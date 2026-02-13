@@ -4,6 +4,8 @@ import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
 
@@ -238,9 +240,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
  * Start the server.
  */
 async function main() {
-    const transport = new StdioServerTransport();
-    await server.connect(transport);
-    console.error("Fodda MCP server running on stdio");
+    if (process.env.PORT) {
+        const app = express();
+        const port = parseInt(process.env.PORT) || 8080;
+        let transport: SSEServerTransport | null = null;
+
+        app.get("/sse", async (req, res) => {
+            console.error("New SSE connection established");
+            transport = new SSEServerTransport("/messages", res);
+            await server.connect(transport);
+        });
+
+        app.post("/messages", async (req, res) => {
+            if (transport) {
+                await transport.handlePostMessage(req, res);
+            } else {
+                res.status(400).send("SSE connection not established");
+            }
+        });
+
+        app.listen(port, () => {
+            console.error(`Fodda MCP server running on SSE at http://localhost:${port}/sse`);
+        });
+    } else {
+        const transport = new StdioServerTransport();
+        await server.connect(transport);
+        console.error("Fodda MCP server running on stdio");
+    }
 }
 
 main().catch((error) => {
