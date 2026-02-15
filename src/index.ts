@@ -335,13 +335,9 @@ async function main() {
         };
 
         // Parse JSON bodies (required for signature verification)
-        // app.use(express.json());
+        app.use(express.json());
 
-        console.error("[DEBUG] Registering verifySignature middleware");
-        app.use((req, res, next) => {
-            console.error(`[DEBUG] FORCE HIT: ${req.path}`);
-            throw new Error("Middleware is running!");
-        });
+        // Commenting out verifySignature for now as requested by previous turn logic
         // app.use(verifySignature);
 
         app.get("/sse", async (req, res) => {
