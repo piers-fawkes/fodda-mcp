@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  fodda-mcp:
+    image: fodda-mcp:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - FODDA_API_URL=${FODDA_API_URL:-https://api.fodda.ai}
+      - FODDA_MCP_SECRET=${FODDA_MCP_SECRET}
+      - NODE_ENV=production
+    restart: always

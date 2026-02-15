@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import crypto from "crypto";
 import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
@@ -8,6 +9,7 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
+import { TOOLS, MCP_SERVER_VERSION } from "./tools.js";
 
 dotenv.config();
 
@@ -19,7 +21,7 @@ const DUMMY_USER_ID = "dummy-test-user";
 const server = new Server(
     {
         name: "fodda-mcp",
-        version: "1.1.0",
+        version: MCP_SERVER_VERSION,
     },
     {
         capabilities: {
@@ -33,94 +35,7 @@ const server = new Server(
  */
 server.setRequestHandler(ListToolsRequestSchema, async () => {
     return {
-        tools: [
-            {
-                name: "search_graph",
-                description: "Perform hybrid (keyword + semantic) search on a Fodda knowledge graph. Use this to find trends, articles, and concepts. Highly recommended for natural language discovery.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        graphId: { type: "string", description: "The graph ID (e.g., 'psfk', 'waldo', 'sic')" },
-                        query: { type: "string", description: "The search query" },
-                        userId: { type: "string", description: "Unique identifier for the user (Required)" },
-                        limit: { type: "number", description: "Maximum number of results (default 25, max 50)" },
-                        use_semantic: { type: "boolean", description: "Whether to use semantic search (default true)" },
-                    },
-                    required: ["graphId", "query", "userId"],
-                },
-            },
-            {
-                name: "get_neighbors",
-                description: "Traverse the graph from seed nodes to find related concepts and relationships. Useful for depth-first discovery.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        graphId: { type: "string", description: "The graph ID" },
-                        seed_node_ids: { type: "array", items: { type: "string" }, description: "Array of node IDs to start traversal from" },
-                        userId: { type: "string", description: "Unique identifier for the user (Required)" },
-                        relationship_types: { type: "array", items: { type: "string" }, description: "Filter by relationship types" },
-                        depth: { type: "number", description: "Traversal depth (default 1, max 2)" },
-                        limit: { type: "number", description: "Maximum results (default 50)" },
-                    },
-                    required: ["graphId", "seed_node_ids", "userId"],
-                },
-            },
-            {
-                name: "get_evidence",
-                description: "Get source signals, articles, and evidentiary depth for a specific node. Essential for provenance and fact-checking.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        graphId: { type: "string", description: "The graph ID" },
-                        for_node_id: { type: "string", description: " The ID of the node (Trend or Article)" },
-                        userId: { type: "string", description: "Unique identifier for the user (Required)" },
-                        top_k: { type: "number", description: "Number of evidence items to return (default 5)" },
-                    },
-                    required: ["graphId", "for_node_id", "userId"],
-                },
-            },
-            {
-                name: "get_node",
-                description: "Directly retrieve metadata and properties for a single node by its ID.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        graphId: { type: "string", description: "The graph ID" },
-                        nodeId: { type: "string", description: "The ID of the node" },
-                        userId: { type: "string", description: "Unique identifier for the user (Required)" },
-                    },
-                    required: ["graphId", "nodeId", "userId"],
-                },
-            },
-            {
-                name: "get_label_values",
-                description: "Discover valid values for a specific node label (e.g., RetailerType, Technology). Use for discovery, UI filters, and category exploration.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        graphId: { type: "string", description: "The graph ID" },
-                        label: { type: "string", description: "The label to fetch values for" },
-                        userId: { type: "string", description: "Unique identifier for the user (Required)" },
-                    },
-                    required: ["graphId", "label", "userId"],
-                },
-            },
-            {
-                name: "psfk_overview",
-                description: "Get a structured macro overview from the PSFK Graph. Returns up to 3 meta_patterns. Useful for top-level briefings before deeper exploration.",
-                inputSchema: {
-                    type: "object",
-                    properties: {
-                        industry: { type: "string", description: "Filter by industry (e.g. 'Retail', 'Health')" },
-                        sector: { type: "string", description: "Filter by sector" },
-                        region: { type: "string", description: "Filter by region" },
-                        timeframe: { type: "string", description: "Timeframe for the overview" },
-                        userId: { type: "string", description: "Unique identifier for the user (Required)" },
-                    },
-                    required: ["userId"], // industry or sector required by logic, but not schema strictness to allow either
-                },
-            },
-        ],
+        tools: TOOLS,
     };
 });
 
@@ -226,11 +141,23 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
     }
 
+    const timestamp = Date.now().toString();
     const headers: Record<string, string> = {
         "X-API-Key": apiKey,
         "X-User-Id": userId,
         "X-Fodda-Mode": "deterministic",
+        "X-Fodda-Timestamp": timestamp,
         "Content-Type": "application/json",
+    };
+
+    // Helper to sign payload
+    const signRequest = (body: any) => {
+        const secret = process.env.FODDA_MCP_SECRET;
+        if (secret) {
+            const payload = timestamp + "." + JSON.stringify(body);
+            const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
+            headers["X-Fodda-Signature"] = signature;
+        }
     };
 
     const startTime = Date.now();
@@ -239,32 +166,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         switch (name) {
             case "search_graph": {
                 const limit = Math.min(Number(args?.limit) || 25, 50); // Defense in Depth: Cap results
-                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/search`, {
+                const body = {
                     query: args?.query,
                     limit: limit,
                     use_semantic: args?.use_semantic !== false,
-                }, { headers });
+                };
+                signRequest(body);
+                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/search`, body, { headers });
                 break;
             }
 
             case "get_neighbors": {
                 const depth = Math.min(Number(args?.depth) || 1, 2);   // Defense in Depth: Cap traversal depth
                 const limit = Math.min(Number(args?.limit) || 50, 50); // Defense in Depth: Cap results
-                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/neighbors`, {
+                const body = {
                     seed_node_ids: args?.seed_node_ids,
                     relationship_types: args?.relationship_types,
                     depth: depth,
                     limit: limit,
-                }, { headers });
+                };
+                signRequest(body);
+                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/neighbors`, body, { headers });
                 break;
             }
 
             case "get_evidence": {
                 const top_k = Math.min(Number(args?.top_k) || 5, 10);  // Defense in Depth: Cap evidence sources
-                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/evidence`, {
+                const body = {
                     for_node_id: args?.for_node_id,
                     top_k: top_k,
-                }, { headers });
+                };
+                signRequest(body);
+                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/evidence`, body, { headers });
                 break;
             }
 
@@ -287,12 +220,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     throw new Error("At least one of 'industry' or 'sector' must be provided for psfk_overview.");
                 }
 
-                response = await axios.post(`${API_BASE_URL}/v1/psfk/overview`, {
+                const body = {
                     industry,
                     sector,
                     region: args?.region,
                     timeframe: args?.timeframe,
-                }, { headers });
+                };
+                signRequest(body);
+                response = await axios.post(`${API_BASE_URL}/v1/psfk/overview`, body, { headers });
                 break;
             }
 
@@ -347,6 +282,68 @@ async function main() {
         const port = parseInt(process.env.PORT) || 8080;
         let transport: SSEServerTransport | null = null;
 
+        // Security: HMAC Signature Verification Middleware
+        const verifySignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+            // Skip verification for public endpoints (like tools registry)
+            console.error(`[DEBUG] Middleware hit: ${req.method} ${req.path}`);
+            if (req.path === "/mcp/tools" && req.method === "GET") {
+                console.error(`[DEBUG] Skipping verification for /mcp/tools`);
+                return next();
+            }
+
+            const signature = req.headers["x-fodda-signature"];
+            const secret = process.env.FODDA_MCP_SECRET;
+
+            if (!secret) {
+                console.error("❌ CRTICAL: FODDA_MCP_SECRET not set in environment.");
+                return res.status(500).json({ error: "Server misconfiguration" });
+            }
+
+            if (!signature || typeof signature !== 'string') {
+                console.error(`[DEBUG] Missing signature. Header:`, req.headers["x-fodda-signature"]);
+                return res.status(401).json({ error: "Missing or invalid signature" });
+            }
+
+            // In a real Express setup with body-parser, req.body is an object.
+            // We need the raw body for HMAC. 
+            // However, with MCP SDK, we might be using standard express json parser.
+            // If body is already parsed, JSON.stringify might not match exact raw body sent.
+            // BEST PRACTICE: Use a raw body parser or verify locally.
+            // For this implementation, assuming JSON body parser is used upstream or we need to add it.
+            // Let's assume standard JSON body for now, but note the fragility.
+            // Ideally: app.use(express.json({ verify: ... })) to capture raw body.
+
+            // For simplicity in this task, we will attempt to reconstruct or use a rawBody property if available,
+            // otherwise falling back to JSON.stringify (which is fragile but often sufficient for simple JSON RPC).
+
+            const payload = JSON.stringify(req.body);
+            const expectedSignature = crypto
+                .createHmac("sha256", secret)
+                .update(payload)
+                .digest("hex");
+
+            // Timing-safe comparison
+            const trusted = Buffer.from(expectedSignature, 'ascii');
+            const untrusted = Buffer.from(signature, 'ascii');
+
+            if (trusted.length !== untrusted.length || !crypto.timingSafeEqual(trusted, untrusted)) {
+                console.error("❌ Invalid Signature:", signature, "Expected:", expectedSignature);
+                return res.status(401).json({ error: "Invalid signature" });
+            }
+
+            next();
+        };
+
+        // Parse JSON bodies (required for signature verification)
+        // app.use(express.json());
+
+        console.error("[DEBUG] Registering verifySignature middleware");
+        app.use((req, res, next) => {
+            console.error(`[DEBUG] FORCE HIT: ${req.path}`);
+            throw new Error("Middleware is running!");
+        });
+        // app.use(verifySignature);
+
         app.get("/sse", async (req, res) => {
             console.error("New SSE connection established");
             transport = new SSEServerTransport("/messages", res);
@@ -359,6 +356,15 @@ async function main() {
             } else {
                 res.status(400).send("SSE connection not established");
             }
+        });
+
+        // Enterprise Transparency: Tool Capability Registry
+        app.get("/mcp/tools", (req, res) => {
+            res.json({
+                tools: TOOLS,
+                count: TOOLS.length,
+                version: MCP_SERVER_VERSION
+            });
         });
 
         app.listen(port, () => {

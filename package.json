@@ -1,7 +1,16 @@
 {
   "name": "fodda-mcp",
-  "version": "1.0.0",
-  "description": "",
+  "version": "1.1.0",
+  "description": "Fodda MCP Server for accessing knowledge graph insights.",
+  "keywords": [
+    "mcp",
+    "fodda",
+    "ai",
+    "graph",
+    "context"
+  ],
+  "author": "Fodda",
+  "license": "UNLICENSED",
   "main": "index.js",
   "type": "module",
   "scripts": {

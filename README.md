@@ -1,6 +1,14 @@
 # Fodda MCP Server
 
-This MCP server provides access to Fodda's knowledge graph and analytical tools.
+This MCP server provides access to Fodda's knowledge graph and analytical tools. It enables AI agents to query the graph, retrieve evidence, and generate macro insights.
+
+## Features
+
+- **Graph Search**: Hybrid keyword and semantic search.
+- **Traversal**: Neighbor discovery and relationship mapping.
+- **Evidence Retrieval**: Access to source signals and articles.
+- **Macro Insights**: High-level industry and sector overviews.
+- **Simulated Mode**: `gemini_echo` mode for tool invocation testing.
 
 ## Tools
 
@@ -34,5 +42,34 @@ Get a structured macro overview from the PSFK Graph (max 3 meta_patterns).
   - `timeframe` (Optional)
 - **Note**: Does not require `graphId`.
 
+## Configuration
+
+The server is configured via environment variables. Create a `.env` file in the root directory:
+
+```env
+PORT=8080                   # Port for the SSE server (default: stdio if unset)
+FODDA_API_URL=              # URL of the Fodda API (default: https://api.fodda.ai)
+NODE_ENV=production         # Environment mode (development|production)
+INTERNAL_TEST_KEYS=         # Comma-separated list of keys allowed to use simulation headers in production
+```
+
+## Usage
+
+### Building
+```bash
+npm install
+npm run build
+```
+
+### Running (Stdio)
+```bash
+npm start
+```
+
+### Running (SSE)
+```bash
+PORT=8080 npm start
+```
+
 ## Authentication
-Tools require `userId` and an API Key (passed via `_meta` or handled by the server environment).
+Tools require `userId` and an API Key. The API Key must be passed in the `_meta` field of the MCP request under `authorization` (Bearer token) or handled by the server environment.

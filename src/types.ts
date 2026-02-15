@@ -1,3 +1,9 @@
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+
+export interface ExtendedTool extends Tool {
+  isDeterministic: boolean;
+}
+
 export interface FoddaSearchRequest {
   query: string;
   limit?: number;
