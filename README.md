@@ -1,9 +1,16 @@
-# Fodda MCP Server
+<div align="center">
+  <img src="https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddaminilogo.png" alt="Fodda Logo" width="120"/>
+  
+  # Fodda MCP Server
 
-**Expert-curated knowledge graphs for AI agents** — PSFK Retail, Beauty, Sports and partner datasets via the Model Context Protocol.
+  **Expert-curated knowledge graphs for AI agents** — PSFK Retail, Beauty, Sports and partner datasets via the Model Context Protocol.
 
-[![MCP Registry](https://img.shields.io/badge/MCP_Registry-ai.fodda%2Fmcp--server-blue)](https://registry.modelcontextprotocol.io)
-[![Version](https://img.shields.io/badge/version-1.3.0-green)](./CHANGELOG.md)
+  [![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.piers--fawkes%2Ffodda-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.piers-fawkes/fodda)
+  [![npm](https://img.shields.io/npm/v/fodda-mcp)](https://www.npmjs.com/package/fodda-mcp)
+  [![Version](https://img.shields.io/badge/version-1.3.2-green)](./CHANGELOG.md)
+  [![License](https://img.shields.io/badge/license-Proprietary-red)](https://fodda.ai)
+
+</div>
 
 ---
 
@@ -110,11 +117,11 @@ PORT=8080 npm start
 
 ## MCP Registry
 
-This server is published to the [Official MCP Registry](https://registry.modelcontextprotocol.io) as `ai.fodda/mcp-server`.
+This server is published to the [Official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.piers-fawkes/fodda`.
 
 ```bash
 # Verify listing
-curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server"
+curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.piers-fawkes/fodda"
 ```
 
 ---
