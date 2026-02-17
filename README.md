@@ -1,75 +1,124 @@
 # Fodda MCP Server
 
-This MCP server provides access to Fodda's knowledge graph and analytical tools. It enables AI agents to query the graph, retrieve evidence, and generate macro insights.
+**Expert-curated knowledge graphs for AI agents** — PSFK Retail, Beauty, Sports and partner datasets via the Model Context Protocol.
 
-## Features
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-ai.fodda%2Fmcp--server-blue)](https://registry.modelcontextprotocol.io)
+[![Version](https://img.shields.io/badge/version-1.3.0-green)](./CHANGELOG.md)
 
-- **Graph Search**: Hybrid keyword and semantic search.
-- **Traversal**: Neighbor discovery and relationship mapping.
-- **Evidence Retrieval**: Access to source signals and articles.
-- **Macro Insights**: High-level industry and sector overviews.
-- **Simulated Mode**: `gemini_echo` mode for tool invocation testing.
+---
 
-## Tools
+## Quick Start
 
-### `search_graph`
-Perform hybrid (keyword + semantic) search on a Fodda knowledge graph.
-- **Inputs**: `graphId`, `query`, `userId`, `limit`, `use_semantic`
+### Claude Code
 
-### `get_neighbors`
-Traverse the graph from seed nodes to find related concepts.
-- **Inputs**: `graphId`, `seed_node_ids`, `userId`, `depth`, `limit`, `relationship_types`
+```bash
+claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
+  --header "Authorization: Bearer YOUR_API_KEY"
+```
 
-### `get_evidence`
-Get source signals and articles for a node.
-- **Inputs**: `graphId`, `for_node_id`, `userId`, `top_k`
+### Gemini CLI
 
-### `get_node`
-Retrieve metadata for a single node.
-- **Inputs**: `graphId`, `nodeId`, `userId`
+```json
+{
+  "tools": [{
+    "type": "mcp",
+    "name": "fodda",
+    "url": "https://mcp.fodda.ai/sse",
+    "headers": { "Authorization": "Bearer YOUR_API_KEY" }
+  }]
+}
+```
 
-### `get_label_values`
-Discover valid values for a node label.
-- **Inputs**: `graphId`, `label`, `userId`
+### Generic SSE Client
 
-### `psfk_overview`
-Get a structured macro overview from the PSFK Graph (max 3 meta_patterns).
-- **Inputs**:
-  - `userId` (Required)
-  - `industry` (Optional, but required if sector is missing)
-  - `sector` (Optional, but required if industry is missing)
-  - `region` (Optional)
-  - `timeframe` (Optional)
-- **Note**: Does not require `graphId`.
+Connect to `https://mcp.fodda.ai/sse` with an `Authorization: Bearer YOUR_API_KEY` header.
+
+---
+
+## Available Tools
+
+| Tool | Description | Deterministic |
+|------|-------------|:---:|
+| `search_graph` | Hybrid keyword + semantic search on a knowledge graph | ❌ |
+| `get_neighbors` | Traverse from seed nodes to discover related concepts | ✅ |
+| `get_evidence` | Source signals, articles, and provenance for a node | ✅ |
+| `get_node` | Retrieve metadata for a single node by ID | ✅ |
+| `get_label_values` | Discover valid values for a node label/category | ✅ |
+| `psfk_overview` | Structured macro overview across industries and sectors | ❌ |
+
+All tools require `userId` and — except `psfk_overview` — a `graphId`.
+
+### Discovery Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /mcp/tools` | Full tool schemas, versions, and capabilities |
+| `GET /health` | Health check (`{ "status": "ok" }`) |
+| `GET /.well-known/mcp.json` | MCP server auto-discovery manifest |
+
+---
+
+## Authentication
+
+Pass your Fodda API key as a Bearer token:
+
+```
+Authorization: Bearer fk_live_...
+```
+
+In MCP request `_meta`:
+```json
+{ "_meta": { "authorization": "Bearer fk_live_..." } }
+```
+
+---
 
 ## Configuration
 
-The server is configured via environment variables. Create a `.env` file in the root directory:
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | SSE server port (omit for stdio mode) | — |
+| `FODDA_API_URL` | Upstream API base URL | `https://api.fodda.ai` |
+| `FODDA_MCP_SECRET` | HMAC signing secret | — |
+| `NODE_ENV` | Environment (`development` / `production`) | `production` |
+| `INTERNAL_TEST_KEYS` | Comma-separated keys for simulation mode | — |
+| `RATE_LIMIT_RPM` | Requests per minute per API key | `60` |
 
-```env
-PORT=8080                   # Port for the SSE server (default: stdio if unset)
-FODDA_API_URL=              # URL of the Fodda API (default: https://api.fodda.ai)
-NODE_ENV=production         # Environment mode (development|production)
-INTERNAL_TEST_KEYS=         # Comma-separated list of keys allowed to use simulation headers in production
-```
+---
 
-## Usage
+## Build & Run
 
-### Building
 ```bash
 npm install
 npm run build
-```
 
-### Running (Stdio)
-```bash
+# Stdio mode
 npm start
-```
 
-### Running (SSE)
-```bash
+# SSE mode
 PORT=8080 npm start
 ```
 
-## Authentication
-Tools require `userId` and an API Key. The API Key must be passed in the `_meta` field of the MCP request under `authorization` (Bearer token) or handled by the server environment.
+## Self-Hosting
+
+- **Docker**: `docker build -t fodda-mcp . && docker run -p 8080:8080 -e PORT=8080 fodda-mcp`
+- **Cloud Run**: `./deploy_cloud_run.sh`
+- **Kubernetes**: See [`deployment/k8s/`](./deployment/k8s/)
+- **Terraform**: See [`deployment/terraform/`](./deployment/terraform/)
+
+---
+
+## MCP Registry
+
+This server is published to the [Official MCP Registry](https://registry.modelcontextprotocol.io) as `ai.fodda/mcp-server`.
+
+```bash
+# Verify listing
+curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server"
+```
+
+---
+
+## License
+
+Proprietary — [fodda.ai](https://www.fodda.ai)

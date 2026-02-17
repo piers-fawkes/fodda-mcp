@@ -7,3 +7,11 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# MCP Registry secrets
+.mcpregistry_github_token
+.mcpregistry_registry_token
+fodda_mcp_registry_key.pem
+
+# Agent workflows (optional - keep local)
+.agent/

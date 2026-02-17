@@ -67,10 +67,16 @@ Compare visually.
 
 ### 7. Marketplace Registry Packaging
 **Owner**: MCP
-Prepare:
-- `server.json` metadata
-- Docker image
-- Registry publication config
+**Status**: ✅ Complete (v1.3.0)
+
+Packaged the MCP server for the Official MCP Registry and npm.
+
+**Deliverables (completed)**:
+- `fodda_mcp_server.json` — conforming to 2025-12-11 registry schema with `remotes` + `packages`
+- `/.well-known/mcp.json` endpoint for auto-discovery
+- `scripts/publish_registry.sh` — one-command npm + registry publish
+- npm package support for self-hosted installs (`npx fodda-mcp`)
+- Marketplace-quality `README.md` with Claude/Gemini quick-start examples
 
 ---
 
@@ -81,6 +87,34 @@ To maintain the focus on **Stability > Innovation**, the following are strictly 
 - **NO Summarization Magic**: The proxy should remain a pass-through for structured data; do not add LLM-based summarization of results.
 - **NO Scope Expansion**: Stay focused on the core graph retrieval tools.
 - **NO Dynamic Retrieval Experiments**: Do not implement self-correcting or multi-hop retrieval logic within the MCP layer.
+
+### 8. WebMCP `navigator.modelContext` Integration
+**Owner**: Website
+**Status**: ⏸️ Blocked — awaiting browser support (ETA: 2027+)
+
+The Fodda Website's `AgentInsightPanel` contains a tool registration via the proposed `navigator.modelContext.registerTool()` API (WebMCP spec from Microsoft/Google). The entire panel is **commented out** from all graph pages until the platform is ready.
+
+**Research findings (Feb 16, 2026)**:
+- Chrome: Canary flag / Early Preview Program only — not origin trial, not stable
+- Edge: Unspecified (Chromium-derived, likely same as Chrome)
+- Firefox / Safari: No engagement found
+- Spec: W3C Community Group draft (not standards-track)
+- MCP-B polyfill: ~789 users — too niche
+- **Realistic production ETA: 2027+**
+
+**Commented-out files**:
+- `components/AgentInsightPanel.tsx` — WebMCP registration block (lines 106–183)
+- `pages/GraphBeauty.tsx` — `<AgentInsightPanel>` import + usage
+- `pages/GraphRetail.tsx` — `<AgentInsightPanel>` import + usage
+- `pages/GraphSports.tsx` — `<AgentInsightPanel>` import + usage
+
+**When to activate**: Only when **Piers confirms** that `navigator.modelContext` has shipped in Chrome/Edge stable or a public origin trial. At that point:
+- Uncomment `AgentInsightPanel` on all three graph pages
+- Verify the WebMCP tool registration lights up
+- Consider wiring additional API tools (`searchGraph`, `getEvidence`, `getLabelValues`)
+- **Also update the corresponding pages on the PSFK website**
+
+> **Note**: Do NOT begin implementation until Piers explicitly confirms browser support is available.
 
 ---
 

@@ -1,0 +1,49 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.fodda/mcp-server",
+  "title": "Fodda Knowledge Graphs",
+  "description": "Expert-curated knowledge graphs for AI agents — PSFK Retail, Beauty, Sports and more.",
+  "version": "1.3.0",
+  "repository": {
+    "url": "https://github.com/fodda/mcp-server",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://mcp.fodda.ai/sse",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token with your Fodda API key (e.g. 'Bearer fk_live_...')",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "fodda-mcp",
+      "version": "1.3.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "FODDA_API_KEY",
+          "description": "Your Fodda API key",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "FODDA_API_URL",
+          "description": "Upstream Fodda API URL",
+          "isRequired": false,
+          "default": "https://api.fodda.ai"
+        }
+      ]
+    }
+  ]
+}

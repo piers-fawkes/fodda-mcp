@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import crypto from "crypto";
@@ -145,7 +146,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const headers: Record<string, string> = {
         "X-API-Key": apiKey,
         "X-User-Id": userId,
-        "X-Fodda-Mode": "deterministic",
         "X-Fodda-Timestamp": timestamp,
         "Content-Type": "application/json",
     };
@@ -202,12 +202,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
 
             case "get_node": {
-                response = await axios.get(`${API_BASE_URL}/v1/graphs/${graphId}/nodes/${args?.nodeId}`, { headers });
+                const getNodePath = `/v1/graphs/${graphId}/nodes/${args?.nodeId}`;
+                const getNodeSecret = process.env.FODDA_MCP_SECRET;
+                if (getNodeSecret) {
+                    const payload = timestamp + "." + getNodePath;
+                    const signature = crypto.createHmac("sha256", getNodeSecret).update(payload).digest("hex");
+                    headers["X-Fodda-Signature"] = signature;
+                }
+                response = await axios.get(`${API_BASE_URL}${getNodePath}`, { headers });
                 break;
             }
 
             case "get_label_values": {
-                response = await axios.get(`${API_BASE_URL}/v1/graphs/${graphId}/labels/${args?.label}/values`, { headers });
+                const getLabelPath = `/v1/graphs/${graphId}/labels/${args?.label}/values`;
+                const getLabelSecret = process.env.FODDA_MCP_SECRET;
+                if (getLabelSecret) {
+                    const payload = timestamp + "." + getLabelPath;
+                    const signature = crypto.createHmac("sha256", getLabelSecret).update(payload).digest("hex");
+                    headers["X-Fodda-Signature"] = signature;
+                }
+                response = await axios.get(`${API_BASE_URL}${getLabelPath}`, { headers });
                 break;
             }
 
@@ -247,7 +261,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             status: response.status,
             durationMs,
             billable_units: usage.total_billable_units,
-            deterministic: true,
+            deterministic: false,
             layer: "mcp_proxy"
         }));
 
@@ -279,15 +293,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
     if (process.env.PORT) {
         const app = express();
+        app.set("trust proxy", true);
         const port = parseInt(process.env.PORT) || 8080;
-        let transport: SSEServerTransport | null = null;
+        const transports = new Map<string, SSEServerTransport>();
 
         // Security: HMAC Signature Verification Middleware
         const verifySignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-            // Skip verification for public endpoints (like tools registry)
-            console.error(`[DEBUG] Middleware hit: ${req.method} ${req.path}`);
-            if (req.path === "/mcp/tools" && req.method === "GET") {
-                console.error(`[DEBUG] Skipping verification for /mcp/tools`);
+            // Skip verification for public/health endpoints
+            if ((req.path === "/mcp/tools" || req.path === "/health" || req.path === "/.well-known/mcp.json") && req.method === "GET") {
                 return next();
             }
 
@@ -295,26 +308,14 @@ async function main() {
             const secret = process.env.FODDA_MCP_SECRET;
 
             if (!secret) {
-                console.error("❌ CRTICAL: FODDA_MCP_SECRET not set in environment.");
+                console.error("CRITICAL: FODDA_MCP_SECRET not set in environment.");
                 return res.status(500).json({ error: "Server misconfiguration" });
             }
 
             if (!signature || typeof signature !== 'string') {
-                console.error(`[DEBUG] Missing signature. Header:`, req.headers["x-fodda-signature"]);
                 return res.status(401).json({ error: "Missing or invalid signature" });
             }
 
-            // In a real Express setup with body-parser, req.body is an object.
-            // We need the raw body for HMAC. 
-            // However, with MCP SDK, we might be using standard express json parser.
-            // If body is already parsed, JSON.stringify might not match exact raw body sent.
-            // BEST PRACTICE: Use a raw body parser or verify locally.
-            // For this implementation, assuming JSON body parser is used upstream or we need to add it.
-            // Let's assume standard JSON body for now, but note the fragility.
-            // Ideally: app.use(express.json({ verify: ... })) to capture raw body.
-
-            // For simplicity in this task, we will attempt to reconstruct or use a rawBody property if available,
-            // otherwise falling back to JSON.stringify (which is fragile but often sufficient for simple JSON RPC).
 
             const payload = JSON.stringify(req.body);
             const expectedSignature = crypto
@@ -334,24 +335,112 @@ async function main() {
             next();
         };
 
-        // Parse JSON bodies (required for signature verification)
-        app.use(express.json());
+        // --- Per-Key Rate Limiting ---
+        const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+        const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_RPM || "60", 10);
 
-        // Commenting out verifySignature for now as requested by previous turn logic
-        // app.use(verifySignature);
+        interface RateLimitEntry {
+            count: number;
+            windowStart: number;
+        }
+        const rateLimitMap = new Map<string, RateLimitEntry>();
+
+        // Clean up expired entries every 5 minutes
+        setInterval(() => {
+            const now = Date.now();
+            for (const [key, entry] of rateLimitMap) {
+                if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
+                    rateLimitMap.delete(key);
+                }
+            }
+        }, 5 * 60_000);
+
+        const rateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+            // Skip rate limiting for public/health endpoints
+            if ((req.path === "/mcp/tools" || req.path === "/health" || req.path === "/.well-known/mcp.json") && req.method === "GET") {
+                return next();
+            }
+
+            // Extract key from API key header or fallback to IP
+            const apiKey = (req.headers["x-api-key"] as string) || req.ip || "unknown";
+            const now = Date.now();
+            const entry = rateLimitMap.get(apiKey);
+
+            if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+                // New window
+                rateLimitMap.set(apiKey, { count: 1, windowStart: now });
+            } else {
+                entry.count++;
+                if (entry.count > RATE_LIMIT_MAX) {
+                    const retryAfter = Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
+                    console.error(JSON.stringify({
+                        event: "mcp.rate_limit",
+                        apiKey: apiKey.substring(0, 8) + "...",
+                        count: entry.count,
+                        limit: RATE_LIMIT_MAX,
+                    }));
+                    res.set("Retry-After", String(retryAfter));
+                    return res.status(429).json({
+                        error: "Rate limit exceeded",
+                        limit: RATE_LIMIT_MAX,
+                        window: "60s",
+                        retry_after: retryAfter,
+                    });
+                }
+            }
+
+            // Set rate limit headers
+            const current = rateLimitMap.get(apiKey)!;
+            res.set("X-RateLimit-Limit", String(RATE_LIMIT_MAX));
+            res.set("X-RateLimit-Remaining", String(Math.max(0, RATE_LIMIT_MAX - current.count)));
+            res.set("X-RateLimit-Reset", String(Math.ceil((current.windowStart + RATE_LIMIT_WINDOW_MS) / 1000)));
+
+            next();
+        };
+
+        // Parse JSON bodies with size limit (required for signature verification)
+        app.use(express.json({ limit: '1mb' }));
+
+        // Rate limiting (before HMAC to reject early)
+        app.use(rateLimiter);
+
+        // HMAC Signature Verification
+        app.use(verifySignature);
 
         app.get("/sse", async (req, res) => {
-            console.error("New SSE connection established");
-            transport = new SSEServerTransport("/messages", res);
+            const sessionId = crypto.randomUUID();
+            console.error(`New SSE connection established (session: ${sessionId})`);
+            const transport = new SSEServerTransport("/messages", res);
+            transports.set(sessionId, transport);
+
+            // Clean up on disconnect
+            res.on("close", () => {
+                transports.delete(sessionId);
+                console.error(`SSE session ${sessionId} disconnected (${transports.size} active)`);
+            });
+
             await server.connect(transport);
         });
 
         app.post("/messages", async (req, res) => {
-            if (transport) {
-                await transport.handlePostMessage(req, res);
+            // Find the appropriate transport by checking the sessionId query param
+            const sessionId = req.query.sessionId as string;
+            if (sessionId && transports.has(sessionId)) {
+                await transports.get(sessionId)!.handlePostMessage(req, res);
+            } else if (transports.size === 1) {
+                // Fallback: single-client mode
+                const [transport] = transports.values();
+                await transport!.handlePostMessage(req, res);
+            } else if (transports.size === 0) {
+                res.status(400).send("No SSE connections established");
             } else {
-                res.status(400).send("SSE connection not established");
+                res.status(400).send("Multiple SSE sessions active. Specify sessionId query parameter.");
             }
+        });
+
+        // Health check for Cloud Run liveness/readiness probes
+        app.get("/health", (req, res) => {
+            res.json({ status: "ok", version: MCP_SERVER_VERSION });
         });
 
         // Enterprise Transparency: Tool Capability Registry
@@ -363,9 +452,38 @@ async function main() {
             });
         });
 
-        app.listen(port, () => {
+        // MCP Server Discovery (emerging .well-known standard)
+        app.get("/.well-known/mcp.json", (req, res) => {
+            res.json({
+                name: "ai.fodda/mcp-server",
+                title: "Fodda Knowledge Graphs",
+                description: "Expert-curated knowledge graphs for AI agents — PSFK Retail, Beauty, Sports and more.",
+                version: MCP_SERVER_VERSION,
+                transport: {
+                    type: "sse",
+                    url: `${req.protocol}://${req.get("host")}/sse`
+                },
+                tools_endpoint: `${req.protocol}://${req.get("host")}/mcp/tools`,
+                health_endpoint: `${req.protocol}://${req.get("host")}/health`
+            });
+        });
+
+        const httpServer = app.listen(port, () => {
             console.error(`Fodda MCP server running on SSE at http://localhost:${port}/sse`);
         });
+
+        // Graceful shutdown for Cloud Run
+        const shutdown = () => {
+            console.error("Shutting down gracefully...");
+            httpServer.close(() => {
+                console.error(`Closed ${transports.size} active SSE connections.`);
+                process.exit(0);
+            });
+            // Force exit after 10s if connections don't close
+            setTimeout(() => process.exit(1), 10000);
+        };
+        process.on("SIGTERM", shutdown);
+        process.on("SIGINT", shutdown);
     } else {
         const transport = new StdioServerTransport();
         await server.connect(transport);

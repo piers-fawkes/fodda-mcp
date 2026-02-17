@@ -11,8 +11,6 @@ async function runTest() {
     mcp.stdout.on('data', (data) => console.log(`[Server]: ${data}`));
     mcp.stderr.on('data', (data) => console.error(`[Server Error]: ${data}`));
 
-    let serverReady = false;
-
     // Allow server time to start
     await new Promise(resolve => setTimeout(resolve, 3000));
 

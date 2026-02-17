@@ -1,6 +1,6 @@
 import type { ExtendedTool } from "./types.js";
 
-export const MCP_SERVER_VERSION = "1.1.0";
+export const MCP_SERVER_VERSION = "1.3.0";
 export const TOOL_VERSIONS = {
     search_graph: "1.0.0",
     get_neighbors: "1.0.0",
@@ -13,11 +13,11 @@ export const TOOL_VERSIONS = {
 export const TOOLS: ExtendedTool[] = [
     {
         name: "search_graph",
-        description: "Perform hybrid (keyword + semantic) search on a Fodda knowledge graph. Use this to find trends, articles, and concepts. Highly recommended for natural language discovery.",
+        description: "Perform hybrid (vector + keyword) search on a Fodda knowledge graph. Returns trends and articles matching the query. Uses a 3-tier fallback: vector search → keyword search → all trends. Always returns results.",
         inputSchema: {
             type: "object",
             properties: {
-                graphId: { type: "string", description: "The graph ID (e.g., 'psfk', 'waldo', 'sic')" },
+                graphId: { type: "string", description: "The graph ID. For PSFK verticals use: 'retail', 'beauty', or 'sports'. Other graphs: 'psfk' (all verticals), 'sic' (Strategic Independent Culture), 'waldo'." },
                 query: { type: "string", description: "The search query" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
                 limit: { type: "number", description: "Maximum number of results (default 25, max 50)" },
@@ -25,7 +25,25 @@ export const TOOLS: ExtendedTool[] = [
             },
             required: ["graphId", "query", "userId"],
         },
-        isDeterministic: false, // Search results can change as data updates
+        outputSchema: {
+            type: "object",
+            properties: {
+                results: {
+                    type: "array",
+                    description: "Array of matching nodes (trends, articles)",
+                },
+                total: { type: "number", description: "Total number of results found" },
+                search_method: { type: "string", description: "Search method used: 'vector', 'keyword', or 'fallback'" },
+                usage: {
+                    type: "object",
+                    description: "Billing/usage metadata",
+                    properties: {
+                        total_billable_units: { type: "number" },
+                    },
+                },
+            },
+        },
+        isDeterministic: false,
     },
     {
         name: "get_neighbors",
@@ -42,7 +60,26 @@ export const TOOLS: ExtendedTool[] = [
             },
             required: ["graphId", "seed_node_ids", "userId"],
         },
-        isDeterministic: true, // Graph structure is relatively stable for traversal
+        outputSchema: {
+            type: "object",
+            properties: {
+                nodes: {
+                    type: "array",
+                    description: "Array of neighboring nodes",
+                },
+                edges: {
+                    type: "array",
+                    description: "Array of relationships between nodes",
+                },
+                usage: {
+                    type: "object",
+                    properties: {
+                        total_billable_units: { type: "number" },
+                    },
+                },
+            },
+        },
+        isDeterministic: true,
     },
     {
         name: "get_evidence",
@@ -51,11 +88,27 @@ export const TOOLS: ExtendedTool[] = [
             type: "object",
             properties: {
                 graphId: { type: "string", description: "The graph ID" },
-                for_node_id: { type: "string", description: " The ID of the node (Trend or Article)" },
+                for_node_id: { type: "string", description: "The ID of the node (Trend or Article)" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
                 top_k: { type: "number", description: "Number of evidence items to return (default 5)" },
             },
             required: ["graphId", "for_node_id", "userId"],
+        },
+        outputSchema: {
+            type: "object",
+            properties: {
+                evidence: {
+                    type: "array",
+                    description: "Array of evidence items with source URLs, titles, snippets, and relevance scores",
+                },
+                node_id: { type: "string", description: "The node this evidence supports" },
+                usage: {
+                    type: "object",
+                    properties: {
+                        total_billable_units: { type: "number" },
+                    },
+                },
+            },
         },
         isDeterministic: true,
     },
@@ -71,6 +124,15 @@ export const TOOLS: ExtendedTool[] = [
             },
             required: ["graphId", "nodeId", "userId"],
         },
+        outputSchema: {
+            type: "object",
+            properties: {
+                id: { type: "string", description: "Node ID" },
+                display: { type: "string", description: "Display name of the node" },
+                labels: { type: "array", description: "Array of node labels/types" },
+                properties: { type: "object", description: "Key-value properties of the node" },
+            },
+        },
         isDeterministic: true,
     },
     {
@@ -85,11 +147,19 @@ export const TOOLS: ExtendedTool[] = [
             },
             required: ["graphId", "label", "userId"],
         },
+        outputSchema: {
+            type: "object",
+            properties: {
+                label: { type: "string", description: "The label queried" },
+                values: { type: "array", description: "Array of valid values for the label" },
+                count: { type: "number", description: "Number of values found" },
+            },
+        },
         isDeterministic: true,
     },
     {
         name: "psfk_overview",
-        description: "Get a structured macro overview from the PSFK Graph. Returns up to 3 meta_patterns. Useful for top-level briefings before deeper exploration.",
+        description: "Get a structured macro overview from the PSFK Graph. Returns up to 3 meta_patterns. Useful for top-level briefings before deeper exploration. At least one of 'industry' or 'sector' must be provided.",
         inputSchema: {
             type: "object",
             properties: {
@@ -99,8 +169,25 @@ export const TOOLS: ExtendedTool[] = [
                 timeframe: { type: "string", description: "Timeframe for the overview" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
             },
-            required: ["userId"], // industry or sector required by logic, but not schema strictness to allow either
+            required: ["userId"],
         },
-        isDeterministic: false, // Macro overviews are generated and may evolve
+        outputSchema: {
+            type: "object",
+            properties: {
+                meta_patterns: {
+                    type: "array",
+                    description: "Up to 3 macro-level pattern objects with trend summaries",
+                },
+                industry: { type: "string", description: "Industry filter applied" },
+                sector: { type: "string", description: "Sector filter applied" },
+                usage: {
+                    type: "object",
+                    properties: {
+                        total_billable_units: { type: "number" },
+                    },
+                },
+            },
+        },
+        isDeterministic: false,
     },
 ];
