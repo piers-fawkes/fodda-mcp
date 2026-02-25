@@ -16,11 +16,17 @@
 
 ## Quick Start
 
-### Claude Code
+### Claude Code (Streamable HTTP fallback to SSE)
 
 ```bash
 claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
   --header "Authorization: Bearer YOUR_API_KEY"
+```
+
+### OpenAI Frontier or Streamable HTTP Client
+Connect to the `/mcp` endpoint using HTTP `GET` to establish a stream and `POST` to execute:
+```bash
+https://mcp.fodda.ai/mcp
 ```
 
 ### Gemini CLI
@@ -84,9 +90,10 @@ In MCP request `_meta`:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | SSE server port (omit for stdio mode) | — |
+| `PORT` | HTTP server port (omit for stdio mode) | — |
 | `FODDA_API_URL` | Upstream API base URL | `https://api.fodda.ai` |
 | `FODDA_MCP_SECRET` | HMAC signing secret | — |
+| `ALLOWED_TOOLS` | Comma-separated allowlist of Enterprise Tool scope | `search_graph,get_node,...` |
 | `NODE_ENV` | Environment (`development` / `production`) | `production` |
 | `INTERNAL_TEST_KEYS` | Comma-separated keys for simulation mode | — |
 | `RATE_LIMIT_RPM` | Requests per minute per API key | `60` |

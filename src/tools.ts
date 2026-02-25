@@ -1,6 +1,6 @@
 import type { ExtendedTool } from "./types.js";
 
-export const MCP_SERVER_VERSION = "1.3.0";
+export const MCP_SERVER_VERSION = "1.4.0";
 export const TOOL_VERSIONS = {
     search_graph: "1.0.0",
     get_neighbors: "1.0.0",
@@ -10,14 +10,14 @@ export const TOOL_VERSIONS = {
     psfk_overview: "1.0.0",
 };
 
-export const TOOLS: ExtendedTool[] = [
+const ALL_TOOLS: ExtendedTool[] = [
     {
         name: "search_graph",
-        description: "Perform hybrid (vector + keyword) search on a Fodda knowledge graph. Returns trends and articles matching the query. Uses a 3-tier fallback: vector search → keyword search → all trends. Always returns results.",
+        description: "Search across expert-curated PSFK knowledge graphs (Retail, Beauty, Sports and partner datasets) to retrieve structured trend clusters, signals, and supporting articles relevant to a query.",
         inputSchema: {
             type: "object",
             properties: {
-                graphId: { type: "string", description: "The graph ID. For PSFK verticals use: 'retail', 'beauty', or 'sports'. Other graphs: 'psfk' (all verticals), 'sic' (Strategic Independent Culture), 'waldo'." },
+                graphId: { type: "string", description: "Select which curated graph to query (e.g., 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo')." },
                 query: { type: "string", description: "The search query" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
                 limit: { type: "number", description: "Maximum number of results (default 25, max 50)" },
@@ -47,11 +47,11 @@ export const TOOLS: ExtendedTool[] = [
     },
     {
         name: "get_neighbors",
-        description: "Traverse the graph from seed nodes to find related concepts and relationships. Useful for depth-first discovery.",
+        description: "Explore how a trend, brand, or technology connects to related signals, concepts, and adjacent innovation patterns within the selected graph. Traversal is depth-limited for focused discovery.",
         inputSchema: {
             type: "object",
             properties: {
-                graphId: { type: "string", description: "The graph ID" },
+                graphId: { type: "string", description: "Select which curated graph to query (e.g., 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo')." },
                 seed_node_ids: { type: "array", items: { type: "string" }, description: "Array of node IDs to start traversal from" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
                 relationship_types: { type: "array", items: { type: "string" }, description: "Filter by relationship types" },
@@ -83,11 +83,11 @@ export const TOOLS: ExtendedTool[] = [
     },
     {
         name: "get_evidence",
-        description: "Get source signals, articles, and evidentiary depth for a specific node. Essential for provenance and fact-checking.",
+        description: "Retrieve supporting signals, source articles, and structured evidence for a specific trend or concept. Designed for provenance, validation, and strategic briefing.",
         inputSchema: {
             type: "object",
             properties: {
-                graphId: { type: "string", description: "The graph ID" },
+                graphId: { type: "string", description: "Select which curated graph to query (e.g., 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo')." },
                 for_node_id: { type: "string", description: "The ID of the node (Trend or Article)" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
                 top_k: { type: "number", description: "Number of evidence items to return (default 5)" },
@@ -114,11 +114,11 @@ export const TOOLS: ExtendedTool[] = [
     },
     {
         name: "get_node",
-        description: "Directly retrieve metadata and properties for a single node by its ID.",
+        description: "Retrieve the full metadata and properties of a specific node within the knowledge graph, including labels and structured attributes.",
         inputSchema: {
             type: "object",
             properties: {
-                graphId: { type: "string", description: "The graph ID" },
+                graphId: { type: "string", description: "Select which curated graph to query (e.g., 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo')." },
                 nodeId: { type: "string", description: "The ID of the node" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
             },
@@ -137,11 +137,11 @@ export const TOOLS: ExtendedTool[] = [
     },
     {
         name: "get_label_values",
-        description: "Discover valid values for a specific node label (e.g., RetailerType, Technology). Use for discovery, UI filters, and category exploration.",
+        description: "Discover available values for a specific category (e.g., Technology, Audience, RetailerType) to support structured filtering and exploration.",
         inputSchema: {
             type: "object",
             properties: {
-                graphId: { type: "string", description: "The graph ID" },
+                graphId: { type: "string", description: "Select which curated graph to query (e.g., 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo')." },
                 label: { type: "string", description: "The label to fetch values for" },
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
             },
@@ -159,7 +159,7 @@ export const TOOLS: ExtendedTool[] = [
     },
     {
         name: "psfk_overview",
-        description: "Get a structured macro overview from the PSFK Graph. Returns up to 3 meta_patterns. Useful for top-level briefings before deeper exploration. At least one of 'industry' or 'sector' must be provided.",
+        description: "Generate a macro-level overview of a selected PSFK domain (e.g., Retail, Beauty, Sports), summarizing key meta-patterns and structured trend clusters for strategic briefing.",
         inputSchema: {
             type: "object",
             properties: {
@@ -170,6 +170,10 @@ export const TOOLS: ExtendedTool[] = [
                 userId: { type: "string", description: "Unique identifier for the user (Required)" },
             },
             required: ["userId"],
+            anyOf: [
+                { required: ["industry"] },
+                { required: ["sector"] }
+            ],
         },
         outputSchema: {
             type: "object",
@@ -191,3 +195,17 @@ export const TOOLS: ExtendedTool[] = [
         isDeterministic: false,
     },
 ];
+
+const DEFAULT_ENTERPRISE_TOOLS = [
+    "search_graph",
+    "get_node",
+    "get_evidence",
+    "get_neighbors"
+];
+
+const allowedToolsStr = process.env.ALLOWED_TOOLS;
+const allowedTools = allowedToolsStr
+    ? allowedToolsStr.split(',').map(s => s.trim())
+    : DEFAULT_ENTERPRISE_TOOLS;
+
+export const TOOLS = ALL_TOOLS.filter(tool => allowedTools.includes(tool.name));

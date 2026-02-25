@@ -5,12 +5,21 @@ import crypto from "crypto";
 import {
     CallToolRequestSchema,
     ListToolsRequestSchema,
+    isInitializeRequest
 } from "@modelcontextprotocol/sdk/types.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import express from "express";
 import axios from "axios";
-import dotenv from "dotenv";
+import * as dotenv from "dotenv";
 import { TOOLS, MCP_SERVER_VERSION } from "./tools.js";
+
+interface RequestContext {
+    requestId: string;
+    traceId?: string;
+}
+const requestContext = new AsyncLocalStorage<RequestContext>();
 
 dotenv.config();
 
@@ -44,27 +53,60 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
  * Handle tool calls.
  */
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const context = requestContext.getStore();
+    const requestId = context?.requestId || crypto.randomUUID();
+    const traceId = context?.traceId;
+
     const { name, arguments: args } = request.params;
     const graphId = (args as any)?.graphId;
     let userId = (args as any)?.userId;
 
-    // Validate graphId for tools that require it
-    if (name !== "psfk_overview" && !graphId) {
-        throw new Error("graphId is required for all Fodda tools except psfk_overview.");
+    // 2. Tool Filtering Enforcement
+    // Ensure the requested tool is explicitly within ALLOWED_TOOLS
+    if (!TOOLS.find(t => t.name === name)) {
+        return {
+            isError: true,
+            content: [{ type: "text", text: JSON.stringify({ error: { code: "FORBIDDEN_TOOL", message: `Tool '${name}' is not in the allowed enterprise toolset.`, requestId } }) }]
+        };
     }
 
-    // Extract Bearer Token from _meta
-    const authHeader = (request.params as any)._meta?.authorization || "";
-    let apiKey = typeof authHeader === 'string' && authHeader.startsWith("Bearer ") ? authHeader.substring(7) : null;
+    // Validate graphId for tools that require it
+    if (name !== "psfk_overview" && !graphId) {
+        return {
+            isError: true,
+            content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: "graphId is required for all Fodda tools except psfk_overview.", requestId } }) }]
+        };
+    }
 
-    // Strict Enforcement / Dev Mode Fallback
-    if (!apiKey) {
+    const meta = (request.params as any)._meta || {};
+    const authHeader = meta.authorization;
+    let apiKey: string | null = null;
+
+    // 1. Auth Fallback Enforcement
+    if (authHeader !== undefined) {
+        if (typeof authHeader === 'string' && authHeader.startsWith("Bearer ")) {
+            const token = authHeader.substring(7);
+            if (token.trim() === "") {
+                return {
+                    isError: true,
+                    content: [{ type: "text", text: JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Empty Bearer token provided.", requestId } }) }],
+                };
+            }
+            apiKey = token;
+        } else {
+            return {
+                isError: true,
+                content: [{ type: "text", text: JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Invalid authorization header format. Expected 'Bearer <token>'.", requestId } }) }],
+            };
+        }
+    } else {
+        // Fallback to DEV KEY only if auth metadata is completely absent and in IS_DEV
         if (IS_DEV) {
             apiKey = DUMMY_API_KEY;
         } else {
             return {
                 isError: true,
-                content: [{ type: "text", text: "Error: No API Key provided. Please include a Bearer token in the 'authorization' field of the MCP request _meta." }],
+                content: [{ type: "text", text: JSON.stringify({ error: { code: "UNAUTHORIZED", message: "No Authorization metadata provided.", requestId } }) }],
             };
         }
     }
@@ -75,14 +117,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } else {
             return {
                 isError: true,
-                content: [{ type: "text", text: "Error: No userId provided. This field is required for tracking and billing." }],
+                content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: "Error: No userId provided. This field is required for tracking and billing.", requestId } }) }],
             };
         }
     }
 
     // Enterprise Readiness: Simulated Gemini Tool Invocation Mode
     // strictly enforced production constraints
-    const meta = (request.params as any)._meta || {};
     const testMode = meta.test_mode;
 
     if (testMode) {
@@ -92,7 +133,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             // "Reject unknown test modes" -> Throwing error is safer to signal invalid usage
             return {
                 isError: true,
-                content: [{ type: "text", text: `Error: Invalid test_mode '${testMode}'. Only 'gemini_echo' is supported.` }]
+                content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: `Error: Invalid test_mode '${testMode}'. Only 'gemini_echo' is supported.`, requestId } }) }]
             };
         }
 
@@ -114,7 +155,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             // Safest Enterprise approach: If you ASK for test_mode but aren't allowed, FAIL. Don't fall back to real execution which might cost money.
             return {
                 isError: true,
-                content: [{ type: "text", text: "Error: Simulation mode not permitted in production without internal privileges." }]
+                content: [{ type: "text", text: JSON.stringify({ error: { code: "FORBIDDEN", message: "Error: Simulation mode not permitted in production without internal privileges.", requestId } }) }]
             };
         }
 
@@ -148,7 +189,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         "X-User-Id": userId,
         "X-Fodda-Timestamp": timestamp,
         "Content-Type": "application/json",
+        "X-Request-Id": requestId,
     };
+    if (traceId) {
+        headers["traceparent"] = traceId;
+    }
 
     // Helper to sign payload
     const signRequest = (body: any) => {
@@ -226,13 +271,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
 
             case "psfk_overview": {
-                // Logic: At least one of industry or sector is required
                 const industry = args?.industry as string | undefined;
                 const sector = args?.sector as string | undefined;
-
-                if (!industry && !sector) {
-                    throw new Error("At least one of 'industry' or 'sector' must be provided for psfk_overview.");
-                }
 
                 const body = {
                     industry,
@@ -262,27 +302,62 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             durationMs,
             billable_units: usage.total_billable_units,
             deterministic: false,
-            layer: "mcp_proxy"
+            layer: "mcp_proxy",
+            requestId,
+            traceId
         }));
 
+        const resultData = { ...response.data, meta: { requestId } };
+        const resultString = JSON.stringify(resultData, null, 2);
+
+        const MAX_RESPONSE_BYTES = process.env.MAX_RESPONSE_BYTES ? parseInt(process.env.MAX_RESPONSE_BYTES, 10) : 2 * 1024 * 1024;
+        if (Buffer.byteLength(resultString, 'utf8') > MAX_RESPONSE_BYTES) {
+            console.error(JSON.stringify({
+                event: "mcp.tool_error",
+                tool: name,
+                graphId,
+                userId,
+                status: 413,
+                durationMs,
+                error: "Response exceeded maximum size limit",
+                requestId,
+                traceId
+            }));
+            return {
+                isError: true,
+                content: [{ type: "text", text: JSON.stringify({ error: { code: "PAYLOAD_TOO_LARGE", message: `Response exceeded maximum size of ${MAX_RESPONSE_BYTES} bytes.`, requestId } }) }]
+            };
+        }
+
         return {
-            content: [{ type: "text", text: JSON.stringify(response.data, null, 2) }]
+            content: [{ type: "text", text: resultString }]
         };
 
     } catch (error: any) {
         const durationMs = Date.now() - startTime;
+        const status = error.status || error.response?.status || 500;
         console.error(JSON.stringify({
             event: "mcp.tool_error",
             tool: name,
             graphId,
             userId,
-            status: error.response?.status || 500,
+            status,
             durationMs,
-            error: error.response?.data?.message || error.message
+            error: error.response?.data?.message || error.message,
+            requestId,
+            traceId
         }));
+        let code = "UPSTREAM_ERROR";
+        if (status === 400) code = "INVALID_PARAMS";
+        else if (status === 401) code = "INVALID_AUTH";
+        else if (status === 403) code = "FORBIDDEN";
+        else if (status === 404) code = "GRAPH_NOT_FOUND";
+        else if (status === 429) code = "RATE_LIMITED";
+        else if (status === 504) code = "BACKEND_TIMEOUT";
+        else if (error.message && error.message.includes("Unknown tool")) code = "UNKNOWN_TOOL";
         return {
             isError: true,
-            content: [{ type: "text", text: `Error calling Fodda API: ${error.response?.data?.message || error.message}` }],
+            content: [{ type: "text", text: JSON.stringify({ error: { code, message: error.response?.data?.message || error.message, requestId } }) }],
         };
     }
 });
@@ -295,7 +370,13 @@ async function main() {
         const app = express();
         app.set("trust proxy", true);
         const port = parseInt(process.env.PORT) || 8080;
-        const transports = new Map<string, SSEServerTransport>();
+        const transports = new Map<string, any>();
+
+        app.use((req, res, next) => {
+            const requestId = (req.headers["x-request-id"] as string) || crypto.randomUUID();
+            const traceId = req.headers["traceparent"] as string;
+            requestContext.run({ requestId, traceId }, () => next());
+        });
 
         // Security: HMAC Signature Verification Middleware
         const verifySignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -348,11 +429,11 @@ async function main() {
         // Clean up expired entries every 5 minutes
         setInterval(() => {
             const now = Date.now();
-            for (const [key, entry] of rateLimitMap) {
+            rateLimitMap.forEach((entry, key) => {
                 if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
                     rateLimitMap.delete(key);
                 }
-            }
+            });
         }, 5 * 60_000);
 
         const rateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -373,15 +454,18 @@ async function main() {
                 entry.count++;
                 if (entry.count > RATE_LIMIT_MAX) {
                     const retryAfter = Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
+                    const context = requestContext.getStore();
+                    const requestId = context?.requestId || req.headers["x-request-id"] as string || crypto.randomUUID();
                     console.error(JSON.stringify({
                         event: "mcp.rate_limit",
                         apiKey: apiKey.substring(0, 8) + "...",
                         count: entry.count,
                         limit: RATE_LIMIT_MAX,
+                        requestId
                     }));
                     res.set("Retry-After", String(retryAfter));
                     return res.status(429).json({
-                        error: "Rate limit exceeded",
+                        error: { code: "RATE_LIMITED", message: "Rate limit exceeded", requestId },
                         limit: RATE_LIMIT_MAX,
                         window: "60s",
                         retry_after: retryAfter,
@@ -407,6 +491,41 @@ async function main() {
         // HMAC Signature Verification
         app.use(verifySignature);
 
+        app.all('/mcp', async (req, res) => {
+            try {
+                const sessionId = req.headers['mcp-session-id'] as string;
+                let transport: any;
+                if (sessionId && transports.has(sessionId)) {
+                    transport = transports.get(sessionId);
+                    if (!(transport instanceof StreamableHTTPServerTransport)) {
+                        return res.status(400).json({ error: 'Session exists but uses a different transport protocol' });
+                    }
+                } else if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
+                    transport = new StreamableHTTPServerTransport({
+                        sessionIdGenerator: () => crypto.randomUUID(),
+                        onsessioninitialized: (sid) => {
+                            console.error(`StreamableHTTP session initialized: ${sid}`);
+                            transports.set(sid, transport);
+                        }
+                    });
+                    transport.onclose = () => {
+                        const sid = transport.sessionId;
+                        if (sid && transports.has(sid)) {
+                            console.error(`StreamableHTTP session ${sid} disconnected`);
+                            transports.delete(sid);
+                        }
+                    };
+                    await server.connect(transport as any);
+                } else {
+                    return res.status(400).json({ error: 'No valid session ID provided' });
+                }
+                await transport.handleRequest(req, res, req.body);
+            } catch (error) {
+                console.error('Error handling HTTP MCP request:', error);
+                if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
         app.get("/sse", async (req, res) => {
             const sessionId = crypto.randomUUID();
             console.error(`New SSE connection established (session: ${sessionId})`);
@@ -429,7 +548,8 @@ async function main() {
                 await transports.get(sessionId)!.handlePostMessage(req, res);
             } else if (transports.size === 1) {
                 // Fallback: single-client mode
-                const [transport] = transports.values();
+                let transport: any;
+                transports.forEach((v) => { transport = v; });
                 await transport!.handlePostMessage(req, res);
             } else if (transports.size === 0) {
                 res.status(400).send("No SSE connections established");
@@ -457,11 +577,15 @@ async function main() {
             res.json({
                 name: "ai.fodda/mcp-server",
                 title: "Fodda Knowledge Graphs",
-                description: "Expert-curated knowledge graphs for AI agents — PSFK Retail, Beauty, Sports and more.",
+                description: "Fodda MCP — Expert-curated trend intelligence graphs exposed as structured context for AI agents.",
                 version: MCP_SERVER_VERSION,
                 transport: {
-                    type: "sse",
-                    url: `${req.protocol}://${req.get("host")}/sse`
+                    type: "streamable-http",
+                    url: `${req.protocol}://${req.get("host")}/mcp`,
+                    fallback: {
+                        type: "sse",
+                        url: `${req.protocol}://${req.get("host")}/sse`
+                    }
                 },
                 tools_endpoint: `${req.protocol}://${req.get("host")}/mcp/tools`,
                 health_endpoint: `${req.protocol}://${req.get("host")}/health`

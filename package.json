@@ -1,6 +1,6 @@
 {
   "name": "fodda-mcp",
-  "version": "1.3.2",
+  "version": "1.4.0",
   "mcpName": "io.github.piers-fawkes/fodda",
   "description": "Fodda MCP Server for accessing knowledge graph insights.",
   "keywords": [
@@ -33,7 +33,7 @@
     "test": "npm run build && node dist/verify_tools_endpoint.js"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "axios": "^1.13.5",
     "dotenv": "^17.2.4",
     "express": "^5.2.1"
