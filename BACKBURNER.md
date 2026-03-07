@@ -116,6 +116,22 @@ The Fodda Website's `AgentInsightPanel` contains a tool registration via the pro
 
 > **Note**: Do NOT begin implementation until Piers explicitly confirms browser support is available.
 
+### 9. Publish v1.6.0 to npm + MCP Registry
+**Owner**: MCP
+**Status**: ⏸️ Blocked — npm auth token expired
+
+v1.6.0 (API alignment: `list_graphs`, `filters`, `include_evidence`, `direction`, `property`) is **built locally** but not yet deployed to Cloud Run, npm, or the MCP Registry. The npm login session expired during a prior publish attempt.
+
+**To complete**:
+```bash
+npm login          # complete browser auth
+bash scripts/publish_registry.sh
+```
+
+**Verify after publish**:
+- https://www.npmjs.com/package/fodda-mcp (should show 1.6.0)
+- `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server"`
+
 ---
 
 **Philosophy**: *The MCP layer is a secure, stateless, and deterministic bridge. Reliability is the primary feature.*

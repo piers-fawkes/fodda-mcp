@@ -71,10 +71,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     // Validate graphId for tools that require it
-    if (name !== "psfk_overview" && !graphId) {
+    if (name !== "psfk_overview" && name !== "list_graphs" && !graphId) {
         return {
             isError: true,
-            content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: "graphId is required for all Fodda tools except psfk_overview.", requestId } }) }]
+            content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: "graphId is required for all Fodda tools except psfk_overview and list_graphs.", requestId } }) }]
         };
     }
 
@@ -195,6 +195,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         headers["traceparent"] = traceId;
     }
 
+    // Internal Service Key: bypass credit checks for internal/admin usage
+    const internalServiceKey = process.env.INTERNAL_SERVICE_KEY || process.env.FODDA_INTERNAL_KEY;
+    if (internalServiceKey && apiKey === internalServiceKey) {
+        headers["fodda-internal-service-key"] = internalServiceKey;
+    }
+
     // Helper to sign payload
     const signRequest = (body: any) => {
         const secret = process.env.FODDA_MCP_SECRET;
@@ -211,11 +217,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         switch (name) {
             case "search_graph": {
                 const limit = Math.min(Number(args?.limit) || 25, 50); // Defense in Depth: Cap results
-                const body = {
+                const body: Record<string, any> = {
                     query: args?.query,
                     limit: limit,
                     use_semantic: args?.use_semantic !== false,
                 };
+                if (args?.filters) body.filters = args.filters;
+                if (args?.include_evidence !== undefined) {
+                    body.include_evidence = args.include_evidence;
+                } else {
+                    body.include_evidence = true; // Default to true — most agent use cases benefit from inline evidence
+                }
                 signRequest(body);
                 response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/search`, body, { headers });
                 break;
@@ -224,12 +236,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             case "get_neighbors": {
                 const depth = Math.min(Number(args?.depth) || 1, 2);   // Defense in Depth: Cap traversal depth
                 const limit = Math.min(Number(args?.limit) || 50, 50); // Defense in Depth: Cap results
-                const body = {
+                const body: Record<string, any> = {
                     seed_node_ids: args?.seed_node_ids,
                     relationship_types: args?.relationship_types,
                     depth: depth,
                     limit: limit,
                 };
+                if (args?.direction) body.direction = args.direction;
                 signRequest(body);
                 response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/neighbors`, body, { headers });
                 break;
@@ -259,7 +272,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }
 
             case "get_label_values": {
-                const getLabelPath = `/v1/graphs/${graphId}/labels/${args?.label}/values`;
+                const propertyParam = args?.property ? `?property=${encodeURIComponent(String(args.property))}` : '';
+                const getLabelPath = `/v1/graphs/${graphId}/labels/${args?.label}/values${propertyParam}`;
                 const getLabelSecret = process.env.FODDA_MCP_SECRET;
                 if (getLabelSecret) {
                     const payload = timestamp + "." + getLabelPath;
@@ -282,6 +296,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 };
                 signRequest(body);
                 response = await axios.post(`${API_BASE_URL}/v1/psfk/overview`, body, { headers });
+                break;
+            }
+
+            case "discover_adjacent_trends": {
+                const adjParams = new URLSearchParams({ node_id: String(args?.trend_id) });
+                if (args?.min_score !== undefined) adjParams.set("min_score", String(args.min_score));
+                const adjLimit = Math.min(Number(args?.limit) || 10, 20); // Defense in Depth: Cap adjacent results
+                adjParams.set("limit", String(adjLimit));
+                if (args?.include_editorial !== undefined) adjParams.set("include_editorial", String(args.include_editorial));
+
+                const adjPath = `/v1/graphs/${graphId}/adjacent?${adjParams.toString()}`;
+                const adjSecret = process.env.FODDA_MCP_SECRET;
+                if (adjSecret) {
+                    const payload = timestamp + "." + adjPath;
+                    const signature = crypto.createHmac("sha256", adjSecret).update(payload).digest("hex");
+                    headers["X-Fodda-Signature"] = signature;
+                }
+                response = await axios.get(`${API_BASE_URL}${adjPath}`, { headers });
+                break;
+            }
+
+            case "list_graphs": {
+                const listGraphsPath = `/v1/graphs`;
+                const listGraphsSecret = process.env.FODDA_MCP_SECRET;
+                if (listGraphsSecret) {
+                    const payload = timestamp + "." + listGraphsPath;
+                    const signature = crypto.createHmac("sha256", listGraphsSecret).update(payload).digest("hex");
+                    headers["X-Fodda-Signature"] = signature;
+                }
+                response = await axios.get(`${API_BASE_URL}${listGraphsPath}`, { headers });
                 break;
             }
 

@@ -3,7 +3,7 @@
   "name": "ai.fodda/mcp-server",
   "title": "Fodda Knowledge Graphs",
   "description": "Expert-curated knowledge graphs for AI agents — PSFK Retail, Beauty, Sports and more.",
-  "version": "1.4.0",
+  "version": "1.7.0",
   "repository": {
     "url": "https://github.com/fodda/mcp-server",
     "source": "github"
@@ -38,7 +38,7 @@
     {
       "registryType": "npm",
       "identifier": "fodda-mcp",
-      "version": "1.4.0",
+      "version": "1.7.0",
       "transport": {
         "type": "stdio"
       },

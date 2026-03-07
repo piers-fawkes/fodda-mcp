@@ -47,4 +47,6 @@ export interface FoddaEvidence {
   snippet: string;
   publishedAt?: string;
   relevance?: number;
+  place?: string;
+  brandNames?: string[];
 }

@@ -1,9 +1,9 @@
 #!/bin/bash
 # deploy_cloud_run.sh - Deploy Fodda MCP to Google Cloud Run
 
-PROJECT_ID=$(gcloud config get-value project)
+PROJECT_ID="fodda-mcp"
 SERVICE_NAME="fodda-mcp"
-REGION="us-central1"
+REGION="us-east4"
 
 echo "Deploying $SERVICE_NAME to project $PROJECT_ID in $REGION..."
 

@@ -7,7 +7,7 @@
 
   [![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.piers--fawkes%2Ffodda-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.piers-fawkes/fodda)
   [![npm](https://img.shields.io/npm/v/fodda-mcp)](https://www.npmjs.com/package/fodda-mcp)
-  [![Version](https://img.shields.io/badge/version-1.3.2-green)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.4.0-green)](./CHANGELOG.md)
   [![License](https://img.shields.io/badge/license-Proprietary-red)](https://fodda.ai)
 
 </div>

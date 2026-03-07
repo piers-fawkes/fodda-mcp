@@ -1,6 +1,6 @@
 {
   "name": "fodda-mcp",
-  "version": "1.4.0",
+  "version": "1.7.0",
   "mcpName": "io.github.piers-fawkes/fodda",
   "description": "Fodda MCP Server for accessing knowledge graph insights.",
   "keywords": [
