@@ -2,7 +2,16 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.piers-fawkes/fodda",
   "title": "Fodda Knowledge Graphs",
-  "description": "Fodda MCP — Expert-curated trend intelligence graphs exposed as structured context for AI agents.",
+  "description": "Expert-curated PSFK trend intelligence graphs — Retail, Beauty, Sports and more.",
+  "websiteUrl": "https://fodda.ai",
+  "icons": [
+    {
+      "src": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
+      "sizes": [
+        "any"
+      ]
+    }
+  ],
   "version": "1.7.0",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",

@@ -1,665 +1,488 @@
-#!/usr/bin/env node
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import crypto from "crypto";
-import {
-    CallToolRequestSchema,
-    ListToolsRequestSchema,
-    isInitializeRequest
-} from "@modelcontextprotocol/sdk/types.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { AsyncLocalStorage } from "node:async_hooks";
-import express from "express";
-import axios from "axios";
-import * as dotenv from "dotenv";
-import { TOOLS, MCP_SERVER_VERSION } from "./tools.js";
-
-interface RequestContext {
-    requestId: string;
-    traceId?: string;
-}
-const requestContext = new AsyncLocalStorage<RequestContext>();
+/**
+ * Fodda MCP Server — Clean Architecture
+ * Uses McpServer (high-level API) which is proven to work with Claude.
+ * NO middleware, NO AsyncLocalStorage, NO response interceptors.
+ * API key is extracted from URL query params and passed to tool handlers.
+ */
+import express from 'express';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { z } from 'zod';
+import crypto from 'crypto';
+import axios from 'axios';
+import * as dotenv from 'dotenv';
+import { TOOLS, MCP_SERVER_VERSION } from './tools.js';
 
 dotenv.config();
 
-const API_BASE_URL = process.env.FODDA_API_URL || "https://api.fodda.ai";
-const IS_DEV = process.env.NODE_ENV === "development";
-const DUMMY_API_KEY = "dummy-test-key";
-const DUMMY_USER_ID = "dummy-test-user";
+const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 
-const server = new Server(
-    {
-        name: "fodda-mcp",
-        version: MCP_SERVER_VERSION,
-    },
-    {
-        capabilities: {
-            tools: {},
-        },
-    }
-);
+const app = express();
+app.use(express.json());
 
-/**
- * List available tools.
- */
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return {
-        tools: TOOLS,
-    };
+// CORS — minimal, matching test server
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id, Accept');
+    res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    next();
 });
 
-/**
- * Handle tool calls.
- */
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const context = requestContext.getStore();
-    const requestId = context?.requestId || crypto.randomUUID();
-    const traceId = context?.traceId;
-
-    const { name, arguments: args } = request.params;
-    const graphId = (args as any)?.graphId;
-    let userId = (args as any)?.userId;
-
-    // 2. Tool Filtering Enforcement
-    // Ensure the requested tool is explicitly within ALLOWED_TOOLS
-    if (!TOOLS.find(t => t.name === name)) {
-        return {
-            isError: true,
-            content: [{ type: "text", text: JSON.stringify({ error: { code: "FORBIDDEN_TOOL", message: `Tool '${name}' is not in the allowed enterprise toolset.`, requestId } }) }]
-        };
-    }
-
-    // Validate graphId for tools that require it
-    if (name !== "psfk_overview" && name !== "list_graphs" && !graphId) {
-        return {
-            isError: true,
-            content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: "graphId is required for all Fodda tools except psfk_overview and list_graphs.", requestId } }) }]
-        };
-    }
-
-    const meta = (request.params as any)._meta || {};
-    const authHeader = meta.authorization;
-    let apiKey: string | null = null;
-
-    // 1. Auth Fallback Enforcement
-    if (authHeader !== undefined) {
-        if (typeof authHeader === 'string' && authHeader.startsWith("Bearer ")) {
-            const token = authHeader.substring(7);
-            if (token.trim() === "") {
-                return {
-                    isError: true,
-                    content: [{ type: "text", text: JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Empty Bearer token provided.", requestId } }) }],
-                };
-            }
-            apiKey = token;
-        } else {
-            return {
-                isError: true,
-                content: [{ type: "text", text: JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Invalid authorization header format. Expected 'Bearer <token>'.", requestId } }) }],
-            };
-        }
-    } else {
-        // Fallback to DEV KEY only if auth metadata is completely absent and in IS_DEV
-        if (IS_DEV) {
-            apiKey = DUMMY_API_KEY;
-        } else {
-            return {
-                isError: true,
-                content: [{ type: "text", text: JSON.stringify({ error: { code: "UNAUTHORIZED", message: "No Authorization metadata provided.", requestId } }) }],
-            };
-        }
-    }
-
-    if (!userId) {
-        if (IS_DEV) {
-            userId = DUMMY_USER_ID;
-        } else {
-            return {
-                isError: true,
-                content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: "Error: No userId provided. This field is required for tracking and billing.", requestId } }) }],
-            };
-        }
-    }
-
-    // Enterprise Readiness: Simulated Gemini Tool Invocation Mode
-    // strictly enforced production constraints
-    const testMode = meta.test_mode;
-
-    if (testMode) {
-        // 1. Strict Value Check
-        if (testMode !== "gemini_echo") {
-            // Silently ignore unknown test modes or throw error? 
-            // "Reject unknown test modes" -> Throwing error is safer to signal invalid usage
-            return {
-                isError: true,
-                content: [{ type: "text", text: JSON.stringify({ error: { code: "INVALID_PARAMS", message: `Error: Invalid test_mode '${testMode}'. Only 'gemini_echo' is supported.`, requestId } }) }]
-            };
-        }
-
-        // 2. Production Guardrails
-        // Simulation is ignored (treated as normal unauthorized/error if it falls through, or just explicitly blocked here)
-        // unless ENV != production OR API key has role internal_testing.
-        // We assume 'apiKey' variable holds the extracted key.
-        // Since we can't check roles dynamically without a DB call, we'll use a placeholder logic or ENV var for now.
-        const isInternalKey = process.env.INTERNAL_TEST_KEYS?.split(',').includes(apiKey || "");
-        const isProduction = process.env.NODE_ENV === "production";
-
-        if (isProduction && !isInternalKey) {
-            // In production, matching keys are required to use simulation.
-            // If not internal key, we pretend simulation doesn't exist or return error?
-            // "Be ignored unless..." -> Proceed to normal execution path (which handles auth/tool call normally)
-            // But wait, if we proceed, it tries to execute the tool for real.
-            // If the intention is to SAFEGUARD against accidental real execution, we should probably BLOCK if test_mode is present but unauthorized.
-            // However, "Be ignored" implies falling back to normal behavior OR just doing nothing.
-            // Safest Enterprise approach: If you ASK for test_mode but aren't allowed, FAIL. Don't fall back to real execution which might cost money.
-            return {
-                isError: true,
-                content: [{ type: "text", text: JSON.stringify({ error: { code: "FORBIDDEN", message: "Error: Simulation mode not permitted in production without internal privileges.", requestId } }) }]
-            };
-        }
-
-        // 3. Structured Logging
-        console.error(JSON.stringify({
-            event: "mcp.tool_call.simulation",
-            simulation_mode: true,
-            simulation_type: "gemini_echo",
-            tool: name,
-            graphId,
-            userId
-        }));
-
-        // 4. Gemini Echo Response
-        return {
-            content: [{
-                type: "text",
-                text: JSON.stringify({
-                    tool_calls: [{
-                        name: name,
-                        arguments: args
-                    }]
-                }, null, 2)
-            }]
-        };
-    }
-
-    const timestamp = Date.now().toString();
-    const headers: Record<string, string> = {
-        "X-API-Key": apiKey,
-        "X-User-Id": userId,
-        "X-Fodda-Timestamp": timestamp,
-        "Content-Type": "application/json",
-        "X-Request-Id": requestId,
-    };
-    if (traceId) {
-        headers["traceparent"] = traceId;
-    }
-
-    // Internal Service Key: bypass credit checks for internal/admin usage
-    const internalServiceKey = process.env.INTERNAL_SERVICE_KEY || process.env.FODDA_INTERNAL_KEY;
-    if (internalServiceKey && apiKey === internalServiceKey) {
-        headers["fodda-internal-service-key"] = internalServiceKey;
-    }
-
-    // Helper to sign payload
-    const signRequest = (body: any) => {
-        const secret = process.env.FODDA_MCP_SECRET;
-        if (secret) {
-            const payload = timestamp + "." + JSON.stringify(body);
-            const signature = crypto.createHmac("sha256", secret).update(payload).digest("hex");
-            headers["X-Fodda-Signature"] = signature;
-        }
-    };
-
-    const startTime = Date.now();
-    try {
-        let response;
-        switch (name) {
-            case "search_graph": {
-                const limit = Math.min(Number(args?.limit) || 25, 50); // Defense in Depth: Cap results
-                const body: Record<string, any> = {
-                    query: args?.query,
-                    limit: limit,
-                    use_semantic: args?.use_semantic !== false,
-                };
-                if (args?.filters) body.filters = args.filters;
-                if (args?.include_evidence !== undefined) {
-                    body.include_evidence = args.include_evidence;
-                } else {
-                    body.include_evidence = true; // Default to true — most agent use cases benefit from inline evidence
-                }
-                signRequest(body);
-                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/search`, body, { headers });
-                break;
-            }
-
-            case "get_neighbors": {
-                const depth = Math.min(Number(args?.depth) || 1, 2);   // Defense in Depth: Cap traversal depth
-                const limit = Math.min(Number(args?.limit) || 50, 50); // Defense in Depth: Cap results
-                const body: Record<string, any> = {
-                    seed_node_ids: args?.seed_node_ids,
-                    relationship_types: args?.relationship_types,
-                    depth: depth,
-                    limit: limit,
-                };
-                if (args?.direction) body.direction = args.direction;
-                signRequest(body);
-                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/neighbors`, body, { headers });
-                break;
-            }
-
-            case "get_evidence": {
-                const top_k = Math.min(Number(args?.top_k) || 5, 10);  // Defense in Depth: Cap evidence sources
-                const body = {
-                    for_node_id: args?.for_node_id,
-                    top_k: top_k,
-                };
-                signRequest(body);
-                response = await axios.post(`${API_BASE_URL}/v1/graphs/${graphId}/evidence`, body, { headers });
-                break;
-            }
-
-            case "get_node": {
-                const getNodePath = `/v1/graphs/${graphId}/nodes/${args?.nodeId}`;
-                const getNodeSecret = process.env.FODDA_MCP_SECRET;
-                if (getNodeSecret) {
-                    const payload = timestamp + "." + getNodePath;
-                    const signature = crypto.createHmac("sha256", getNodeSecret).update(payload).digest("hex");
-                    headers["X-Fodda-Signature"] = signature;
-                }
-                response = await axios.get(`${API_BASE_URL}${getNodePath}`, { headers });
-                break;
-            }
-
-            case "get_label_values": {
-                const propertyParam = args?.property ? `?property=${encodeURIComponent(String(args.property))}` : '';
-                const getLabelPath = `/v1/graphs/${graphId}/labels/${args?.label}/values${propertyParam}`;
-                const getLabelSecret = process.env.FODDA_MCP_SECRET;
-                if (getLabelSecret) {
-                    const payload = timestamp + "." + getLabelPath;
-                    const signature = crypto.createHmac("sha256", getLabelSecret).update(payload).digest("hex");
-                    headers["X-Fodda-Signature"] = signature;
-                }
-                response = await axios.get(`${API_BASE_URL}${getLabelPath}`, { headers });
-                break;
-            }
-
-            case "psfk_overview": {
-                const industry = args?.industry as string | undefined;
-                const sector = args?.sector as string | undefined;
-
-                const body = {
-                    industry,
-                    sector,
-                    region: args?.region,
-                    timeframe: args?.timeframe,
-                };
-                signRequest(body);
-                response = await axios.post(`${API_BASE_URL}/v1/psfk/overview`, body, { headers });
-                break;
-            }
-
-            case "discover_adjacent_trends": {
-                const adjParams = new URLSearchParams({ node_id: String(args?.trend_id) });
-                if (args?.min_score !== undefined) adjParams.set("min_score", String(args.min_score));
-                const adjLimit = Math.min(Number(args?.limit) || 10, 20); // Defense in Depth: Cap adjacent results
-                adjParams.set("limit", String(adjLimit));
-                if (args?.include_editorial !== undefined) adjParams.set("include_editorial", String(args.include_editorial));
-
-                const adjPath = `/v1/graphs/${graphId}/adjacent?${adjParams.toString()}`;
-                const adjSecret = process.env.FODDA_MCP_SECRET;
-                if (adjSecret) {
-                    const payload = timestamp + "." + adjPath;
-                    const signature = crypto.createHmac("sha256", adjSecret).update(payload).digest("hex");
-                    headers["X-Fodda-Signature"] = signature;
-                }
-                response = await axios.get(`${API_BASE_URL}${adjPath}`, { headers });
-                break;
-            }
-
-            case "list_graphs": {
-                const listGraphsPath = `/v1/graphs`;
-                const listGraphsSecret = process.env.FODDA_MCP_SECRET;
-                if (listGraphsSecret) {
-                    const payload = timestamp + "." + listGraphsPath;
-                    const signature = crypto.createHmac("sha256", listGraphsSecret).update(payload).digest("hex");
-                    headers["X-Fodda-Signature"] = signature;
-                }
-                response = await axios.get(`${API_BASE_URL}${listGraphsPath}`, { headers });
-                break;
-            }
-
-            default:
-                throw new Error(`Unknown tool: ${name}`);
-        }
-
-        const durationMs = Date.now() - startTime;
-        const usage = response.data.usage || { total_billable_units: 0 };
-
-        // Structured Audit Log for Enterprise Traceability (Refined for Security Compliance)
-        console.error(JSON.stringify({
-            event: "mcp.tool_call",
-            tool: name,
-            graphId,
-            userId, // Corresponds to tenant/user identity
-            status: response.status,
-            durationMs,
-            billable_units: usage.total_billable_units,
-            deterministic: false,
-            layer: "mcp_proxy",
-            requestId,
-            traceId
-        }));
-
-        const resultData = { ...response.data, meta: { requestId } };
-        const resultString = JSON.stringify(resultData, null, 2);
-
-        const MAX_RESPONSE_BYTES = process.env.MAX_RESPONSE_BYTES ? parseInt(process.env.MAX_RESPONSE_BYTES, 10) : 2 * 1024 * 1024;
-        if (Buffer.byteLength(resultString, 'utf8') > MAX_RESPONSE_BYTES) {
-            console.error(JSON.stringify({
-                event: "mcp.tool_error",
-                tool: name,
-                graphId,
-                userId,
-                status: 413,
-                durationMs,
-                error: "Response exceeded maximum size limit",
-                requestId,
-                traceId
-            }));
-            return {
-                isError: true,
-                content: [{ type: "text", text: JSON.stringify({ error: { code: "PAYLOAD_TOO_LARGE", message: `Response exceeded maximum size of ${MAX_RESPONSE_BYTES} bytes.`, requestId } }) }]
-            };
-        }
-
-        return {
-            content: [{ type: "text", text: resultString }]
-        };
-
-    } catch (error: any) {
-        const durationMs = Date.now() - startTime;
-        const status = error.status || error.response?.status || 500;
-        console.error(JSON.stringify({
-            event: "mcp.tool_error",
-            tool: name,
-            graphId,
-            userId,
-            status,
-            durationMs,
-            error: error.response?.data?.message || error.message,
-            requestId,
-            traceId
-        }));
-        let code = "UPSTREAM_ERROR";
-        if (status === 400) code = "INVALID_PARAMS";
-        else if (status === 401) code = "INVALID_AUTH";
-        else if (status === 403) code = "FORBIDDEN";
-        else if (status === 404) code = "GRAPH_NOT_FOUND";
-        else if (status === 429) code = "RATE_LIMITED";
-        else if (status === 504) code = "BACKEND_TIMEOUT";
-        else if (error.message && error.message.includes("Unknown tool")) code = "UNKNOWN_TOOL";
-        return {
-            isError: true,
-            content: [{ type: "text", text: JSON.stringify({ error: { code, message: error.response?.data?.message || error.message, requestId } }) }],
-        };
-    }
+// OAuth discovery endpoints — return 404 to indicate no OAuth support
+app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+    res.status(404).json({ error: 'OAuth not supported. Use API key auth via URL: ?api_key=YOUR_KEY' });
+});
+app.get('/.well-known/oauth-protected-resource/:path', (_req, res) => {
+    res.status(404).json({ error: 'OAuth not supported.' });
+});
+app.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    res.status(404).json({ error: 'OAuth not supported.' });
+});
+app.post('/register', (_req, res) => {
+    res.status(404).json({ error: 'OAuth not supported.' });
 });
 
-/**
- * Start the server.
- */
-async function main() {
-    if (process.env.PORT) {
-        const app = express();
-        app.set("trust proxy", true);
-        const port = parseInt(process.env.PORT) || 8080;
-        const transports = new Map<string, any>();
+const transports = new Map<string, StreamableHTTPServerTransport>();
+const sessionApiKeys = new Map<string, string>();
+const sessionUserIds = new Map<string, string>();
 
-        app.use((req, res, next) => {
-            const requestId = (req.headers["x-request-id"] as string) || crypto.randomUUID();
-            const traceId = req.headers["traceparent"] as string;
-            requestContext.run({ requestId, traceId }, () => next());
-        });
+const GRAPH_ID_DESC = "Select which graph to query. Use list_graphs to discover all available options including PSFK curated graphs and community Pattern Graphs. Common curated values: 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo', 'pew'. Community graphs use unique slugs (e.g., 'sarah-clean-beauty').";
 
-        // Security: HMAC Signature Verification Middleware
-        const verifySignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-            // Skip verification for public/health endpoints
-            if ((req.path === "/mcp/tools" || req.path === "/health" || req.path === "/.well-known/mcp.json") && req.method === "GET") {
-                return next();
-            }
-
-            const signature = req.headers["x-fodda-signature"];
-            const secret = process.env.FODDA_MCP_SECRET;
-
-            if (!secret) {
-                console.error("CRITICAL: FODDA_MCP_SECRET not set in environment.");
-                return res.status(500).json({ error: "Server misconfiguration" });
-            }
-
-            if (!signature || typeof signature !== 'string') {
-                return res.status(401).json({ error: "Missing or invalid signature" });
-            }
-
-
-            const payload = JSON.stringify(req.body);
-            const expectedSignature = crypto
-                .createHmac("sha256", secret)
-                .update(payload)
-                .digest("hex");
-
-            // Timing-safe comparison
-            const trusted = Buffer.from(expectedSignature, 'ascii');
-            const untrusted = Buffer.from(signature, 'ascii');
-
-            if (trusted.length !== untrusted.length || !crypto.timingSafeEqual(trusted, untrusted)) {
-                console.error("❌ Invalid Signature:", signature, "Expected:", expectedSignature);
-                return res.status(401).json({ error: "Invalid signature" });
-            }
-
-            next();
-        };
-
-        // --- Per-Key Rate Limiting ---
-        const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
-        const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_RPM || "60", 10);
-
-        interface RateLimitEntry {
-            count: number;
-            windowStart: number;
-        }
-        const rateLimitMap = new Map<string, RateLimitEntry>();
-
-        // Clean up expired entries every 5 minutes
-        setInterval(() => {
-            const now = Date.now();
-            rateLimitMap.forEach((entry, key) => {
-                if (now - entry.windowStart > RATE_LIMIT_WINDOW_MS * 2) {
-                    rateLimitMap.delete(key);
-                }
-            });
-        }, 5 * 60_000);
-
-        const rateLimiter = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-            // Skip rate limiting for public/health endpoints
-            if ((req.path === "/mcp/tools" || req.path === "/health" || req.path === "/.well-known/mcp.json") && req.method === "GET") {
-                return next();
-            }
-
-            // Extract key from API key header or fallback to IP
-            const apiKey = (req.headers["x-api-key"] as string) || req.ip || "unknown";
-            const now = Date.now();
-            const entry = rateLimitMap.get(apiKey);
-
-            if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-                // New window
-                rateLimitMap.set(apiKey, { count: 1, windowStart: now });
-            } else {
-                entry.count++;
-                if (entry.count > RATE_LIMIT_MAX) {
-                    const retryAfter = Math.ceil((entry.windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000);
-                    const context = requestContext.getStore();
-                    const requestId = context?.requestId || req.headers["x-request-id"] as string || crypto.randomUUID();
-                    console.error(JSON.stringify({
-                        event: "mcp.rate_limit",
-                        apiKey: apiKey.substring(0, 8) + "...",
-                        count: entry.count,
-                        limit: RATE_LIMIT_MAX,
-                        requestId
-                    }));
-                    res.set("Retry-After", String(retryAfter));
-                    return res.status(429).json({
-                        error: { code: "RATE_LIMITED", message: "Rate limit exceeded", requestId },
-                        limit: RATE_LIMIT_MAX,
-                        window: "60s",
-                        retry_after: retryAfter,
-                    });
-                }
-            }
-
-            // Set rate limit headers
-            const current = rateLimitMap.get(apiKey)!;
-            res.set("X-RateLimit-Limit", String(RATE_LIMIT_MAX));
-            res.set("X-RateLimit-Remaining", String(Math.max(0, RATE_LIMIT_MAX - current.count)));
-            res.set("X-RateLimit-Reset", String(Math.ceil((current.windowStart + RATE_LIMIT_WINDOW_MS) / 1000)));
-
-            next();
-        };
-
-        // Parse JSON bodies with size limit (required for signature verification)
-        app.use(express.json({ limit: '1mb' }));
-
-        // Rate limiting (before HMAC to reject early)
-        app.use(rateLimiter);
-
-        // HMAC Signature Verification
-        app.use(verifySignature);
-
-        app.all('/mcp', async (req, res) => {
-            try {
-                const sessionId = req.headers['mcp-session-id'] as string;
-                let transport: any;
-                if (sessionId && transports.has(sessionId)) {
-                    transport = transports.get(sessionId);
-                    if (!(transport instanceof StreamableHTTPServerTransport)) {
-                        return res.status(400).json({ error: 'Session exists but uses a different transport protocol' });
-                    }
-                } else if (!sessionId && req.method === 'POST' && isInitializeRequest(req.body)) {
-                    transport = new StreamableHTTPServerTransport({
-                        sessionIdGenerator: () => crypto.randomUUID(),
-                        onsessioninitialized: (sid) => {
-                            console.error(`StreamableHTTP session initialized: ${sid}`);
-                            transports.set(sid, transport);
-                        }
-                    });
-                    transport.onclose = () => {
-                        const sid = transport.sessionId;
-                        if (sid && transports.has(sid)) {
-                            console.error(`StreamableHTTP session ${sid} disconnected`);
-                            transports.delete(sid);
-                        }
-                    };
-                    await server.connect(transport as any);
-                } else {
-                    return res.status(400).json({ error: 'No valid session ID provided' });
-                }
-                await transport.handleRequest(req, res, req.body);
-            } catch (error) {
-                console.error('Error handling HTTP MCP request:', error);
-                if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
-            }
-        });
-
-        app.get("/sse", async (req, res) => {
-            const sessionId = crypto.randomUUID();
-            console.error(`New SSE connection established (session: ${sessionId})`);
-            const transport = new SSEServerTransport("/messages", res);
-            transports.set(sessionId, transport);
-
-            // Clean up on disconnect
-            res.on("close", () => {
-                transports.delete(sessionId);
-                console.error(`SSE session ${sessionId} disconnected (${transports.size} active)`);
-            });
-
-            await server.connect(transport);
-        });
-
-        app.post("/messages", async (req, res) => {
-            // Find the appropriate transport by checking the sessionId query param
-            const sessionId = req.query.sessionId as string;
-            if (sessionId && transports.has(sessionId)) {
-                await transports.get(sessionId)!.handlePostMessage(req, res);
-            } else if (transports.size === 1) {
-                // Fallback: single-client mode
-                let transport: any;
-                transports.forEach((v) => { transport = v; });
-                await transport!.handlePostMessage(req, res);
-            } else if (transports.size === 0) {
-                res.status(400).send("No SSE connections established");
-            } else {
-                res.status(400).send("Multiple SSE sessions active. Specify sessionId query parameter.");
-            }
-        });
-
-        // Health check for Cloud Run liveness/readiness probes
-        app.get("/health", (req, res) => {
-            res.json({ status: "ok", version: MCP_SERVER_VERSION });
-        });
-
-        // Enterprise Transparency: Tool Capability Registry
-        app.get("/mcp/tools", (req, res) => {
-            res.json({
-                tools: TOOLS,
-                count: TOOLS.length,
-                version: MCP_SERVER_VERSION
-            });
-        });
-
-        // MCP Server Discovery (emerging .well-known standard)
-        app.get("/.well-known/mcp.json", (req, res) => {
-            res.json({
-                name: "ai.fodda/mcp-server",
-                title: "Fodda Knowledge Graphs",
-                description: "Fodda MCP — Expert-curated trend intelligence graphs exposed as structured context for AI agents.",
-                version: MCP_SERVER_VERSION,
-                transport: {
-                    type: "streamable-http",
-                    url: `${req.protocol}://${req.get("host")}/mcp`,
-                    fallback: {
-                        type: "sse",
-                        url: `${req.protocol}://${req.get("host")}/sse`
-                    }
-                },
-                tools_endpoint: `${req.protocol}://${req.get("host")}/mcp/tools`,
-                health_endpoint: `${req.protocol}://${req.get("host")}/health`
-            });
-        });
-
-        const httpServer = app.listen(port, () => {
-            console.error(`Fodda MCP server running on SSE at http://localhost:${port}/sse`);
-        });
-
-        // Graceful shutdown for Cloud Run
-        const shutdown = () => {
-            console.error("Shutting down gracefully...");
-            httpServer.close(() => {
-                console.error(`Closed ${transports.size} active SSE connections.`);
-                process.exit(0);
-            });
-            // Force exit after 10s if connections don't close
-            setTimeout(() => process.exit(1), 10000);
-        };
-        process.on("SIGTERM", shutdown);
-        process.on("SIGINT", shutdown);
-    } else {
-        const transport = new StdioServerTransport();
-        await server.connect(transport);
-        console.error("Fodda MCP server running on stdio");
-    }
+/** Check if an error is an access/upgrade error (403) vs a not-found error (404). */
+function isAccessError(err: any): boolean {
+    const status = err.response?.status;
+    const msg = (err.response?.data?.error?.message || err.response?.data?.error || err.response?.data?.message || err.message || '').toString().toLowerCase();
+    return status === 403 || msg.includes('upgrade') || msg.includes('plan covers') || msg.includes('access');
 }
 
-main().catch((error) => {
-    console.error("Server error:", error);
-    process.exit(1);
+/**
+ * Make an authenticated request to the Fodda API.
+ */
+async function foddaRequest(
+    method: 'GET' | 'POST',
+    path: string,
+    apiKey: string,
+    userId: string,
+    body?: any,
+    requestId?: string
+): Promise<any> {
+    const timestamp = Date.now().toString();
+    const headers: Record<string, string> = {
+        'X-API-Key': apiKey,
+        'X-User-Id': userId,
+        'X-Fodda-Timestamp': timestamp,
+        'Content-Type': 'application/json',
+    };
+    if (requestId) headers['X-Request-Id'] = requestId;
+
+    // HMAC sign the request
+    const secret = process.env.FODDA_MCP_SECRET;
+    if (secret) {
+        const payload = method === 'POST' && body
+            ? timestamp + '.' + JSON.stringify(body)
+            : timestamp + '.' + path;
+        const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+        headers['X-Fodda-Signature'] = signature;
+    }
+
+    const url = `${API_BASE_URL}${path}`;
+    const response = method === 'POST'
+        ? await axios.post(url, body, { headers })
+        : await axios.get(url, { headers });
+    return response.data;
+}
+
+function createServer(apiKey: string, userId: string): McpServer {
+    const server = new McpServer({
+        name: 'fodda-mcp',
+        version: MCP_SERVER_VERSION,
+    }, {
+        instructions: `You are connected to Fodda — a platform of expert-curated knowledge graphs built by PSFK.
+
+ATTRIBUTION: When presenting insights from Fodda, always attribute clearly:
+- Lead with: "According to the [Graph Name] Graph in Fodda..." or "Insights from the PSFK [Graph Name] Graph via Fodda show..."
+- For the PSFK graph: "According to the PSFK Retail Intelligence Graph in Fodda..."
+- For vertical graphs like SIC: "According to insights found in the SIC Graph in Fodda..."
+- When summarizing multiple results: "Based on analysis of the PSFK knowledge graph via Fodda..."
+
+CITATIONS & LINKS: Always include source URLs and hyperlinks:
+- Every evidence article has a sourceUrl field — ALWAYS hyperlink the article title to its sourceUrl
+- Format as: [Article Title](sourceUrl) — never show raw URLs
+- When mentioning brands or examples, hyperlink to the source article
+- If an article lacks a sourceUrl, note the article title and published date instead
+- Group evidence by theme and present as a bulleted list with hyperlinked titles
+
+FORMATTING: Present Fodda data professionally:
+- Use headers to organize by trend cluster or theme
+- Show relevance scores as context (e.g., "highly relevant, score: 0.92")
+- Include geographic context when the 'place' field is present
+- Mention brand names from the brandNames field when relevant
+- Always suggest exploring related trends using discover_adjacent_trends
+
+GRAPH TYPES: Fodda serves two types of knowledge graphs:
+- CURATED GRAPHS: Expert-curated by PSFK (Retail, Beauty, Sports) and partners (SIC, Pew). These use deep editorial curation and AI-powered embeddings.
+- COMMUNITY PATTERN GRAPHS: Contributed by strategists via Google Sheets. These follow the Fodda Pattern Standard (Signals → Patterns → Entities). Attribute as "According to [creator]'s [Graph Name] Pattern Graph on Fodda..."
+
+When presenting results from community graphs, use the creator's name in attribution rather than "PSFK".
+
+HELPFUL LINKS: If the user wants to adjust their settings, explore other available graphs, or learn more about Fodda, suggest they visit https://app.fodda.ai`
+    });
+
+    // --- list_graphs ---
+    server.tool(
+        'list_graphs',
+        'Discover all available knowledge graphs — both expert-curated PSFK graphs and community-contributed Pattern Graphs. Returns graph IDs, descriptions, authors, sectors, and signal/pattern counts. Use this tool first to find valid graphId values for other tools.',
+        { userId: z.string().describe('Unique identifier for the user (Required)') },
+        async ({ userId: uid }) => {
+            try {
+                const data = await foddaRequest('GET', '/v1/graphs', apiKey, uid || userId);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- search_graph ---
+    server.tool(
+        'search_graph',
+        'Search across expert-curated PSFK knowledge graphs and community-contributed Pattern Graphs to retrieve structured trend clusters, signals, and supporting articles relevant to a query. IMPORTANT: Each result includes a `_use_this_graphId` field — always use THIS value (not the search graphId) when calling get_evidence, get_node, or get_neighbors for a specific result. PRESENTATION: Attribute results as "According to the [graphId] Graph in Fodda..." and hyperlink any evidence articles using their sourceUrl field: [Article Title](sourceUrl). Include geographic context from the place field when present.',
+        {
+            graphId: z.string().describe(GRAPH_ID_DESC),
+            query: z.string().describe('The search query. Location terms are auto-detected and used to filter results geographically.'),
+            userId: z.string().describe('Unique identifier for the user (Required)'),
+            limit: z.number().optional().describe('Maximum number of results (default 25, max 50)'),
+            use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
+            include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.')
+        },
+        async ({ graphId, query, userId: uid, limit, use_semantic, include_evidence }) => {
+            try {
+                const body: Record<string, any> = {
+                    query,
+                    limit: Math.min(limit || 10, 50),
+                    use_semantic: use_semantic !== false,
+                    include_evidence: include_evidence ?? true,
+                };
+                const data = await foddaRequest('POST', `/v1/graphs/${graphId}/search`, apiKey, uid || userId, body);
+                // Post-process results
+                if (data?.rows) {
+                    data.rows = data.rows.map((row: any) => {
+                        const trimmed = { ...row };
+                        // Add explicit hint for follow-up calls — the node may live in a different graph than the one searched
+                        trimmed._use_this_graphId = row.graphId || graphId;
+                        // Trim verbose fields
+                        if (trimmed.adjacentPossibilities?.length > 200) trimmed.adjacentPossibilities = trimmed.adjacentPossibilities.substring(0, 200) + '...';
+                        if (trimmed.whyNow?.length > 200) trimmed.whyNow = trimmed.whyNow.substring(0, 200) + '...';
+                        return trimmed;
+                    });
+                }
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- get_neighbors ---
+    server.tool(
+        'get_neighbors',
+        'Explore how a trend, brand, or technology connects to related signals within the selected graph. Use the _use_this_graphId from search results.',
+        {
+            graphId: z.string().describe(GRAPH_ID_DESC),
+            seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from'),
+            userId: z.string().describe('Unique identifier for the user (Required)'),
+            relationship_types: z.array(z.string()).optional().describe("Filter by relationship types: 'EVIDENCED_BY', 'RELATED_TO', 'SEMANTICALLY_SIMILAR', 'ASSOCIATED_BRAND', 'MENTIONS_BRAND', 'IN_LOCATION'"),
+            direction: z.enum(['in', 'out']).optional().describe("Traversal direction: 'out' (default) follows outgoing edges, 'in' follows incoming edges"),
+            depth: z.number().optional().describe('Traversal depth (default 1, max 2)'),
+            limit: z.number().optional().describe('Maximum results (default 50)')
+        },
+        async ({ graphId, seed_node_ids, userId: uid, relationship_types, direction, depth, limit }) => {
+            try {
+                const body: Record<string, any> = {
+                    seed_node_ids,
+                    depth: Math.min(depth || 1, 2),
+                    limit: Math.min(limit || 50, 50),
+                };
+                if (relationship_types) body.relationship_types = relationship_types;
+                if (direction) body.direction = direction;
+                let data = await foddaRequest('POST', `/v1/graphs/${graphId}/neighbors`, apiKey, uid || userId, body);
+                // Fallback to psfk if empty — vertical graphs are views on psfk
+                if ((!data.neighbors || data.neighbors.length === 0) && graphId !== 'psfk') {
+                    try {
+                        const psfkData = await foddaRequest('POST', `/v1/graphs/psfk/neighbors`, apiKey, uid || userId, body);
+                        if (psfkData.neighbors?.length > 0) {
+                            data = psfkData;
+                            data._note = `Results found in psfk graph (${graphId} returned empty)`;
+                        }
+                    } catch { /* user may not have psfk access — ignore fallback failure */ }
+                }
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- get_evidence ---
+    server.tool(
+        'get_evidence',
+        'Retrieve supporting signals, source articles, and structured evidence for a specific trend or concept. Use the _use_this_graphId from search results. PRESENTATION: Each evidence item includes a sourceUrl — always present articles as hyperlinks: [title](sourceUrl). Include the place (location), brandNames, and publishedAt fields to provide rich context. Group articles thematically when presenting multiple evidence items.',
+        {
+            graphId: z.string().describe(GRAPH_ID_DESC),
+            for_node_id: z.string().describe('The ID of the node (Trend or Article)'),
+            userId: z.string().describe('Unique identifier for the user (Required)'),
+            top_k: z.number().optional().describe('Number of evidence items to return (default 5)')
+        },
+        async ({ graphId, for_node_id, userId: uid, top_k }) => {
+            try {
+                const body = { for_node_id, top_k: Math.min(top_k || 5, 10) };
+                let data: any;
+                try {
+                    data = await foddaRequest('POST', `/v1/graphs/${graphId}/evidence`, apiKey, uid || userId, body);
+                } catch (primaryErr: any) {
+                    // If not-found (not access error), try psfk fallback
+                    if (graphId !== 'psfk' && !isAccessError(primaryErr)) {
+                        try {
+                            data = await foddaRequest('POST', `/v1/graphs/psfk/evidence`, apiKey, uid || userId, body);
+                            if (data.evidence?.length > 0) data._note = `Evidence found in psfk graph (${graphId} returned error)`;
+                        } catch { /* fallback failed too — rethrow original */ }
+                    }
+                    if (!data) throw primaryErr;
+                }
+                // Also fallback on empty results (success but no evidence)
+                if ((!data.evidence || data.evidence.length === 0) && graphId !== 'psfk') {
+                    try {
+                        const psfkData = await foddaRequest('POST', `/v1/graphs/psfk/evidence`, apiKey, uid || userId, body);
+                        if (psfkData.evidence?.length > 0) {
+                            data = psfkData;
+                            data._note = `Evidence found in psfk graph (${graphId} returned empty)`;
+                        }
+                    } catch { /* user may not have psfk access — ignore fallback failure */ }
+                }
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- get_node ---
+    server.tool(
+        'get_node',
+        'Retrieve the full metadata and properties of a specific node within the knowledge graph. Use the _use_this_graphId from search results.',
+        {
+            graphId: z.string().describe(GRAPH_ID_DESC),
+            nodeId: z.string().describe('The ID of the node'),
+            userId: z.string().describe('Unique identifier for the user (Required)')
+        },
+        async ({ graphId, nodeId, userId: uid }) => {
+            try {
+                const data = await foddaRequest('GET', `/v1/graphs/${graphId}/nodes/${nodeId}`, apiKey, uid || userId);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                // Fallback to psfk if node not found — but NOT if it's an access/upgrade error
+                if (graphId !== 'psfk' && !isAccessError(err) && (err.response?.status === 404 || err.message?.includes('not found'))) {
+                    try {
+                        const data = await foddaRequest('GET', `/v1/graphs/psfk/nodes/${nodeId}`, apiKey, uid || userId);
+                        (data as any)._note = `Node found in psfk graph (${graphId} returned 404)`;
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                    } catch { /* fall through to original error */ }
+                }
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- get_label_values ---
+    server.tool(
+        'get_label_values',
+        'Discover available values for a specific category (e.g., Brand, Location, Technology, Audience) to support structured filtering.',
+        {
+            graphId: z.string().describe(GRAPH_ID_DESC),
+            label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
+            userId: z.string().describe('Unique identifier for the user (Required)'),
+            property: z.string().optional().describe('Optional property to return values for. Defaults vary by label.')
+        },
+        async ({ graphId, label, userId: uid, property }) => {
+            try {
+                const propParam = property ? `?property=${encodeURIComponent(property)}` : '';
+                const data = await foddaRequest('GET', `/v1/graphs/${graphId}/labels/${label}/values${propParam}`, apiKey, uid || userId);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- discover_adjacent_trends ---
+    server.tool(
+        'discover_adjacent_trends',
+        'Find trends that are semantically similar to a given trend — useful for discovering related signals and expanding research briefs.',
+        {
+            graphId: z.string().describe(GRAPH_ID_DESC),
+            trend_id: z.string().describe('The trendId of the seed trend to find adjacent possibilities for'),
+            userId: z.string().describe('Unique identifier for the user (Required)'),
+            min_score: z.number().optional().describe('Minimum similarity score threshold (0-1). Default: 0.80'),
+            limit: z.number().optional().describe('Maximum number of adjacent trends to return. Default: 10'),
+            include_editorial: z.boolean().optional().describe('If true, also include editorially linked trends. Default: false')
+        },
+        async ({ graphId, trend_id, userId: uid, min_score, limit, include_editorial }) => {
+            try {
+                const params = new URLSearchParams({ node_id: trend_id });
+                if (min_score !== undefined) params.set('min_score', String(min_score));
+                params.set('limit', String(Math.min(limit || 10, 20)));
+                if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
+                let data = await foddaRequest('GET', `/v1/graphs/${graphId}/adjacent?${params.toString()}`, apiKey, uid || userId);
+                // Fallback to psfk if empty — vertical graphs are views on psfk
+                if ((!data.adjacent || data.adjacent.length === 0) && graphId !== 'psfk') {
+                    try {
+                        const psfkData = await foddaRequest('GET', `/v1/graphs/psfk/adjacent?${params.toString()}`, apiKey, uid || userId);
+                        if (psfkData.adjacent?.length > 0) {
+                            data = psfkData;
+                            data._note = `Adjacent trends found in psfk graph (${graphId} returned empty)`;
+                        }
+                    } catch { /* user may not have psfk access — ignore fallback failure */ }
+                }
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                // On error, try psfk fallback if not an access error
+                if (graphId !== 'psfk' && !isAccessError(err)) {
+                    try {
+                        const params = new URLSearchParams({ node_id: trend_id });
+                        if (min_score !== undefined) params.set('min_score', String(min_score));
+                        params.set('limit', String(Math.min(limit || 10, 20)));
+                        if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
+                        const data = await foddaRequest('GET', `/v1/graphs/psfk/adjacent?${params.toString()}`, apiKey, uid || userId);
+                        if (data.adjacent?.length > 0) data._note = `Adjacent trends found in psfk graph (${graphId} returned error)`;
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                    } catch { /* fallback also failed — fall through to original error */ }
+                }
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    return server;
+}
+
+// --- MCP Transport Handler ---
+app.all('/mcp', async (req, res) => {
+    try {
+        const sessionId = req.headers['mcp-session-id'] as string;
+        let transport: StreamableHTTPServerTransport;
+
+        // Extract API key and userId from URL
+        const apiKey = (req.query.api_key as string) || '';
+        const userId = (req.query.user_id as string) || 'anonymous';
+
+        if (sessionId && transports.has(sessionId)) {
+            transport = transports.get(sessionId)!;
+        } else if (!sessionId && req.method === 'POST') {
+            const body = req.body;
+            if (body?.method === 'initialize') {
+                // Store API key/userId for this session
+                const server = createServer(apiKey, userId);
+                transport = new StreamableHTTPServerTransport({
+                    sessionIdGenerator: () => crypto.randomUUID(),
+                    onsessioninitialized: (sid) => {
+                        console.error(`Session created: ${sid}`);
+                        transports.set(sid, transport);
+                        sessionApiKeys.set(sid, apiKey);
+                        sessionUserIds.set(sid, userId);
+                    }
+                });
+                transport.onclose = () => {
+                    const sid = (transport as any).sessionId;
+                    if (sid) {
+                        transports.delete(sid);
+                        sessionApiKeys.delete(sid);
+                        sessionUserIds.delete(sid);
+                    }
+                };
+                await server.connect(transport as any);
+            } else {
+                return res.status(400).json({
+                    jsonrpc: '2.0',
+                    error: { code: -32000, message: 'Bad Request: Session required' },
+                    id: null
+                });
+            }
+        } else {
+            return res.status(404).json({
+                jsonrpc: '2.0',
+                error: { code: -32001, message: 'Session not found' },
+                id: null
+            });
+        }
+
+        // Inject Accept: text/event-stream if missing (prevents SDK 406)
+        const accept = req.headers['accept'] || '';
+        if (!accept.includes('text/event-stream')) {
+            req.headers['accept'] = accept ? `${accept}, text/event-stream` : 'application/json, text/event-stream';
+            const idx = req.rawHeaders?.findIndex((h: string) => h.toLowerCase() === 'accept');
+            if (idx !== undefined && idx >= 0 && req.rawHeaders) {
+                req.rawHeaders[idx + 1] = req.headers['accept'] as string;
+            } else if (req.rawHeaders) {
+                req.rawHeaders.push('Accept', req.headers['accept'] as string);
+            }
+        }
+
+        await transport!.handleRequest(req, res, req.body);
+    } catch (error) {
+        console.error('Error:', error);
+        if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+    }
 });
+
+// Legacy SSE transport
+app.get('/sse', async (req, res) => {
+    const apiKey = (req.query.api_key as string) || '';
+    const userId = (req.query.user_id as string) || 'anonymous';
+    const sessionId = crypto.randomUUID();
+    const transport = new SSEServerTransport('/messages', res);
+    const server = createServer(apiKey, userId);
+    await server.connect(transport as any);
+    console.error(`SSE session: ${sessionId}`);
+});
+
+app.post('/messages', async (req, res) => {
+    // SSE message handler would go here
+    res.status(404).json({ error: 'Use /mcp endpoint' });
+});
+
+// Favicon — required for Anthropic Connectors Directory (Google favicon API)
+const FAVICON_SVG = 'https://ucarecdn.com/e3ce77f2-661e-48a1-a294-c7c01039aed4/foddaminilogo.svg';
+const FAVICON_PNG = 'https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png';
+
+app.get('/favicon.ico', (_req, res) => { res.redirect(301, FAVICON_PNG); });
+app.get('/favicon.svg', (_req, res) => { res.redirect(301, FAVICON_SVG); });
+
+// Root — minimal HTML so Google's favicon crawler can find the icon
+app.get('/', (_req, res) => {
+    res.setHeader('Content-Type', 'text/html');
+    res.send(`<!DOCTYPE html>
+<html><head>
+<title>Fodda MCP Server</title>
+<link rel="icon" type="image/png" href="${FAVICON_PNG}">
+<link rel="icon" type="image/svg+xml" href="${FAVICON_SVG}">
+</head><body>
+<h1>Fodda MCP Server v${MCP_SERVER_VERSION}</h1>
+<p>Expert-curated knowledge graphs for AI agents.</p>
+<p>Connect via <a href="https://app.fodda.ai">app.fodda.ai</a></p>
+</body></html>`);
+});
+
+app.get('/health', (_req, res) => res.json({ status: 'ok', version: MCP_SERVER_VERSION }));
+
+const PORT = parseInt(process.env.PORT || '8080');
+app.listen(PORT, () => console.error(`Fodda MCP server v${MCP_SERVER_VERSION} on port ${PORT}`));

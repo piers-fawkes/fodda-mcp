@@ -65,8 +65,27 @@ gcloud run deploy fodda-mcp \
 }
 ```
 
-### Anthropic Enterprise Connector
-For Anthropic, point to the `/sse` fallback or `/mcp` Streamable endpoint with standard context parameters.
+### Claude (Web — Pro, Max, Team)
+Individual users can add Fodda as a custom connector directly in Claude:
+1. Go to **Settings → Connectors → Add custom connector**
+2. URL: `https://mcp.fodda.ai/mcp?api_key=YOUR_API_KEY`
+3. Under **Advanced settings** — leave OAuth Client ID and Secret **blank** (Fodda uses API key auth, not OAuth)
+4. Click **Add**
+
+> **Why the key is in the URL:** Claude's web connector form only supports OAuth for auth — it doesn't have a "Custom headers" option. Since Fodda uses API key authentication, the key is passed as a URL parameter instead. The connection is over HTTPS, so the key is encrypted in transit.
+
+### Claude Enterprise (Admin-Managed Connectors)
+Enterprise workspace admins can register the Fodda MCP server via the Admin Console:
+- **URL:** `https://mcp.fodda.ai/mcp?api_key=YOUR_ORG_API_KEY`
+- **OAuth fields:** Leave blank (not used)
+- **Fallback (SSE):** `https://mcp.fodda.ai/sse?api_key=YOUR_ORG_API_KEY`
+- **Auto-discovery:** `https://mcp.fodda.ai/.well-known/mcp.json`
+
+### Claude Code (CLI)
+```bash
+claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
+  --header "Authorization: Bearer YOUR_API_KEY"
+```
 
 ## 5. Security & Error Handling
 

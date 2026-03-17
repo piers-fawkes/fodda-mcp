@@ -78,6 +78,33 @@ Packaged the MCP server for the Official MCP Registry and npm.
 - npm package support for self-hosted installs (`npx fodda-mcp`)
 - Marketplace-quality `README.md` with Claude/Gemini quick-start examples
 
+### 11. Re-Add Stripped Features to McpServer Architecture
+**Owner**: MCP
+**Status**: ⏸️ Pending — add ONE at a time, test Claude after each
+
+Rev 42 rebuilt the server using `McpServer` (no middleware). The following features were removed and should be re-added carefully:
+
+| Priority | Feature | Notes |
+|----------|---------|-------|
+| High | Usage logging (`mcp.tool_call` events) | Safe — just `console.error()` inside handlers |
+| High | Credit exhaustion error enrichment | Safe — catch block logic only |
+| Medium | Response size guard (2MB max) | Safe — pre-return check |
+| Low | Rate limiting | Add inside `app.all('/mcp')`, NOT as global middleware. Do NOT set response headers. |
+| Low | HMAC verification | Only needed for server-to-server calls. May not need for MCP clients. |
+
+**⚠️ Do NOT re-add**: AsyncLocalStorage, diagnostic response interceptors (`res.writeHead`/`res.write`/`res.end` overrides), or global `app.use()` middleware for MCP paths.
+
+### 12. Search Output Improvements
+**Owner**: MCP
+**Status**: ⏸️ Pending
+
+Improve how search results appear when surfaced by Claude/AI agents:
+
+- **Default `include_evidence` to `true`**: Gives Claude article URLs (`sourceUrl`) automatically. Currently defaults to `false`. Simple one-line change.
+- **Add `fodda_url` to each trend**: Post-process API response to add `https://app.fodda.ai/trends/{trendSlug}`.
+- **Add `psfk_trend_label`**: Friendly label like `PSFK Trend #6278` so Claude uses it instead of raw node IDs.
+- **Update tool description**: Mention the new fields so Claude naturally uses them.
+
 ---
 
 ## Strategic Guardrails (What NOT To Do)
@@ -131,6 +158,43 @@ bash scripts/publish_registry.sh
 **Verify after publish**:
 - https://www.npmjs.com/package/fodda-mcp (should show 1.6.0)
 - `curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server"`
+
+### 10. Check Claude.ai Web Client Bug Report
+**Owner**: Piers
+**Status**: ✅ Resolved (March 10, 2026)
+**Filed**: March 7, 2026
+
+Bug report filed at [github.com/anthropics/claude-ai-mcp](https://github.com/anthropics/claude-ai-mcp/issues) for Claude.ai web client returning "Error occurred during tool execution" despite valid 200 OK JSON responses.
+
+**Resolution**: Root cause was not a Claude bug — it was the Fodda server's middleware chain (`Server` class + AsyncLocalStorage + response interceptors) interfering with the SDK's `@hono/node-server` response pipeline. Rebuilding the server using `McpServer` (high-level API, no middleware) fixed it immediately. Both `list_graphs` and `search_graph` now work end-to-end through Claude.ai.
+
+**To do**: Consider updating/closing the GitHub issue with the resolution.
+
+### 13. Explore Anthropic Agent Skills for Fodda
+**Owner**: MCP
+**Status**: ⏸️ Backburner
+
+Anthropic's Connectors Directory supports **Skills** — modular capability packages (instructions, metadata, resources) that extend Claude's functionality. Fodda could submit a Skill alongside the MCP connector to guide Claude in creative and effective use of the knowledge graph tools.
+
+**To explore**:
+- Review Skill spec and examples on claude.com/connector
+- Design a Fodda research Skill (e.g., "Trend Research Assistant" that guides multi-step graph exploration)
+- Package as a public GitHub repo with instructions, metadata, and optional prompt templates
+- Submit via the Connectors Directory form (Skills section)
+
+**Value**: A Skill could differentiate Fodda from other MCP servers by providing opinionated research workflows, not just raw tool access.
+
+### 14. Community Graph Quality — MCP-Side Implications
+**Owner**: MCP (monitor) + API (enforce)
+**Status**: ⏸️ Watch — API agent owns enforcement
+
+Co-pilot review (March 2026) flagged three quality risks for community Pattern Graphs:
+
+1. **Signal summary quality** — weak summaries degrade search/clustering. API should enforce min 250 chars at `/validate`. MCP impact: none (proxies results as-is).
+2. **Pattern inflation** — 1:1 signal-to-pattern ratios destroy the model. API should enforce min 2 signals/pattern at `/refresh`. MCP impact: none.
+3. **Entity normalization** — `Nike` vs `nike` vs `NIKE` vs `Nike Inc` will accumulate over time. API should add a normalization layer (Sheets → normalize → cache). **MCP impact**: if/when we add an `entity_search` or `entity_autocomplete` tool, normalized entities would make fuzzy matching much cleaner.
+
+**Action**: Periodically check that the API agent has implemented these guards. If entity normalization ships, consider adding an `entity_search` MCP tool.
 
 ---
 

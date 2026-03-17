@@ -1,9 +1,9 @@
 import type { ExtendedTool } from "./types.js";
 
-export const MCP_SERVER_VERSION = "1.7.0";
+export const MCP_SERVER_VERSION = "1.8.0";
 export const TOOL_VERSIONS = {
-    list_graphs: "1.0.0",
-    search_graph: "1.2.0",
+    list_graphs: "1.1.0",
+    search_graph: "1.4.0",
     get_neighbors: "1.2.0",
     get_evidence: "1.1.0",
     get_node: "1.0.0",
@@ -12,12 +12,12 @@ export const TOOL_VERSIONS = {
     discover_adjacent_trends: "1.0.0",
 };
 
-const GRAPH_ID_DESCRIPTION = "Select which curated graph to query. Use list_graphs to discover available options. Common values: 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo', 'pew'.";
+const GRAPH_ID_DESCRIPTION = "Select which graph to query. Use list_graphs to discover all available options including PSFK curated graphs and community Pattern Graphs. Common curated values: 'retail', 'beauty', 'sports', 'psfk', 'sic', 'waldo', 'pew'. Community graphs use unique slugs (e.g., 'sarah-clean-beauty').";
 
 const ALL_TOOLS: ExtendedTool[] = [
     {
         name: "list_graphs",
-        description: "Discover available knowledge graphs and their schemas, including node types, relationship types, and versions. Use this tool first to find valid graphId values for other tools.",
+        description: "Discover all available knowledge graphs — both expert-curated PSFK graphs and community-contributed Pattern Graphs. Returns graph IDs, descriptions, authors, sectors, and signal/pattern counts. Use this tool first to find valid graphId values for other tools.",
         inputSchema: {
             type: "object",
             properties: {
@@ -35,10 +35,17 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: true,
+        annotations: {
+            title: "List Knowledge Graphs",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
     },
     {
         name: "search_graph",
-        description: "Search across expert-curated PSFK knowledge graphs (Retail, Beauty, Sports and partner datasets) to retrieve structured trend clusters, signals, and supporting articles relevant to a query. Note: a server-side relevance gate may reduce results for brand/entity-specific queries — results with low semantic scores that don't mention query terms are automatically filtered out.",
+        description: "Search across expert-curated PSFK knowledge graphs and community-contributed Pattern Graphs to retrieve structured trend clusters, signals, and supporting articles relevant to a query. Note: a server-side relevance gate may reduce results for brand/entity-specific queries — results with low semantic scores that don't mention query terms are automatically filtered out.",
         inputSchema: {
             type: "object",
             properties: {
@@ -67,7 +74,15 @@ const ALL_TOOLS: ExtendedTool[] = [
             properties: {
                 results: {
                     type: "array",
-                    description: "Array of matching nodes (trends, articles), each optionally with an 'evidence' array if include_evidence=true. When evidence is included, each evidence item contains: sourceUrl (article link), place (geographic location of the article), brandNames (brands mentioned), snippet (relevant excerpt), and publishedAt (publication date).",
+                    description: "Array of matching nodes (trends, articles). Each result includes quality fields: semantic_score (0-1, raw vector similarity), relevance_score (0-1, blends semantic score with evidence count — zero-evidence trends get a 0.6× penalty), and evidence_count (number of linked articles). Results are pre-sorted by relevance_score descending. Optionally includes an 'evidence' array if include_evidence=true, where each evidence item contains: sourceUrl, place, brandNames, snippet, and publishedAt.",
+                    items: {
+                        type: "object",
+                        properties: {
+                            semantic_score: { type: "number", description: "Raw vector similarity to the query (0-1)" },
+                            relevance_score: { type: "number", description: "Composite score blending semantic similarity with evidence count. Zero-evidence trends receive a 0.6× penalty. Results are sorted by this field." },
+                            evidence_count: { type: "integer", description: "Number of supporting articles linked to this trend. Higher counts indicate better-supported results." },
+                        },
+                    },
                 },
                 total: { type: "number", description: "Total number of results found" },
                 search_method: { type: "string", description: "Search method used: 'vector', 'keyword', 'hybrid', or 'all_fallback'" },
@@ -81,6 +96,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: false,
+        annotations: {
+            title: "Search Knowledge Graph",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+        },
     },
     {
         name: "get_neighbors",
@@ -118,6 +140,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: true,
+        annotations: {
+            title: "Explore Graph Neighbors",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
     },
     {
         name: "get_evidence",
@@ -149,6 +178,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: true,
+        annotations: {
+            title: "Get Supporting Evidence",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
     },
     {
         name: "get_node",
@@ -172,6 +208,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: true,
+        annotations: {
+            title: "Get Node Details",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
     },
     {
         name: "get_label_values",
@@ -196,6 +239,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: true,
+        annotations: {
+            title: "Get Category Values",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
     },
     {
         name: "psfk_overview",
@@ -233,6 +283,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: false,
+        annotations: {
+            title: "PSFK Industry Overview",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+        },
     },
     {
         name: "discover_adjacent_trends",
@@ -286,6 +343,13 @@ const ALL_TOOLS: ExtendedTool[] = [
             },
         },
         isDeterministic: true,
+        annotations: {
+            title: "Discover Adjacent Trends",
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+        },
     },
 ];
 
