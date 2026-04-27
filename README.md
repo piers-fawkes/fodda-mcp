@@ -17,7 +17,7 @@ Your AI produces generic output because it has generic context. Fodda gives it e
 
 Unlike flat text or generic retrieval, Fodda organizes insight as interconnected entities, relationships, evidence, and metadata — giving AI systems both the qualitative context and quantitative evidence they need for trusted, explainable outputs.
 
-[Quick Start](#quick-start) · [Available Tools](#available-tools) · [Graph Showcase](#graph-showcase) · [How It Works](#how-it-works) · [REST API](#rest-api-reference) · [Self-Hosting](#self-hosting)
+[Quick Start](#quick-start) · [Available Tools](#available-tools) · [Graph Showcase](#graph-showcase) · [How It Works](#how-it-works) · [REST API](#rest-api-reference) · [Best Practices](#best-practices)
 
 ---
 
@@ -256,42 +256,6 @@ Authorization: Bearer sk_live_...
 |--------|------------|
 | Claude Web, Notion | URL parameter: `?api_key=sk_live_...` (HTTPS-encrypted) |
 | Claude Code, Cursor, Desktop | Bearer header: `Authorization: Bearer sk_live_...` |
-
----
-
-## Configuration
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | HTTP server port (omit for stdio mode) | — |
-| `FODDA_API_URL` | Upstream API base URL | `https://api.fodda.ai` |
-| `FODDA_MCP_SECRET` | HMAC signing secret | — |
-| `ALLOWED_TOOLS` | Comma-separated allowlist of Enterprise Tool scope | `search_graph,get_node,...` |
-| `NODE_ENV` | Environment (`development` / `production`) | `production` |
-| `INTERNAL_TEST_KEYS` | Comma-separated keys for simulation mode | — |
-| `RATE_LIMIT_RPM` | Requests per minute per API key | `60` |
-
----
-
-## Build & Run
-
-```bash
-npm install
-npm run build
-
-# Stdio mode
-npm start
-
-# SSE mode
-PORT=8080 npm start
-```
-
-## Self-Hosting
-
-- **Docker**: `docker build -t fodda-mcp . && docker run -p 8080:8080 -e PORT=8080 fodda-mcp`
-- **Cloud Run**: `./deploy_cloud_run.sh`
-- **Kubernetes**: See [`deployment/k8s/`](./deployment/k8s/)
-- **Terraform**: See [`deployment/terraform/`](./deployment/terraform/)
 
 ---
 
