@@ -1,0 +1,70 @@
+{
+  "name": "fodda",
+  "displayName": "Fodda",
+  "description": "Connect your AI agent to Fodda knowledge graphs via MCP — one click in Cursor, Windsurf, and VS Code.",
+  "version": "0.1.6",
+  "publisher": "fodda",
+  "license": "SEE LICENSE IN LICENSE",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/piers-fawkes/fodda-mcp.git"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "fodda",
+    "mcp",
+    "model context protocol",
+    "ai",
+    "knowledge graph",
+    "cursor",
+    "windsurf",
+    "research",
+    "agents",
+    "trends"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "fodda.connect",
+        "title": "Fodda: Connect to MCP"
+      }
+    ],
+    "configuration": {
+      "title": "Fodda",
+      "properties": {
+        "fodda.apiKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your Fodda API key (starts with `fk_live_` or `sk_live_`). Get one at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration."
+        },
+        "fodda.userEmail": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The email address associated with your Fodda account."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0",
+    "@vscode/vsce": "^3.0.0"
+  }
+}

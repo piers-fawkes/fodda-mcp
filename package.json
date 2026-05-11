@@ -1,6 +1,6 @@
 {
   "name": "fodda-mcp",
-  "version": "1.8.0",
+  "version": "1.20.0",
   "mcpName": "io.github.piers-fawkes/fodda",
   "description": "Fodda MCP Server for accessing knowledge graph insights.",
   "keywords": [
@@ -33,10 +33,15 @@
     "test": "npm run build && node dist/verify_tools_endpoint.js"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^8.5.0",
+    "@google/genai": "^1.50.1",
+    "@google/generative-ai": "^0.24.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "axios": "^1.13.5",
     "dotenv": "^17.2.4",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "neo4j-driver": "^6.0.1",
+    "resend": "^6.11.0"
   },
   "devDependencies": {
     "@types/axios": "^0.9.36",

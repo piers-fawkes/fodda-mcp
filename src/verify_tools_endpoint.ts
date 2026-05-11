@@ -25,8 +25,8 @@ async function runTest() {
             process.exit(1);
         }
 
-        if (response.data.count !== 6) {
-            console.error('❌ Expected 6 tools, got ' + response.data.count);
+        if (response.data.count !== 20) {
+            console.error('❌ Expected 20 tools, got ' + response.data.count);
             process.exit(1);
         }
     } catch (error: any) {
