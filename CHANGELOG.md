@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.25.0] - 2026-05-11
+
+### Added
+- **Consulting Analysts Tooling** (`toolHandlers.ts`, `tools.ts`): New orchestration flow for "talking to" Synthetic Analysts.
+  - **`list_analysts` tool**: Discovers available expert personas (e.g., Ben Dietz) and their specialized domains.
+  - **`consult_analyst` tool**: Enables direct conversation with an analyst persona. Routes to the Fodda API's new analyst consultation engine.
+- **Fodda Research Agent (Autonomous Research)** (`src/agents/fodda-researcher/`): Integrated a new autonomous agent architecture for deep analysis.
+  - **Skill-Injected Instruction Engine**: Assembles complex system instructions from 5 modular skill files: Research Methodology, Evidence Categories, Output Format, Graph Awareness, and Source Quality.
+  - **Graph Context Injection**: `deep_research_topic` now pre-fetches graph results and injects them as primary source material into the agent's context, ensuring "graph-first" autonomous research.
+  - **Waverunner Integration**: Researcher agent utilizes the Gemini Interactions API (via `waverunnerRequest`) with autonomous `google_search` and `url_context` tools.
+
+### Changed
+- **`deep_research_topic` Orchestration**: Refactored to use the new `Fodda Research Agent` architecture. Includes 5-phase research loop (Plan → Search → Read → Synthesize → Cite) and editorial-quality reporting.
+- **Version Bump**: Updated server version to 1.25.0 to reflect major agentic capability expansion.
 
 ### Added
 - **Fixed-Price Query Billing System** (`pricingCache.ts`, `toolHandlers.ts`, `index.ts`): Major billing architecture change — migrated from variable per-API-call token metering to fixed-price-per-query billing. Each query type (Topic Research, Brand Intelligence, Brainstorm, etc.) now has a single fixed cost in API calls, charged once at query completion via `POST /v1/research/meter`.
