@@ -237,7 +237,7 @@ export async function createServer(
     });
 
     const server = new McpServer({
-        name: 'fodda-mcp',
+        name: 'fodda_mcp',
         version: MCP_SERVER_VERSION,
     }, {
         instructions: buildSystemPrompt(accountProfile, skillPromptMeta, isTrial, entryId),

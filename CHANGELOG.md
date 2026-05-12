@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.25.0] - 2026-05-11
+## [1.26.0] - 2026-05-12
+
+### Added
+- **Analyst Routing Logic** (`systemPrompt.ts`): Implemented a mandatory two-step workflow for Consulting Analysts. The LLM must now search the relevant domain graph first and inject found signals into the analyst consultation query to ground the response.
+- **Enhanced Auth Support** (`index.ts`): Added support for `X-API-Key` and `Authorization Bearer` headers in the `/mcp` route, improving compatibility with remote MCP clients and API gateways.
+
+### Changed
+- **Server Name**: Internal MCP server name changed from `fodda-mcp` to `fodda_mcp` for better compatibility with certain SDK clients.
+
 
 ### Added
 - **Consulting Analysts Tooling** (`toolHandlers.ts`, `tools.ts`): New orchestration flow for "talking to" Synthetic Analysts.

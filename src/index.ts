@@ -29,7 +29,7 @@ app.use(express.json());
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id, Accept');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, Mcp-Session-Id, Accept');
     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
@@ -549,8 +549,12 @@ app.all('/mcp', async (req, res) => {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
 
-        // Extract API key, userId, and entry ID from URL
-        const apiKey = (req.query.api_key as string) || '';
+        // Extract API key, userId, and entry ID from URL or headers
+        // Priority: query string (existing MCP clients) → X-API-Key header → Authorization Bearer (Remote MCP)
+        const apiKey = (req.query.api_key as string)
+            || (req.headers['x-api-key'] as string)
+            || (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
+            || '';
         const entryId = (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup
         const isEmailId = entryId.includes('@') && entryId.includes('.');
