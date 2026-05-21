@@ -8,6 +8,7 @@ import path from 'path';
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 const SECRET = process.env.FODDA_MCP_SECRET || 'dev-secret-key';
+
 const PORT = 3001; // Use a different port for testing
 
 async function runTest() {

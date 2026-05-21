@@ -18,6 +18,9 @@
 
 ### Claude (Web — Pro, Max, Team, Enterprise)
 
+**⚡ Quick Connect:** Use this [Add to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Fodda&connectorUrl=https%3A%2F%2Fmcp.fodda.ai%2Fmcp%3Fapi_key%3DYOUR_API_KEY%26user_id%3DYOUR_EMAIL) quick link (replace `YOUR_API_KEY` and `YOUR_EMAIL` in the URL before pressing enter).
+
+**Manual Setup:**
 1. In Claude, go to **Settings → Connectors → Add custom connector**
 2. Enter URL: `https://mcp.fodda.ai/mcp?api_key=YOUR_API_KEY&user_id=YOUR_EMAIL`
 3. Under **Advanced settings** — leave OAuth Client ID and Secret **blank** (Fodda uses API key auth, not OAuth)

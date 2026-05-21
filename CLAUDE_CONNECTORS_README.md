@@ -56,6 +56,10 @@ Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK cover
 
 ### For Individual Users (Pro / Max)
 
+**⚡ Quick Connect Method:**
+Use this [Add to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Fodda&connectorUrl=https%3A%2F%2Fmcp.fodda.ai%2Fmcp%3Fapi_key%3DYOUR_API_KEY%26user_id%3DYOUR_EMAIL) quick link. *(You will need to manually replace `YOUR_API_KEY` and `YOUR_EMAIL` in the browser URL bar before hitting enter).*
+
+**Manual Setup Method:**
 1. Go to [Settings → Connectors](https://claude.ai/settings/connectors)
 2. Click **"Add custom connector"**
 3. Paste the Fodda connector URL:

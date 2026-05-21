@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **`toggle_graph_preference` tool** (`src/toolHandlers.ts`, `src/tools.ts`): Added a new tool that allows the MCP agent to permanently enable or disable any knowledge graph, supplemental data source, or skill on the user's behalf. It calls the new `POST /v1/user/preferences/toggle` API endpoint.
+
+### Changed
+- **System Prompt** (`systemPrompt.ts`): Updated rules for skill configuration. Explicitly instruct the LLM to call `toggle_graph_preference` instead of directing users to the dashboard when they ask to turn graphs, sources, or skills on or off.
+
 ## [1.26.0] - 2026-05-12
 
 ### Added

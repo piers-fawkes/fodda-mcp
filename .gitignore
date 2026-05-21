@@ -13,5 +13,8 @@ yarn-error.log*
 .mcpregistry_registry_token
 fodda_mcp_registry_key.pem
 
+# Deploy script — historically contained live secrets; keep local only
+deploy_cloud_run.sh
+
 # Agent workflows (optional - keep local)
 .agent/

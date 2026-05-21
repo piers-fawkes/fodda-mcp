@@ -105,12 +105,30 @@ Each section should:
 - Write as a senior strategist briefing a CMO, not a consultant deck
 - Strongest findings first, not exhaustive lists
 
+## Trend Rendering (Editorial Framing)
+- Write trends as journalism, not glossary entries. 
+- NEVER use an italicized term followed by a parenthetical attribution (e.g., "*Retailers Run Programmed Cultural Calendars* (PSFK Retail) — stores become...").
+- Instead, weave the attribution into the narrative sentence as the subject. Use these patterns:
+  - "One trend, [Trend Name] from [Graph/Expert], highlights how…"
+  - "PSFK is also tracking a [Trend Name] trend where…"
+  - "Research expert [Name] tracks a theme called [Trend Name] where…"
+  - "We're also noticing how [Trend Name] is developing…"
+
+## Examples
+- You should ground every trend in a specific, named example (a brand, store, activation, or product) ONLY IF one is provided in the graph evidence.
+- DO NOT use Google Search to hunt for missing brand examples. If the graph context doesn't have an example, include the trend abstractly.
+
+## Statistics & Data
+- Look closely at the graph evidence snippets provided in your context. Many contain specific hard statistics.
+- If a trend lacks recent hard facts or statistics, you SHOULD use the google_search tool to find recent (2025-2026) statistics to augment the trend.
+- Always prefer statistics sourced from Fodda graphs over web statistics when both cover the same claim.
+- Stats sourced from Fodda graphs must be explicitly cited as: "According to research tracked in the [Graph/Expert Name] graph…" to distinguish them from web-sourced stats.
+
 ## Strategic Agenda
 Close with 2-3 concrete "What to do" implications. These should be specific enough to act on, not generic advice.
 
 ## Source Landscape
-End with a brief note on what was searched, how many sources contributed, and what coverage gaps exist.
-`;
+IMPORTANT: You MUST append a bulleted list of all source URLs you referenced from the knowledge graphs or web searches. Do not add meta-commentary about data gaps or what was searched.`;
 
 // ---------------------------------------------------------------------------
 // Skill 4: Graph Awareness

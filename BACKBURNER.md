@@ -4,6 +4,34 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 📝 MCP Tool Descriptions from Airtable
+**Status:** Not started — low priority, consider when descriptions stabilize  
+**What:** Add an `mcp_tool_description` column to a new `MCP Tools` table in Airtable. At server startup, `catalogCache.ts` fetches these descriptions and injects them into `server.tool()` registrations, replacing the hardcoded strings in `toolHandlers.ts`. This would let the sales/marketing team iterate on tool descriptions (the text LLM routers read to decide tool selection) without code deploys.  
+**Why not now:** Tool descriptions are tightly coupled to code behavior — they reference parameter names, return shapes, API call costs, and technical constraints. There are only ~23 tools and they change alongside code changes. Decoupling prematurely risks someone breaking the parameter contract. Once descriptions stabilize post-audit, this becomes safer.  
+**Needs:**
+- Airtable: New `MCP Tools` table with `tool_id`, `description`, `is_active` columns
+- API: Expose via `/v1/tools/catalog` or add to existing `/v1/graphs/catalog` response
+- MCP: `catalogCache.ts` fetches at startup, `toolHandlers.ts` reads from cache with hardcoded fallback  
+**Agent:** MCP agent + API agent + Manual (Airtable schema)
+
+---
+
+## 🤖 Multi-Agent "Expert Panels" (Deep Research Evolution)
+**Status:** Waiting on Google EAP updates  
+**What:** Google is building native support for parent agents to spin up child sub-agents in separate sandboxes. Once released, transition `deep_research_topic` to use an Orchestrator Agent. The orchestrator will spin up an individual child agent for each Fodda graph (e.g., a Retail agent, an AI agent, a Logistics agent), let them research independently, and synthesize their findings. This prevents context-window dilution.  
+**When:** When Google officially releases Sub-Agents for Waverunner.  
+**Agent:** MCP agent
+
+---
+
+## ⚙️ Configuration-as-Code (CI/CD for Agents)
+**Status:** Waiting on Vertex AI parity  
+**What:** Graduate Fodda "Skills" (like Paralogy, Igloo) from simple system prompts into full YAML-based agent environment configurations. Use CI/CD (GitHub actions) to automatically snapshot and deploy new Base Agent environments whenever a YAML file is updated, eliminating cold-start download taxes.  
+**When:** Once Waverunner achieves full parity with Vertex AI and CI/CD pipelines are documented.  
+**Agent:** MCP agent
+
+---
+
 ## 🔇 Ghost Upsell Tool (`check_premium_insights`)
 **Status:** Code complete, commented out in `src/index.ts`  
 **Re-enable when:** Significant user volume warrants cross-sell  
@@ -290,5 +318,4 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 **Full brief:** `Brief MCP Eval Harness.md`  
 **Inspiration:** Wild.ai "AI in Regulated Industries" (Feb 2026), Anthropic "Demystifying evals for AI agents" (Jan 2025)  
 **Agent:** MCP agent
-
 

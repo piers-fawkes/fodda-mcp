@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.piers-fawkes/fodda",
   "title": "Fodda Knowledge Graphs",
-  "description": "Expert-curated PSFK trend intelligence graphs — Retail, Beauty, Sports and more.",
+  "description": "Expert-curated knowledge graphs for AI agents — retail, beauty, sports, plus institutional data",
   "websiteUrl": "https://fodda.ai",
   "icons": [
     {
@@ -12,16 +12,30 @@
       ]
     }
   ],
-  "version": "1.22.0",
+  "version": "1.30.0",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"
   },
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://mcp.fodda.ai/sse",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token (Fodda API key prefixed with \"Bearer \")",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "fodda-mcp",
-      "version": "1.22.0",
+      "version": "1.29.0",
       "transport": {
         "type": "stdio"
       },

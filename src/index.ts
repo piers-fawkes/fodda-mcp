@@ -16,6 +16,7 @@ import { MCP_SERVER_VERSION } from './tools.js';
 import { createServer } from './toolHandlers.js';
 import { checkTrialLimit, incrementTrialUsage } from './trialTracker.js';
 import type { TrialInteractionType } from './trialTracker.js';
+import { registerA2ARoute } from './a2aHandler.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -130,7 +131,7 @@ function getServiceUrl(): string {
  * the existing trial → Base conversion flow.
  */
 async function foddaRequest(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
     apiKey: string,
     userId: string,
@@ -177,7 +178,7 @@ async function foddaRequest(
     // HMAC sign the request
     const secret = process.env.FODDA_MCP_SECRET;
     if (secret) {
-        const payload = method === 'POST' && body
+        const payload = (method === 'POST' || method === 'PATCH') && body
             ? timestamp + '.' + JSON.stringify(body)
             : timestamp + '.' + path;
         const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
@@ -185,9 +186,11 @@ async function foddaRequest(
     }
 
     const url = `${API_BASE_URL}${path}`;
-    const response = method === 'POST'
-        ? await axios.post(url, body, { headers, timeout: 15000 })
-        : await axios.get(url, { headers, timeout: 15000 });
+    const response = method === 'GET'
+        ? await axios.get(url, { headers, timeout: 120000 })
+        : method === 'PATCH'
+        ? await axios.patch(url, body, { headers, timeout: 120000 })
+        : await axios.post(url, body, { headers, timeout: 120000 });
 
     // ── Cache store ──
     cacheSet(method, path, body, response.data);
@@ -667,6 +670,12 @@ app.get('/', (_req, res) => {
 });
 
 app.get('/health', (_req, res) => res.json({ status: 'ok', version: MCP_SERVER_VERSION, queryCache: getCacheStats() }));
+
+// ---------------------------------------------------------------------------
+// A2A Protocol Endpoint — agent-to-agent task delegation
+// ---------------------------------------------------------------------------
+
+registerA2ARoute(app, foddaRequest);
 
 const PORT = parseInt(process.env.PORT || '8080');
 

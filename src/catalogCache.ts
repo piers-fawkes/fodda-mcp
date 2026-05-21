@@ -95,12 +95,15 @@ async function fetchCatalog(): Promise<CatalogResponse> {
 }
 
 /**
- * Fetch the analysts from the API. Public endpoint, no auth needed.
+ * Fetch the analysts from the API. Requires internal auth.
  */
 async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
     const url = `${API_BASE_URL}/v1/analysts`;
+    const internalKey = process.env.FODDA_INTERNAL_API_KEY;
+    const headers = internalKey ? { 'Authorization': `Bearer ${internalKey}` } : {};
+    
     try {
-        const response = await axios.get(url, { timeout: 10000 });
+        const response = await axios.get(url, { headers, timeout: 10000 });
         return Array.isArray(response.data) ? response.data : (response.data.analysts || []);
     } catch (err: any) {
         console.error(`[catalogCache] Failed to fetch analysts: ${err.message}`);
@@ -760,9 +763,9 @@ export interface GraphRelevanceResult {
  */
 export function getRelevantGraphs(
     query: string,
-    minGraphs: number = 2,
-    maxGraphs: number = 8,
-    threshold: number = 0.15,
+    minGraphs: number = 4,
+    maxGraphs: number = 15,
+    threshold: number = 0.10,
 ): GraphRelevanceResult[] {
     const allGraphs = getLiveGraphs().filter(g =>
         (g.graph_type === 'domain' || g.graph_type === 'expert' || g.graph_type === 'industry report') && g.graph_id !== 'waldo'
@@ -783,10 +786,59 @@ export function getRelevantGraphs(
         console.error(`[graphRouter] Skipped ${skippedShells} unsynced graph shell(s) (trend_count=0, last_synced=null)`);
     }
 
+    // ── Phase 0: Direct name matching ──
+    // When users explicitly name a graph, curator, or company (e.g. "Pull from
+    // TBWA/Alyson Stevens Macro, SIC (Ben Dietz), Marieke Neleman..."), keyword
+    // scoring dilutes these names across 100+ query terms, dropping them below
+    // the threshold. Direct matches get automatic inclusion at score 1.0.
+    const queryLower = query.toLowerCase();
+    const directMatchIds = new Set<string>();
+
+    for (const g of syncedGraphs) {
+        // Check graph_id (e.g., "alyson-stevens-macro", "sic")
+        if (queryLower.includes(g.graph_id)) {
+            directMatchIds.add(g.graph_id);
+            continue;
+        }
+
+        // Check curator full name (e.g., "Alyson Stevens", "Ben Dietz")
+        const curatorLower = (g.curator || '').toLowerCase();
+        if (curatorLower && curatorLower.length > 3 && queryLower.includes(curatorLower)) {
+            directMatchIds.add(g.graph_id);
+            continue;
+        }
+
+        // Check curator last name (>3 chars to avoid false positives like "AI", "NIQ")
+        const curatorParts = curatorLower.split(/\s+/);
+        const curatorLastName = curatorParts[curatorParts.length - 1];
+        if (curatorLastName && curatorLastName.length > 3 && queryLower.includes(curatorLastName)) {
+            directMatchIds.add(g.graph_id);
+            continue;
+        }
+
+        // Check company name (e.g., "TBWA", "Delta", "Havas", "Kantar")
+        const companyLower = (g.company || '').toLowerCase();
+        if (companyLower && companyLower.length > 2 && queryLower.includes(companyLower)) {
+            directMatchIds.add(g.graph_id);
+            continue;
+        }
+
+        // Check graph name (e.g., "SIC", "Connection Index")
+        const nameLower = (g.name || '').toLowerCase();
+        if (nameLower && nameLower.length > 3 && queryLower.includes(nameLower)) {
+            directMatchIds.add(g.graph_id);
+            continue;
+        }
+    }
+
+    if (directMatchIds.size > 0) {
+        console.error(`[graphRouter] Phase 0 direct name matches: ${[...directMatchIds].join(', ')}`);
+    }
+
     // Score ALL graph types together — domain, expert, industry report compete on merit
     const scored: GraphRelevanceResult[] = syncedGraphs.map(g => ({
         graph: g,
-        score: scoreGraphRelevance(query, g),
+        score: directMatchIds.has(g.graph_id) ? 1.0 : scoreGraphRelevance(query, g),
         graphTier: classifyGraphTier(g),
     }));
 
@@ -794,6 +846,7 @@ export function getRelevantGraphs(
     scored.sort((a, b) => b.score - a.score);
 
     // Take all above threshold, respecting min/max bounds
+    // Direct matches always pass (score 1.0 >> threshold)
     const aboveThreshold = scored.filter(s => s.score >= threshold);
     const resultCount = Math.max(minGraphs, Math.min(aboveThreshold.length, maxGraphs));
 

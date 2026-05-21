@@ -5,7 +5,7 @@
  * This file provides version strings used by index.ts and toolHandlers.ts.
  */
 
-export const MCP_SERVER_VERSION = "1.26.0";
+export const MCP_SERVER_VERSION = "1.29.0";
 
 export const TOOL_VERSIONS = {
     list_graphs: "1.4.0",
@@ -21,7 +21,7 @@ export const TOOL_VERSIONS = {
     get_census_demographics_snapshot: "1.1.0",
     get_fred_economic_snapshot: "1.0.0",
     get_wikipedia_pageviews: "1.0.0",
-    get_worldbank_global_snapshot: "1.0.0",
+    get_worldbank_global_snapshot: "1.1.0",
     get_fda_ingredient_safety: "1.0.0",
     get_fda_recalls: "1.0.0",
     get_clinical_trials: "1.0.0",
@@ -40,6 +40,48 @@ export const TOOL_VERSIONS = {
     get_google_trends_snapshot: "1.0.0",
     get_amazon_products_snapshot: "1.0.0",
     get_oecd_economic_snapshot: "1.0.0",
+    get_cbs_nl_snapshot: "1.0.0",
+    get_ptdata_pt_snapshot: "1.0.0",
+    // v1.28.0 — European expansion
+    get_eurostat_eu_snapshot: "1.0.0",
+    get_ecb_euro_snapshot: "1.0.0",
+    get_boe_uk_snapshot: "1.0.0",
+    get_nordic_pxweb_snapshot: "1.0.0",
+    get_bundesbank_de_snapshot: "1.0.0",
+    get_ine_es_snapshot: "1.0.0",
+    get_insee_fr_snapshot: "1.0.0",
+    get_snb_ch_snapshot: "1.0.0",
+    get_bis_global_snapshot: "1.0.0",
+    // v1.28.0 — Americas expansion
+    get_bcb_br_snapshot: "1.0.0",
+    get_bcrp_pe_snapshot: "1.0.0",
+    get_arg_ar_snapshot: "1.0.0",
+    get_banxico_mx_snapshot: "1.0.0",
+    get_bch_hn_snapshot: "1.0.0",
+    get_boc_ca_snapshot: "1.0.0",
+    get_statcan_ca_snapshot: "1.0.0",
+    get_bcch_cl_snapshot: "1.0.0",
+    get_socrata_us_snapshot: "1.0.0",
+    // v1.28.0 — Asia-Pacific expansion
+    get_abs_au_snapshot: "1.0.0",
+    get_rba_au_snapshot: "1.0.0",
+    get_pdh_pacific_snapshot: "1.0.0",
+    get_bnm_my_snapshot: "1.0.0",
+    get_hkma_hk_snapshot: "1.0.0",
+    get_estat_jp_snapshot: "1.0.0",
+    get_bok_kr_snapshot: "1.0.0",
+    get_bot_th_snapshot: "1.0.0",
+    get_bps_id_snapshot: "1.0.0",
+    get_psa_ph_snapshot: "1.0.0",
+    get_sg_snapshot: "1.0.0",
+    get_cn_china_snapshot: "1.0.0",
+    get_india_in_snapshot: "1.0.0",
+    // v1.28.0 — Middle East & Africa expansion
+    get_qatar_qa_snapshot: "1.0.0",
+    get_bahrain_bh_snapshot: "1.0.0",
+    get_boi_il_snapshot: "1.0.0",
+    get_sarb_za_snapshot: "1.0.0",
+    // Utility tools
     sign_up_free_account: "1.0.0",
     send_feedback: "1.0.0",
     get_my_account: "1.0.0",
@@ -48,4 +90,6 @@ export const TOOL_VERSIONS = {
     read_url: "1.0.0",
     list_analysts: "1.0.0",
     consult_analyst: "1.0.0",
+    toggle_graph_preference: "1.0.0",
+    manage_scheduled_reports: "2.0.0",
 };

@@ -9,6 +9,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
+import crypto from 'crypto';
 import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getEnabledSkillConfigs, getSkillGraphs, getAnalysts } from './catalogCache.js';
 import type { CatalogGraph } from './catalogCache.js';
 import { renderBrandWidget } from './brandTemplate.js';
@@ -117,7 +118,7 @@ function collectGraphWebpageUrls(graphIds: string[]): Record<string, string> {
 // Type for injected foddaRequest dependency
 // ---------------------------------------------------------------------------
 export type FoddaRequestFn = (
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PATCH',
     path: string,
     apiKey: string,
     userId: string,
@@ -156,6 +157,9 @@ function resolveUserId(sessionUserId: string, toolProvidedUid?: string): string 
 // ---------------------------------------------------------------------------
 // createServer — builds and returns a fully-configured MCP server
 // ---------------------------------------------------------------------------
+
+const activeResearchJobs = new Map<string, any>();
+const activeSupplementalJobs = new Map<string, any>();
 
 export async function createServer(
     apiKey: string,
@@ -379,7 +383,7 @@ export async function createServer(
     // --- list_graphs ---
     server.tool(
         'list_graphs',
-        'Discover all available knowledge graphs and supplemental data sources. Returns graph IDs, descriptions, authors, sectors, signal/pattern counts, and a list of 21 supplemental data tools (Census, FRED, FDA, CDC, PubMed, OpenAlex, World Bank, WTO, Pew, OECD, Open Food Facts, RIDB, OpenStreetMap, Google Trends, Amazon, etc.) that provide quantitative context from authoritative sources. Use this tool first. Note: \'waldo\' is deprecated — do not query. \'psfk\' no longer exists as a standalone graph — use specific verticals (retail, fashion, beauty, sports) instead.',
+        'List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/fashion/beauty/sports instead).',
         { userId: z.string().optional().describe('Optional user identifier. Authenticated users are identified automatically via API key. For trial users, this helps track usage.') },
         { title: 'List Knowledge Graphs', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
@@ -416,7 +420,7 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Discover available Fodda Synthetic Analysts — expert personas (e.g., Ben Dietz for culture & streetwear) that can answer questions using their curated knowledge graph plus real-time research. Use this FIRST when a user asks to \'talk to\' or \'consult\' a named expert.',
+        'List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to "talk to" or "consult" an expert, or when you need specialist depth on culture, strategy, or innovation topics.',
         { userId: z.string().optional().describe('Optional user identifier.') },
         { title: 'List Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
@@ -435,7 +439,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Search Fodda\'s knowledge graphs for expert-curated trend clusters, signals, and evidence. If graphId is omitted, searches ALL accessible graphs in parallel and returns merged results — this is the recommended default. If you know a specific graph, pass its ID (e.g. \'retail\', \'fashion\', \'beauty\', \'sports\'). Returns trends with relevance scores, evidence counts, and _use_this_graphId for follow-up calls. Each result row includes a graphName field with the human-readable source name. RENDERING RULES: 1) ALWAYS attribute findings to their source graph by name using graphName. Never say "the Fodda graph" — Fodda is the platform, the graphs are created by named experts. 2) Every evidence item has a formatted_citation field — use it as-is for inline markdown links. Never present evidence without its link. 3) If suggested_next_prompts is present, surface them to the user as numbered follow-up suggestions. 4) A separate content block with pre-rendered HTML may follow the JSON — if your client supports HTML visualization (show_widget, artifacts), pass it verbatim.',
+        'Search expert-curated knowledge graphs for trend clusters, signals, and consumer behavior evidence across retail, beauty, luxury, fashion, sport, consumer electronics, F&B, travel, and 30+ specialist domains. Returns structured trend data with cited evidence chains, source attribution, lifecycle signals (emerging/building/mature/fading), and momentum indicators — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use when the query involves market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
         {
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Location terms are auto-detected and used to filter results geographically.'),
@@ -864,7 +868,7 @@ export async function createServer(
     // --- get_neighbors ---
     server.tool(
         'get_neighbors',
-        'Explore how a trend connects to related signals, brands, and technologies within a graph. Use _use_this_graphId from search results for the graphId parameter.',
+        'Traverse graph relationships from a specific trend node to discover connected signals, brands, technologies, and locations. Returns structured relationship data that web search cannot provide — the curated editorial connections between trends. Use after search_graph to map the territory around a specific trend, find which brands are connected, or understand cross-domain links. Requires node_id from a prior search_graph result.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
@@ -899,7 +903,7 @@ export async function createServer(
     // --- get_evidence ---
     server.tool(
         'get_evidence',
-        'Retrieve source articles and structured evidence for a trend node. Use _use_this_graphId from search results for graphId. Returns evidence with sourceUrl, place, brandNames, publishedAt, and formatted_citation. This is a node lookup — not a text search tool. LINK RULE: Every evidence item includes formatted_citation (a ready-to-use markdown link like [Title](url)). Use it inline — never present an evidence claim without its source link.',
+        'Retrieve curated source articles and structured evidence for a specific trend node — case studies, statistics, expert quotes, and analysis with full source attribution. Returns evidence that has been editorially selected and categorized, not raw web results. Each item includes sourceUrl, place, brandNames, publishedAt, category, and formatted_citation. Use after search_graph when you need the supporting proof behind a specific trend. This is a node lookup — not a text search tool.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -928,7 +932,7 @@ export async function createServer(
     // --- get_node ---
     server.tool(
         'get_node',
-        'Retrieve the full metadata and properties of a specific node. Use _use_this_graphId from search results for graphId.',
+        'Retrieve complete metadata for a specific trend node — full description, signal score, lifecycle, geographic scope, adjacent possibilities, and all properties. Use when you need the full detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             nodeId: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -956,7 +960,7 @@ export async function createServer(
     // --- get_label_values ---
     server.tool(
         'get_label_values',
-        'Discover available values for a specific category (e.g., Brand, Location, Technology, Audience) to support structured filtering.',
+        'List all values for a structured category within a graph — Brand names, Locations, Technologies, Audiences, RetailerTypes. Use when you need to enumerate what entities exist in a graph before filtering, or when the user asks "what brands are in the retail graph?" or "what locations does the fashion graph cover?".',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
@@ -982,7 +986,7 @@ export async function createServer(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Find trends that are semantically similar to a given trend — useful for discovering related signals and expanding research briefs.',
+        'Find trends semantically similar to a given trend using pre-computed embeddings — surfaces connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover unexpected cross-domain connections, or map the territory around a strong signal. Web search cannot replicate this — it uses Fodda\'s internal embedding space.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -1098,12 +1102,15 @@ export async function createServer(
                                 speaker_title: ev.speakerTitle || null,
                             });
                             // Track which graphs each co-occurring brand appears in (for sector-aware competitor labels)
+                            // Skip earnings/finance graphs — analyst transcripts co-mention unrelated brands
                             const evBrands = ev.brandNames || [];
-                            for (const b of evBrands) {
-                                const bLower = (b || '').toLowerCase();
-                                if (bLower && bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
-                                    if (!competitorGraphs[b]) competitorGraphs[b] = new Set();
-                                    competitorGraphs[b].add(t.graphId);
+                            if (!t.graphId.includes('earnings') && !t.graphId.includes('finance')) {
+                                for (const b of evBrands) {
+                                    const bLower = (b || '').toLowerCase();
+                                    if (bLower && bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
+                                        if (!competitorGraphs[b]) competitorGraphs[b] = new Set();
+                                        competitorGraphs[b].add(t.graphId);
+                                    }
                                 }
                             }
                         }
@@ -1264,7 +1271,10 @@ export async function createServer(
                         // so high-scoring results are topically relevant even without a literal brand mention.
                         // This prevents discarding trends like "Closed-Loop Textiles" when searching for "Patagonia".
                         const semanticMatch = (row.signal_score || row.score || 0) >= 60;
-                        return directMatch || semanticMatch;
+                        if (!directMatch && !semanticMatch) return false;
+                        // Tag row so competitor extraction only runs on direct matches
+                        row._directBrandMatch = directMatch;
+                        return true;
                     });
 
                     if (brandRows.length === 0) continue;
@@ -1309,24 +1319,31 @@ export async function createServer(
                                 });
                                 graphEvCount++;
 
-                                for (const b of evBrandsRaw) {
-                                    const bLower = b.toLowerCase();
-                                    if (bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
-                                        competitorCounts[b] = (competitorCounts[b] || 0) + 1;
-                                        if (!competitorGraphs[b]) competitorGraphs[b] = new Set();
-                                        competitorGraphs[b].add(graphId);
+                                // Only count competitors from DIRECT brand matches, not semantic matches
+                                if (row._directBrandMatch) {
+                                    for (const b of evBrandsRaw) {
+                                        const bLower = b.toLowerCase();
+                                        if (bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
+                                            if (graphId.includes('earnings') || graphId.includes('finance')) continue;
+                                            competitorCounts[b] = (competitorCounts[b] || 0) + 1;
+                                            if (!competitorGraphs[b]) competitorGraphs[b] = new Set();
+                                            competitorGraphs[b].add(graphId);
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        const rowBrands = typeof row.brandNames === 'string' ? row.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(row.brandNames) ? row.brandNames : []);
-                        for (const b of rowBrands) {
-                            const bLower = b.toLowerCase();
-                            if (bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
-                                competitorCounts[b] = (competitorCounts[b] || 0) + 1;
-                                if (!competitorGraphs[b]) competitorGraphs[b] = new Set();
-                                competitorGraphs[b].add(graphId);
+                        // Only count trend-level brands as competitors for DIRECT brand matches
+                        if (row._directBrandMatch) {
+                            const rowBrands = typeof row.brandNames === 'string' ? row.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(row.brandNames) ? row.brandNames : []);
+                            for (const b of rowBrands) {
+                                const bLower = b.toLowerCase();
+                                if (bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
+                                    competitorCounts[b] = (competitorCounts[b] || 0) + 1;
+                                    if (!competitorGraphs[b]) competitorGraphs[b] = new Set();
+                                    competitorGraphs[b].add(graphId);
+                                }
                             }
                         }
                     }
@@ -1510,16 +1527,19 @@ export async function createServer(
             foddaRequest('GET', `/v1/supplemental/earnings/snapshot?brand=${encodeURIComponent(brandName)}&limit=5`, apiKey, resolveUserId(userId, uid)),
         ]);
 
+        // Unwrap .snapshot nesting — supplemental API wraps actual data inside .snapshot alongside metadata
+        const unwrapSnapshot = (raw: any) => raw?.snapshot || raw;
         profile.supplemental_signals = {
-            google_trends: googleTrendsResult.status === 'fulfilled' ? googleTrendsResult.value : null,
-            wikipedia: wikipediaResult.status === 'fulfilled' ? wikipediaResult.value : null,
-            amazon: amazonResult.status === 'fulfilled' ? amazonResult.value : null,
-            census_retail: beaResult.status === 'fulfilled' ? beaResult.value : null,
+            google_trends: googleTrendsResult.status === 'fulfilled' ? unwrapSnapshot(googleTrendsResult.value) : null,
+            wikipedia: wikipediaResult.status === 'fulfilled' ? unwrapSnapshot(wikipediaResult.value) : null,
+            amazon: amazonResult.status === 'fulfilled' ? unwrapSnapshot(amazonResult.value) : null,
+            census_retail: beaResult.status === 'fulfilled' ? unwrapSnapshot(beaResult.value) : null,
         };
 
         // ── Earnings Intelligence (for publicly traded brands) ──
         const earningsRaw = earningsResult.status === 'fulfilled' ? earningsResult.value : null;
-        const earningsItems = earningsRaw?.results || earningsRaw?.earnings || (Array.isArray(earningsRaw) ? earningsRaw : []);
+        const earningsSnapshot = earningsRaw?.snapshot || earningsRaw;  // unwrap .snapshot if present
+        const earningsItems = earningsSnapshot?.results || earningsSnapshot?.earnings || (Array.isArray(earningsSnapshot) ? earningsSnapshot : []);
         (profile as any).earningsIntelligence = earningsItems.length > 0 ? earningsItems : undefined;
 
         const widget = await renderBrandWidget(profile);
@@ -1534,7 +1554,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Build a Brand Intelligence Profile by searching across ALL accessible knowledge graphs for a specific brand. Returns trend footprint, evidence items, competitive context, cross-graph presence, industry mapping, and activity timeline. RENDERING RULES: 1) Use formatted_citation from evidence items as inline markdown links. Never present a claim without its source. 2) Surface suggested_next_prompts as numbered follow-up suggestions. 3) A separate content block with pre-rendered HTML may follow the JSON — if your client supports HTML visualization (show_widget, artifacts), pass it verbatim.',
+        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -1564,75 +1584,6 @@ export async function createServer(
         }
     );
 
-    const waverunnerSupplementalRegistry: { name: string, schema: any, buildPath: (args: any) => string }[] = [];
-
-    // --- Supplemental tools helper ---
-    const supplementalTool = (
-        name: string,
-        description: string,
-        schema: Record<string, any>,
-        title: string,
-        buildPath: (args: any) => string,
-        opts?: { idempotent?: boolean }
-    ) => {
-        server.tool(
-            name,
-            description,
-            { ...schema, userId: z.string().optional().describe('Optional user identifier for trial usage tracking.') },
-            { title, readOnlyHint: true, destructiveHint: false, idempotentHint: opts?.idempotent ?? true, openWorldHint: false },
-            async (args: any) => {
-                try {
-                    const path = buildPath(args);
-                    const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, args.userId));
-                    return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
-                } catch (err: any) {
-                    return await handleAccessError(err, 'supplemental');
-                }
-            }
-        );
-
-        // Build Waverunner-compatible schema object from Zod properties
-        try {
-            const properties: any = {};
-            const required: string[] = [];
-            const waverunnerSchema = { ...schema }; // Exclude userId from agent injection to minimize clutter
-
-            for (const [key, zObj] of Object.entries(waverunnerSchema)) {
-                let def = (zObj as any)._def;
-                let isOpt = false;
-                if (def && def.typeName === 'ZodOptional') {
-                    isOpt = true;
-                    def = def.innerType._def;
-                }
-                const desc = (zObj as any).description || def?.description || '';
-                const tName = def?.typeName || '';
-                
-                let gType = 'string';
-                if (tName === 'ZodNumber') gType = 'number';
-                if (tName === 'ZodBoolean') gType = 'boolean';
-                
-                properties[key] = { type: gType, description: desc };
-                if (!isOpt) required.push(key);
-            }
-
-            waverunnerSupplementalRegistry.push({
-                name,
-                schema: {
-                    type: 'function' as const,
-                    name,
-                    description,
-                    parameters: {
-                        type: 'object',
-                        properties,
-                        required
-                    }
-                },
-                buildPath
-            });
-        } catch (e) {
-            console.error(`Failed to build Waverunner schema for ${name}`, e);
-        }
-    };
 
     // --- get_supplemental_context (Unified Supplemental Endpoint) ---
     // Replaces 21 individual supplemental tools with a single call.
@@ -1656,16 +1607,66 @@ export async function createServer(
                 if (brands?.length) body.brands = brands;
                 if (graph_ids?.length) body.graph_ids = graph_ids;
 
-                const data = await foddaRequest('POST', '/v1/supplemental/context', apiKey, resolveUserId(userId, uid), body);
+                const jobId = crypto.randomUUID();
+                activeSupplementalJobs.set(jobId, { status: 'RUNNING', result: null, error: null });
 
-                // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
-                    .catch(e => console.error('[supplemental] chargeQuery failed:', e.message));
+                // Run fetch in the background
+                (async () => {
+                    try {
+                        const data = await foddaRequest('POST', '/v1/supplemental/context', apiKey, resolveUserId(userId, uid), body);
+                        
+                        // ── Query-level billing ──
+                        chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
+                            .catch(e => console.error('[supplemental] chargeQuery failed:', e.message));
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(data, null, 2) });
+                    } catch (err: any) {
+                        const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Unknown error';
+                        activeSupplementalJobs.set(jobId, { status: 'FAILED', error: errMsg });
+                    }
+                })();
+
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: `Supplemental data gathering started! The server is collecting context from up to 15 external sources in parallel. Job ID: ${jobId}\n\nIMPORTANT: You must use the check_supplemental_status tool with this Job ID to poll the status of the job and retrieve the data. Wait about 5-10 seconds before your first poll.`
+                    }]
+                };
             } catch (err: any) {
                 return await handleAccessError(err, 'supplemental');
             }
+        }
+    );
+
+    // --- check_supplemental_status ---
+    server.tool(
+        'check_supplemental_status',
+        'Check the status of a long-running supplemental data gathering job. If complete, this tool returns the full JSON data payload. You MUST poll this periodically until the status is COMPLETE or FAILED.',
+        {
+            job_id: z.string().describe('The Job ID returned by get_supplemental_context'),
+        },
+        { title: 'Check Supplemental Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ job_id }) => {
+            const job = activeSupplementalJobs.get(job_id);
+            if (!job) {
+                return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
+            }
+
+            if (job.status === 'RUNNING') {
+                return { content: [{ type: 'text' as const, text: `Job ${job_id} is still RUNNING. The server is waiting on external APIs. Please poll again in 5 seconds.` }] };
+            }
+
+            if (job.status === 'FAILED') {
+                activeSupplementalJobs.delete(job_id); // cleanup
+                return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
+            }
+
+            if (job.status === 'COMPLETE') {
+                activeSupplementalJobs.delete(job_id); // cleanup
+                return { content: [{ type: 'text' as const, text: job.result }] };
+            }
+
+            return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };
         }
     );
 
@@ -1673,7 +1674,7 @@ export async function createServer(
     // Searches ALL PSFK curated domain graphs in parallel. Returns trends + bundled evidence.
     server.tool(
         'get_domain_intelligence',
-        "Search PSFK curated domain graphs (retail, beauty, fashion, sports, etc.) for trend intelligence. Returns trends with bundled evidence categorized as statistics, case studies, analysis, and interviews. No graph ID needed — searches all relevant domain graphs in parallel. Use for broad industry trend research.",
+        "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked.",
         {
             query: z.string().describe("Natural language search query (e.g., 'sustainable packaging trends', 'Gen Z beauty habits')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -1703,7 +1704,7 @@ export async function createServer(
     // Searches ALL expert specialist graphs in parallel.
     server.tool(
         'get_expert_intelligence',
-        "Search expert specialist knowledge graphs for deep domain intelligence. Expert graphs contain curated insights from named strategists and industry leaders with high statistics density. Returns trends with bundled evidence. No graph ID needed. Use when you need specialist depth on a topic.",
+        "Search specialist knowledge graphs built by named strategists and industry leaders — contains proprietary analysis, expert interviews, and high-density statistics not available via web search. No graph ID needed — searches all expert graphs in parallel. Use when the query requires specialist depth, named-expert perspectives, or strategic frameworks beyond mainstream coverage. Expert graphs cover domains like macro strategy, wayfinding, design innovation, SXSW insights, and sector-specific research reports.",
         {
             query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'future of work')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -1733,7 +1734,7 @@ export async function createServer(
     // Searches ALL industry report graphs in parallel.
     server.tool(
         'get_report_intelligence',
-        "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections. Returns trends with bundled evidence. No graph ID needed. Use for market sizing, competitive landscape, and data-heavy research.",
+        "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Delta, and specialist research firms. Returns structured findings with bundled evidence — not raw PDFs or summaries, but editorially extracted trend data with source attribution. No graph ID needed. Use for market sizing, competitive landscape analysis, and data-heavy research where published report intelligence is more authoritative than web search results.",
         {
             query: z.string().describe("Natural language search query (e.g., 'luxury resale market size', 'electric vehicle adoption rates')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -1759,238 +1760,6 @@ export async function createServer(
         }
     );
 
-    // --- get_census_retail_snapshot ---
-    supplementalTool(
-        'get_census_retail_snapshot',
-        'Retrieve US retail sales data from the Census Bureau: total sales, sector breakdowns (e-commerce, clothing, food, electronics), and month-over-month trends. Source: US Census Bureau.',
-        {
-            year: z.number().int().optional().describe('Calendar year to query (default: current year)'),
-            include_subcategories: z.boolean().optional().describe('Include retail sector breakdowns (default: true)'),
-            include_time_series: z.boolean().optional().describe('Include monthly time series data (default: true)'),
-        },
-        'Query Retail Market Data',
-        ({ year, include_subcategories, include_time_series }: any) => {
-            const params = new URLSearchParams();
-            if (year !== undefined) params.set('year', String(year));
-            if (include_subcategories !== undefined) params.set('include_subcategories', String(include_subcategories));
-            if (include_time_series !== undefined) params.set('include_time_series', String(include_time_series));
-            const qs = params.toString();
-            return `/v1/supplemental/census/retail-snapshot${qs ? '?' + qs : ''}`;
-        }
-    );
-
-    // --- get_census_demographics_snapshot ---
-    supplementalTool(
-        'get_census_demographics_snapshot',
-        'Retrieve US demographic and economic data from the American Community Survey: population, income, education, housing by state or national. Source: US Census Bureau.',
-        {
-            state: z.string().optional().describe("US state abbreviation (e.g., 'CA', 'NY'). Omit for national data."),
-            category: z.string().optional().describe("Data category: 'population', 'income', 'education', 'housing', etc."),
-        },
-        'Query Demographics Data',
-        ({ state, category }: any) => {
-            const params = new URLSearchParams();
-            if (state !== undefined) params.set('state', state);
-            if (category !== undefined) params.set('category', category);
-            const qs = params.toString();
-            return `/v1/supplemental/census/demographics-snapshot${qs ? '?' + qs : ''}`;
-        }
-    );
-
-    // --- get_fred_economic_snapshot ---
-    supplementalTool(
-        'get_fred_economic_snapshot',
-        'Retrieve key economic indicators from FRED: CPI, unemployment, consumer sentiment, interest rates, savings rate. Use after search_graph to add macro context. Source: Federal Reserve Bank of St. Louis.',
-        {
-            categories: z.string().optional().describe("Category filter: 'consumer_spending', 'prices', 'employment', 'housing', etc."),
-        },
-        'Query Economic Indicators',
-        ({ categories }: any) => {
-            const params = new URLSearchParams();
-            if (categories !== undefined) params.set('categories', categories);
-            const qs = params.toString();
-            return `/v1/supplemental/fred/economic-snapshot${qs ? '?' + qs : ''}`;
-        }
-    );
-
-    // --- get_wikipedia_pageviews ---
-    supplementalTool(
-        'get_wikipedia_pageviews',
-        'Track cultural attention via Wikipedia pageview trends for brands, topics, or phenomena. Source: Wikimedia Foundation.',
-        {
-            articles: z.string().describe('Comma-separated Wikipedia article titles'),
-            period: z.string().optional().describe("Granularity: 'daily' or 'monthly'"),
-            start: z.string().optional().describe('Start date (YYYYMMDD)'),
-            end: z.string().optional().describe('End date (YYYYMMDD)'),
-        },
-        'Query Cultural Attention Data',
-        ({ articles, period, start, end }: any) => {
-            const params = new URLSearchParams();
-            params.set('articles', articles);
-            if (period !== undefined) params.set('period', period);
-            if (start !== undefined) params.set('start', start);
-            if (end !== undefined) params.set('end', end);
-            return `/v1/supplemental/wikipedia/pageviews?${params.toString()}`;
-        }
-    );
-
-    // --- get_worldbank_global_snapshot ---
-    supplementalTool(
-        'get_worldbank_global_snapshot',
-        'Retrieve global economic indicators across 189 countries: GDP, trade, demographics. Primary source for non-US economic data. Source: World Bank.',
-        {
-            countries: z.string().optional().describe("Comma-separated ISO country codes (e.g., 'US,GB,JP')"),
-            categories: z.string().optional().describe("Category filter: 'gdp', 'trade', 'demographics', etc."),
-        },
-        'Query Global Economic Data',
-        ({ countries, categories }: any) => {
-            const params = new URLSearchParams();
-            if (countries !== undefined) params.set('countries', countries);
-            if (categories !== undefined) params.set('categories', categories);
-            const qs = params.toString();
-            return `/v1/supplemental/worldbank/global-snapshot${qs ? '?' + qs : ''}`;
-        }
-    );
-
-    // --- get_fda_ingredient_safety ---
-    supplementalTool(
-        'get_fda_ingredient_safety',
-        'Check FDA adverse event reports for beauty/wellness ingredients. Source: openFDA.',
-        {
-            ingredients: z.string().describe("Comma-separated ingredient names (e.g., 'retinol,salicylic acid')"),
-        },
-        'Query Ingredient Safety Data',
-        ({ ingredients }: any) => `/v1/supplemental/fda/ingredient-safety?ingredients=${encodeURIComponent(ingredients)}`
-    );
-
-    // --- get_fda_recalls ---
-    supplementalTool(
-        'get_fda_recalls',
-        'Search recent FDA product recalls. Source: openFDA.',
-        {
-            search: z.string().describe('Search term for recalls'),
-            limit: z.number().int().optional().describe('Max results to return (default 10)'),
-        },
-        'Query Product Recall Data',
-        ({ search, limit }: any) => {
-            const params = new URLSearchParams();
-            params.set('search', search);
-            if (limit !== undefined) params.set('limit', String(limit));
-            return `/v1/supplemental/fda/recalls?${params.toString()}`;
-        }
-    );
-
-    // --- get_clinical_trials ---
-    supplementalTool(
-        'get_clinical_trials',
-        'Search active and completed clinical trials for any intervention or condition. Source: ClinicalTrials.gov / NIH.',
-        {
-            term: z.string().describe("Search term (e.g., 'hyaluronic acid')"),
-            status: z.string().optional().describe("Trial status: 'RECRUITING', 'COMPLETED', etc."),
-            limit: z.number().int().optional().describe('Max results to return (default 10)'),
-        },
-        'Query Clinical Research Data',
-        ({ term, status, limit }: any) => {
-            const params = new URLSearchParams();
-            params.set('term', term);
-            if (status !== undefined) params.set('status', status);
-            if (limit !== undefined) params.set('limit', String(limit));
-            return `/v1/supplemental/clinical-trials/search?${params.toString()}`;
-        }
-    );
-
-    // --- get_bls_economic_snapshot ---
-    supplementalTool(
-        'get_bls_economic_snapshot',
-        'Retrieve CPI, employment, and wage data from BLS: CPI (all items, apparel, food), employment, wages, productivity. Source: US Bureau of Labor Statistics.',
-        {
-            categories: z.string().optional().describe("Category filter: 'prices', 'employment', 'wages'"),
-        },
-        'Query Labor Market Data',
-        ({ categories }: any) => {
-            const params = new URLSearchParams();
-            if (categories !== undefined) params.set('categories', categories);
-            const qs = params.toString();
-            return `/v1/supplemental/bls/economic-snapshot${qs ? '?' + qs : ''}`;
-        }
-    );
-
-    // --- get_bea_spending_snapshot ---
-    supplementalTool(
-        'get_bea_spending_snapshot',
-        'Retrieve Personal Consumption Expenditure breakdowns from BEA: clothing, food, housing, healthcare, recreation, transportation. Use after search_graph for spending context. Source: US BEA.',
-        {
-            frequency: z.string().optional().describe("Data frequency: 'Q' (quarterly) or 'A' (annual)"),
-            years: z.string().optional().describe("Year(s) to query (e.g., '2024' or '2022,2023,2024')"),
-            categories: z.string().optional().describe("Category filter: 'total', 'goods', 'services', 'consumer', 'health'"),
-        },
-        'Query Consumer Spending Data',
-        ({ frequency, years, categories }: any) => {
-            const params = new URLSearchParams();
-            if (frequency !== undefined) params.set('frequency', frequency);
-            if (years !== undefined) params.set('years', years);
-            if (categories !== undefined) params.set('categories', categories);
-            const qs = params.toString();
-            return `/v1/supplemental/bea/spending-snapshot${qs ? '?' + qs : ''}`;
-        }
-    );
-
-    // --- get_cdc_health_data ---
-    supplementalTool(
-        'get_cdc_health_data',
-        'Retrieve health behavior and chronic disease data from the CDC BRFSS survey. Source: Centers for Disease Control and Prevention.',
-        {
-            topic: z.string().describe("Health topic (e.g., 'Depression', 'Asthma', 'BMI Categories')"),
-            location: z.string().optional().describe('Optional 2-letter US state code'),
-            limit: z.number().int().optional().describe('Max results to return (default 10)'),
-        },
-        'Query Public Health Data',
-        ({ topic, location, limit }: any) => {
-            const params = new URLSearchParams();
-            params.set('topic', topic);
-            if (location !== undefined) params.set('location', location);
-            if (limit !== undefined) params.set('limit', String(limit));
-            return `/v1/supplemental/cdc/health-data?${params.toString()}`;
-        }
-    );
-
-    // --- get_pubmed_research_trends ---
-    supplementalTool(
-        'get_pubmed_research_trends',
-        'Track scientific publication trends for ingredients or health topics. Year-by-year counts and recent articles. Source: PubMed / NCBI.',
-        {
-            term: z.string().describe("Search term (e.g., 'retinol skin', 'CBD anxiety')"),
-            years: z.number().int().optional().describe('Number of years of history (default 10)'),
-            recent: z.number().int().optional().describe('Number of recent articles to return (default 5)'),
-        },
-        'Query Medical Research Data',
-        ({ term, years, recent }: any) => {
-            const params = new URLSearchParams();
-            params.set('term', term);
-            if (years !== undefined) params.set('years', String(years));
-            if (recent !== undefined) params.set('recent', String(recent));
-            return `/v1/supplemental/pubmed/research-trends?${params.toString()}`;
-        }
-    );
-
-    // --- get_openalex_research_trends ---
-    supplementalTool(
-        'get_openalex_research_trends',
-        'Track academic publication trends across ALL scholarly domains (250M+ works). Returns year-by-year publication counts, trend direction, top-cited papers with citation counts, and dominant research topics with a 4-level hierarchy (domain → field → subfield → topic). Covers retail, marketing, culture, media, sports, technology, AI, sustainability — everything PubMed does NOT cover. For biomedical/ingredient topics, prefer get_pubmed_research_trends. For everything else, use this. Source: OpenAlex.',
-        {
-            term: z.string().describe("Search query (e.g., 'experiential retail', 'creator economy', 'generative AI', 'PDRN skincare')"),
-            years: z.number().int().optional().describe('Number of years of trend data (default 10, max 20)'),
-            top_papers: z.number().int().optional().describe('Number of top-cited papers to return (default 5, max 10)'),
-        },
-        'Query Academic Research Data',
-        ({ term, years, top_papers }: any) => {
-            const params = new URLSearchParams();
-            params.set('term', term);
-            if (years !== undefined) params.set('years', String(Math.min(years, 20)));
-            if (top_papers !== undefined) params.set('top_papers', String(Math.min(top_papers, 10)));
-            return `/v1/supplemental/openalex/research-trends?${params.toString()}`;
-        }
-    );
 
     // --- search_statistics ---
     server.tool(
@@ -2028,7 +1797,7 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        'Search for expert quotes, interpretations, and qualitative evidence across Fodda knowledge graphs. Works on ALL graphs — PSFK curated graphs AND expert graphs. Expert graphs contain rich interview, analysis, and statistical evidence from specialist reports.',
+        'Search for expert quotes, editorial interpretations, and qualitative evidence across knowledge graphs. Returns categorized evidence (metric, quote, interpretation, signal) with source attribution and parent trend context. Works on ALL graphs. Use when you need named-expert voices, strategic framing, or analytical perspectives on a topic — the kind of curated qualitative intelligence that web search cannot surface because it lives inside structured knowledge graphs, not on public web pages.',
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
@@ -2055,22 +1824,6 @@ export async function createServer(
         }
     );
 
-    // --- Remaining supplemental tools ---
-    supplementalTool('get_wto_trade_snapshot', 'Retrieve international trade data from WTO: merchandise volumes, services trade, and tariff rates across 160+ economies. Supports country groups (major, g7, brics, etc.) or custom codes. Source: WTO.', { countries: z.string().optional().describe("Country group key OR comma-separated WTO numeric codes. Groups: 'major' (US, China, Germany, UK, Japan, France, India, Brazil, S. Korea, Australia), 'g7', 'brics', 'eu_big4', 'asia_pac', 'english', 'nordic'. Custom codes: e.g., '840,156,826' for US, China, UK. Default: 'major'."), categories: z.string().optional().describe("Comma-separated trade categories: 'merchandise', 'services', 'tariffs'. Default: all categories."), years: z.number().int().optional().describe('Years of history to include (max 10). Default: 5.') }, 'Query International Trade Data', ({ countries, categories, years }: any) => { const params = new URLSearchParams(); if (countries !== undefined) params.set('countries', countries); if (categories !== undefined) params.set('categories', categories); if (years !== undefined) params.set('years', String(Math.min(years, 10))); const qs = params.toString(); return `/v1/supplemental/wto/trade-snapshot${qs ? '?' + qs : ''}`; });
-
-    supplementalTool('get_pew_survey_data', 'Retrieve behavioral and attitudinal survey data from the Pew Research Center\'s NPORS 2025 study. Covers social media usage, technology adoption, news consumption, trust, and AI attitudes — segmented by demographics. Source: Pew Research Center.', { topic: z.string().describe("Topic to query (e.g., 'tiktok', 'social media', 'streaming', 'AI')"), segment_type: z.string().optional().describe("Optional demographic segment: 'AGEGRP', 'INCOME', 'EDUC', 'RACE', 'SEX', 'PARTY'"), limit: z.number().int().optional().describe('Max results to return (default 5)') }, 'Query Survey & Attitudes Data', ({ topic, segment_type, limit }: any) => { const params = new URLSearchParams(); params.set('topic', topic); if (segment_type !== undefined) params.set('segment_type', segment_type); if (limit !== undefined) params.set('limit', String(limit)); return `/v1/supplemental/pew/survey-data?${params.toString()}`; });
-
-    supplementalTool('get_openfoodfacts_snapshot', 'Search the Open Food Facts crowdsourced product database for ingredient composition, additive prevalence, NOVA ultra-processing levels, and brand distribution. Shows what ingredients and additives are actually in products on the market. Source: Open Food Facts.', { query: z.string().describe("Product search term (e.g., 'protein bar', 'collagen', 'oat milk')"), country: z.string().optional().describe("Optional country code (e.g., 'us', 'fr', 'gb')"), limit: z.number().int().optional().describe('Max results to return (default 5)') }, 'Query Product Composition Data', ({ query, country, limit }: any) => { const params = new URLSearchParams(); params.set('query', query); if (country !== undefined) params.set('country', country); if (limit !== undefined) params.set('limit', String(limit)); return `/v1/supplemental/openfoodfacts?${params.toString()}`; }, { idempotent: false });
-
-    supplementalTool('get_ridb_recreation_snapshot', 'Search US federal recreation facilities and areas — trails, campgrounds, parks — from the Recreation Information Database (RIDB). Shows where outdoor recreation infrastructure exists. US federal recreation lands only (NPS, USFS, BLM, Army Corps). Source: Recreation.gov (US Federal Government).', { query: z.string().describe("Activity or facility type (e.g., 'hiking', 'kayaking', 'camping')"), state: z.string().optional().describe("Optional 2-letter US state code (e.g., 'CO', 'CA')"), limit: z.number().int().optional().describe('Max results to return (default 10)') }, 'Query Recreation Infrastructure', ({ query, state, limit }: any) => { const params = new URLSearchParams(); params.set('query', query); if (state !== undefined) params.set('state', state); if (limit !== undefined) params.set('limit', String(limit)); return `/v1/supplemental/ridb?${params.toString()}`; }, { idempotent: false });
-
-    supplementalTool('get_osm_commerce_snapshot', 'Search global retail and commercial location data from OpenStreetMap. Shows store density, retail presence, and infrastructure distribution. Supports 35+ retail categories across 180+ countries. Crowdsourced data — indicates presence, not performance. Source: OpenStreetMap / Overpass API.', { query: z.string().describe("Retail category (e.g., 'supermarket', 'pharmacy', 'cafe', 'gym', 'clothing')"), location: z.string().optional().describe("Optional city name (e.g., 'New York', 'London', 'Tokyo')"), limit: z.number().int().optional().describe('Max results to return (default 20)') }, 'Query Retail Infrastructure', ({ query, location, limit }: any) => { const params = new URLSearchParams(); params.set('query', query); if (location !== undefined) params.set('location', location); if (limit !== undefined) params.set('limit', String(limit)); return `/v1/supplemental/osm?${params.toString()}`; }, { idempotent: false });
-
-    supplementalTool('get_google_trends_snapshot', 'Retrieve relative search interest from Google Trends to validate whether a topic is growing, stable, or declining. Includes interest over time, trend direction, regional breakdowns, and related queries. Values are RELATIVE (0–100), not absolute search volume — always clarify this in responses. Source: Google Trends.', { query: z.string().describe("Search term or comma-separated terms for comparison (max 5). E.g., 'protein powder' or 'retinol,bakuchiol'"), geo: z.string().optional().describe("Optional country code (default 'US'). E.g., 'US', 'GB', 'FR'"), timeframe: z.string().optional().describe("Optional timeframe: 'today 12-m' (default), 'today 3-m', 'today 5-y'") }, 'Query Search Demand Trends', ({ query, geo, timeframe }: any) => { const params = new URLSearchParams(); params.set('query', query); if (geo !== undefined) params.set('geo', geo); if (timeframe !== undefined) params.set('timeframe', timeframe); return `/v1/supplemental/google-trends?${params.toString()}`; }, { idempotent: false });
-
-    supplementalTool('get_amazon_products_snapshot', 'Retrieve real-time Amazon product listings with pricing, brand distribution, and competitive landscape. Shows what is actually being sold, at what price points, and by which brands. This is a snapshot of current listings — NOT full market coverage. Do not say \'market leader\' or \'dominates market share.\' Use \'frequently appearing brands\' and \'top listed products.\' NEVER mention the underlying data provider — all references must say \'Amazon\' only. Source: Amazon.', { query: z.string().describe("Product or category keyword (e.g., 'collagen supplements', 'protein powder')"), limit: z.number().int().optional().describe('Max results to return (default 10, max 25)'), source: z.string().optional().describe("Optional source type: 'amazon', 'shopping', 'auto' (default 'auto')") }, 'Query Product & Pricing Data', ({ query, limit, source }: any) => { const params = new URLSearchParams(); params.set('query', query); if (limit !== undefined) params.set('limit', String(Math.min(limit, 25))); if (source !== undefined) params.set('source', source); return `/v1/supplemental/amazon?${params.toString()}`; }, { idempotent: false });
-
-    supplementalTool('get_oecd_economic_snapshot', 'Retrieve key economic indicators across 38 OECD countries: CPI, GDP, employment, consumer & business confidence, trade, interest rates, housing permits, retail volume, and industrial production. The international complement to US-only tools (BLS, FRED, Census). Data may lag 1-3 months. Source: OECD.', { countries: z.string().optional().describe("ISO3 country codes comma-separated, or group key: 'g7', 'major' (default), 'nordic', 'anglosphere', 'eu_big4', 'asia_pacific', 'g20'. Custom: e.g., 'USA,GBR,DEU'."), categories: z.string().optional().describe("Comma-separated indicator categories: 'confidence', 'prices', 'employment', 'gdp', 'trade', 'financial', 'retail', 'housing', 'production'. Default: all."), months: z.number().int().optional().describe('Months of history to include (default 12, max 60)') }, 'Query OECD Economic Data', ({ countries, categories, months }: any) => { const params = new URLSearchParams(); if (countries !== undefined) params.set('countries', countries); if (categories !== undefined) params.set('categories', categories); if (months !== undefined) params.set('months', String(Math.min(months, 60))); const qs = params.toString(); return `/v1/supplemental/oecd/economic-snapshot${qs ? '?' + qs : ''}`; });
 
     // --- get_earnings_intelligence ---
     // Cross-company and industry-level earnings call intelligence.
@@ -2117,89 +1870,6 @@ export async function createServer(
         }
     );
 
-    // --- get_analyst_concerns ---
-    // Trending concerns that analysts are probing in earnings Q&A sessions.
-    supplementalTool(
-        'get_analyst_concerns',
-        'Retrieve trending analyst concerns from earnings call Q&A sessions. Shows what risks and issues analysts are probing across companies, with frequency counts and quarter-over-quarter changes. Use for "what are analysts worried about in [industry]?" queries. Results include concern themes, frequency, QoQ delta, and top companies. For 3+ companies, use the ANALYST GRID FORMAT. Source: Fodda Earnings Intelligence.',
-        {
-            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
-            industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
-            search: z.string().optional().describe("Free text search in concern themes (e.g., 'tariffs', 'margin erosion', 'AI cannibalization')"),
-            dateFrom: z.string().optional().describe("ISO date range start (e.g., '2025-01-01')"),
-            dateTo: z.string().optional().describe("ISO date range end (e.g., '2026-06-01')"),
-            limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-        },
-        'Query Analyst Concerns',
-        ({ sector, industry, search, dateFrom, dateTo, limit }: any) => {
-            const params = new URLSearchParams();
-            if (sector) params.set('sector', sector);
-            if (industry) params.set('industry', industry);
-            if (search) params.set('search', search);
-            if (dateFrom) params.set('dateFrom', dateFrom);
-            if (dateTo) params.set('dateTo', dateTo);
-            if (limit !== undefined) params.set('limit', String(Math.min(limit, 50)));
-            const qs = params.toString();
-            return `/v1/supplemental/earnings/analyst-concerns${qs ? '?' + qs : ''}`;
-        },
-        { idempotent: false }
-    );
-
-    // --- get_analyst_question_themes ---
-    // Thematic patterns in what analysts are asking about across earnings calls.
-    supplementalTool(
-        'get_analyst_question_themes',
-        'Retrieve thematic trends in analyst questions from earnings call Q&A sessions. Shows recurring question patterns across companies and quarters. Use for "what are analysts asking about in [industry]?" queries. Source: Fodda Earnings Intelligence.',
-        {
-            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
-            industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
-            search: z.string().optional().describe("Free text search in question themes"),
-            dateFrom: z.string().optional().describe("ISO date range start"),
-            dateTo: z.string().optional().describe("ISO date range end"),
-            limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-        },
-        'Query Analyst Question Themes',
-        ({ sector, industry, search, dateFrom, dateTo, limit }: any) => {
-            const params = new URLSearchParams();
-            if (sector) params.set('sector', sector);
-            if (industry) params.set('industry', industry);
-            if (search) params.set('search', search);
-            if (dateFrom) params.set('dateFrom', dateFrom);
-            if (dateTo) params.set('dateTo', dateTo);
-            if (limit !== undefined) params.set('limit', String(Math.min(limit, 50)));
-            const qs = params.toString();
-            return `/v1/supplemental/earnings/question-themes${qs ? '?' + qs : ''}`;
-        },
-        { idempotent: false }
-    );
-
-    // --- get_management_response_themes ---
-    // How executives frame their answers to analyst questions.
-    supplementalTool(
-        'get_management_response_themes',
-        'Retrieve thematic patterns in how management teams respond to analyst questions during earnings calls. Shows executive framing strategies and narrative themes. Use for "how is management responding to [concern]?" queries. Source: Fodda Earnings Intelligence.',
-        {
-            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
-            industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
-            search: z.string().optional().describe("Free text search in response themes (e.g., 'AI optimization', 'pricing power')"),
-            dateFrom: z.string().optional().describe("ISO date range start"),
-            dateTo: z.string().optional().describe("ISO date range end"),
-            limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-        },
-        'Query Management Response Themes',
-        ({ sector, industry, search, dateFrom, dateTo, limit }: any) => {
-            const params = new URLSearchParams();
-            if (sector) params.set('sector', sector);
-            if (industry) params.set('industry', industry);
-            if (search) params.set('search', search);
-            if (dateFrom) params.set('dateFrom', dateFrom);
-            if (dateTo) params.set('dateTo', dateTo);
-            if (limit !== undefined) params.set('limit', String(Math.min(limit, 50)));
-            const qs = params.toString();
-            return `/v1/supplemental/earnings/management-themes${qs ? '?' + qs : ''}`;
-        },
-        { idempotent: false }
-    );
 
     // --- get_earnings_divergence ---
     // Gaps between what analysts are concerned about and how management responds.
@@ -2290,6 +1960,49 @@ export async function createServer(
                         text: JSON.stringify({
                             status: 'ERROR',
                             message: 'Could not save profile right now. I\'ll use this context for the current session.',
+                            error: msg,
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    // --- toggle_graph_preference ---
+    server.tool(
+        'toggle_graph_preference',
+        'Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says "Turn off Paralogy", "Enable igloo", "Disable the economics data", or similar. The change is permanent until toggled again.',
+        {
+            target_id: z.string().describe('The ID of the graph, skill, or data source to toggle (e.g., "paralogy", "igloo", "retail", "get_bea_spending_snapshot"). Use the exact ID from list_graphs.'),
+            enabled: z.boolean().describe('true to enable (turn on), false to disable (turn off).'),
+            user_email: z.string().optional().describe('Optional. Use ONLY when operating as an Admin on behalf of another user to specify their email.')
+        },
+        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ target_id, enabled, user_email }) => {
+            try {
+                const body: any = { target_id, enabled };
+                if (user_email) body.user_email = user_email;
+                
+                const result = await foddaRequest('POST', '/v1/user/preferences/toggle', apiKey, userId, body);
+                
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            status: 'SUCCESS',
+                            message: `Successfully ${enabled ? 'enabled' : 'disabled'} ${target_id}.`,
+                            disabled_graphs: result.disabled_graphs || [],
+                        }, null, 2)
+                    }]
+                };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            status: 'ERROR',
+                            message: `Failed to ${enabled ? 'enable' : 'disable'} ${target_id}.`,
                             error: msg,
                         }, null, 2)
                     }]
@@ -2730,34 +2443,44 @@ export async function createServer(
     // --- manage_scheduled_reports ---
     server.tool(
         'manage_scheduled_reports',
-        'Create, list, or cancel scheduled weekly research reports. Users can set up autonomous research that runs on a schedule and delivers results via email or Slack. Costs 20 API calls per run. Use "create" to set up a new schedule, "list" to show active schedules, or "cancel" to stop one.',
+        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Costs 20 API calls per run. Supports topic research or brand intelligence report types.',
         {
-            action: z.enum(['create', 'list', 'cancel']).describe('The action to perform'),
-            query: z.string().optional().describe('For "create": the research query to run weekly'),
-            frequency: z.enum(['weekly', 'biweekly', 'monthly']).optional().describe('How often to run. Default: weekly'),
-            day_of_week: z.string().optional().describe('Day to run on. Default: monday'),
+            action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']),
+            query: z.string().optional().describe('For "create": the research query to run'),
             email: z.string().optional().describe('Email address to deliver reports to'),
             slack_webhook: z.string().optional().describe('Optional Slack webhook URL for delivery'),
             graphs: z.array(z.string()).optional().describe('Specific graph IDs to search. Default: all accessible'),
-            schedule_id: z.string().optional().describe('For "cancel": the schedule ID to cancel'),
+            schedule_id: z.string().optional().describe('For cancel/update/pause/resume: the schedule ID'),
+            cadence: z.enum(['weekly', 'daily']).optional()
+                .describe('weekly or daily (Mon-Fri). Default: weekly'),
+            timezone: z.enum(['london', 'new_york', 'san_francisco', 'sydney']).optional()
+                .describe('Delivery timezone for 9am delivery. Default: new_york'),
+            report_type: z.enum(['topic_research', 'brand_intelligence']).optional()
+                .describe('topic_research for sector trends, brand_intelligence for competitive tracking'),
+            brands: z.array(z.string()).optional()
+                .describe('For brand_intelligence: brand names to track (e.g., ["Nike", "Patagonia"])'),
         },
         { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ action, query, frequency, day_of_week, email, slack_webhook, graphs, schedule_id }) => {
+        async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
             try {
                 if (action === 'create') {
                     if (!query) return { isError: true, content: [{ type: 'text' as const, text: 'A research query is required to create a schedule.' }] };
                     if (!email) return { isError: true, content: [{ type: 'text' as const, text: 'An email address is required for report delivery.' }] };
+                    const day_of_week = cadence === 'daily' ? 'weekdays' : 'monday';
                     const body = {
                         query,
-                        frequency: frequency || 'weekly',
-                        day_of_week: day_of_week || 'monday',
+                        cadence: cadence || 'weekly',
+                        day_of_week,
+                        hour_utc: 9,  // Always 9am local
+                        timezone: timezone || 'new_york',
+                        report_type: report_type || 'topic_research',
+                        brands: brands || [],
                         graphs: graphs || [],
                         delivery: { email, slack_webhook, format: 'markdown' },
-                        tokens_per_run: 20,
-                        max_runs: 52,
+                        name: query.substring(0, 80),
                     };
                     const result = await foddaRequest('POST', '/v1/research/schedules', apiKey, resolveUserId('', ''), body);
-                    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + '\n\n✅ Schedule created! Your first report will arrive within 24 hours as a preview.' }] };
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + '\n\n✅ Briefing created! Your first report will arrive within 24 hours as a preview.' }] };
                 } else if (action === 'list') {
                     const result = await foddaRequest('GET', '/v1/research/schedules', apiKey, resolveUserId('', ''));
                     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
@@ -2765,6 +2488,24 @@ export async function createServer(
                     if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to cancel.' }] };
                     const result = await foddaRequest('POST', `/v1/research/schedules/${encodeURIComponent(schedule_id)}/cancel`, apiKey, resolveUserId('', ''), {});
                     return { content: [{ type: 'text' as const, text: '✅ Schedule cancelled. Already-consumed API calls are not refunded.' }] };
+                } else if (action === 'pause') {
+                    if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to pause.' }] };
+                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, resolveUserId('', ''), { status: 'paused' });
+                    return { content: [{ type: 'text' as const, text: '⏸️ Briefing paused. Say "resume my briefing" to restart.' }] };
+                } else if (action === 'resume') {
+                    if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to resume.' }] };
+                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, resolveUserId('', ''), { status: 'active' });
+                    return { content: [{ type: 'text' as const, text: `✅ Briefing resumed! Next delivery: ${result.next_run}` }] };
+                } else if (action === 'update') {
+                    if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to update.' }] };
+                    const body: any = {};
+                    if (cadence) body.cadence = cadence;
+                    if (timezone) body.timezone = timezone;
+                    if (email) body.delivery = { email };
+                    if (brands) body.brands = brands;
+                    if (report_type) body.report_type = report_type;
+                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, resolveUserId('', ''), body);
+                    return { content: [{ type: 'text' as const, text: `✅ Briefing updated: ${result.changes.join(', ')}. Next delivery: ${result.next_run}` }] };
                 }
                 return { isError: true, content: [{ type: 'text' as const, text: 'Unknown action.' }] };
             } catch (err: any) {
@@ -2839,7 +2580,7 @@ export async function createServer(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Launch an autonomous Deep Research session on a topic. The Fodda Research Agent will search multiple knowledge graphs, Google, and external URLs to produce a comprehensive editorial-quality research report. Use for complex, multi-faceted research questions. Depth: "light" (20 API calls, faster) or "heavy" (30 API calls, comprehensive multi-pass).',
+        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: "light" (20 API calls, faster single-pass) or "heavy" (30 API calls, comprehensive multi-pass with validation).',
         {
             query: z.string().describe('The research query/topic'),
             graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
@@ -2852,7 +2593,7 @@ export async function createServer(
             const isHeavy = depth === 'heavy';
             const tokenCost = isHeavy ? 3 : 2; // Waverunner trial pool tokens
             const queryTypeCode = isHeavy ? 'deep_research_heavy' : 'deep_research_light';
-            const maxGraphs = isHeavy ? 6 : 4;
+            const maxGraphs = isHeavy ? 15 : 8;
             const startTime = Date.now();
 
             try {
@@ -2880,7 +2621,9 @@ export async function createServer(
                     try {
                         const searchBody = { query, limit: isHeavy ? 10 : 5, use_semantic: true, include_evidence: true };
                         const res = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(gid)}/search`, apiKey, resolvedUserId, searchBody);
-                        return { graphId: gid, rows: res?.rows || [], evidence: res?.evidence || [] };
+                        const rows = res?.rows || [];
+                        const evidence = rows.flatMap((r: any) => r.evidence || []);
+                        return { graphId: gid, rows, evidence };
                     } catch {
                         return { graphId: gid, rows: [], evidence: [] };
                     }
@@ -2918,14 +2661,21 @@ export async function createServer(
                     graphResults: JSON.stringify(graphResults.map(g => ({
                         graph_id: g.graphId,
                         trends: g.rows.map((r: any) => ({
-                            name: r.title || r.trendName,
-                            summary: r.summary || r.description,
+                            name: String(r.title || r.trendName || '').substring(0, 150),
+                            summary: String(r.summary || r.description || '').substring(0, 600),
                             signal_score: r.signal_score || r.score,
                             lifecycle: r.trendLifecycle || r.lifecycle,
+                            evidence: (r.evidence || []).slice(0, 3).map((e: any) => ({
+                                title: String(e.title || '').substring(0, 150),
+                                snippet: String(e.snippet || e.summary || '').substring(0, 400),
+                                source_url: e.sourceUrl || e.url,
+                                category: e.category || e.type,
+                            }))
                         })),
-                        evidence: g.evidence.slice(0, isHeavy ? 15 : 8).map((e: any) => ({
-                            title: e.title,
-                            snippet: e.snippet || e.summary,
+                        // Top-level evidence sample for cross-trend validation
+                        evidence: g.evidence.slice(0, isHeavy ? 10 : 5).map((e: any) => ({
+                            title: String(e.title || '').substring(0, 150),
+                            snippet: String(e.snippet || e.summary || '').substring(0, 400),
                             source_url: e.sourceUrl || e.url,
                             category: e.category || e.type,
                             brand: e.brandNames?.[0] || e.brand,
@@ -2944,115 +2694,178 @@ export async function createServer(
                 // Without a timeout, a stuck Gemini call hangs the MCP tool response
                 // indefinitely — the user sees silence until their client times out.
                 const geminiModel = isHeavy ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
-                const RESEARCH_TIMEOUT_MS = isHeavy ? 10 * 60 * 1000 : 5 * 60 * 1000; // 10min heavy, 5min light
 
-                const geminiPromise = waverunnerRequest(
-                    'deep_dive',
-                    tokenCost,
-                    apiKey,
-                    resolvedUserId,
-                    {
-                        model: geminiModel,
-                        systemInstruction,
-                        input: [
-                            {
-                                type: 'text',
-                                text: `Research query: ${query}\n\nProduce a comprehensive research report following the skills in your system instruction. Use Google Search to find additional context beyond the pre-loaded graph data. Write in editorial narrative style — like a senior strategist briefing a CMO.`,
-                            },
-                        ],
-                        tools: [
-                            { type: 'google_search' },
-                            { type: 'url_context' },
-                        ],
+                // Build the Interactions API payload.
+                // SDK type: BaseCreateModelInteractionParams supports system_instruction
+                // (snake_case) as a top-level parameter alongside model, input, tools.
+                const interactionPayload = {
+                    model: geminiModel,
+                    system_instruction: systemInstruction,
+                    input: [
+                        {
+                            type: 'text',
+                            text: `Research query: ${query}\n\nProduce a comprehensive research report following the skills in your system instruction. Write in editorial narrative style — like a senior strategist briefing a CMO. IMPORTANT: At the end of the report, you MUST include a "## Sources" section listing all the source URLs you used from the provided context.`,
+                        },
+                    ],
+                    tools: [
+                        { type: 'google_search' as const },
+                        { type: 'url_context' as const },
+                    ],
+                };
+
+                const jobId = crypto.randomUUID();
+                activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null });
+
+                // Run research in the background to avoid Claude Web timeout
+                (async () => {
+                    try {
+                        let geminiPromise = waverunnerRequest(
+                            'deep_dive', tokenCost, apiKey, resolvedUserId, interactionPayload
+                        );
+
+                        let result: any;
+                        try {
+                            result = await geminiPromise;
+                        } catch (primaryErr: any) {
+                            const errMsg = primaryErr?.response?.data?.error?.message || primaryErr?.message || '';
+                            const isCapacity = errMsg.includes('high demand') || errMsg.includes('overloaded') || errMsg.includes('503');
+                            if (isCapacity && geminiModel !== 'gemini-2.5-flash') {
+                                console.error(`[deep_research_topic] ${geminiModel} capacity error — retrying with gemini-2.5-flash`);
+                                interactionPayload.model = 'gemini-2.5-flash';
+                                geminiPromise = waverunnerRequest(
+                                    'deep_dive', tokenCost, apiKey, resolvedUserId, interactionPayload
+                                );
+                                result = await geminiPromise;
+                            } else {
+                                throw primaryErr;
+                            }
+                        }
+
+                        // Extract text from Gemini response
+                        const outputs = result?.outputs || [];
+                        const textParts = outputs
+                            .filter((o: any) => o.type === 'text')
+                            .map((o: any) => o.text);
+                        let reportText = textParts.join('\n\n');
+
+                        // Extract URLs
+                        const seenUrls = new Set<string>();
+                        const sourceUrls: { title: string; url: string }[] = [];
+
+                        for (const output of outputs) {
+                            if (output.type === 'text' && Array.isArray(output.annotations)) {
+                                for (const ann of output.annotations) {
+                                    if (ann.type === 'url_citation' && ann.url && !seenUrls.has(ann.url)) {
+                                        if (ann.url.includes('vertexaisearch.cloud.google.com')) continue;
+                                        seenUrls.add(ann.url);
+                                        sourceUrls.push({ title: ann.title || '', url: ann.url });
+                                    }
+                                }
+                            }
+                            if (output.type === 'url_context_result' && Array.isArray(output.result)) {
+                                for (const ctx of output.result) {
+                                    if (ctx.url && ctx.status === 'success' && !seenUrls.has(ctx.url)) {
+                                        seenUrls.add(ctx.url);
+                                        sourceUrls.push({ title: '', url: ctx.url });
+                                    }
+                                }
+                            }
+                        }
+
+                        const groundingChunks = result?.groundingMetadata?.groundingChunks || [];
+                        for (const chunk of groundingChunks) {
+                            if (chunk?.web?.uri && !seenUrls.has(chunk.web.uri)) {
+                                seenUrls.add(chunk.web.uri);
+                                sourceUrls.push({ title: chunk.web.title || '', url: chunk.web.uri });
+                            }
+                        }
+
+                        if (sourceUrls.length > 0) {
+                            reportText += '\n\n## Sources\n' + sourceUrls.map(s =>
+                                s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`
+                            ).join('\n');
+                        }
+
+                        if (!reportText) {
+                            activeResearchJobs.set(jobId, { status: 'FAILED', error: 'Research agent returned no output.' });
+                            return;
+                        }
+
+                        const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+                        
+                        chargeQuery({
+                            queryTypeCode,
+                            apiKey,
+                            userId: resolvedUserId,
+                            query,
+                            graphsSearched: graphIds,
+                            foddaRequest,
+                        }).catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
+
+                        const header = [
+                            `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed • ${durationSec}s_`,
+                            '',
+                        ].join('\n');
+
+                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result: header + reportText });
+
+                    } catch (err: any) {
+                        const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                        activeResearchJobs.set(jobId, { status: 'FAILED', error: msg });
                     }
-                );
+                })();
 
-                const timeoutPromise = new Promise<never>((_, reject) => {
-                    setTimeout(() => {
-                        const mins = RESEARCH_TIMEOUT_MS / 60000;
-                        reject(new Error(
-                            `Research timed out after ${mins} minutes. The query may be too broad — try narrowing the topic or using depth="light".`
-                        ));
-                    }, RESEARCH_TIMEOUT_MS);
-                });
-
-                const result = await Promise.race([geminiPromise, timeoutPromise]);
-
-                // ── Phase 4: Synthesize ──
-                await server.sendLoggingMessage({
-                    level: 'info',
-                    data: `✍️ Phase 4/5: Synthesizing findings into report...`,
-                });
-
-                // Extract text from Gemini response
-                const outputs = result?.outputs || [];
-                const textParts = outputs
-                    .filter((o: any) => o.type === 'text')
-                    .map((o: any) => o.text);
-                const reportText = textParts.join('\n\n');
-
-                if (!reportText) {
-                    console.error('[deep_research_topic] No text output from Gemini agent');
-                    return {
-                        isError: true,
-                        content: [{
-                            type: 'text' as const,
-                            text: JSON.stringify({
-                                error: 'Research agent returned no output. The query may be too niche or the model may have timed out.',
-                                graphs_searched: graphIds,
-                                trends_found: totalTrends,
-                            }),
-                        }],
-                    };
-                }
-
-                // ── Phase 5: Delivery ──
-                const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-                await server.sendLoggingMessage({
-                    level: 'info',
-                    data: `✅ Phase 5/5: Research complete — ${totalTrends} trends, ${activeGraphs.length} graphs, ${durationSec}s`,
-                });
-
-                // ── Billing (fire-and-forget, SUCCESS ONLY) ──
-                // This is intentionally AFTER report text validation. If the Gemini
-                // call fails (catch block) or returns empty text (early return above),
-                // chargeQuery never fires — the user is not charged.
-                // Note: waverunnerRequest() has its own small trial credit decrement
-                // (2-3 tokens for Gemini compute), which fires whenever the SDK call
-                // succeeds — even with empty output. That's acceptable since compute
-                // was consumed. The main charge (20/30 API calls) is here.
-                chargeQuery({
-                    queryTypeCode,
-                    apiKey,
-                    userId: resolvedUserId,
-                    query,
-                    graphsSearched: graphIds,
-                    foddaRequest,
-                }).catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
-
-                console.error(`[deep_research_topic] Complete: ${totalTrends} trends, ${activeGraphs.length} graphs, ${durationSec}s, model=${geminiModel}`);
-
-                // Prepend research metadata
-                const header = [
-                    `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed • ${durationSec}s_`,
-                    '',
-                ].join('\n');
-
-                return { content: [{ type: 'text' as const, text: header + reportText }] };
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: `Deep research job started! The agent is searching the graph and the live web. Job ID: ${jobId}\n\nIMPORTANT: You must use the check_research_status tool with this Job ID to poll the status of the job and retrieve the report.`
+                    }]
+                };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                console.error('[deep_research_topic] Error:', msg);
+                const msg = err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
+        }
+    );
+
+    // --- check_research_status ---
+    server.tool(
+        'check_research_status',
+        'Check the status of a long-running deep research job. If complete, this tool returns the final report. You MUST poll this periodically until the status is COMPLETE or FAILED.',
+        {
+            job_id: z.string().describe('The Job ID returned by deep_research_topic'),
+        },
+        { title: 'Check Research Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ job_id }) => {
+            const job = activeResearchJobs.get(job_id);
+            if (!job) {
+                return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
+            }
+
+            if (job.status === 'RUNNING') {
+                return { content: [{ type: 'text' as const, text: `Job ${job_id} is still RUNNING. The agent is gathering and synthesizing data. Please poll again in 10 seconds.` }] };
+            }
+
+            if (job.status === 'FAILED') {
+                activeResearchJobs.delete(job_id); // cleanup
+                return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
+            }
+
+            if (job.status === 'COMPLETE') {
+                activeResearchJobs.delete(job_id); // cleanup
+                return { content: [{ type: 'text' as const, text: job.result }] };
+            }
+
+            return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };
         }
     );
 
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Have a conversation with a Fodda Synthetic Analyst. The analyst will use its curated knowledge graph and Fodda research tools to answer the query in its expert voice. Use list_analysts first to discover available analyst_id values (e.g., \'ben-dietz-sic\').',
+        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values.',
         {
             analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic')"),
             query: z.string().describe("The question or topic to discuss with the analyst"),
