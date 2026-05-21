@@ -17,20 +17,6 @@
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"
   },
-  "remotes": [
-    {
-      "type": "sse",
-      "url": "https://mcp.fodda.ai/sse",
-      "headers": [
-        {
-          "name": "Authorization",
-          "description": "Bearer token (Fodda API key prefixed with \"Bearer \")",
-          "isRequired": true,
-          "isSecret": true
-        }
-      ]
-    }
-  ],
   "packages": [
     {
       "registryType": "npm",
