@@ -6,6 +6,7 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ListResourcesRequestSchema, ListPromptsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
@@ -70,8 +71,23 @@ function buildRenderInstructions(opts: {
 /**
  * Append a low-credit warning to the response data if tokens are running low.
  * Utilizes new dynamic Stripe links and upsell data provided by the Fodda API.
+ *
+ * Also surfaces upstream X-Usage-* header warnings (approaching-limit, overage-active)
+ * injected by foddaRequest() as _upstream_usage.
  */
-function appendUsageWarning(data: any, isTrial: boolean) {
+function appendUsageWarning(data: any, isTrial: boolean, userEmail?: string) {
+    // ── Upstream header-based warnings (X-Usage-Warning / X-Usage-Percent / X-Usage-Overage-Tokens) ──
+    if (data?._upstream_usage) {
+        const u = data._upstream_usage;
+        if (u.warning === 'approaching-limit' && u.percent) {
+            data._usage_status = `⚠️ You've used ${u.percent}% of your monthly API calls. Consider upgrading or adding a payment method to avoid interruption.`;
+        } else if (u.warning === 'overage-active') {
+            data._usage_status = u.overage_tokens
+                ? `📊 You're in overage — ${u.overage_tokens} additional token(s) used at $0.20/token this billing cycle.`
+                : `📊 Overage billing is active — additional queries are charged at $0.20/token.`;
+        }
+    }
+
     if (!data?.usage) return;
 
     const remaining = data.usage.remaining ?? data.usage.credits_remaining;
@@ -85,16 +101,21 @@ function appendUsageWarning(data: any, isTrial: boolean) {
     const stripeLink = data.usage.stripeLink || (data._account?.stripe_link);
     const price = data.usage.monthlyPriceUSD || (data._account?.monthly_price_usd);
 
+    // Build portal upgrade URL with pre-filled email
+    const portalParams = new URLSearchParams({ action: 'upgrade' });
+    if (userEmail && userEmail.includes('@')) portalParams.set('email', userEmail);
+    const portalUrl = `${API_BASE_URL.replace('api.', 'app.')}/portal?${portalParams.toString()}`;
+
     if (isTrial) {
-        data._credit_warning = `⚠️ You have ${remaining} ${noun} remaining on your trial. I can set you up with a Free Base account (100 API calls/month) instantly — just give me your email. A Base account also unlocks a dashboard at app.fodda.ai to manage your team and graph settings.`;
+        data._credit_warning = `\u26a0\ufe0f You have ${remaining} ${noun} remaining on your trial. Upgrade to the free Base plan (100 API calls/month) or a paid plan to continue.\n\n\ud83d\ude80 **[Upgrade Now \u2192](${portalUrl})**`;
     } else {
-        let msg = `⚠️ You have ${remaining} ${noun} remaining this month.`;
+        let msg = `\u26a0\ufe0f You have ${remaining} ${noun} remaining this month.`;
         if (upsell) {
-            msg += ` You can get 100 more API calls for $${upsell.price || '50'} right now: ${upsell.link || 'https://app.fodda.ai'}`;
+            msg += ` You can get 100 more API calls for $${upsell.price || '50'} right now: ${upsell.link || portalUrl}`;
         } else if (stripeLink) {
             msg += ` You can top up your API calls here: ${stripeLink}`;
         } else {
-            msg += ` You can add more at app.fodda.ai, or your balance resets next month.`;
+            msg += ` You can add more at ${portalUrl}, or your balance resets next month.`;
         }
         data._credit_warning = msg;
     }
@@ -136,7 +157,39 @@ export type WaverunnerRequestFn = (
 
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 
-const GRAPH_ID_DESC = "The graph ID. Use list_available_graphs to see all options. Examples: 'retail', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'michaels-2026-creativity-trend-report', 'delta/the-connection-index'";
+const GRAPH_ID_DESC = "The graph ID. Use list_graphs to see all options. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'michaels-2026-creativity-trend-report', 'delta/the-connection-index'";
+
+// ── P0 Security: Allowlist serializer for list_graphs ──
+const GRAPH_LIST_ALLOWLIST: ReadonlySet<string> = new Set([
+    'graph_id', 'name', 'one_liner', 'description', 'curator',
+    'domain', 'graph_type', 'trend_count', 'evidence_count',
+    'status', 'last_updated',
+]);
+const SNAKE_TO_CAMEL: Record<string, string> = {
+    'graph_id': 'graphId', 'one_liner': 'oneLiner', 'graph_type': 'graphType',
+    'trend_count': 'trendCount', 'evidence_count': 'evidenceCount',
+    'last_updated': 'lastUpdated',
+};
+// Strip internal routing guidance that may be baked into a description — either
+// injected by us below or already present in the API/Airtable description field.
+function stripRoutingInstruction(text: string): string {
+    return text.replace(/\n*\[ROUTING INSTRUCTION:[\s\S]*?\]\s*$/g, '').trimEnd();
+}
+function serializeGraphForList(g: any): Record<string, any> {
+    const out: Record<string, any> = {};
+    for (const key of GRAPH_LIST_ALLOWLIST) {
+        let val = g[key] ?? g[SNAKE_TO_CAMEL[key] || key];
+        if (val !== undefined && val !== null) {
+            // Defensive: never surface internal routing text in the public description.
+            if (key === 'description' && typeof val === 'string') {
+                val = stripRoutingInstruction(val);
+            }
+            out[key] = val;
+        }
+    }
+    return out;
+}
+const DEPRECATED_GRAPH_IDS: ReadonlySet<string> = new Set(['waldo', 'psfk']);
 
 /**
  * Resolve the effective userId for API requests.
@@ -176,7 +229,14 @@ export async function createServer(
     let sessionSkills: SkillConfig[] = [];
     let discoveredSkills: DiscoveredSkill[] = [];
     try {
-        const graphsData = await foddaRequest('GET', '/v1/graphs', apiKey, userId);
+        // H2: Race the /v1/graphs call against a 5s timeout so a slow upstream
+        // never blocks the MCP initialize handshake. Degrades gracefully —
+        // missing account profile means no persona-aware framing, but tools work.
+        const INIT_TIMEOUT_MS = 5000;
+        const graphsData = await Promise.race([
+            foddaRequest('GET', '/v1/graphs', apiKey, userId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), INIT_TIMEOUT_MS)),
+        ]);
         if (graphsData?._account) {
             accountProfile = graphsData._account as AccountProfile;
             console.error(`[persona] Account profile loaded: isProfessionalServices=${accountProfile.isProfessionalServices}, jobTitle=${accountProfile.jobTitle}, company=${accountProfile.companyName}`);
@@ -226,8 +286,23 @@ export async function createServer(
         console.error('[persona] Failed to fetch account profile — proceeding without persona framing');
     }
 
-    const isTrial = apiKey.startsWith('sk_trial_');
+    // sk_trial_ keys are retired. New individual trial accounts (planCode 13) use
+    // sk_live_ keys and are detected from API error responses via isIndividualTrial().
+    // isTrial is false at session init for all current account types.
+    const isTrial = false;
     const sessionTracker = createSessionTracker();
+
+    // Fire-and-forget: log the user's query text to the Questions table.
+    // Called at tool entry — BEFORE cache-eligible foddaRequest calls —
+    // so the question is captured even when the MCP query cache serves a hit.
+    function logUserQuery(query: string, interactionType: string, graphId?: string) {
+        foddaRequest('POST', '/v1/log/question', apiKey, userId, {
+            question: query,
+            graphId: graphId || 'all',
+            interactionType,
+            source: 'mcp',
+        }).catch(() => {}); // Never block on logging failures
+    }
 
     // Build skill metadata for system prompt — includes both output-phase and interactive skills
     const skillPromptMeta = sessionSkills.map(s => {
@@ -245,6 +320,20 @@ export async function createServer(
         version: MCP_SERVER_VERSION,
     }, {
         instructions: buildSystemPrompt(accountProfile, skillPromptMeta, isTrial, entryId),
+    });
+
+    // Register empty capabilities and handlers to silence directory warnings
+    server.server.registerCapabilities({
+        resources: {},
+        prompts: {}
+    });
+
+    server.server.setRequestHandler(ListResourcesRequestSchema, async () => {
+        return { resources: [] };
+    });
+
+    server.server.setRequestHandler(ListPromptsRequestSchema, async () => {
+        return { prompts: [] };
     });
 
     // ── Register discovered interactive skill tools as MCP tools ──
@@ -345,24 +434,33 @@ export async function createServer(
                     api_calls_remaining: account.tokens_remaining ?? account.credits ?? 'unknown',
                     api_calls_total: account.tokens_total ?? account.monthlyQueryLimit ?? 'unknown',
                 };
+                // Flag overage status when tokens_remaining is negative (overage billing active)
+                if (typeof status.api_calls_remaining === 'number' && status.api_calls_remaining < 0) {
+                    status.overage_active = true;
+                    status.overage_tokens = Math.abs(status.api_calls_remaining);
+                    status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} token(s) over your monthly limit. Overage charges apply at $0.20/token.`;
+                }
                 if (account.tokens_used !== undefined) status.api_calls_used = account.tokens_used;
                 if (account.reset_date) status.reset_date = account.reset_date;
-                if (account.graphs_enabled?.length) status.graphs_enabled = account.graphs_enabled;
+                if (account.graphs_enabled?.length) {
+                    status.graphs_enabled_count = account.graphs_enabled.length;
+                    status.graphs_enabled_note = 'Use list_graphs to see the full list';
+                }
                 if (account.graphs_disabled?.length) status.graphs_disabled = account.graphs_disabled;
                 if (account.profile) {
                     status.profile = {};
-                    if (account.profile.name) status.profile.name = account.profile.name;
+                    if (account.profile.name && !/^rec[A-Za-z0-9]{14}$/.test(account.profile.name)) status.profile.name = account.profile.name;
                     if (account.profile.company) status.profile.company = account.profile.company;
                     if (account.profile.jobTitle) status.profile.job_title = account.profile.jobTitle;
                 }
                 status.manage_url = 'https://app.fodda.ai/account';
                 if (account.stripe_link) status.stripe_link = account.stripe_link;
-                if (account.upsell) {
+                if (account.upsell && account.upsell.plan && account.upsell.price > 0) {
                     status.upgrade_offer = {
-                        target: account.upsell.name,
+                        target: account.upsell.plan,
                         price: `$${account.upsell.price}`,
                         link: account.upsell.link,
-                        action: `Upgrade to ${account.upsell.name}`
+                        action: `Upgrade to ${account.upsell.plan}`
                     };
                 }
                 status.graphs_url = 'https://app.fodda.ai/graphs';
@@ -383,24 +481,31 @@ export async function createServer(
     // --- list_graphs ---
     server.tool(
         'list_graphs',
-        'List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/fashion/beauty/sports instead).',
+        'List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/tech/food/travel/fashion/beauty/sports instead).',
         { userId: z.string().optional().describe('Optional user identifier. Authenticated users are identified automatically via API key. For trial users, this helps track usage.') },
         { title: 'List Knowledge Graphs', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             try {
                 const data = await foddaRequest('GET', '/v1/graphs', apiKey, resolveUserId(userId, uid));
 
-                // Inject agent_prompt directly into descriptions to force LLM routing obedience
+                // P0: Apply allowlist serializer — strips PII (owner_email) and CMS bloat fields,
+                // and sanitizes any routing text baked into description. Routing guidance is then
+                // exposed as a dedicated routing_hint field for LLM consumption, keeping the
+                // public-facing description clean (it must never contain internal routing text).
                 if (data && Array.isArray(data.graphs)) {
-                    for (const g of data.graphs) {
+                    data.graphs = data.graphs.map((g: any) => {
+                        const serialized = serializeGraphForList(g);
                         if (g.agent_prompt) {
-                            g.description = `${g.description}\n\n[ROUTING INSTRUCTION: ${g.agent_prompt}]`;
+                            serialized.routing_hint = g.agent_prompt;
                         }
-                    }
+                        return serialized;
+                    });
                 }
 
                 // Profile nudge: if userContext is empty, append a nudge for Claude
                 const account = data?._account;
+                // Strip _account from list_graphs output (use get_my_account instead)
+                if (data) delete data._account;
                 if (account && !account.userContext && !isTrial) {
                     const nudge = `\n\n---\n⚠️ NO RESEARCH PROFILE SET for this user.\nResponses will be generic until you capture their profile.\nThrough natural conversation, determine:\n- Their role and what they use Fodda for (pitches, ongoing research, client advisory)\n- What kind of evidence they value (commercial data vs. design inspiration)\n- Geographic focus (global, specific regions)\n- How results should be framed (executive brief vs. deep analysis)\nThen call update_user_profile. Write BEHAVIORAL INSTRUCTIONS, not a bio.\nFormat: one sentence of identity, then numbered directives that change how you respond.\nExample: "Agency strategist doing pitches. (1) Lead with landscape orientation. (2) Prioritize commercial evidence. (3) Time-scarce — strongest findings first."\n---`;
                     const jsonText = JSON.stringify(data, null, 2);
@@ -441,7 +546,7 @@ export async function createServer(
         'search_graph',
         'Search expert-curated knowledge graphs for trend clusters, signals, and consumer behavior evidence across retail, beauty, luxury, fashion, sport, consumer electronics, F&B, travel, and 30+ specialist domains. Returns structured trend data with cited evidence chains, source attribution, lifecycle signals (emerging/building/mature/fading), and momentum indicators — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use when the query involves market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
         {
-            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
+            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Location terms are auto-detected and used to filter results geographically.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
@@ -452,6 +557,9 @@ export async function createServer(
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'search', graphId);
+
                 const effectiveLimit = Math.min(limit || 10, 50);
                 const body: Record<string, any> = {
                     query,
@@ -613,7 +721,9 @@ export async function createServer(
                         return result;
                     })();
 
-                    data = { rows: diversified.slice(0, effectiveLimit), dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: graphsToSearch.map(g => g.graph_id) };
+                    const finalRows = diversified.slice(0, effectiveLimit);
+                    const actualSourceGraphs = [...new Set(finalRows.map((r: any) => r.graphId || r._use_this_graphId).filter(Boolean))];
+                    data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs };
                 } else {
                     data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/search`, apiKey, resolveUserId(userId, uid), body);
                 }
@@ -640,13 +750,34 @@ export async function createServer(
                         trimmed._use_this_graphId = row.graphId || graphId;
                         if (!trimmed.node_id) trimmed.node_id = trimmed.trendId || trimmed.id || trimmed.nodeId || trimmed._id || trimmed.uuid || null;
                         if (!trimmed.title) trimmed.title = trimmed.trendName || trimmed.display || trimmed.name || null;
+                        // P0 Item 3: Populate canonical summary from source fields (raw rows have no summary)
                         if (!trimmed.summary) trimmed.summary = trimmed.description || trimmed.trendDescription || null;
-                        if (!trimmed.score) trimmed.score = trimmed.relevance_score || trimmed.semantic_score || null;
+                        if (!trimmed.relevance_score) trimmed.relevance_score = trimmed.semantic_score || trimmed._score || trimmed.score || null;
                         const resolvedId = LEGACY_ALIASES[trimmed._use_this_graphId || ''] || trimmed._use_this_graphId || graphId || '';
                         trimmed.graphName = graphNameMap.get(resolvedId) || resolvedId;
-                        if (trimmed.adjacentPossibilities?.length > 200) trimmed.adjacentPossibilities = trimmed.adjacentPossibilities.substring(0, 200) + '...';
+                        // P0 Item 3: Convert brandNames from pipe-delimited string to capped array
+                        const rawBrands = typeof trimmed.brandNames === 'string'
+                            ? trimmed.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean)
+                            : Array.isArray(trimmed.brandNames) ? trimmed.brandNames : [];
+                        trimmed.brandNames = rawBrands.slice(0, 10);
+                        trimmed.brand_count = rawBrands.length;
+                        // P0 Item 3: Convert place from comma-delimited string to capped array
+                        const rawPlaces = typeof trimmed.place === 'string'
+                            ? trimmed.place.split(',').map((s: string) => s.trim()).filter(Boolean)
+                            : Array.isArray(trimmed.place) ? trimmed.place : [];
+                        trimmed.place = rawPlaces.slice(0, 10);
+                        trimmed.place_count = rawPlaces.length;
                         if (trimmed.whyNow?.length > 200) trimmed.whyNow = trimmed.whyNow.substring(0, 200) + '...';
-                        if (trimmed.evidence) trimmed.evidence = enrichEvidence(trimmed.evidence);
+                        // P0 Item 4 + Round-2: cap at top-3 BY RELEVANCE (API order), not recency
+                        if (trimmed.evidence?.length > 0) {
+                            trimmed.evidence_count = trimmed.evidence.length;        // total before cap
+                            trimmed.evidence = enrichEvidence(trimmed.evidence.slice(0, 3));
+                        } else {
+                            trimmed.evidence_count = trimmed.evidence_count || trimmed.evidenceCount || 0;
+                            if ((include_evidence ?? true) && trimmed.evidence_count > 0) {
+                                trimmed.evidence_status = 'Evidence expected but not returned by API';
+                            }
+                        }
                         const drillTrendName = trimmed.title || trimmed.trendName || 'this trend';
                         const drillGraphId = trimmed._use_this_graphId || graphId || '';
                         trimmed.suggested_drill_down = `Tell me more about "${drillTrendName}" from the ${trimmed.graphName || drillGraphId} graph. What is driving this and what are the key signals?`;
@@ -655,6 +786,11 @@ export async function createServer(
                         trimmed.fastMover = isFastMover(trimmed, enrichNow);
                         trimmed.graphBadge = GRAPH_BADGES[trimmed._use_this_graphId || graphId || ''] || '○';
                         return trimmed;
+                    });
+                    // P0 Item 6: Filter out deprecated graph rows
+                    data.rows = data.rows.filter((r: any) => {
+                        const gid = r._use_this_graphId || r.graphId || '';
+                        return !DEPRECATED_GRAPH_IDS.has(gid);
                     });
                 }
                 if (data?.rows) {
@@ -667,7 +803,20 @@ export async function createServer(
 
                 const primaryCatalogEntry = getGraphs().find(g => g.graph_id === effectiveGraphId);
                 const primaryGraphName = primaryCatalogEntry ? buildDisplayName(primaryCatalogEntry) : effectiveGraphId;
-                data._attribution = `Data sourced from ${primaryGraphName}`;
+                // P0 Item 6: Attribution covers all source graphs, resolved via catalog
+                const attrGraphIds = [...new Set(
+                    (data.rows || []).map((r: any) => r._use_this_graphId || r.graphId).filter(Boolean)
+                )];
+                if (attrGraphIds.length > 1) {
+                    const attrNames = attrGraphIds.map(id => {
+                        const resolved = id === 'psfk' ? 'retail' : id;
+                        const entry = getGraphs().find((g: any) => g.graph_id === resolved);
+                        return entry ? buildDisplayName(entry) : resolved;
+                    });
+                    data._attribution = `Data sourced from ${attrNames.join(', ')}`;
+                } else {
+                    data._attribution = `Data sourced from ${primaryGraphName}`;
+                }
 
                 // Suggested next prompts
                 const rows = data.rows || [];
@@ -701,8 +850,8 @@ export async function createServer(
 
                 // Phase 2 envelope enrichment
                 const enrichedRows = data.rows || [];
-                const mainstream = enrichedRows.filter((r: any) => (r.evidenceCount || r.evidence_count || 0) >= 3);
-                const weakSignals = enrichedRows.filter((r: any) => (r.evidenceCount || r.evidence_count || 0) < 3 && (r.trendLifecycle === 'emerging' || r.trendLifecycle === 'unknown'));
+                const mainstream = enrichedRows.filter((r: any) => (r.evidence_count || r.evidenceCount || 0) >= 3);
+                const weakSignals = enrichedRows.filter((r: any) => (r.evidence_count || r.evidenceCount || 0) < 3 && (r.trendLifecycle === 'emerging' || r.trendLifecycle === 'unknown'));
                 if (weakSignals.length > 0) { data.mainstream = mainstream; data.weak_signals = weakSignals; }
 
                 const allFirstSeen = enrichedRows.map((r: any) => r.firstSeen).filter(Boolean).sort();
@@ -712,10 +861,12 @@ export async function createServer(
                 }
                 const places = enrichedRows.map((r: any) => r.place || r.geographical_region).filter(Boolean);
                 if (places.length >= 3) {
-                    const uniqueRegions = new Set(places.flatMap((p: string) => p.split(',').map((s: string) => s.trim())));
+                    const uniqueRegions = new Set(places.flatMap((p: string | string[]) =>
+                        Array.isArray(p) ? p : p.split(',').map((s: string) => s.trim())
+                    ));
                     if (uniqueRegions.size === 1) data.geoBias = { concentrated: true, region: [...uniqueRegions][0], note: 'Results are geographically concentrated' };
                 }
-                if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.evidenceCount || r.evidence_count || 0) < 3)) {
+                if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.evidence_count || r.evidenceCount || 0) < 3)) {
                     data.research_gaps = { thin_coverage: true, note: 'The graph has limited coverage on this topic. These are the closest matches.' };
                 }
 
@@ -739,7 +890,7 @@ export async function createServer(
                 }
 
                 // ── Low-credit warning for all users — utilizes dynamic Stripe links from API ──
-                appendUsageWarning(data, isTrial);
+                appendUsageWarning(data, isTrial, resolveUserId(userId));
 
                 // ── Supplemental data — macro context for all queries with results ──
                 let supplemental: { google_trends: any; census_retail: any } = { google_trends: null, census_retail: null };
@@ -783,25 +934,36 @@ export async function createServer(
                     // Also cache for direct browser access via /widget/:id
                     storeWidget(searchWidget.widget_html);
 
-                    // Strip duplicates (results=rows copy, weak_signals=rows subset) + heavy evidence arrays
+                    // P0 Item 3+4: Dedupe aliased fields; keep capped evidence inline
                     const liteData = { ...data };
                     delete liteData.results;       // exact copy of rows
                     delete liteData.weak_signals;  // subset of rows
                     liteData.rows = (data.rows || []).map((r: any) => {
-                        const { evidence, ...rest } = r;
-                        return rest;
+                        const out = { ...r };
+                        // ID aliases → keep node_id
+                        delete out.trendId; delete out.nodeId; delete out.uuid;
+                        if (out.node_id) { delete out.id; delete out._id; }
+                        // Score aliases → keep relevance_score
+                        if (!out.relevance_score) out.relevance_score = out.semantic_score || out._score || out.score || null;
+                        delete out._score; delete out.semantic_score; delete out.score;
+                        // Description aliases → keep summary
+                        delete out.description; delete out.trendDescription;
+                        // Drop adjacentPossibilities and evidenceCount (canonical is evidence_count)
+                        delete out.adjacentPossibilities;
+                        delete out.evidenceCount;
+                        return out;
                     });
 
                     // Size check: if total payload exceeds ~30KB, skip widget to avoid context overflow
                     const jsonPayload = JSON.stringify(liteData, null, 2);
                     const totalSize = searchWidget.widget_html.length + jsonPayload.length;
                     if (totalSize > 30000) {
-                        console.error(`[search_graph] Payload too large (${(totalSize / 1024).toFixed(1)}KB) — skipping widget HTML, sending JSON + design brief`);
+                        console.error(`[search_graph] Payload too large (${(totalSize / 1024).toFixed(1)}KB) — skipping widget HTML, sending liteData JSON + design brief`);
                         // ── Query-level billing (large payload path) ──
                         chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
                             .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
                         return { content: [
-                            { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+                            { type: 'text' as const, text: jsonPayload },
                             { type: 'text' as const, text: FODDA_WIDGET_DESIGN_BRIEF },
                         ] };
                     }
@@ -826,16 +988,32 @@ export async function createServer(
                     return widgetResponse;
                 }
 
-                // Fallback: <3 results or no widget — give Claude the shell + raw data
+                // Fallback: <3 results or no widget — give Claude the shell + stripped data
                 const shellSources = [...new Set((data?.rows || []).map((r: any) => r.graphName).filter(Boolean))] as string[];
                 const shellHtml = getShellTemplate(`Search: ${query}`, shellSources.length ? shellSources : [primaryGraphName as string]);
+
+                // P0 Item 3+4: Dedupe aliased fields in fallback path; keep capped evidence inline
+                const fallbackData = { ...data };
+                delete fallbackData.results;
+                delete fallbackData.weak_signals;
+                fallbackData.rows = (data.rows || []).map((r: any) => {
+                    const out = { ...r };
+                    delete out.trendId; delete out.nodeId; delete out.uuid;
+                    if (out.node_id) { delete out.id; delete out._id; }
+                    if (!out.relevance_score) out.relevance_score = out.semantic_score || out._score || out.score || null;
+                    delete out._score; delete out.semantic_score; delete out.score;
+                    delete out.description; delete out.trendDescription;
+                    delete out.adjacentPossibilities;
+                    delete out.evidenceCount;
+                    return out;
+                });
 
                 // ── Query-level billing (fallback path) ──
                 chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
                     .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
 
                 return { content: [
-                    { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+                    { type: 'text' as const, text: JSON.stringify(fallbackData, null, 2) },
                     { type: 'text' as const, text: '── FODDA SHELL TEMPLATE ──\nUse this shell to wrap your widget response. Replace {{CONTENT}} with your HTML and {{EXTRA_CSS}} with any additional styles.\n\n' + shellHtml },
                     { type: 'text' as const, text: FODDA_COMPONENT_GUIDE },
                     // Append skill outputs (if any ran despite thin results)
@@ -890,6 +1068,7 @@ export async function createServer(
                 if (direction) body.direction = direction;
                 let data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/neighbors`, apiKey, resolveUserId(userId, uid), body);
 
+                appendUsageWarning(data, isTrial, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -919,6 +1098,7 @@ export async function createServer(
                 data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/evidence`, apiKey, resolveUserId(userId, uid), body);
                 // Enrich evidence with pre-formatted citations
                 if (data?.evidence) data.evidence = enrichEvidence(data.evidence);
+                appendUsageWarning(data, isTrial, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -947,6 +1127,7 @@ export async function createServer(
                 if (data && typeof data === 'object') {
                     data.theme = getFoddaTheme(graphId);
                 }
+                appendUsageWarning(data, isTrial, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -960,7 +1141,7 @@ export async function createServer(
     // --- get_label_values ---
     server.tool(
         'get_label_values',
-        'List all values for a structured category within a graph — Brand names, Locations, Technologies, Audiences, RetailerTypes. Use when you need to enumerate what entities exist in a graph before filtering, or when the user asks "what brands are in the retail graph?" or "what locations does the fashion graph cover?".',
+        'List all values for a structured category within a graph — Brand names, Locations, Technologies, Audiences, RetailerTypes, or Trend names. Use when you need to enumerate what entities exist in a graph before filtering, or when the user asks "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To enumerate every trend in a graph (especially industry-report graphs, where semantic search/search_insights may return only the top match or nothing if evidence is unlinked), call with label="Trend" — this returns the complete, deterministic list of trend names.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
@@ -1005,6 +1186,7 @@ export async function createServer(
                 if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
                 let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/adjacent?${params.toString()}`, apiKey, resolveUserId(userId, uid));
 
+                appendUsageWarning(data, isTrial, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1082,9 +1264,14 @@ export async function createServer(
                     const lastTrend = allTrends[allTrends.length - 1];
                     lastTrend.lifecycle = computeLifecycle({ ...lastTrend, firstSeen: t.firstSeen, lastSeen: t.lastSeen, evidenceCount: t.evidenceCount, signal_score: t.signalScore, freshnessDays: lastTrend.freshnessDays });
 
-                    // Collect evidence
+                    // Collect evidence — filter to items that actually mention the brand
                     if (includeEvidence && t.evidence) {
                         for (const ev of t.evidence) {
+                            const evBrands = typeof ev.brandNames === 'string' ? ev.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(ev.brandNames) ? ev.brandNames : []);
+                            const evText = `${ev.title || ''} ${ev.summary || ''}`.toLowerCase();
+                            const evMentionsBrand = evBrands.some((b: string) => b.toLowerCase().includes(brandLower)) || evText.includes(brandLower);
+                            if (!evMentionsBrand) continue;
+
                             allEvidence.push({
                                 title: ev.title,
                                 excerpt: ev.summary || '',
@@ -1095,7 +1282,7 @@ export async function createServer(
                                 place: ev.place || null,
                                 graphId: t.graphId,
                                 graphName,
-                                brands_mentioned: ev.brandNames || [],
+                                brands_mentioned: evBrands,
                                 linked_trend: t.trendName,
                                 formatted_citation: ev.formatted_citation || (ev.title && ev.sourceUrl ? `[${ev.title}](${ev.sourceUrl})` : ev.title || ''),
                                 speaker_name: ev.speakerName || null,
@@ -1103,7 +1290,6 @@ export async function createServer(
                             });
                             // Track which graphs each co-occurring brand appears in (for sector-aware competitor labels)
                             // Skip earnings/finance graphs — analyst transcripts co-mention unrelated brands
-                            const evBrands = ev.brandNames || [];
                             if (!t.graphId.includes('earnings') && !t.graphId.includes('finance')) {
                                 for (const b of evBrands) {
                                     const bLower = (b || '').toLowerCase();
@@ -1175,6 +1361,12 @@ export async function createServer(
                         if (r.status !== 'fulfilled') continue;
                         const { trend, evidence: evItems } = r.value;
                         for (const ev of evItems) {
+                            // Filter to evidence that actually mentions the brand
+                            const evBrandsRaw = typeof ev.brandNames === 'string' ? ev.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(ev.brandNames) ? ev.brandNames : []);
+                            const evText = `${ev.title || ''} ${ev.snippet || ev.summary || ''}`.toLowerCase();
+                            const evMentionsBrand = evBrandsRaw.some((b: string) => b.toLowerCase().includes(brandLower)) || evText.includes(brandLower);
+                            if (!evMentionsBrand) continue;
+
                             allEvidence.push({
                                 title: ev.title,
                                 excerpt: ev.snippet || ev.summary || '',
@@ -1185,14 +1377,13 @@ export async function createServer(
                                 place: ev.place || null,
                                 graphId: trend.graphId,
                                 graphName: trend.graphName,
-                                brands_mentioned: ev.brandNames || [],
+                                brands_mentioned: evBrandsRaw,
                                 linked_trend: trend.trend_name,
                                 formatted_citation: ev.formatted_citation || (ev.title && ev.sourceUrl ? `[${ev.title}](${ev.sourceUrl})` : ev.title || ''),
                                 speaker_name: ev.speakerName || null,
                                 speaker_title: ev.speakerTitle || null,
                             });
                             // Collect competitor brands from backfilled evidence
-                            const evBrandsRaw = typeof ev.brandNames === 'string' ? ev.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(ev.brandNames) ? ev.brandNames : []);
                             for (const b of evBrandsRaw) {
                                 const bLower = b.toLowerCase();
                                 if (bLower !== brandLower && !bLower.includes(brandLower) && !brandLower.includes(bLower)) {
@@ -1289,7 +1480,7 @@ export async function createServer(
                             signal_score: row.signal_score || null,
                             lifecycle: computeLifecycle(row),
                             momentum: computeMomentum(row),
-                            evidence_count: row.evidenceCount || row.evidence_count || 0,
+                            evidence_count: row.evidence_count || row.evidenceCount || 0,
                             node_id: row.node_id || row.trendId,
                             _use_this_graphId: row._use_this_graphId || graphId,
                         });
@@ -1519,9 +1710,12 @@ export async function createServer(
         const topCompetitors = competitors.slice(0, 2).map(c => c.brand);
         const comparisonQuery = [brandName, ...topCompetitors].join(',');
 
+        // Wikipedia disambiguation: map brand names to canonical article titles
+        const wikiDisambig: Record<string, string> = { 'Nike': 'Nike, Inc.', 'Apple': 'Apple Inc.', 'Amazon': 'Amazon (company)', 'Meta': 'Meta Platforms', 'Target': 'Target Corporation' };
+        const wikiArticles = [brandName, ...topCompetitors].map(b => wikiDisambig[b] || b).join(',');
         const [googleTrendsResult, wikipediaResult, amazonResult, beaResult, earningsResult] = await Promise.allSettled([
             foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(comparisonQuery)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
-            foddaRequest('GET', `/v1/supplemental/wikipedia/pageviews?articles=${encodeURIComponent(comparisonQuery)}&period=monthly`, apiKey, resolveUserId(userId, uid)),
+            foddaRequest('GET', `/v1/supplemental/wikipedia/pageviews?articles=${encodeURIComponent(wikiArticles)}&period=monthly`, apiKey, resolveUserId(userId, uid)),
             amazonPromise,
             censusPromise,
             foddaRequest('GET', `/v1/supplemental/earnings/snapshot?brand=${encodeURIComponent(brandName)}&limit=5`, apiKey, resolveUserId(userId, uid)),
@@ -1565,6 +1759,9 @@ export async function createServer(
         { title: 'Brand Intelligence Profile', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ brand_name, userId: uid, graph_ids, include_evidence, max_evidence }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(brand_name, 'brand_tracker');
+
                 const { widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(brand_name, uid, graph_ids, include_evidence, max_evidence);
 
                 // ── Query-level billing ──
@@ -1633,6 +1830,8 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1695,6 +1894,8 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/search/domain', apiKey, resolveUserId(userId, uid), body);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1725,6 +1926,8 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1755,6 +1958,8 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/search/report', apiKey, resolveUserId(userId, uid), body);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1789,6 +1994,8 @@ export async function createServer(
                 }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1819,6 +2026,8 @@ export async function createServer(
                 const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1865,6 +2074,8 @@ export async function createServer(
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -1906,6 +2117,8 @@ export async function createServer(
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental');
             }
         }
@@ -2597,6 +2810,9 @@ export async function createServer(
             const startTime = Date.now();
 
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'deep_research');
+
                 // ── Phase 1: Planning ──
                 await server.sendLoggingMessage({
                     level: 'info',
@@ -2865,22 +3081,53 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values.',
+        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
         {
             analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic')"),
             query: z.string().describe("The question or topic to discuss with the analyst"),
+            company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Tesla' or 'TSLA') to bind the analyst to a specific brand context."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, query, userId: uid }) => {
+        async ({ analyst_id, query, company, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'consult_analyst');
+
                 const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), {
                     analyst_id,
-                    query
+                    query,
+                    company
                 });
                 
-                const reportText = typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2);
-                return { content: [{ type: 'text' as const, text: reportText }] };
+                // Extract the expert's answer text (legacy-compatible)
+                const reportText = typeof result.result === 'string'
+                    ? result.result
+                    : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
+
+                const parts: string[] = [reportText];
+
+                // --- Structured envelope fields (Phase 2 Digital Twin) ---
+                if (result.coverage) {
+                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
+                }
+                if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
+                    const sourceLines = result.sources_used.map((s: any) =>
+                        s.url ? `- ${s.label || s.name || 'Source'}: ${s.url}` : `- ${s.label || s.name || 'Source'}`
+                    );
+                    parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
+                }
+                if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
+                    const refLines = result.referrals.map((r: any, i: number) =>
+                        `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
+                    );
+                    parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                }
+                if (result.speaker_note) {
+                    parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
+                }
+
+                return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
