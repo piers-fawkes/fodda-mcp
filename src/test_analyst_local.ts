@@ -38,16 +38,16 @@ async function main() {
 
     // Get the tool
     // @ts-ignore
-    const tools = server.server.registeredTools;
+    const tools = server._registeredTools;
     const analystTools = Object.keys(tools).filter(name => name.startsWith('consult_'));
     console.log(`Found Analyst Tools: ${analystTools.join(', ')}`);
 
     if (analystTools.length > 0) {
-        const toolToCall = analystTools[0];
+        const toolToCall = analystTools[0]!;
         console.log(`Calling tool: ${toolToCall}`);
         try {
-            const toolFunc = tools[toolToCall];
-            const result = await toolFunc({ query: "Test query for analyst" });
+            const toolObj = tools[toolToCall];
+            const result = await toolObj.handler({ analyst_id: "brand-ceo", query: "Test query for analyst", company: "Tesla" });
             console.log("Result:", result);
         } catch (e: any) {
             console.error("Error calling tool:", e.message);

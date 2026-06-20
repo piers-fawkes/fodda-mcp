@@ -3,7 +3,7 @@ import axios from 'axios';
 import { MCP_SERVER_VERSION } from './tools.js';
 
 async function runTest() {
-    console.log('Starting Fodda MCP server verification for /mcp/tools endpoint...');
+    console.log('Starting Fodda MCP server verification for /health endpoint...');
     const mcp = spawn('node', ['dist/index.js'], {
         env: { ...process.env, PORT: '3000' }
     });
@@ -15,9 +15,9 @@ async function runTest() {
     await new Promise(resolve => setTimeout(resolve, 3000));
 
     try {
-        const response = await axios.get('http://localhost:3000/mcp/tools');
+        const response = await axios.get('http://localhost:3000/health');
         console.log('✅ Response Code:', response.status);
-        console.log('✅ Tools Count:', response.data.count);
+        console.log('✅ Health Status:', response.data.status);
         console.log('✅ Server Version:', response.data.version);
 
         if (response.data.version !== MCP_SERVER_VERSION) {
@@ -25,8 +25,8 @@ async function runTest() {
             process.exit(1);
         }
 
-        if (response.data.count !== 20) {
-            console.error('❌ Expected 20 tools, got ' + response.data.count);
+        if (response.data.status !== 'ok') {
+            console.error('❌ Expected status ok, got ' + response.data.status);
             process.exit(1);
         }
     } catch (error: any) {

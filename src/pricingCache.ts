@@ -12,6 +12,8 @@
  *   - Plans are denominated in API calls
  */
 
+import { randomUUID } from 'crypto';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -387,6 +389,17 @@ export function getAllPricing(): QueryPricing[] {
 }
 
 /**
+ * Compact tool→cost summary for surfacing to the agent/user (system prompt,
+ * get_my_account). Sourced from the same pricing table so it never drifts.
+ * Only billable tools (cost > 0) with a real MCP tool name.
+ */
+export function getToolCostSummary(): Array<{ tool: string; name: string; apiCalls: number }> {
+    return getAllPricing()
+        .filter(p => p.apiCallsCharged > 0 && !!p.mcpToolName)
+        .map(p => ({ tool: p.mcpToolName, name: p.queryTypeName, apiCalls: p.apiCallsCharged }));
+}
+
+/**
  * Check if the pricing cache has been loaded (from either defaults or Airtable).
  */
 export function isPricingLoaded(): boolean {
@@ -414,8 +427,10 @@ export interface ChargeQueryParams {
     userId: string;
     query?: string;
     graphsSearched?: string[];
+    /** When set, this is an anonymous SPT session — settle by charging the SPT, not credits. */
+    spt?: string | undefined;
     /** foddaRequest function — injected from index.ts to avoid circular deps */
-    foddaRequest: (method: 'GET' | 'POST', path: string, apiKey: string, userId: string, body?: any) => Promise<any>;
+    foddaRequest: (method: 'GET' | 'POST', path: string, apiKey: string, userId: string, body?: any, requestId?: string, source?: string, spt?: string) => Promise<any>;
 }
 
 export interface ChargeQueryResult {
@@ -437,7 +452,7 @@ export interface ChargeQueryResult {
  * For paid users — fires the meter call (fire-and-forget, non-blocking).
  */
 export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQueryResult> {
-    const { queryTypeCode, apiKey, userId, query, graphsSearched, foddaRequest } = params;
+    const { queryTypeCode, apiKey, userId, query, graphsSearched, foddaRequest, spt } = params;
 
     const price = getQueryPrice(queryTypeCode);
 
@@ -446,43 +461,42 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
         return { charged: false, apiCallsCharged: 0 };
     }
 
-    const isTrial = apiKey.startsWith('sk_trial_');
+    // All accounts (paid and new individual trial planCode 13) use the meter endpoint.
+    // sk_trial_ specific Firestore metering removed — those keys are retired.
+    const meterBody: Record<string, any> = {
+        type: queryTypeCode,
+        billable_units: price,
+    };
+    if (query) meterBody.query = query;
+    if (graphsSearched?.length) meterBody.graphs_searched = graphsSearched;
 
-    // Trial users — increment trial usage counter
-    if (isTrial) {
+    // Stable per-query idempotency key — reused across retries so the API's
+    // /v1/research/meter dedupe (keyed on X-Request-Id) never double-debits.
+    const meterRequestId = `meter_${queryTypeCode}_${randomUUID()}`;
+    const MAX_ATTEMPTS = 3;
+    let lastErr: any;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
-            const { incrementTrialUsage } = await import('./trialTracker.js');
-            await incrementTrialUsage(userId, 1, 'search');
-            console.error(`[chargeQuery] Trial: charged 1 ${queryTypeCode} credit for ${userId}`);
-            return { charged: true, apiCallsCharged: 1 };
+            const result = await foddaRequest('POST', '/v1/research/meter', apiKey, userId, meterBody, meterRequestId, undefined, spt);
+            const remaining = result?.usage?.api_calls_remaining ?? result?.usage?.remaining;
+            if (result?.idempotent_replay) {
+                console.error(`[chargeQuery] Meter replay (already charged) for ${queryTypeCode} [${meterRequestId}].`);
+            } else {
+                console.error(`[chargeQuery] Charged ${price} API calls for ${queryTypeCode} [${meterRequestId}]. Remaining: ${remaining ?? 'unknown'}`);
+            }
+            return { charged: true, apiCallsCharged: price, apiCallsRemaining: remaining };
         } catch (err: any) {
-            console.error(`[chargeQuery] Trial metering failed: ${err.message}`);
-            return { charged: false, apiCallsCharged: 0, error: err.message };
+            lastErr = err;
+            console.error(`[chargeQuery] Meter attempt ${attempt}/${MAX_ATTEMPTS} failed for ${queryTypeCode} [${meterRequestId}]: ${err.message}`);
+            if (attempt < MAX_ATTEMPTS) {
+                await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+            }
         }
     }
 
-    // Paid users — fire meter call
-    try {
-        const meterBody: Record<string, any> = {
-            type: queryTypeCode,
-            billable_units: price,
-        };
-        if (query) meterBody.query = query;
-        if (graphsSearched?.length) meterBody.graphs_searched = graphsSearched;
-
-        const result = await foddaRequest('POST', '/v1/research/meter', apiKey, userId, meterBody);
-
-        const remaining = result?.usage?.api_calls_remaining ?? result?.usage?.remaining;
-        console.error(`[chargeQuery] Charged ${price} API calls for ${queryTypeCode}. Remaining: ${remaining ?? 'unknown'}`);
-
-        return {
-            charged: true,
-            apiCallsCharged: price,
-            apiCallsRemaining: remaining,
-        };
-    } catch (err: any) {
-        // Non-blocking — log but don't fail the query
-        console.error(`[chargeQuery] Metering failed for ${queryTypeCode}: ${err.message}`);
-        return { charged: false, apiCallsCharged: 0, error: err.message };
-    }
+    // All attempts failed — non-blocking (don't fail the user's query), but logged
+    // with the request id for reconciliation against the API's meter_idempotency records.
+    console.error(`[chargeQuery] METER LOST after ${MAX_ATTEMPTS} attempts for ${queryTypeCode} [${meterRequestId}] — query uncharged. Last error: ${lastErr?.message}`);
+    return { charged: false, apiCallsCharged: 0, error: lastErr?.message };
 }

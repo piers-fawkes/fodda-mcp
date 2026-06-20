@@ -14,7 +14,9 @@ import { initPricingCache } from './pricingCache.js';
 import { cacheGet, cacheSet, getCacheStats } from './queryCache.js';
 import { MCP_SERVER_VERSION } from './tools.js';
 import { createServer } from './toolHandlers.js';
-import { checkTrialLimit, incrementTrialUsage } from './trialTracker.js';
+// NOTE: client-side trial counting (checkTrialLimit/incrementTrialUsage) is retired —
+// individual trial accounts are now metered server-side by the API and surfaced
+// reactively via errorHandling.ts (TRIAL_EXHAUSTED). Only the type is still used.
 import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
 import * as dotenv from 'dotenv';
@@ -24,13 +26,13 @@ dotenv.config();
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '512kb' }));
 
 // CORS — minimal, matching test server
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, Mcp-Session-Id, Accept');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-Stripe-SPT, Mcp-Session-Id, Accept');
     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
@@ -81,6 +83,12 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 const sessionApiKeys = new Map<string, string>();
 const sessionUserIds = new Map<string, string>();
 const sessionSources = new Map<string, string>();
+// SPT-paying anonymous sessions (no API key). Holds the token + the connect-time
+// validate result (cap + price map) so per-task coverage can be checked locally.
+const sessionSpts = new Map<string, { token: string; maxAmountCents: number | null; prices: Record<string, number> }>();
+// Track session creation time in our own Map (transport._createdAt is a private
+// field that is never set by the SDK — reading it always yields undefined).
+const sessionCreatedAt = new Map<string, number>();
 
 // ---------------------------------------------------------------------------
 // Periodic cleanup — prevent unbounded memory growth
@@ -95,14 +103,16 @@ setInterval(() => {
     for (const [id, entry] of widgetCache) {
         if (now - entry.createdAt > WIDGET_TTL_MS) widgetCache.delete(id);
     }
-    // Sweep stale sessions
-    for (const [sid, transport] of transports) {
-        const created = (transport as any)._createdAt;
+    // Sweep stale sessions using our own creation-time Map
+    for (const [sid] of transports) {
+        const created = sessionCreatedAt.get(sid);
         if (created && now - created > SESSION_MAX_AGE_MS) {
             transports.delete(sid);
             sessionApiKeys.delete(sid);
             sessionUserIds.delete(sid);
             sessionSources.delete(sid);
+            sessionSpts.delete(sid);
+            sessionCreatedAt.delete(sid);
         }
     }
 }, CLEANUP_INTERVAL_MS).unref();
@@ -111,10 +121,20 @@ setInterval(() => {
 // Service URL helper
 // ---------------------------------------------------------------------------
 
+// M2: FODDA_SERVICE_URL must be set in Cloud Run env vars.
+// Fallback to localhost for local dev only. The hardcoded project hash
+// was removed — if it was being used, the URL was silently wrong.
 function getServiceUrl(): string {
-    return process.env.K_SERVICE
-        ? `https://${process.env.K_SERVICE}-${process.env.K_REVISION?.split('-').pop() || '7mopqjzhwq'}-uk.a.run.app`
-        : `http://localhost:${process.env.PORT || 8080}`;
+    if (process.env.FODDA_SERVICE_URL) return process.env.FODDA_SERVICE_URL;
+    if (process.env.K_SERVICE) {
+        // Derive from K_SERVICE + K_REVISION if FODDA_SERVICE_URL not set.
+        // Requires CLOUD_RUN_REGION env var (e.g. 'uk') to be set.
+        const region = process.env.CLOUD_RUN_REGION || 'uk';
+        const revHash = process.env.K_REVISION?.split('-').pop();
+        if (!revHash) console.error('[getServiceUrl] WARNING: K_REVISION not set — widget URLs may be wrong');
+        return `https://${process.env.K_SERVICE}-${revHash || 'unknown'}-${region}.a.run.app`;
+    }
+    return `http://localhost:${process.env.PORT || 8080}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,11 +144,6 @@ function getServiceUrl(): string {
 /**
  * Make an authenticated request to the Fodda API.
  * Checks the query cache first; stores responses on cache miss.
- *
- * For trial API keys, enforces per-user token limits via Firestore.
- * When the per-user limit is reached, throws a synthetic 403 matching
- * the format that handleTrialCreditExhaustion() expects — preserving
- * the existing trial → Base conversion flow.
  */
 async function foddaRequest(
     method: 'GET' | 'POST' | 'PATCH',
@@ -137,41 +152,26 @@ async function foddaRequest(
     userId: string,
     body?: any,
     requestId?: string,
-    source?: string
+    source?: string,
+    spt?: string
 ): Promise<any> {
-    // ── Per-user trial limit check ──
-    const isTrial = apiKey.startsWith('sk_trial_');
-    if (isTrial) {
-        const check = await checkTrialLimit(userId);
-        if (!check.allowed) {
-            console.error(`[trialTracker] Per-user limit reached for ${userId} (${check.count}/${check.limit})`);
-            // Throw a synthetic 403 that matches handleTrialCreditExhaustion() format
-            const syntheticError: any = new Error('Per-user trial token limit reached');
-            syntheticError.response = {
-                status: 403,
-                data: {
-                    error: {
-                        code: 'CREDITS_EXHAUSTED',
-                        message: 'Your trial tokens have run out.',
-                    },
-                },
-            };
-            throw syntheticError;
-        }
-    }
-
     // ── Cache check ──
     const cached = cacheGet(method, path, body);
     if (cached !== null) return cached;
 
     const timestamp = Date.now().toString();
     const headers: Record<string, string> = {
-        'X-API-Key': apiKey,
         'X-User-Id': userId,
         'X-Fodda-Timestamp': timestamp,
         'X-Fodda-Billing': 'mcp-orchestrated',  // Tells API to skip per-call billing — MCP charges lump sum via meter
         'Content-Type': 'application/json',
     };
+    // SPT settlement: the Shared Payment Token is the payer (Authorization Bearer), no X-API-Key.
+    if (spt) {
+        headers['Authorization'] = `Bearer ${spt}`;
+    } else {
+        headers['X-API-Key'] = apiKey;
+    }
     if (requestId) headers['X-Request-Id'] = requestId;
     if (source) headers['X-Fodda-Source'] = source;
 
@@ -186,37 +186,67 @@ async function foddaRequest(
     }
 
     const url = `${API_BASE_URL}${path}`;
+    // Base timeout: 30s aligns with MCP client expectations.
+    // Extended to 60s for analyst consult — multi-turn LLM + tool calls can legitimately exceed 30s.
+    const AXIOS_TIMEOUT_MS = /\/analysts\/consult/.test(path) ? 60000 : 30000;
     const response = method === 'GET'
-        ? await axios.get(url, { headers, timeout: 120000 })
+        ? await axios.get(url, { headers, timeout: AXIOS_TIMEOUT_MS })
         : method === 'PATCH'
-        ? await axios.patch(url, body, { headers, timeout: 120000 })
-        : await axios.post(url, body, { headers, timeout: 120000 });
+        ? await axios.patch(url, body, { headers, timeout: AXIOS_TIMEOUT_MS })
+        : await axios.post(url, body, { headers, timeout: AXIOS_TIMEOUT_MS });
 
     // ── Cache store ──
     cacheSet(method, path, body, response.data);
 
-    // ── Per-user trial increment + inject per-user remaining ──
-    if (isTrial) {
-        const newCount = await incrementTrialUsage(userId, 1, 'search');
-        const remaining = Math.max(0, 50 - newCount);
-        console.error(`[trialTracker] ${userId}: ${newCount}/50 tokens used (${remaining} remaining)`);
+    // ── Inject upstream usage warning headers into response data ──
+    // The app returns X-Usage-Warning / X-Usage-Percent / X-Usage-Overage-Tokens
+    // on successful responses to indicate approaching-limit or overage-active status.
+    const usageWarningHeader = response.headers?.['x-usage-warning'];
+    if (usageWarningHeader && response.data && typeof response.data === 'object') {
+        response.data._upstream_usage = {
+            warning: usageWarningHeader,  // 'approaching-limit' or 'overage-active'
+        };
+        const pct = response.headers['x-usage-percent'];
+        if (pct) response.data._upstream_usage.percent = parseInt(pct, 10);
+        const overageTokens = response.headers['x-usage-overage-tokens'];
+        if (overageTokens) response.data._upstream_usage.overage_tokens = parseInt(overageTokens, 10);
+    }
 
-        // Inject per-user remaining into response so appendUsageWarning() triggers earlier
-        if (response.data && typeof response.data === 'object') {
-            if (!response.data.usage) response.data.usage = {};
-            // Override API's shared pool remaining with per-user remaining
-            // (whichever is lower takes effect via appendUsageWarning)
-            const apiRemaining = response.data.usage.remaining ?? response.data.usage.credits_remaining;
-            if (apiRemaining === undefined || remaining < apiRemaining) {
-                response.data.usage.remaining = remaining;
-                response.data.usage.credits_remaining = remaining;
-            }
-            response.data.usage._per_user_count = newCount;
-            response.data.usage._per_user_limit = 50;
-        }
+    // ── Billing-mode trust check (Option C) ──
+    // Every MCP request claims mcp-orchestrated; the API echoes the EFFECTIVE mode.
+    // If it returns 'per-call', the API did NOT trust our HMAC → the user is billed
+    // per-call AND will be metered = double-charge. Surface loudly (don't suppress
+    // silently — under correct Option C this should never fire, so it means a real
+    // regression: FODDA_MCP_SECRET parity or signing drift).
+    const effectiveBillingMode = response.headers?.['x-fodda-billing-mode']
+        || (response.data && typeof response.data === 'object' ? response.data?.usage?.billing_mode : undefined);
+    if (effectiveBillingMode === 'per-call') {
+        console.error(`[foddaRequest] ⚠️ DOUBLE-CHARGE RISK: ${method} ${path} returned billing_mode='per-call' despite mcp-orchestrated — API did not trust the MCP HMAC. Check FODDA_MCP_SECRET parity.`);
     }
 
     return response.data;
+}
+
+// ---------------------------------------------------------------------------
+// SPT validation — connect-time, non-charging coverage check
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate a Stripe Shared Payment Token at session connect (no charge).
+ * GET /v1/spt/validate → { valid, max_amount_cents, spt_prices_usd }.
+ * Lets the MCP refuse a task the SPT can't cover BEFORE running it.
+ */
+async function validateSpt(spt: string): Promise<{ valid: boolean; max_amount_cents: number | null; prices: Record<string, number>; error?: string }> {
+    try {
+        const resp = await axios.get(`${API_BASE_URL}/v1/spt/validate`, {
+            headers: { 'Authorization': `Bearer ${spt}` },
+            timeout: 15000,
+        });
+        const d = resp.data || {};
+        return { valid: d.valid === true, max_amount_cents: d.max_amount_cents ?? null, prices: d.spt_prices_usd || {} };
+    } catch (e: any) {
+        return { valid: false, max_amount_cents: null, prices: {}, error: e.response?.data?.error || e.message };
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,26 +273,8 @@ async function waverunnerRequest(
     userId: string,
     waverunnerPayload: any
 ): Promise<any> {
-    const isTrial = userApiKey.startsWith('sk_trial_');
-
     // ── Pre-check credits ──
-    if (isTrial) {
-        const check = await checkTrialLimit(userId, interactionType);
-        if (!check.allowed) {
-            console.error(`[waverunnerRequest] Trial ${interactionType} credits exhausted for ${userId}`);
-            const syntheticError: any = new Error(`Trial ${interactionType} credits exhausted`);
-            syntheticError.response = {
-                status: 403,
-                data: {
-                    error: {
-                        code: 'CREDITS_EXHAUSTED',
-                        message: `Your trial ${interactionType.replace('_', ' ')} credits have run out.`,
-                    },
-                },
-            };
-            throw syntheticError;
-        }
-    }
+    // (sk_trial_ pre-check removed — new trial accounts are metered server-side by the API)
 
     // ── Call Waverunner via Gemini SDK ──
     const geminiKey = process.env.GEMINI_API_KEY;
@@ -273,17 +285,11 @@ async function waverunnerRequest(
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const result = await ai.interactions.create(waverunnerPayload);
 
-    // ── Post-decrement ──
-    if (isTrial) {
-        await incrementTrialUsage(userId, tokenCost, interactionType);
-        console.error(`[waverunnerRequest] Trial ${interactionType} charge: ${tokenCost} token(s) for ${userId}`);
-    } else {
-        // Decrement paid account via Fodda API metering endpoint (fire-and-forget)
-        foddaRequest('POST', '/v1/research/meter', userApiKey, userId, {
-            type: interactionType,
-            billable_units: tokenCost,
-        }).catch(err => console.error('[waverunnerRequest] Paid account metering failed:', err.message));
-    }
+    // ── Post-decrement (paid accounts) ──
+    foddaRequest('POST', '/v1/research/meter', userApiKey, userId, {
+        type: interactionType,
+        billable_units: tokenCost,
+    }).catch(err => console.error('[waverunnerRequest] Metering failed:', err.message));
 
     return result;
 }
@@ -510,7 +516,7 @@ app.get('/mcp', (req, res, next) => {
 
   <p class="subtitle">
     You've opened a <strong>Model Context Protocol (MCP)</strong> endpoint.
-    It's designed to be used by AI assistants like Claude, ChatGPT, or Cursor &mdash;
+    It's designed to be used by AI assistants like Claude, ChatGPT, Cursor, or the OpenAI Responses API &mdash;
     not visited directly in a web browser.
   </p>
 
@@ -552,29 +558,59 @@ app.all('/mcp', async (req, res) => {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
 
+        // SPT (anonymous Shared Payment Token) detection — MUST precede api-key
+        // extraction so an `spt_xxx` Bearer is never treated as an API key.
+        const rawAuth = req.headers['authorization']?.toString() || '';
+        const spt = (req.query.spt as string)
+            || (req.headers['x-stripe-spt'] as string)
+            || (/^Bearer\s+spt_/i.test(rawAuth) ? rawAuth.replace(/^Bearer\s+/i, '') : '')
+            || '';
+        const isSpt = !!spt;
+
         // Extract API key, userId, and entry ID from URL or headers
         // Priority: query string (existing MCP clients) → X-API-Key header → Authorization Bearer (Remote MCP)
-        const apiKey = (req.query.api_key as string)
+        const apiKey = isSpt ? '' : ((req.query.api_key as string)
             || (req.headers['x-api-key'] as string)
             || (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
-            || '';
+            || '');
         const entryId = (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup
         const isEmailId = entryId.includes('@') && entryId.includes('.');
-        const userId = (req.query.user_id as string) || (isEmailId ? entryId : 'anonymous');
-        const source = (req.query.source as string) || '';
+        const userId = isSpt ? 'spt_agent' : ((req.query.user_id as string)
+            || (req.headers['x-user-id'] as string)
+            || (isEmailId ? entryId : 'anonymous'));
+        const source = (req.query.source as string) || (isSpt ? 'spt' : '');
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;
         } else if (!sessionId && req.method === 'POST') {
             const body = req.body;
             if (body?.method === 'initialize') {
-                // Store API key/userId for this session
-                // Wrap foddaRequest to bake in source attribution
-                const boundFoddaRequest = source
-                    ? ((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest
-                    : foddaRequest;
-                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId);
+                // For an SPT (anonymous) session: validate the token ONCE now (no charge)
+                // so we can refuse a task the SPT can't cover before running it. Reject the
+                // connection if the token is bad/unfunded.
+                let sptInfo: { token: string; maxAmountCents: number | null; prices: Record<string, number> } | null = null;
+                if (isSpt) {
+                    const v = await validateSpt(spt);
+                    if (!v.valid) {
+                        return res.status(402).json({
+                            jsonrpc: '2.0',
+                            error: { code: -32002, message: `SPT validation failed: ${v.error || 'invalid token'}` },
+                            id: body?.id ?? null,
+                        });
+                    }
+                    sptInfo = { token: spt, maxAmountCents: v.max_amount_cents, prices: v.prices };
+                }
+                // Wrap foddaRequest. SPT sessions authenticate the internal fan-out with the
+                // internal service key (the SPT is spent ONCE at settlement, never on fan-out);
+                // otherwise bake in source attribution.
+                const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
+                const boundFoddaRequest = isSpt
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, 'spt', sptArg)) as typeof foddaRequest)
+                    : (source
+                        ? (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest)
+                        : foddaRequest);
+                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined);
                 transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: () => crypto.randomUUID(),
                     onsessioninitialized: (sid) => {
@@ -582,7 +618,9 @@ app.all('/mcp', async (req, res) => {
                         transports.set(sid, transport);
                         sessionApiKeys.set(sid, apiKey);
                         sessionUserIds.set(sid, userId);
+                        sessionCreatedAt.set(sid, Date.now()); // C2: track creation time
                         if (source) sessionSources.set(sid, source);
+                        if (sptInfo) sessionSpts.set(sid, sptInfo);
                     }
                 });
                 transport.onclose = () => {
@@ -592,6 +630,8 @@ app.all('/mcp', async (req, res) => {
                         sessionApiKeys.delete(sid);
                         sessionUserIds.delete(sid);
                         sessionSources.delete(sid);
+                        sessionSpts.delete(sid);
+                        sessionCreatedAt.delete(sid); // C2: clean up creation time
                     }
                 };
                 await server.connect(transport as any);
@@ -634,10 +674,19 @@ app.get('/sse', async (req, res) => {
     const apiKey = (req.query.api_key as string) || '';
     const entryId = (req.query.id as string) || '';
     const isEmailId = entryId.includes('@') && entryId.includes('.');
-    const userId = (req.query.user_id as string) || (isEmailId ? entryId : 'anonymous');
+    const userId = (req.query.user_id as string)
+        || (req.headers['x-user-id'] as string)
+        || (isEmailId ? entryId : 'anonymous');
+    const source = (req.query.source as string) || '';
     const sessionId = crypto.randomUUID();
     const transport = new SSEServerTransport('/messages', res);
-    const server = await createServer(apiKey, userId, foddaRequest, waverunnerRequest, storeWidget, getServiceUrl);
+
+    // Bind source parameter to foddaRequest to forward it upstream as X-Fodda-Source
+    const boundFoddaRequest = source
+        ? ((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest
+        : foddaRequest;
+
+    const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl);
     await server.connect(transport as any);
     console.error(`SSE session: ${sessionId}`);
 });

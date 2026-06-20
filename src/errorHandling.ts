@@ -37,6 +37,28 @@ async function fetchAgentCheckoutLink(email: string | null, source: string = 'mc
     }
 }
 
+/**
+ * Attempt to generate a one-click Stripe setup URL for adding a payment method.
+ * Calls the App's setup-url endpoint. Returns the URL on success, or null on failure.
+ * Non-blocking: failures fall back to the billing page URL.
+ */
+async function fetchSetupUrl(emailOrAccountId: string): Promise<string | null> {
+    try {
+        const body = emailOrAccountId.includes('@')
+            ? { email: emailOrAccountId }
+            : { accountId: emailOrAccountId };
+        const response = await axios.post(
+            `${APP_BASE_URL}/api/account/setup-url`,
+            body,
+            { headers: { 'Content-Type': 'application/json' }, timeout: 8000 }
+        );
+        return response.data?.setupUrl || null;
+    } catch (err: any) {
+        console.warn(`[setup-url] Failed to generate setup URL: ${err?.message}`);
+        return null;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Error classification
 // ---------------------------------------------------------------------------
@@ -46,7 +68,7 @@ async function fetchAgentCheckoutLink(email: string | null, source: string = 'mc
  * Now handles both 403 Forbidden (existing) and 402 Payment Required
  * (new individual trial system, planCode 13).
  */
-export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credits' | null {
+export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credits' | 'legacy_retired' | null {
     const status = err.response?.status;
     if (status !== 403 && status !== 402) return null;
 
@@ -57,14 +79,17 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
     if (status === 402) return 'credits';
 
     // 403 sub-classification
+    if (code === 'LEGACY_TRIAL_RETIRED') return 'legacy_retired';
     if (code === 'GRAPH_DISABLED' || msg.includes('disabled')) return 'disabled';
     if (
         code === 'CREDITS_EXHAUSTED' ||
         code === 'INSUFFICIENT_CREDITS' ||
         code === 'LIMIT_EXCEEDED' ||
+        code === 'PLAN_LIMIT_EXCEEDED' ||
         code === 'TRIAL_EXHAUSTED' ||
         msg.includes('credit') ||
         msg.includes('limit reached') ||
+        msg.includes('limit exceeded') ||
         msg.includes('trial limit')
     ) return 'credits';
     return 'forbidden'; // FORBIDDEN — plan doesn't cover this source
@@ -89,6 +114,12 @@ export async function handleAccessError(err: any, toolName: string): Promise<{ i
     if (accessType === 'disabled') {
         return { isError: false, content: [{ type: 'text' as const, text: JSON.stringify({ data: null, note: `This data source is currently disabled in the user's settings. They can re-enable it at https://app.fodda.ai` }) }] };
     }
+    if (accessType === 'legacy_retired') {
+        const errorMsg = err.response?.data?.error?.message || err.response?.data?.error || err.response?.data?.message
+            || 'Legacy trial keys are no longer supported. Sign up at app.fodda.ai.';
+        const signupUrl = err.response?.data?.signupUrl || 'https://app.fodda.ai';
+        return { isError: false, content: [{ type: 'text' as const, text: JSON.stringify({ status: 'LEGACY_TRIAL_RETIRED', message: errorMsg, signupUrl }) }] };
+    }
     if (accessType === 'credits') {
         const errorData = err.response?.data?.error || err.response?.data || {};
         const msg = errorData.message || 'Query limit reached.';
@@ -106,7 +137,7 @@ export async function handleAccessError(err: any, toolName: string): Promise<{ i
         const response: Record<string, any> = {
             status: 'CREDITS_EXHAUSTED',
             message: checkoutUrl
-                ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more tokens →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at https://app.fodda.ai`
+                ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at https://app.fodda.ai`
                 : msg,
             upsell: upsell,
             usage: usage,
@@ -118,6 +149,8 @@ export async function handleAccessError(err: any, toolName: string): Promise<{ i
         }
         if (payg) {
             response.payg = payg;
+            const paygUrl = payg.checkoutUrl || payg.url || payg.link;
+            response.message += `\n\n💳 **Pay-as-you-go:** keep querying without a plan — billed per API call.${paygUrl ? ` Set it up here: ${paygUrl}` : ''}`;
         }
 
         return {
@@ -193,71 +226,39 @@ export async function handleTrialCreditExhaustion(
     sessionUserId: string
 ): Promise<{ isError: boolean; content: { type: 'text'; text: string }[] } | null> {
     const accessType = classifyAccessError(err);
+
+    // ── Legacy trial key retirement — surface API message directly ──
+    if (accessType === 'legacy_retired') {
+        const errorMsg = err.response?.data?.error?.message || err.response?.data?.error || err.response?.data?.message
+            || 'Legacy trial keys are no longer supported. Sign up for a free Base account at app.fodda.ai to get 100 API calls/month.';
+        const signupUrl = err.response?.data?.signupUrl || err.response?.data?.error?.signupUrl || 'https://app.fodda.ai';
+
+        return {
+            isError: false,
+            content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                    status: 'LEGACY_TRIAL_RETIRED',
+                    message: errorMsg,
+                    signupUrl,
+                    action: 'VISIT_APP',
+                    note: 'Present the message to the user exactly as written — it already contains the right context (new account created, existing account found, or signup needed). Include the signupUrl as a clickable link.',
+                }, null, 2)
+            }]
+        };
+    }
+
     if (accessType !== 'credits') return null; // Not a credit error — let caller handle
 
-    const isLegacyTrial = sessionApiKey.startsWith('sk_trial_');
+    // sk_trial_ keys are retired — isLegacyTrial always false.
+    // Individual trial accounts (planCode 13) use sk_live_ keys; detected from the error response.
     const isNewTrial = isIndividualTrial(err);
-    const isTrial = isLegacyTrial || isNewTrial;
+    const isTrial = isNewTrial;
 
     // Extract usage metadata from the error response (backend may include it)
     const errUsage = err.response?.data?.usage || null;
     const usedCount = errUsage?.used ?? errUsage?.queries_used ?? null;
     const limitCount = errUsage?.limit ?? errUsage?.query_limit ?? (isNewTrial ? 25 : null);
-
-    if (isLegacyTrial && sessionUserId && sessionUserId !== 'anonymous') {
-        // AUTO-UPGRADE: We have the email, create Base account via App trial-convert endpoint
-        try {
-            // Derive firstName from email prefix as fallback
-            const firstName = (sessionUserId.split('@')[0] || 'User').replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-            const convertBody = {
-                email: sessionUserId,
-                trialKey: sessionApiKey,
-                firstName,
-            };
-
-            const convertResponse = await axios.post(
-                `${APP_BASE_URL}/api/account/trial-convert`,
-                convertBody,
-                { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
-            );
-
-            if (convertResponse.data?.ok && !convertResponse.data?.alreadyExists) {
-                return {
-                    isError: false,
-                    content: [{
-                        type: 'text' as const,
-                        text: JSON.stringify({
-                            status: 'UPGRADED',
-                            message: `I've created your Base account — you'll get ${convertResponse.data.monthlyTokens || 100} tokens/month. You now have a central dashboard at https://app.fodda.ai where you can invite team members, manage your research profile, and toggle specific knowledge graphs on/off. Check your email for a confirmation link to get started.`,
-                            plan: convertResponse.data.plan || 'Base',
-                            monthly_token_limit: convertResponse.data.monthlyTokens || 100,
-                            graphId: convertResponse.data.graphId || null,
-                            accountId: convertResponse.data.accountId || null,
-                        }, null, 2)
-                    }]
-                };
-            }
-
-            if (convertResponse.data?.alreadyExists) {
-                const portalUrl = buildPortalUpgradeUrl(sessionUserId);
-                return {
-                    isError: false,
-                    content: [{
-                        type: 'text' as const,
-                        text: JSON.stringify({
-                            status: 'EXISTING_ACCOUNT',
-                            message: `It looks like you already have a Fodda account with ${sessionUserId}. Log in at ${portalUrl} to manage your account or upgrade your plan.`,
-                            upgrade_url: portalUrl,
-                        }, null, 2)
-                    }]
-                };
-            }
-        } catch (upgradeErr) {
-            console.error('[trial-convert] Auto-upgrade failed, falling through to manual flow:', (upgradeErr as any)?.message);
-            // Fall through to manual prompt
-        }
-    }
 
     if (isTrial) {
         const portalUrl = buildPortalUpgradeUrl(
@@ -267,43 +268,25 @@ export async function handleTrialCreditExhaustion(
             ? ` (${usedCount}/${limitCount} queries used)`
             : '';
 
-        // Individual trial (planCode 13): direct to portal with upgrade link
-        if (isNewTrial) {
-            return {
-                isError: false,
-                content: [{
-                    type: 'text' as const,
-                    text: JSON.stringify({
-                        status: 'TRIAL_EXHAUSTED',
-                        message: `Your Fodda trial limit has been reached${usageNote}. Upgrade to the free **Base** plan (100 queries/month upon email verification) or a paid plan to continue using Fodda.\n\n🚀 **[Upgrade Now →](${portalUrl})**`,
-                        action: 'UPGRADE_REQUIRED',
-                        upgrade_url: portalUrl,
-                        note: 'Present the upgrade link prominently. The Base plan is FREE and gives 100 queries/month after email verification.',
-                    }, null, 2)
-                }]
-            };
-        }
-
-        // Legacy shared trial: collect email to create Base account
         return {
             isError: false,
             content: [{
                 type: 'text' as const,
                 text: JSON.stringify({
                     status: 'TRIAL_EXHAUSTED',
-                    message: `Your trial tokens have run out${usageNote} — but I can get you 100 tokens/month by signing you up for a Fodda Base account instantly. This includes a central dashboard at app.fodda.ai to manage your team and knowledge graphs. All I need is your email address. Would you like me to set that up?\n\nAlternatively, you can upgrade directly at: ${portalUrl}`,
-                    action: 'COLLECT_EMAIL',
+                    message: `Your Fodda trial limit has been reached${usageNote}. Upgrade to the free **Base** plan (100 queries/month upon email verification) or a paid plan to continue using Fodda.\n\n🚀 **[Upgrade Now →](${portalUrl})**`,
+                    action: 'UPGRADE_REQUIRED',
                     upgrade_url: portalUrl,
-                    note: 'Trial → Base transition is FREE. Do NOT show payment links to trial users. Collect email to create their account.'
+                    note: 'Present the upgrade link prominently. The Base plan is FREE and gives 100 queries/month after email verification.',
                 }, null, 2)
             }]
         };
     }
 
-    // Non-trial credit exhaustion — use API's specialized message + upsell (Base users)
-    // Phase 3: attempt to create an inline Stripe Checkout link for immediate purchase
+    // Non-trial credit exhaustion — handles both legacy CREDITS_EXHAUSTED and new PLAN_LIMIT_EXCEEDED
     const errorData = err.response?.data?.error || err.response?.data || {};
-    const apiMsg = errorData.message || "You've used all your tokens for this month.";
+    const errCode = (errorData.code || err.response?.data?.code || '').toString().toUpperCase();
+    const apiMsg = errorData.message || "You've used all your API calls for this month.";
     const upsell = errorData.upsell || null;
     const usage = err.response?.data?.usage || null;
     const payg = err.response?.data?.payg || null;
@@ -312,6 +295,38 @@ export async function handleTrialCreditExhaustion(
     // Resolve email: session userId (if it's an email), or null
     const email = sessionUserId && sessionUserId.includes('@') ? sessionUserId : null;
 
+    // ── PLAN_LIMIT_EXCEEDED — overage billing (no card on file) ──
+    // The upstream API returns setupUrl directly; if missing, fetch it ourselves
+    if (errCode === 'PLAN_LIMIT_EXCEEDED') {
+        let setupUrl = err.response?.data?.setupUrl || errorData.setupUrl || null;
+        if (!setupUrl && (email || sessionUserId)) {
+            setupUrl = await fetchSetupUrl(email || sessionUserId);
+        }
+        const upgradeUrl = `${APP_BASE_URL}?view=billing`;
+
+        const response: Record<string, any> = {
+            status: 'PLAN_LIMIT_EXCEEDED',
+            code: 'PLAN_LIMIT_EXCEEDED',
+            message: setupUrl
+                ? `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.20/API call.\n\n💳 **[Add payment method →](${setupUrl})**\n\nThis is a one-click Stripe link to add a card. After adding, queries resume immediately with overage billing.\n\nOr manage your billing at ${upgradeUrl}`
+                : `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.20/API call.\n\nManage your billing at ${upgradeUrl}`,
+            action: setupUrl ? 'ADD_PAYMENT_METHOD' : 'VISIT_BILLING',
+            note: 'Present the setupUrl prominently — it is a one-click card addition link. The upgradeUrl lets them manage billing.',
+        };
+        if (setupUrl) response.setupUrl = setupUrl;
+        response.upgradeUrl = upgradeUrl;
+        if (usage) response.usage = usage;
+
+        return {
+            isError: true,
+            content: [{
+                type: 'text' as const,
+                text: JSON.stringify(response, null, 2)
+            }]
+        };
+    }
+
+    // ── Legacy credit exhaustion — checkout link + upsell (Base users) ──
     // Try to get an inline checkout link (best-effort, non-blocking)
     let checkoutUrl = agentCheckout?.url || null;
     if (!checkoutUrl) {
@@ -322,7 +337,7 @@ export async function handleTrialCreditExhaustion(
     const response: Record<string, any> = {
         status: 'CREDITS_EXHAUSTED',
         message: checkoutUrl
-            ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more tokens →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at ${portalUrl}`
+            ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at ${portalUrl}`
             : apiMsg,
         upsell: upsell,
         usage: usage,
@@ -337,6 +352,8 @@ export async function handleTrialCreditExhaustion(
     }
     if (payg) {
         response.payg = payg;
+        const paygUrl = payg.checkoutUrl || payg.url || payg.link;
+        response.message += `\n\n💳 **Pay-as-you-go:** keep querying without a plan — billed per API call.${paygUrl ? ` Set it up here: ${paygUrl}` : ''}`;
     }
 
     return {

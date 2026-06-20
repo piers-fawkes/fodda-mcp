@@ -8,10 +8,10 @@
  * for Claude to fill client-side.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI, ServiceTier } from '@google/genai';
 
 // ---------------------------------------------------------------------------
-// Google AI Studio — Gemini (singleton SDK + model cache)
+// Google AI Studio — Gemini (singleton SDK)
 // ---------------------------------------------------------------------------
 interface GeminiResponse {
     text: string;
@@ -20,43 +20,32 @@ interface GeminiResponse {
 
 // Singleton: instantiate SDK once at module load, not per-call
 const genAI = process.env.GOOGLE_AI_API_KEY
-    ? new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY)
+    ? new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY })
     : null;
-
-// Cache model instances by name — avoids re-creating on every call
-const modelCache = new Map<string, any>();
-function getModel(modelName: string) {
-    if (!genAI) return null;
-    let model = modelCache.get(modelName);
-    if (!model) {
-        model = genAI.getGenerativeModel({ model: modelName });
-        modelCache.set(modelName, model);
-    }
-    return model;
-}
 
 const GEMINI_TIMEOUT_MS = 5000; // 5s hard timeout to prevent widget-render hangs
 
 async function callGemini(prompt: string, modelName: string = 'gemini-2.0-flash', maxTokens: number = 2048): Promise<GeminiResponse> {
-    const model = getModel(modelName);
-    if (!model) {
+    if (!genAI) {
         return { text: '', error: 'GOOGLE_AI_API_KEY environment variable is not set.' };
     }
 
     try {
-        const generatePromise = model.generateContent({
+        const generatePromise = genAI.models.generateContent({
+            model: modelName,
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: {
+            config: {
                 temperature: 0.7,
                 maxOutputTokens: maxTokens,
                 responseMimeType: 'application/json',
-            }
+                serviceTier: ServiceTier.FLEX,
+            },
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error('Gemini timeout')), GEMINI_TIMEOUT_MS)
         );
         const result = await Promise.race([generatePromise, timeoutPromise]);
-        const text = result.response.text();
+        const text = result.text ?? '';
         return { text };
     } catch (err: any) {
         return { text: '', error: `Google AI Studio failed: ${err.message}` };
@@ -82,15 +71,21 @@ export async function fillSearchInsight(trends: TrendSummary[], query: string): 
         `"${t.name}" (signal:${t.signal}, ${t.stage}, brands:${t.brands.slice(0,3).join('/')||'—'})`
     ).join(', ');
 
-    const prompt = `You are a senior trend analyst. Write a single concise sentence (max 40 words) summarizing the strategic insight from these trends for the query "${query}".
+    const prompt = `---
+title: Search Insight Fill Prompt
+compliance: RFC-2119
+---
 
-Trends: ${trendList}
+### FUNCTION: GenerateSearchInsight
+- input_query: "${query}"
+- input_trends: [${trendList}]
 
-Rules:
-- Focus on WHAT the data reveals about the topic, not how many trends or which graphs they came from
-- Do NOT mention signal scores, trend counts, graph names, or sources
-- Write as editorial insight, not data description
-- No quotes around your response`;
+### RULE: StyleConstraints
+- The output MUST be a single, concise sentence (max 40 words) summarizing the strategic insight from the trends.
+- The output MUST focus on WHAT the data reveals about the topic, not how many trends or which graphs they came from.
+- The agent MUST NOT mention signal scores, trend counts, graph names, or sources.
+- Write as an editorial insight, not a data description.
+- Do NOT wrap the response in quotation marks.`;
 
     try {
         const result = await callGemini(prompt, 'gemini-2.0-flash', 256);
@@ -124,21 +119,28 @@ export async function fillBrandOneLiner(
     topCompetitors: string[],
 ): Promise<string> {
     const topTrends = trends.slice(0, 4).map(t => t.trend_name || t.trendName || '').filter(Boolean);
+    const trendLifecycles = trends.slice(0, 4).map(t => `${t.trend_name || t.trendName || ''} (${(t as any).lifecycle || 'building'})`).filter(Boolean);
     const compList = topCompetitors.slice(0, 3).join(', ');
 
-    const prompt = `Write ONE sentence (max 30 words) capturing the most interesting tension in ${brandName}'s current position.
+    const prompt = `---
+title: Brand One-Liner Fill Prompt
+compliance: RFC-2119
+---
 
-Data from Fodda knowledge graphs:
-- Momentum: ${velocity}
-- Connected trends: ${topTrends.join(', ')}
-${compList ? `- Co-occurring with: ${compList}` : ''}
+### FUNCTION: GenerateBrandOneLiner
+- input_brand: "${brandName}"
+- input_momentum: "${velocity}"
+- input_connected_trends: [${trendLifecycles.map(t => `"${t}"`).join(', ')}]
+${compList ? `- input_co_occurring: [${topCompetitors.slice(0, 3).map(c => `"${c}"`).join(', ')}]` : ''}
 
-Rules:
-- Name at least one specific trend from the list
-- State a TENSION, SHIFT, or SURPRISE — not a strength statement
-- BANNED words: leverages, solidifies, dominance, premiumization, platform expansion, innovative, commitment
-- Write like a journalist, not a consultant
-- Return JSON: {"one_liner":"your sentence"}`;
+### RULE: ContentConstraints
+- The output MUST be exactly ONE sentence (max 30 words) capturing the most interesting tension in ${brandName}'s current position.
+- The output MUST name at least one specific trend from the input list.
+- The output MUST state a TENSION, SHIFT, or SURPRISE — NOT a strength statement.
+- IMPORTANT: input_momentum describes ${brandName}'s overall evidence velocity (volume of coverage change). Each trend has its own lifecycle stage shown in parentheses. Do NOT say a trend is "${velocity}" if that trend's lifecycle is different — instead, find the tension between them.
+- BANNED words: leverages, solidifies, dominance, premiumization, platform expansion, innovative, commitment. These words MUST NOT be used.
+- Write like a journalist, not a consultant.
+- Return output strictly formatted as JSON matching this schema: {"one_liner":"your sentence"}`;
 
     try {
         const result = await callGemini(prompt, 'gemini-2.0-flash', 256);
@@ -161,7 +163,7 @@ Rules:
     }
 
     // Fallback
-    return `${brandName} is ${velocity} across ${topTrends[0] || 'emerging trends'}.`;
+    return `${brandName} is ${velocity} across ${trends.length} trend${trends.length !== 1 ? 's' : ''} including ${topTrends[0] || 'emerging signals'}.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -183,21 +185,26 @@ export async function fillTrendFootprintIntro(
     const graphNames = [...new Set(trends.map(t => t.graphName).filter(Boolean))];
     const graphSpread = graphNames.length;
 
-    const prompt = `You are a senior brand analyst writing for a Fodda Brand Intelligence report. Write exactly 2-3 sentences interpreting what ${brandName}'s trend footprint reveals. Be declarative and specific.
+    const prompt = `---
+title: Trend Footprint Intro Prompt
+compliance: RFC-2119
+---
 
-Data:
-- Trends connected to ${brandName}: ${trendList}
-- Lifecycle distribution: ${lcSummary} (total: ${trends.length})
-- Spread across ${graphSpread} knowledge graph${graphSpread !== 1 ? 's' : ''}: ${graphNames.join(', ')}
+### FUNCTION: GenerateTrendFootprintIntro
+- input_brand: "${brandName}"
+- input_trends: "${trendList}"
+- input_lifecycle_distribution: "${lcSummary}"
+- input_total_trends: ${trends.length}
+- input_graph_spread: "${graphNames.join(', ')}"
 
-Your interpretation MUST:
-1. Lead with the single most revealing pattern — for example: Is the brand mostly fading or building? Is there an imbalance (e.g., 5 fading vs 2 emerging)? Is the brand concentrated in one graph or spread wide?
-2. Name 1-2 specific trend names to ground your claim (e.g., "${brandName}'s connection to [trend name] suggests...")
-3. Say something only true of THIS brand and THIS data — not generic strategy language
-4. Do NOT use phrases like "leverages", "solidifies dominance", "strategic push", or "commitment to"
-5. Do NOT mention signal scores, evidence counts, or methodology
-
-Return JSON: {"intro":"your 2-3 sentences"}`;
+### RULE: InterpretationDirectives
+- The output MUST be exactly 2-3 declarative and specific sentences interpreting what ${brandName}'s trend footprint reveals.
+- The output MUST lead with the single most revealing pattern (e.g. fading vs building imbalance, concentration vs spread).
+- The output MUST name 1-2 specific trend names from the inputs to ground the claim.
+- The output MUST say something only true of THIS brand and THIS data, avoiding generic strategy language.
+- The agent MUST NOT use phrases: "leverages", "solidifies dominance", "strategic push", or "commitment to".
+- The agent MUST NOT mention signal scores, evidence counts, or methodology.
+- Return output strictly formatted as JSON matching this schema: {"intro":"your 2-3 sentences"}`;
 
     try {
         const result = await callGemini(prompt, 'gemini-2.0-flash', 512);
@@ -263,17 +270,22 @@ export async function fillMarketDataIntro(
     console.error(`[fillMarketDataIntro] ${brandName}: parts=${parts.length}: ${parts.join(' | ')}`);
     if (parts.length === 0) return '';
 
-    const prompt = `Write exactly 2 sentences interpreting ${brandName}'s market data signals for a brand intelligence report.
+    const prompt = `---
+title: Market Data Intro Prompt
+compliance: RFC-2119
+---
 
-Data: ${parts.join('. ')}
+### FUNCTION: GenerateMarketDataIntro
+- input_brand: "${brandName}"
+- input_data: "${parts.join('. ')}"
 
-Rules:
-1. Lead with the most striking number and what it means
-2. Note any surprises (e.g., unexpectedly low/high) but do NOT speculate about causes you can't see in the data
-3. If comparing pageviews or search interest, note these are attention signals that fluctuate with news cycles — avoid inferring long-term strategy from them
-4. Do NOT use phrases like "solidifies market dominance" or "demonstrates strong positioning"
-
-Return JSON: {"intro":"your 2 sentences"}`;
+### RULE: InterpretationDirectives
+- The output MUST be exactly 2 sentences interpreting the ${brandName}'s market data signals.
+- The output MUST lead with the most striking number and what it means.
+- Note any surprises in the data, but the agent MUST NOT speculate about causes not present in the data.
+- If comparing pageviews or search interest, note that these are attention signals that fluctuate with news cycles and avoid inferring long-term strategy from them.
+- The agent MUST NOT use phrases like "solidifies market dominance" or "demonstrates strong positioning".
+- Return output strictly formatted as JSON matching this schema: {"intro":"your 2 sentences"}`;
 
     try {
         const result = await callGemini(prompt, 'gemini-2.0-flash', 512);
@@ -310,12 +322,22 @@ export async function fillAnalysis(
         `"${t.name}" (sig:${t.signal}, ${t.stage}, brands:${t.brands.slice(0,3).join('/')||'—'}, ${t.graphName})`
     ).join('\n');
 
-    const prompt = `Senior brand strategist. Write 3-5 paragraph analysis for: "${query}"
+    const prompt = `---
+title: Trend Analysis Prompt
+compliance: RFC-2119
+---
 
-Data:\n${trendList}\n${supplementalSummary ? `Context: ${supplementalSummary}` : ''}
+### FUNCTION: GenerateTrendAnalysis
+- input_query: "${query}"
+- input_trends: "${trendList}"
+${supplementalSummary ? `- input_supplemental_context: "${supplementalSummary}"` : ''}
 
-Return JSON: {"analysis":"<p>...</p><p>...</p>"}
-Use <p> and <strong>. Reference specific trends/brands/scores. No filler. No mention of Fodda.`;
+### RULE: FormatConstraints
+- The output MUST be a 3-5 paragraph analysis written from the perspective of a senior brand strategist.
+- The output MUST be formatted as HTML using only <p> and <strong> tags inside the JSON.
+- The agent MUST reference specific trends, brands, and scores from the inputs.
+- The output MUST NOT contain filler or mention "Fodda".
+- Return output strictly formatted as JSON matching this schema: {"analysis":"HTML paragraphs"}`;
 
     try {
         const result = await callGemini(prompt, 'gemini-2.0-flash', 1024);
@@ -339,14 +361,26 @@ export async function fillBrandVerdict(
     competitorList: string,
     supplementalSummary: string,
 ): Promise<{ title: string; body: string; competitive_insight: string }> {
-    const prompt = `Senior strategist. Write Brand Intelligence verdict for "${brandName}".
+    const prompt = `---
+title: Brand Verdict Prompt
+compliance: RFC-2119
+---
 
-Trends: ${trendSummary}
-Competitors: ${competitorList}
-${supplementalSummary ? `Context: ${supplementalSummary}` : ''}
+### FUNCTION: GenerateBrandVerdict
+- input_brand: "${brandName}"
+- input_trends: "${trendSummary}"
+- input_competitors: "${competitorList}"
+${supplementalSummary ? `- input_supplemental_context: "${supplementalSummary}"` : ''}
 
-Return JSON: {"verdict_title":"4-8 word headline","verdict_body":"<p>2-3 paragraphs with <strong></p>","competitive_insight":"2-3 sentences vs competitors"}
-Be specific. No mention of Fodda.`;
+### RULE: ContentConstraints
+- The output MUST be a specific brand intelligence verdict.
+- Return output strictly formatted as JSON matching this schema:
+  {
+    "verdict_title": "4-8 word headline",
+    "verdict_body": "<p>2-3 paragraphs with <strong></p>",
+    "competitive_insight": "2-3 sentences comparing against competitors"
+  }
+- The output MUST NOT mention "Fodda".`;
 
     try {
         const result = await callGemini(prompt, 'gemini-2.0-flash', 1024);

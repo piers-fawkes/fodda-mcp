@@ -35,7 +35,7 @@ async function main() {
                     query: "test query",
                     userId: "self-test-user",
                     _meta: {
-                        authorization: "Bearer fk_live_sample"
+                        authorization: "Bearer sk_live_sample"
                     }
                 }
             });

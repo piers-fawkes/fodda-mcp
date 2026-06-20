@@ -31,7 +31,7 @@ async function runTest() {
         // Hex 1: Public Endpoint (Should pass without signature)
         console.log('\n--- Test 1: Public Endpoint (No Signature) ---');
         try {
-            const res1 = await axios.get(`${baseURL}/mcp/tools`);
+            const res1 = await axios.get(`${baseURL}/health`);
             console.log('✅ Passed: Public endpoint accessible (Status:', res1.status, ')');
         } catch (e: any) {
             console.error('❌ Failed: Public endpoint blocked (', e.message, ')');

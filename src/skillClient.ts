@@ -383,7 +383,7 @@ export function buildSkillInput(
             signal_score: r.signal_score || r.score || 0,
             trendLifecycle: r.trendLifecycle || 'unknown',
             momentum: r.momentum || 'unknown',
-            evidence_count: r.evidenceCount || r.evidence_count || 0,
+            evidence_count: r.evidence_count || r.evidenceCount || 0,
             graphName: r.graphName || '',
         })),
         evidence: rows.flatMap((r: any) =>

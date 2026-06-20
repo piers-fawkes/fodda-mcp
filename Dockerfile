@@ -24,4 +24,6 @@ EXPOSE 8080
 # Environment variables should be injected by Cloud Run
 # FODDA_API_KEY is required
 
+ENV NODE_ENV=production
+
 CMD ["node", "dist/index.js"]

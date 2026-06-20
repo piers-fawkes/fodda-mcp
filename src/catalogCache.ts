@@ -417,7 +417,9 @@ export function buildSupplementalPairingBlock(): string {
 }
 
 /**
- * Infer which supplemental tools pair with a graph based on its domain and topics.
+ * Infer which supplemental subcategories pair with a graph based on its domain and topics.
+ * Subcategories: Economic Indicators, Market Data, Financial Reporting,
+ *                Demand Signals, Demographic Context, Research Signals
  */
 interface ToolPairing {
     primary: string[];
@@ -450,105 +452,105 @@ function inferSupplementalPairing(g: CatalogGraph): ToolPairing {
 
     // Retail / Commerce
     if (text.match(/retail|commerce|shopping|store|e-commerce|omnichannel/)) {
-        primary.push('get_census_retail_snapshot', 'get_bea_spending_snapshot', 'get_fred_economic_snapshot');
-        secondary.push('get_bls_economic_snapshot', 'get_census_demographics_snapshot', 'get_wto_trade_snapshot', 'get_openalex_research_trends');
+        primary.push('Economic Indicators', 'Market Data');
+        secondary.push('Demographic Context', 'Financial Reporting');
         useWhen = 'Always. Retail trends need economic context — sales data, consumer spending, sentiment.';
     }
     // Beauty / Wellness / Health
     else if (text.match(/beauty|wellness|cosmetic|ingredient|skincare|health|biotech/)) {
-        primary.push('get_fda_ingredient_safety', 'get_pubmed_research_trends', 'get_clinical_trials');
-        secondary.push('get_bea_spending_snapshot', 'get_wikipedia_pageviews', 'get_wto_trade_snapshot');
-        useWhen = 'Always for ingredient-specific queries. PubMed for publication velocity. FDA for safety signals.';
+        primary.push('Research Signals');
+        secondary.push('Economic Indicators', 'Demand Signals', 'Market Data');
+        useWhen = 'Always for ingredient-specific queries. Research Signals for publication velocity and safety data.';
     }
     // Sports / Fitness / Recreation
     else if (text.match(/sport|fitness|fandom|athlete|recreation|trail|outdoor/)) {
-        primary.push('get_wikipedia_pageviews', 'get_bea_spending_snapshot', 'get_pew_survey_data');
-        secondary.push('get_fred_economic_snapshot', 'get_census_demographics_snapshot', 'get_wto_trade_snapshot');
-        useWhen = 'Wikipedia for attention tracking. BEA for recreation spending shifts. Pew for media consumption.';
+        primary.push('Demand Signals', 'Economic Indicators', 'Demographic Context');
+        secondary.push('Market Data');
+        useWhen = 'Demand Signals for attention tracking. Economic Indicators for recreation spending. Demographic Context for media consumption.';
     }
     // Fashion / Apparel
     else if (text.match(/fashion|apparel|clothing|streetwear|luxury|textile/)) {
-        primary.push('get_bea_spending_snapshot', 'get_bls_economic_snapshot', 'get_census_retail_snapshot');
-        secondary.push('get_wikipedia_pageviews', 'get_worldbank_global_snapshot');
-        useWhen = 'BEA for clothing PCE trends. BLS for apparel CPI. Census for e-commerce vs. brick-and-mortar split.';
+        primary.push('Economic Indicators', 'Market Data');
+        secondary.push('Demand Signals');
+        useWhen = 'Economic Indicators for clothing PCE and apparel CPI. Market Data for e-commerce vs. brick-and-mortar split.';
     }
     // Work / HR / Organization
     else if (text.match(/work|hr|talent|hybrid|employment|organization|workforce/)) {
-        primary.push('get_bls_economic_snapshot', 'get_fred_economic_snapshot');
-        secondary.push('get_census_demographics_snapshot');
-        useWhen = 'BLS for employment and wage data. FRED for macro sentiment and labor market indicators.';
+        primary.push('Economic Indicators');
+        secondary.push('Demographic Context');
+        useWhen = 'Economic Indicators for employment, wage data, and labor market indicators.';
     }
     // Consumer culture / Marketing / Advertising / Brand
     else if (text.match(/culture|marketing|advertising|brand|media|consumer culture|cultural/)) {
-        primary.push('get_pew_survey_data', 'get_wikipedia_pageviews');
-        secondary.push('get_bea_spending_snapshot', 'get_census_demographics_snapshot', 'get_openalex_research_trends');
-        useWhen = 'Pew for social media usage and attitudes. Wikipedia for cultural moment tracking. BEA for consumer spending.';
+        primary.push('Demographic Context', 'Demand Signals');
+        secondary.push('Economic Indicators', 'Research Signals');
+        useWhen = 'Demographic Context for social media usage and attitudes. Demand Signals for cultural moment tracking. Economic Indicators for consumer spending.';
     }
     // Technology / Electronics / Digital
     else if (text.match(/technology|electronics|digital|enterprise|platform|tech|ai|software/)) {
-        primary.push('get_fred_economic_snapshot', 'get_worldbank_global_snapshot');
-        secondary.push('get_bea_spending_snapshot', 'get_pew_survey_data', 'get_openalex_research_trends');
-        useWhen = 'FRED for business investment indicators. World Bank for tech trade. Pew for technology adoption attitudes.';
+        primary.push('Economic Indicators');
+        secondary.push('Demographic Context', 'Research Signals');
+        useWhen = 'Economic Indicators for business investment. Demographic Context for technology adoption attitudes. Research Signals for academic trends.';
     }
     // Travel / Tourism
     else if (text.match(/travel|tourism|hospitality|destination/)) {
-        primary.push('get_worldbank_global_snapshot', 'get_wto_trade_snapshot');
-        secondary.push('get_bea_spending_snapshot', 'get_wikipedia_pageviews');
-        useWhen = 'World Bank for tourism GDP. WTO for services trade. BEA for recreation spending.';
+        primary.push('Economic Indicators', 'Market Data');
+        secondary.push('Demand Signals');
+        useWhen = 'Economic Indicators for tourism GDP and services trade. Demand Signals for destination attention tracking.';
     }
     // Design / Lifestyle / Materials
     else if (text.match(/design|lifestyle|interior|material|color|aesthetic/)) {
-        primary.push('get_bea_spending_snapshot', 'get_worldbank_global_snapshot');
-        secondary.push('get_wikipedia_pageviews', 'get_fred_economic_snapshot', 'get_openalex_research_trends');
-        useWhen = 'BEA for housing and durable goods spending. World Bank for manufacturing context.';
+        primary.push('Economic Indicators');
+        secondary.push('Demand Signals', 'Research Signals');
+        useWhen = 'Economic Indicators for housing and durable goods spending. Research Signals for materials science context.';
     }
     // Food / CPG / Snacking
     else if (text.match(/food|snack|treat|indulgence|cpg|consumer goods/)) {
-        primary.push('get_bea_spending_snapshot', 'get_bls_economic_snapshot');
-        secondary.push('get_openfoodfacts_snapshot', 'get_fred_economic_snapshot');
-        useWhen = 'BEA for food spending. BLS for food CPI. Open Food Facts for product composition data.';
+        primary.push('Economic Indicators', 'Market Data');
+        secondary.push('Research Signals');
+        useWhen = 'Economic Indicators for food spending and CPI. Market Data for product composition and trade data.';
     }
     // Logistics / Shipping / Supply chain
     else if (text.match(/logistics|shipping|warehouse|supply chain|last.mile/)) {
-        primary.push('get_census_retail_snapshot', 'get_wto_trade_snapshot');
-        secondary.push('get_fred_economic_snapshot', 'get_worldbank_global_snapshot');
-        useWhen = 'Census for e-commerce vs retail data. WTO for cross-border trade volumes.';
+        primary.push('Market Data', 'Economic Indicators');
+        secondary.push('Financial Reporting');
+        useWhen = 'Market Data for e-commerce vs retail and cross-border trade volumes. Economic Indicators for macro context.';
     }
     // Trust / Public opinion
     else if (text.match(/trust|tipping|opinion|societal|backlash/)) {
-        primary.push('get_fred_economic_snapshot', 'get_pew_survey_data', 'get_oecd_economic_snapshot');
-        secondary.push('get_census_demographics_snapshot');
-        useWhen = 'FRED for macro consumer confidence. Pew for public trust data. OECD for international confidence divergence.';
+        primary.push('Economic Indicators', 'Demographic Context');
+        secondary.push('Research Signals');
+        useWhen = 'Economic Indicators for consumer confidence. Demographic Context for public trust and attitudes. Research Signals for academic framing.';
     }
     // Automotive
     else if (text.match(/automotive|car|vehicle|color trend/)) {
-        primary.push('get_worldbank_global_snapshot', 'get_wto_trade_snapshot');
-        secondary.push('get_bea_spending_snapshot');
-        useWhen = 'World Bank for auto manufacturing data. WTO for automotive trade flows.';
+        primary.push('Economic Indicators', 'Market Data');
+        secondary.push('Financial Reporting');
+        useWhen = 'Economic Indicators for auto manufacturing data. Market Data for automotive trade flows. Financial Reporting for OEM earnings.';
     }
     // CRM / Engagement / Martech
     else if (text.match(/crm|engagement|martech|retention|personalization/)) {
-        primary.push('get_bea_spending_snapshot', 'get_fred_economic_snapshot');
-        secondary.push('get_pew_survey_data');
-        useWhen = 'BEA for services spending. FRED for consumer sentiment as backdrop to engagement strategy.';
+        primary.push('Economic Indicators');
+        secondary.push('Demographic Context', 'Financial Reporting');
+        useWhen = 'Economic Indicators for services spending and consumer sentiment. Financial Reporting for corporate strategy context.';
     }
     // Sponsorship (MLB etc)
     else if (text.match(/sponsorship|mlb|baseball|stadium/)) {
-        primary.push('get_wikipedia_pageviews', 'get_bea_spending_snapshot');
-        secondary.push('get_census_demographics_snapshot', 'get_fred_economic_snapshot');
-        useWhen = 'Wikipedia for team/league/brand attention tracking. BEA for recreation spending.';
+        primary.push('Demand Signals', 'Economic Indicators');
+        secondary.push('Demographic Context', 'Financial Reporting');
+        useWhen = 'Demand Signals for team/league/brand attention tracking. Economic Indicators for recreation spending.';
     }
     // Public opinion data (Pew-type)
     else if (text.match(/public opinion|survey|demographics|pew/)) {
-        primary.push('get_census_demographics_snapshot', 'get_pew_survey_data');
-        secondary.push('get_fred_economic_snapshot');
-        useWhen = 'Census for demographic cross-referencing. FRED for macro sentiment backdrop.';
+        primary.push('Demographic Context');
+        secondary.push('Economic Indicators');
+        useWhen = 'Demographic Context for demographic cross-referencing and public opinion. Economic Indicators for macro sentiment backdrop.';
     }
     // Fallback
     else {
-        primary.push('get_fred_economic_snapshot', 'get_bea_spending_snapshot');
-        secondary.push('get_wikipedia_pageviews', 'get_worldbank_global_snapshot');
-        useWhen = `Use general economic indicators for context on ${g.domain || g.name} trends.`;
+        primary.push('Economic Indicators');
+        secondary.push('Demand Signals', 'Market Data');
+        useWhen = `Use Economic Indicators for macro context on ${g.domain || g.name} trends.`;
     }
 
     return { primary, secondary, useWhen };
@@ -767,8 +769,10 @@ export function getRelevantGraphs(
     maxGraphs: number = 15,
     threshold: number = 0.10,
 ): GraphRelevanceResult[] {
+    const DEPRECATED_GRAPH_IDS = new Set(['waldo', 'psfk']);
     const allGraphs = getLiveGraphs().filter(g =>
-        (g.graph_type === 'domain' || g.graph_type === 'expert' || g.graph_type === 'industry report') && g.graph_id !== 'waldo'
+        (g.graph_type === 'domain' || g.graph_type === 'expert' || g.graph_type === 'industry report')
+        && !DEPRECATED_GRAPH_IDS.has(g.graph_id)
     );
 
     if (allGraphs.length === 0) return [];

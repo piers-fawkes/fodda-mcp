@@ -9,8 +9,8 @@
 // ---------------------------------------------------------------------------
 // Pressure type color mapping
 // ---------------------------------------------------------------------------
-import { fillBrandOneLiner, fillBrandVerdict, fillTrendFootprintIntro, fillMarketDataIntro, replaceSlots, type TrendSummary } from './editorialFill.js';
-import { esc, FODDA_SHELL_CSS, PLAYFAIR_LINK, FODDA_LOGO_URL } from './widgetShell.js';
+import { fillBrandOneLiner, fillTrendFootprintIntro, fillMarketDataIntro, replaceSlots } from './editorialFill.js';
+import { esc, FODDA_LOGO_URL } from './widgetShell.js';
 import { getDomainGraphIds } from './catalogCache.js';
 
 const PRESSURE_COLORS: Record<string, { bg: string; color: string; label: string }> = {
@@ -60,6 +60,14 @@ const ORBIT_POSITIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+// SVG brand-name truncation (keeps text inside small circles)
+// ---------------------------------------------------------------------------
+function truncSvg(name: string, maxChars = 12): string {
+    if (name.length <= maxChars) return name;
+    return name.slice(0, maxChars - 1).trimEnd() + '…';
+}
+
+// ---------------------------------------------------------------------------
 // Sparkline shape derivation
 // ---------------------------------------------------------------------------
 function deriveSparklineShape(trend: any): string {
@@ -106,7 +114,7 @@ function computeLifecycle(trend: any): string {
         // Date-based lifecycle (most reliable)
         const ageMonths = (now - first) / (1000 * 60 * 60 * 24 * 30);
         const staleDays = (now - last) / (1000 * 60 * 60 * 24);
-        const count = trend.evidenceCount || trend.evidence_count || 0;
+        const count = trend.evidence_count || trend.evidenceCount || 0;
         if (staleDays > 180) return 'fading';
         if (ageMonths < 6 && count < 5) return 'emerging';
         if (ageMonths > 12 && count > 10) return 'mature';
@@ -136,9 +144,9 @@ function catClass(category: string): string {
     switch (category) {
         case 'Case Study': return 'cat-cs';
         case 'Signal': return 'cat-si';
-        case 'Metric': return 'cat-me';
-        case 'Quote': return 'cat-qu';
-        case 'Interpretation': return 'cat-in';
+        case 'Metric': case 'Datapoint': case 'Data Point': return 'cat-me';
+        case 'Quote': case 'Opinion': return 'cat-qu';
+        case 'Interpretation': case 'Interview': return 'cat-in';
         default: return 'cat-cs';
     }
 }
@@ -270,10 +278,13 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         ? earnings.slice(0, 5).map((e: any) => {
             const topicPills = (e.key_topics || e.keyTopics || []).slice(0, 5)
                 .map((t: string) => `<span class="rqp">${esc(t)}</span>`).join('');
-            const provenance = e.source === 'web_supplemental' ? 'Recent reports suggest' : 'Management noted';
+            const quarter = e.quarter || e.period || '';
+            const company = e.company || e.ticker || '';
+            const title = quarter ? `${company ? company + ' — ' : ''}${quarter}` : (company || 'Earnings Update');
+            const provenance = quarter ? `In the ${quarter} earnings report` : (e.source === 'web_supplemental' ? 'Recent reports suggest' : 'Management noted');
             const summary = e.summary || e.description || '';
             return `<div class="ec">
-  <div class="et" style="font-size:12px;font-weight:500;">${esc(e.company || e.ticker || '')} — ${esc(e.quarter || e.period || '')}</div>
+  <div class="et" style="font-size:12px;font-weight:500;">${esc(title)}</div>
   <div class="ex">${esc(provenance)}: ${esc(summary)}</div>
   <div class="rq" style="margin-top:6px;">${topicPills}</div>
 </div>`;
@@ -359,9 +370,11 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         const titleHtml = ev.source_url
             ? `<a href="${esc(ev.source_url)}">${esc(ev.title)}</a>`
             : esc(ev.title);
+        const speakerHtml = ev.speaker_name ? `<div style="font-size:11px;color:var(--color-text-secondary);margin-top:4px;font-style:italic;">${esc(ev.speaker_name)}${ev.speaker_title ? ', ' + esc(ev.speaker_title) : ''}</div>` : '';
         return `<div class="ec">
   ${imgTag}<div class="et">${titleHtml}</div>
   <div class="ex">${esc(ev.excerpt)}</div>
+  ${speakerHtml}
   <div class="em">
     <span class="lb ${catClass(ev.category)} bd">${esc(ev.category)}</span>
     <span class="bdp">${esc(ev.graphName)}</span>
@@ -395,7 +408,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         const colors = PRESSURE_COLORS[pType] || DEFAULT_PRESSURE;
         return `<line x1="150" y1="113" x2="${pos.cx}" y2="${pos.cy}" stroke="${colors.color}" stroke-width="0.5" stroke-dasharray="3,3"/>
         <circle cx="${pos.cx}" cy="${pos.cy}" r="18" fill="${colors.bg}" stroke="${colors.color}" stroke-width="1"/>
-        <text x="${pos.cx}" y="${pos.cy + 3}" class="svgt" font-size="7.5" text-anchor="middle" fill="${colors.color}">${esc(c.brand)}</text>`;
+        <text x="${pos.cx}" y="${pos.cy + 3}" class="svgt" font-size="7.5" text-anchor="middle" fill="${colors.color}">${esc(truncSvg(c.brand))}</text>`;
     }).join('\n        ');
 
     // Network legend — bottom-right (avoid overlapping left orbit node)
@@ -426,7 +439,15 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
 
     const amazonRaw = supplemental?.amazon || {};
     const amazon = amazonRaw?.snapshot || amazonRaw;
-    const products = amazon?.example_products || amazon?.products || [];
+    const rawProducts = amazon?.example_products || amazon?.products || [];
+    // Deduplicate by title and sort by review count descending
+    const seen = new Set<string>();
+    const products = rawProducts.filter((p: any) => {
+        const key = (p.name || p.title || '').toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    }).sort((a: any, b: any) => (b.reviews || 0) - (a.reviews || 0));
     const amazonProductsHtml = products.slice(0, 4).map((p: any) =>
         `<div class="ap"><div><div class="an2">${esc(p.name || p.title)}</div><div class="am2">${esc(p.price || '')}</div></div><div><div class="astar">${'★'.repeat(Math.round(p.rating || 0))}${'☆'.repeat(5 - Math.round(p.rating || 0))}</div><div class="am2">${(p.reviews || 0).toLocaleString()} reviews</div></div></div>`
     ).join('\n');
@@ -628,7 +649,7 @@ export const TEMPLATE = `
 .lci{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--color-text-secondary);}
 .lcd{width:8px;height:8px;border-radius:2px;}
 .card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:4px;padding:1rem 1.25rem;margin-bottom:8px;transition:border-color .15s,background .15s;}
-.card:hover{border-color:#663399;background:#F5F0FF;}
+.card:hover{border-color:var(--p);background:var(--pl);}
 .th{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px;}
 .tn{font-size:13px;font-weight:500;}
 .ta{display:flex;align-items:center;gap:4px;flex-shrink:0;}
@@ -755,10 +776,6 @@ export const TEMPLATE = `
   <p class="note">{{AMAZON_CAPTION}}</p>
 
   {{GEO_SECTION_HTML}}
-
-  {{EARNINGS_SECTION_HTML}}
-
-
 
   <div class="sec">Explore further</div>
   {{SUGGESTED_NEXT_HTML}}

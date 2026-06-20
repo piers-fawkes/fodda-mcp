@@ -19,7 +19,7 @@ export function computeLifecycle(row: any, now?: number): string {
     if (!first || !last) {
         // Fallback: signal-score + evidence-count heuristic when dates are missing
         const signal = row.signal_score || row.signalScore || 0;
-        const evCount = row.evidenceCount || row.evidence_count || 0;
+        const evCount = row.evidence_count || row.evidenceCount || 0;
         if (signal >= 70 && evCount >= 10) return 'mature';
         if (signal >= 45 || evCount >= 6) return 'building';
         if (signal < 20 && evCount <= 2) return 'fading';
@@ -27,7 +27,7 @@ export function computeLifecycle(row: any, now?: number): string {
     }
     const ageMonths = (ts - first) / (1000 * 60 * 60 * 24 * 30);
     const staleDays = (ts - last) / (1000 * 60 * 60 * 24);
-    const count = row.evidenceCount || row.evidence_count || 0;
+    const count = row.evidence_count || row.evidenceCount || 0;
     if (staleDays > 180) return 'fading';
     if (ageMonths < 6 && count < 5) return 'emerging';
     if (ageMonths > 12 && count > 10) return 'mature';
@@ -48,7 +48,7 @@ export function isFastMover(row: any, now?: number): boolean {
     const first = row.firstSeen ? new Date(row.firstSeen).getTime() : 0;
     if (!first) return false;
     const ageMonths = (ts - first) / (1000 * 60 * 60 * 24 * 30);
-    return ageMonths < 6 && (row.evidenceCount || row.evidence_count || 0) >= 8;
+    return ageMonths < 6 && (row.evidence_count || row.evidenceCount || 0) >= 8;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,18 +78,24 @@ const EVIDENCE_ROLES: Record<string, string> = {
  * Enrich evidence items with pre-formatted markdown citations and editorial roles.
  * Models are much more likely to pass through a ready-made link than construct one.
  */
-export function enrichEvidence(items: any[]): any[] {
+export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } = {}): any[] {
     if (!Array.isArray(items)) return items;
-    // Sort by publishedAt descending — most recent evidence first
-    items.sort((a, b) => {
-        const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
-        const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-        return dateB - dateA;
-    });
+    // Preserve the API's relevance order by default — evidence items carry no
+    // per-item score, so input array order IS the relevance signal. Sorting by
+    // recency here discarded it and surfaced newest-but-off-topic items. Opt-in only.
+    if (opts.sortByRecency) {
+        items.sort((a, b) => {
+            const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
+            const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
+            return dateB - dateA;
+        });
+    }
     return items.map(item => {
-        // Assign editorial role based on content type
+        // Assign editorial role based on content type — but don't stamp unknown
+        // contentTypes as 'proof' (that mislabels everything as standalone evidence).
         const ct = (item.contentType || '').toLowerCase();
-        item.role = EVIDENCE_ROLES[ct] || 'proof';
+        const mappedRole = EVIDENCE_ROLES[ct];
+        if (mappedRole) item.role = mappedRole;
 
         if (item.formatted_citation) return item; // already enriched
 

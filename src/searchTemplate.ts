@@ -2,16 +2,12 @@
  * Search Results Widget Template
  * 
  * Server-side rendering for search_graph responses.
- * Tabs: Trends (with optional scrubber), Companies, Market, Analysis
+ * Tabs: Trends, Companies, Market, Analysis
  * Returns near-complete HTML with editorial slots for Claude.
  */
 
 import { wrapWidget, esc } from './widgetShell.js';
 import { fillSearchInsight, fillAnalysis, replaceSlots, type TrendSummary } from './editorialFill.js';
-
-// ---------------------------------------------------------------------------
-// Temporal detection — decides scrubber vs simple grid
-// ---------------------------------------------------------------------------
 
 
 // ---------------------------------------------------------------------------
@@ -41,7 +37,7 @@ interface TrendRow {
 function computeStage(t: TrendRow): string {
     const now = Date.now();
     const signal = t.signal_score || 0;
-    const evCount = t.evidenceCount || t.evidence_count || 0;
+    const evCount = t.evidence_count || t.evidenceCount || 0;
     const firstMs = t.firstSeen ? new Date(t.firstSeen).getTime() : now;
     const lastMs = t.lastSeen ? new Date(t.lastSeen).getTime() : now;
     const daysSinceLast = (now - lastMs) / 864e5;
@@ -254,7 +250,7 @@ export async function renderSearchWidget(
         _desc: (r.trendDescription || r.description || '').slice(0, 140),
         _brands: normalizeBrands(r.brandNames || (r as any).Brand),
         _graphName: r.graphName || graphName || '',
-        _evCount: r.evidenceCount || r.evidence_count || 0,
+        _evCount: r.evidence_count || r.evidenceCount || 0,
         _firstSeen: r.firstSeen || '',
         _lastSeen: r.lastSeen || '',
     }));
@@ -282,7 +278,7 @@ export async function renderSearchWidget(
     // Build Companies tab content
     const companiesHtml = buildCompaniesHtml(rows);
 
-    const scrubberHtml = `<p class="scr-count">${enriched.length} signals across ${sources.filter(s => s !== 'Google Trends' && s !== 'Census Bureau').join(', ')}</p>`;
+    const signalCountHtml = `<p class="scr-count">${enriched.length} signals across ${sources.filter(s => s !== 'Google Trends' && s !== 'Census Bureau').join(', ')}</p>`;
 
     // Build Trends grid server-side
     const smap = Object.fromEntries(STAGES.map(s => [s.id, s]));
@@ -305,7 +301,7 @@ export async function renderSearchWidget(
 <div class="search-insight">{{SEARCH_INSIGHT}}</div>
 
 <div class="sec">Trends</div>
-${scrubberHtml}
+${signalCountHtml}
 <div class="tgrid" id="tgrid">${trendsGridHtml}</div>
 
 <div class="sec">Companies</div>

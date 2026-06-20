@@ -38,6 +38,7 @@ const UNCACHEABLE_PATTERNS: RegExp[] = [
     /\/v1\/graphs$/,        // list_graphs — already cached by catalogCache
     /\/widget\//,           // widget serving
     /\/register$/,          // OAuth
+    /\/analysts\/consult/,  // identity-sensitive, never cache
 ];
 
 // ---------------------------------------------------------------------------

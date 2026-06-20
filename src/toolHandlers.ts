@@ -21,7 +21,7 @@ import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESI
 import type { AccountProfile } from './systemPrompt.js';
 import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion } from './errorHandling.js';
-import { chargeQuery } from './pricingCache.js';
+import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
 import type { SkillConfig, SkillResult, DiscoveredSkill } from './skillClient.js';
 import { createSessionTracker, postToSlack } from './sessionTracker.js';
@@ -69,13 +69,13 @@ function buildRenderInstructions(opts: {
 }
 
 /**
- * Append a low-credit warning to the response data if tokens are running low.
+ * Append a low-credit warning to the response data if API calls are running low.
  * Utilizes new dynamic Stripe links and upsell data provided by the Fodda API.
  *
  * Also surfaces upstream X-Usage-* header warnings (approaching-limit, overage-active)
  * injected by foddaRequest() as _upstream_usage.
  */
-function appendUsageWarning(data: any, isTrial: boolean, userEmail?: string) {
+function appendUsageWarning(data: any, userEmail?: string) {
     // ── Upstream header-based warnings (X-Usage-Warning / X-Usage-Percent / X-Usage-Overage-Tokens) ──
     if (data?._upstream_usage) {
         const u = data._upstream_usage;
@@ -83,8 +83,8 @@ function appendUsageWarning(data: any, isTrial: boolean, userEmail?: string) {
             data._usage_status = `⚠️ You've used ${u.percent}% of your monthly API calls. Consider upgrading or adding a payment method to avoid interruption.`;
         } else if (u.warning === 'overage-active') {
             data._usage_status = u.overage_tokens
-                ? `📊 You're in overage — ${u.overage_tokens} additional token(s) used at $0.20/token this billing cycle.`
-                : `📊 Overage billing is active — additional queries are charged at $0.20/token.`;
+                ? `📊 You're in overage — ${u.overage_tokens} additional API call(s) used at $0.20/API call this billing cycle.`
+                : `📊 Overage billing is active — additional queries are charged at $0.20/API call.`;
         }
     }
 
@@ -93,7 +93,7 @@ function appendUsageWarning(data: any, isTrial: boolean, userEmail?: string) {
     const remaining = data.usage.remaining ?? data.usage.credits_remaining;
     if (remaining === undefined || remaining < 0) return;
 
-    const threshold = isTrial ? 10 : 15;
+    const threshold = 15;
     if (remaining >= threshold) return;
 
     const noun = remaining === 1 ? 'API call' : 'API calls';
@@ -106,9 +106,7 @@ function appendUsageWarning(data: any, isTrial: boolean, userEmail?: string) {
     if (userEmail && userEmail.includes('@')) portalParams.set('email', userEmail);
     const portalUrl = `${API_BASE_URL.replace('api.', 'app.')}/portal?${portalParams.toString()}`;
 
-    if (isTrial) {
-        data._credit_warning = `\u26a0\ufe0f You have ${remaining} ${noun} remaining on your trial. Upgrade to the free Base plan (100 API calls/month) or a paid plan to continue.\n\n\ud83d\ude80 **[Upgrade Now \u2192](${portalUrl})**`;
-    } else {
+    {
         let msg = `\u26a0\ufe0f You have ${remaining} ${noun} remaining this month.`;
         if (upsell) {
             msg += ` You can get 100 more API calls for $${upsell.price || '50'} right now: ${upsell.link || portalUrl}`;
@@ -222,7 +220,35 @@ export async function createServer(
     storeWidget: (html: string) => string,
     getServiceUrl: () => string,
     entryId: string = '',
+    // anonymous SPT session: token (settlement payer) + connect-time cap/prices (pre-run coverage)
+    sptCtx?: { token: string; maxAmountCents: number | null; prices: Record<string, number> },
 ): Promise<McpServer> {
+    // ── SPT settlement helpers (inert for credit/API-key sessions: sptCtx is undefined) ──
+    // Pre-run guard: refuse a task BEFORE spending compute if this payment token can't cover it.
+    // Returns an error result to return immediately, or null to proceed.
+    const sptGuard = (queryTypeCode: string): { isError: true; content: { type: 'text'; text: string }[] } | null => {
+        if (!sptCtx) return null;
+        const priceUsd = sptCtx.prices[queryTypeCode];
+        if (priceUsd != null && sptCtx.maxAmountCents != null && priceUsd * 100 > sptCtx.maxAmountCents) {
+            return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'SPT_INSUFFICIENT', required_usd: priceUsd, message: `This task costs $${priceUsd.toFixed(2)}, above this payment token's limit.` }) }] };
+        }
+        return null;
+    };
+    // Settlement-as-gate: SPT sessions await the charge and WITHHOLD the result if it fails;
+    // credit sessions fire-and-forget (a missed meter only under-bills, never blocks delivery).
+    // Returns an error result to return instead of the payload, or null when it's safe to deliver.
+    const settleOrWithhold = async (params: Omit<ChargeQueryParams, 'foddaRequest' | 'spt'>, label: string): Promise<{ isError: true; content: { type: 'text'; text: string }[] } | null> => {
+        if (sptCtx) {
+            const r = await chargeQuery({ ...params, foddaRequest, spt: sptCtx.token });
+            if (!r.charged) {
+                return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'SPT_SETTLEMENT_FAILED', message: r.error || 'Payment could not be completed; result withheld.' }) }] };
+            }
+            return null;
+        }
+        chargeQuery({ ...params, foddaRequest }).catch(e => console.error(`[${label}] chargeQuery failed:`, e.message));
+        return null;
+    };
+
     // Fetch account profile for persona-aware framing (best-effort)
     let accountProfile: AccountProfile | undefined;
     let sessionDisabledGraphs = new Set<string>();
@@ -286,10 +312,9 @@ export async function createServer(
         console.error('[persona] Failed to fetch account profile — proceeding without persona framing');
     }
 
-    // sk_trial_ keys are retired. New individual trial accounts (planCode 13) use
-    // sk_live_ keys and are detected from API error responses via isIndividualTrial().
-    // isTrial is false at session init for all current account types.
-    const isTrial = false;
+    // Note: trial accounts are retired and handled entirely server-side by the API
+    // (rejected as no-longer-valid, or surfaced reactively via errorHandling.ts).
+    // No client-side trial state remains.
     const sessionTracker = createSessionTracker();
 
     // Fire-and-forget: log the user's query text to the Questions table.
@@ -319,7 +344,7 @@ export async function createServer(
         name: 'fodda_mcp',
         version: MCP_SERVER_VERSION,
     }, {
-        instructions: buildSystemPrompt(accountProfile, skillPromptMeta, isTrial, entryId),
+        instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId),
     });
 
     // Register empty capabilities and handlers to silence directory warnings
@@ -406,18 +431,6 @@ export async function createServer(
                 const account = data?._account;
 
                 if (!account) {
-                    if (isTrial) {
-                        return {
-                            content: [{
-                                type: 'text' as const,
-                                text: JSON.stringify({
-                                    plan: 'Trial',
-                                    note: 'You\'re on a trial — limited API calls across all expert graphs. I can set you up with a Free Base account (100 API calls/month) instantly — just give me your email.',
-                                    manage_url: 'https://app.fodda.ai',
-                                }, null, 2)
-                            }]
-                        };
-                    }
                     return {
                         content: [{
                             type: 'text' as const,
@@ -438,7 +451,7 @@ export async function createServer(
                 if (typeof status.api_calls_remaining === 'number' && status.api_calls_remaining < 0) {
                     status.overage_active = true;
                     status.overage_tokens = Math.abs(status.api_calls_remaining);
-                    status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} token(s) over your monthly limit. Overage charges apply at $0.20/token.`;
+                    status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.20/API call.`;
                 }
                 if (account.tokens_used !== undefined) status.api_calls_used = account.tokens_used;
                 if (account.reset_date) status.reset_date = account.reset_date;
@@ -464,6 +477,9 @@ export async function createServer(
                     };
                 }
                 status.graphs_url = 'https://app.fodda.ai/graphs';
+                // Surface per-tool costs so the agent can explain spend before running queries
+                const costs = getToolCostSummary();
+                if (costs.length) status.query_costs = costs;
 
                 return {
                     content: [{
@@ -506,7 +522,7 @@ export async function createServer(
                 const account = data?._account;
                 // Strip _account from list_graphs output (use get_my_account instead)
                 if (data) delete data._account;
-                if (account && !account.userContext && !isTrial) {
+                if (account && !account.userContext) {
                     const nudge = `\n\n---\n⚠️ NO RESEARCH PROFILE SET for this user.\nResponses will be generic until you capture their profile.\nThrough natural conversation, determine:\n- Their role and what they use Fodda for (pitches, ongoing research, client advisory)\n- What kind of evidence they value (commercial data vs. design inspiration)\n- Geographic focus (global, specific regions)\n- How results should be framed (executive brief vs. deep analysis)\nThen call update_user_profile. Write BEHAVIORAL INSTRUCTIONS, not a bio.\nFormat: one sentence of identity, then numbered directives that change how you respond.\nExample: "Agency strategist doing pitches. (1) Lead with landscape orientation. (2) Prioritize commercial evidence. (3) Time-scarce — strongest findings first."\n---`;
                     const jsonText = JSON.stringify(data, null, 2);
                     return { content: [{ type: 'text' as const, text: jsonText + nudge }] };
@@ -890,7 +906,7 @@ export async function createServer(
                 }
 
                 // ── Low-credit warning for all users — utilizes dynamic Stripe links from API ──
-                appendUsageWarning(data, isTrial, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId));
 
                 // ── Supplemental data — macro context for all queries with results ──
                 let supplemental: { google_trends: any; census_retail: any } = { google_trends: null, census_retail: null };
@@ -960,7 +976,7 @@ export async function createServer(
                     if (totalSize > 30000) {
                         console.error(`[search_graph] Payload too large (${(totalSize / 1024).toFixed(1)}KB) — skipping widget HTML, sending liteData JSON + design brief`);
                         // ── Query-level billing (large payload path) ──
-                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
+                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
                         return { content: [
                             { type: 'text' as const, text: jsonPayload },
@@ -982,7 +998,7 @@ export async function createServer(
                     ] };
 
                     // ── Query-level billing (rich widget path) ──
-                    chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
+                    chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                         .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
 
                     return widgetResponse;
@@ -1009,7 +1025,7 @@ export async function createServer(
                 });
 
                 // ── Query-level billing (fallback path) ──
-                chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
+                chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
 
                 return { content: [
@@ -1068,7 +1084,7 @@ export async function createServer(
                 if (direction) body.direction = direction;
                 let data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/neighbors`, apiKey, resolveUserId(userId, uid), body);
 
-                appendUsageWarning(data, isTrial, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1098,7 +1114,7 @@ export async function createServer(
                 data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/evidence`, apiKey, resolveUserId(userId, uid), body);
                 // Enrich evidence with pre-formatted citations
                 if (data?.evidence) data.evidence = enrichEvidence(data.evidence);
-                appendUsageWarning(data, isTrial, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1127,7 +1143,7 @@ export async function createServer(
                 if (data && typeof data === 'object') {
                     data.theme = getFoddaTheme(graphId);
                 }
-                appendUsageWarning(data, isTrial, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1186,7 +1202,7 @@ export async function createServer(
                 if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
                 let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/adjacent?${params.toString()}`, apiKey, resolveUserId(userId, uid));
 
-                appendUsageWarning(data, isTrial, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1762,11 +1778,15 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(brand_name, 'brand_tracker');
 
+                // ── SPT pre-run coverage: refuse before spending compute if the token can't cover the task ──
+                const guard = sptGuard('brand_intelligence');
+                if (guard) return guard;
+
                 const { widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(brand_name, uid, graph_ids, include_evidence, max_evidence);
 
-                // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name, foddaRequest })
-                    .catch(e => console.error('[brand_tracker] chargeQuery failed:', e.message));
+                // ── Query-level billing (settlement gates delivery for SPT) ──
+                const withheld = await settleOrWithhold({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name }, 'brand_tracker');
+                if (withheld) return withheld;
 
                 return { content: [
                     { type: 'text' as const, text: '── WIDGET HTML ──\nIf your client supports HTML visualization (show_widget, visualize:show_widget, or artifacts), pass this HTML verbatim. Do not rewrite or restyle.\n\n' + widget.widget_html },
@@ -1813,7 +1833,7 @@ export async function createServer(
                         const data = await foddaRequest('POST', '/v1/supplemental/context', apiKey, resolveUserId(userId, uid), body);
                         
                         // ── Query-level billing ──
-                        chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
+                        chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[supplemental] chargeQuery failed:', e.message));
 
                         activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(data, null, 2) });
@@ -2066,11 +2086,14 @@ export async function createServer(
                 if (limit !== undefined) params.set('limit', String(Math.min(limit, 50)));
 
                 const qs = params.toString();
+                const earningsGuard = sptGuard('earnings_intelligence');
+                if (earningsGuard) return earningsGuard;
+
                 const data = await foddaRequest('GET', `/v1/supplemental/earnings/snapshot${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
 
-                // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || brand || ticker || sector || '', foddaRequest })
-                    .catch(e => console.error('[get_earnings_intelligence] chargeQuery failed:', e.message));
+                // ── Query-level billing (settlement gates delivery for SPT) ──
+                const earningsWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || brand || ticker || sector || '' }, 'get_earnings_intelligence');
+                if (earningsWithheld) return earningsWithheld;
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
@@ -2109,11 +2132,14 @@ export async function createServer(
                 if (limit !== undefined) params.set('limit', String(Math.min(limit, 25)));
 
                 const qs = params.toString();
+                const divergenceGuard = sptGuard('earnings_intelligence');
+                if (divergenceGuard) return divergenceGuard;
+
                 const data = await foddaRequest('GET', `/v1/supplemental/earnings/divergence${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
 
-                // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || sector || industry || 'divergence', foddaRequest })
-                    .catch(e => console.error('[get_earnings_divergence] chargeQuery failed:', e.message));
+                // ── Query-level billing (settlement gates delivery for SPT) ──
+                const divergenceWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || sector || industry || 'divergence' }, 'get_earnings_divergence');
+                if (divergenceWithheld) return divergenceWithheld;
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
@@ -2132,7 +2158,7 @@ export async function createServer(
             userContext: z.string().describe('Behavioral framing instructions for this person. Format: one sentence of identity, then numbered FRAMING INSTRUCTIONS. Example: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists." Max 2000 chars.'),
             accountContext: z.string().optional().describe('Description of their company: industry, size, key markets, competitive position, mission. Shared across all users on this account. Max 2000 chars.'),
         },
-        { title: 'Update Research Profile', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Update Research Profile', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
         async ({ userContext, accountContext }) => {
             try {
                 const body: Record<string, string> = {};
@@ -2156,17 +2182,6 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 console.error(`[update_user_profile] Error: ${msg}`);
                 // Fail gracefully — don't break the conversation
-                if (isTrial) {
-                    return {
-                        content: [{
-                            type: 'text' as const,
-                            text: JSON.stringify({
-                                status: 'SKIPPED',
-                                message: 'Profile saving is available for Base accounts and above. I\'ll use this context for the current session. Sign up at app.fodda.ai to persist your preferences.',
-                            }, null, 2)
-                        }]
-                    };
-                }
                 return {
                     content: [{
                         type: 'text' as const,
@@ -2190,7 +2205,7 @@ export async function createServer(
             enabled: z.boolean().describe('true to enable (turn on), false to disable (turn off).'),
             user_email: z.string().optional().describe('Optional. Use ONLY when operating as an Admin on behalf of another user to specify their email.')
         },
-        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
         async ({ target_id, enabled, user_email }) => {
             try {
                 const body: any = { target_id, enabled };
@@ -2316,7 +2331,7 @@ export async function createServer(
     const APP_BASE_URL = process.env.FODDA_APP_URL || 'https://app.fodda.ai';
     server.tool(
         'sign_up_free_account',
-        'Create a Fodda Base account for a trial user who has run out of credits. Call this when a trial user provides their email after being prompted. Creates an account with 100 API calls/month across ALL knowledge graphs and sends a confirmation email. Can also be called with additional profile fields (name, job_title, company).',
+        'Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company).',
         {
             email: z.string().describe('User\'s email address (required)'),
             name: z.string().optional().describe('User\'s full name (optional — collect conversationally after signup)'),
@@ -2588,7 +2603,7 @@ export async function createServer(
                 };
 
                 // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest })
+                chargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[brainstorm] chargeQuery failed:', e.message));
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(brainstormMap, null, 2) }] };
@@ -2673,7 +2688,7 @@ export async function createServer(
             brands: z.array(z.string()).optional()
                 .describe('For brand_intelligence: brand names to track (e.g., ["Nike", "Patagonia"])'),
         },
-        { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
         async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
             try {
                 if (action === 'create') {
@@ -2762,7 +2777,7 @@ export async function createServer(
                 }
 
                 // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'url_as_prompt', apiKey, userId: resolveUserId(userId, uid), query: url, foddaRequest })
+                chargeQuery({ queryTypeCode: 'url_as_prompt', apiKey, userId: resolveUserId(userId, uid), query: url, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[read_url] chargeQuery failed:', e.message));
 
                 return {
@@ -2808,6 +2823,10 @@ export async function createServer(
             const queryTypeCode = isHeavy ? 'deep_research_heavy' : 'deep_research_light';
             const maxGraphs = isHeavy ? 15 : 8;
             const startTime = Date.now();
+
+            // ── SPT pre-run coverage: refuse before kicking off the (long, expensive) job ──
+            const researchGuard = sptGuard(queryTypeCode);
+            if (researchGuard) return researchGuard;
 
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -3008,15 +3027,18 @@ export async function createServer(
                         }
 
                         const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
-                        
-                        chargeQuery({
-                            queryTypeCode,
-                            apiKey,
-                            userId: resolvedUserId,
-                            query,
-                            graphsSearched: graphIds,
-                            foddaRequest,
-                        }).catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
+
+                        // ── Settlement gates delivery for SPT: only mark COMPLETE once the charge succeeds. ──
+                        if (sptCtx) {
+                            const r = await chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: graphIds, foddaRequest, spt: sptCtx.token });
+                            if (!r.charged) {
+                                activeResearchJobs.set(jobId, { status: 'FAILED', error: r.error || 'Payment could not be completed; report withheld.' });
+                                return;
+                            }
+                        } else {
+                            chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: graphIds, foddaRequest })
+                                .catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
+                        }
 
                         const header = [
                             `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed • ${durationSec}s_`,
@@ -3107,6 +3129,11 @@ export async function createServer(
 
                 const parts: string[] = [reportText];
 
+                // Surface server-side timing for observability
+                if (result.timing_ms != null) {
+                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+                }
+
                 // --- Structured envelope fields (Phase 2 Digital Twin) ---
                 if (result.coverage) {
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
@@ -3131,6 +3158,14 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
+                // Surface timeout explicitly so clients get actionable guidance
+                if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
+                        error: `Analyst consultation timed out (60s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
+                        analyst_id,
+                        timeout: true
+                    }) }] };
+                }
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
