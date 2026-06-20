@@ -1221,8 +1221,13 @@ export async function createServer(
         const brandLower = brandName.toLowerCase();
 
         // ── Fire static/brand-only supplemental queries in parallel ──
-        const amazonPromise = foddaRequest('GET', `/v1/supplemental/amazon?query=${encodeURIComponent(brandName)}&limit=8`, apiKey, resolveUserId(userId, uid));
-        const censusPromise = foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid));
+        // These are created early but only awaited (via Promise.allSettled) ~500 lines later.
+        // A .catch() at creation is MANDATORY: if one rejects (e.g. a transient 503) during the
+        // intervening awaits, an unhandled rejection would crash the whole MCP process. Degrade to null.
+        const amazonPromise = foddaRequest('GET', `/v1/supplemental/amazon?query=${encodeURIComponent(brandName)}&limit=8`, apiKey, resolveUserId(userId, uid))
+            .catch((e: any) => { console.warn('[brand_tracker] amazon supplemental failed:', e?.message); return null; });
+        const censusPromise = foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid))
+            .catch((e: any) => { console.warn('[brand_tracker] census supplemental failed:', e?.message); return null; });
 
         // Build graph lookup map
         const graphLookup = new Map<string, any>();

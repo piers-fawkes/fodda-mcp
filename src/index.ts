@@ -23,6 +23,18 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+// ── Global crash guards ──
+// This is a long-lived server holding in-memory session state (transports, sessionSpts,
+// activeResearchJobs) on a single instance (session affinity). A single un-caught promise
+// rejection from any request would otherwise call exit(1) and drop EVERY active session on
+// the instance. Log loudly and stay alive — a degraded request beats a dead server.
+process.on('unhandledRejection', (reason: any) => {
+    console.error('[unhandledRejection] kept process alive:', reason?.stack || reason?.message || reason);
+});
+process.on('uncaughtException', (err: any) => {
+    console.error('[uncaughtException] kept process alive:', err?.stack || err?.message || err);
+});
+
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 
 const app = express();
