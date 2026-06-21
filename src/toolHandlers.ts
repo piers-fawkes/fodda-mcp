@@ -1115,6 +1115,8 @@ export async function createServer(
                 // Enrich evidence with pre-formatted citations
                 if (data?.evidence) data.evidence = enrichEvidence(data.evidence);
                 appendUsageWarning(data, resolveUserId(userId));
+                const withheld = await settleOrWithhold({ queryTypeCode: 'standalone_evidence', apiKey, userId: resolveUserId(userId, uid), query: for_node_id }, 'get_evidence');
+                if (withheld) return withheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2017,6 +2019,8 @@ export async function createServer(
                 if (data && typeof data === 'object') {
                     data.theme = getFoddaTheme(graph_id);
                 }
+                const statsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_statistics', apiKey, userId: resolveUserId(userId, uid), query }, 'search_statistics');
+                if (statsWithheld) return statsWithheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -3159,6 +3163,8 @@ export async function createServer(
                     parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
                 }
 
+                const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
+                if (consultWithheld) return consultWithheld;
                 return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
