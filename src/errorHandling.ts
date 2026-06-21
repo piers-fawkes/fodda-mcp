@@ -308,8 +308,8 @@ export async function handleTrialCreditExhaustion(
             status: 'PLAN_LIMIT_EXCEEDED',
             code: 'PLAN_LIMIT_EXCEEDED',
             message: setupUrl
-                ? `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.20/API call.\n\n💳 **[Add payment method →](${setupUrl})**\n\nThis is a one-click Stripe link to add a card. After adding, queries resume immediately with overage billing.\n\nOr manage your billing at ${upgradeUrl}`
-                : `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.20/API call.\n\nManage your billing at ${upgradeUrl}`,
+                ? `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.50/API call.\n\n💳 **[Add payment method →](${setupUrl})**\n\nThis is a one-click Stripe link to add a card. After adding, queries resume immediately with overage billing.\n\nOr manage your billing at ${upgradeUrl}`
+                : `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.50/API call.\n\nManage your billing at ${upgradeUrl}`,
             action: setupUrl ? 'ADD_PAYMENT_METHOD' : 'VISIT_BILLING',
             note: 'Present the setupUrl prominently — it is a one-click card addition link. The upgradeUrl lets them manage billing.',
         };

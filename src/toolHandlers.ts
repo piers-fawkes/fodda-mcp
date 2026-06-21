@@ -83,8 +83,8 @@ function appendUsageWarning(data: any, userEmail?: string) {
             data._usage_status = `⚠️ You've used ${u.percent}% of your monthly API calls. Consider upgrading or adding a payment method to avoid interruption.`;
         } else if (u.warning === 'overage-active') {
             data._usage_status = u.overage_tokens
-                ? `📊 You're in overage — ${u.overage_tokens} additional API call(s) used at $0.20/API call this billing cycle.`
-                : `📊 Overage billing is active — additional queries are charged at $0.20/API call.`;
+                ? `📊 You're in overage — ${u.overage_tokens} additional API call(s) used at $0.50/API call this billing cycle.`
+                : `📊 Overage billing is active — additional queries are charged at $0.50/API call.`;
         }
     }
 
@@ -451,7 +451,7 @@ export async function createServer(
                 if (typeof status.api_calls_remaining === 'number' && status.api_calls_remaining < 0) {
                     status.overage_active = true;
                     status.overage_tokens = Math.abs(status.api_calls_remaining);
-                    status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.20/API call.`;
+                    status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.50/API call.`;
                 }
                 if (account.tokens_used !== undefined) status.api_calls_used = account.tokens_used;
                 if (account.reset_date) status.reset_date = account.reset_date;
