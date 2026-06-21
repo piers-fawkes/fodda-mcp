@@ -476,6 +476,16 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
     const MAX_ATTEMPTS = 3;
     let lastErr: any;
 
+    // Prefer the API's structured error code (SPT_REVOKED, SPT_INSUFFICIENT_FUNDS, etc.) over
+    // axios's generic "Request failed with status code 401" so the agent gets a real reason.
+    const cleanMeterError = (err: any): string => {
+        const apiErr = err?.response?.data?.error;
+        return (typeof apiErr === 'object' ? (apiErr.code || apiErr.message) : apiErr)
+            || err?.response?.data?.message
+            || err?.message
+            || 'unknown error';
+    };
+
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         try {
             const result = await foddaRequest('POST', '/v1/research/meter', apiKey, userId, meterBody, meterRequestId, undefined, spt);
@@ -488,7 +498,13 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
             return { charged: true, apiCallsCharged: price, apiCallsRemaining: remaining };
         } catch (err: any) {
             lastErr = err;
-            console.error(`[chargeQuery] Meter attempt ${attempt}/${MAX_ATTEMPTS} failed for ${queryTypeCode} [${meterRequestId}]: ${err.message}`);
+            const cleanErr = cleanMeterError(err);
+            console.error(`[chargeQuery] Meter attempt ${attempt}/${MAX_ATTEMPTS} failed for ${queryTypeCode} [${meterRequestId}]: ${cleanErr}`);
+            // Client errors (revoked/expired/insufficient SPT, bad params) won't recover — fail fast.
+            const status = err?.response?.status;
+            if (status && status >= 400 && status < 500 && status !== 429) {
+                return { charged: false, apiCallsCharged: 0, error: cleanErr };
+            }
             if (attempt < MAX_ATTEMPTS) {
                 await new Promise(resolve => setTimeout(resolve, 250 * attempt));
             }
@@ -497,6 +513,6 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
 
     // All attempts failed — non-blocking (don't fail the user's query), but logged
     // with the request id for reconciliation against the API's meter_idempotency records.
-    console.error(`[chargeQuery] METER LOST after ${MAX_ATTEMPTS} attempts for ${queryTypeCode} [${meterRequestId}] — query uncharged. Last error: ${lastErr?.message}`);
-    return { charged: false, apiCallsCharged: 0, error: lastErr?.message };
+    console.error(`[chargeQuery] METER LOST after ${MAX_ATTEMPTS} attempts for ${queryTypeCode} [${meterRequestId}] — query uncharged. Last error: ${cleanMeterError(lastErr)}`);
+    return { charged: false, apiCallsCharged: 0, error: cleanMeterError(lastErr) };
 }
