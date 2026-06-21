@@ -1205,6 +1205,8 @@ export async function createServer(
                 let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/adjacent?${params.toString()}`, apiKey, resolveUserId(userId, uid));
 
                 appendUsageWarning(data, resolveUserId(userId));
+                const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
+                if (adjacentWithheld) return adjacentWithheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1919,6 +1921,8 @@ export async function createServer(
                 if (min_score !== undefined) body.min_score = min_score;
 
                 const data = await foddaRequest('POST', '/v1/search/domain', apiKey, resolveUserId(userId, uid), body);
+                const domainWithheld = await settleOrWithhold({ queryTypeCode: 'domain_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_domain_intelligence');
+                if (domainWithheld) return domainWithheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1951,6 +1955,8 @@ export async function createServer(
                 if (min_score !== undefined) body.min_score = min_score;
 
                 const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
+                const expertWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_expert_intelligence');
+                if (expertWithheld) return expertWithheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1983,6 +1989,8 @@ export async function createServer(
                 if (min_score !== undefined) body.min_score = min_score;
 
                 const data = await foddaRequest('POST', '/v1/search/report', apiKey, resolveUserId(userId, uid), body);
+                const reportWithheld = await settleOrWithhold({ queryTypeCode: 'report_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_report_intelligence');
+                if (reportWithheld) return reportWithheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2053,6 +2061,8 @@ export async function createServer(
                 if (min_score !== undefined) params.set('min_score', String(min_score));
                 const path = `/v1/graphs/${graph_id}/statistics?${params.toString()}`;
                 const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
+                const insightsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_insights', apiKey, userId: resolveUserId(userId, uid), query }, 'search_insights');
+                if (insightsWithheld) return insightsWithheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
