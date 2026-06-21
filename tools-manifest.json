@@ -1,0 +1,219 @@
+{
+  "generated_from": "Fodda MCP src/toolHandlers.ts",
+  "rate_usd_per_call": 0.5,
+  "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $10/$15.",
+  "count": 30,
+  "billable": 16,
+  "tools": [
+    {
+      "name": "brainstorm_topic",
+      "kind": "tool",
+      "bills_as": "brainstorm",
+      "category": "Ideation",
+      "description": "Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, and geographic hotspots. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore."
+    },
+    {
+      "name": "brand_tracker",
+      "kind": "tool",
+      "bills_as": "brand_intelligence",
+      "category": "Brand",
+      "description": "Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — \"What is Nike doing?\", \"Patagonia's innovation strategy\", \"How is Apple positioned?\". This aggregates intelligence that would require dozens of separate web searches to assemble."
+    },
+    {
+      "name": "check_research_status",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Status",
+      "description": "Check the status of a long-running deep research job. If complete, this tool returns the final report. You MUST poll this periodically until the status is COMPLETE or FAILED."
+    },
+    {
+      "name": "check_supplemental_status",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Status",
+      "description": "Check the status of a long-running supplemental data gathering job. If complete, this tool returns the full JSON data payload. You MUST poll this periodically until the status is COMPLETE or FAILED."
+    },
+    {
+      "name": "consult_analyst",
+      "kind": "tool",
+      "bills_as": "expert_agent",
+      "category": "Expert",
+      "description": "Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph."
+    },
+    {
+      "name": "deep_research_topic",
+      "kind": "tool",
+      "bills_as": "deep_research_light/heavy",
+      "category": "Research",
+      "description": "Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: \"light\" (20 API calls, faster single-pass) or \"heavy\" (30 API calls, comprehensive multi-pass with validation)."
+    },
+    {
+      "name": "discover_adjacent_trends",
+      "kind": "tool",
+      "bills_as": "adjacent_trends",
+      "category": "Ideation",
+      "description": "Find trends semantically similar to a given trend using pre-computed embeddings — surfaces connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover unexpected cross-domain connections, or map the territory around a strong signal. Web search cannot replicate this — it uses Fodda's internal embedding space."
+    },
+    {
+      "name": "generate_visual",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Visual",
+      "description": "Generate a branded SVG data visualization from structured insight data. Use after research to create presentation-ready visuals. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns inline SVG that renders directly in the chat."
+    },
+    {
+      "name": "get_domain_intelligence",
+      "kind": "tool",
+      "bills_as": "domain_intelligence",
+      "category": "Intelligence",
+      "description": "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked."
+    },
+    {
+      "name": "get_earnings_divergence",
+      "kind": "tool",
+      "bills_as": "earnings_intelligence",
+      "category": "Financial",
+      "description": "Detect divergence between analyst concerns and management responses in earnings calls. Surfaces where executives are deflecting, reframing, or avoiding specific topics. Premium intelligence — shows the gap between what Wall Street is worried about and what companies are saying. Results include deflected topics, concern-vs-response framing, and connections to Fodda trends via :VALIDATES edges. Use for \"where are executives deflecting?\" or \"divergence in [sector] earnings.\" 5 API calls per use."
+    },
+    {
+      "name": "get_earnings_intelligence",
+      "kind": "tool",
+      "bills_as": "earnings_intelligence",
+      "category": "Financial",
+      "description": "Query earnings call intelligence across companies, industries, or sectors. Returns structured evidence from public company earnings calls — management commentary, guidance, key topics, and analyst Q&A. Use for cross-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries (\"earnings intelligence for consumer electronics\"), or explicit earnings requests. For single-brand earnings, use brand_tracker instead — it includes earningsIntelligence automatically. Results include a source field: \"knowledge_graph\" (high confidence, structured Neo4j data) or \"web_supplemental\" (backfilled via web search). 5 API calls per use."
+    },
+    {
+      "name": "get_evidence",
+      "kind": "tool",
+      "bills_as": "standalone_evidence",
+      "category": "Graph",
+      "description": "Retrieve curated source articles and structured evidence for a specific trend node — case studies, statistics, expert quotes, and analysis with full source attribution. Returns evidence that has been editorially selected and categorized, not raw web results. Each item includes sourceUrl, place, brandNames, publishedAt, category, and formatted_citation. Use after search_graph when you need the supporting proof behind a specific trend. This is a node lookup — not a text search tool."
+    },
+    {
+      "name": "get_expert_intelligence",
+      "kind": "tool",
+      "bills_as": "expert_intelligence",
+      "category": "Expert",
+      "description": "Search specialist knowledge graphs built by named strategists and industry leaders — contains proprietary analysis, expert interviews, and high-density statistics not available via web search. No graph ID needed — searches all expert graphs in parallel. Use when the query requires specialist depth, named-expert perspectives, or strategic frameworks beyond mainstream coverage. Expert graphs cover domains like macro strategy, wayfinding, design innovation, SXSW insights, and sector-specific research reports."
+    },
+    {
+      "name": "get_label_values",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Graph",
+      "description": "List all values for a structured category within a graph — Brand names, Locations, Technologies, Audiences, RetailerTypes, or Trend names. Use when you need to enumerate what entities exist in a graph before filtering, or when the user asks \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To enumerate every trend in a graph (especially industry-report graphs, where semantic search/search_insights may return only the top match or nothing if evidence is unlinked), call with label=\"Trend\" — this returns the complete, deterministic list of trend names."
+    },
+    {
+      "name": "get_my_account",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "Check the current user's account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks \"how many API calls do I have?\", \"what plan am I on?\", \"what graphs can I access?\", or similar account questions. Returns live data — not cached from session start."
+    },
+    {
+      "name": "get_neighbors",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Graph",
+      "description": "Traverse graph relationships from a specific trend node to discover connected signals, brands, technologies, and locations. Returns structured relationship data that web search cannot provide — the curated editorial connections between trends. Use after search_graph to map the territory around a specific trend, find which brands are connected, or understand cross-domain links. Requires node_id from a prior search_graph result."
+    },
+    {
+      "name": "get_node",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Graph",
+      "description": "Retrieve complete metadata for a specific trend node — full description, signal score, lifecycle, geographic scope, adjacent possibilities, and all properties. Use when you need the full detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result."
+    },
+    {
+      "name": "get_report_intelligence",
+      "kind": "tool",
+      "bills_as": "report_intelligence",
+      "category": "Intelligence",
+      "description": "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Delta, and specialist research firms. Returns structured findings with bundled evidence — not raw PDFs or summaries, but editorially extracted trend data with source attribution. No graph ID needed. Use for market sizing, competitive landscape analysis, and data-heavy research where published report intelligence is more authoritative than web search results."
+    },
+    {
+      "name": "get_supplemental_context",
+      "kind": "tool",
+      "bills_as": "standalone_supplemental",
+      "category": "Supplemental",
+      "description": "Get institutional market data from up to 10 sources in a single call. The server automatically selects the most relevant sources based on your query and domain — economic indicators, trade data, product landscape, food economics, agricultural production, nutritional composition, commodity pricing, research signals, demographic surveys, and more. Use this AFTER graph searches to add macro context, or standalone for quantitative market intelligence. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. 5 API calls per standalone use."
+    },
+    {
+      "name": "list_analysts",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Expert",
+      "description": "List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to \"talk to\" or \"consult\" an expert, or when you need specialist depth on culture, strategy, or innovation topics."
+    },
+    {
+      "name": "list_graphs",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/tech/food/travel/fashion/beauty/sports instead)."
+    },
+    {
+      "name": "manage_scheduled_reports",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Costs 20 API calls per run. Supports topic research or brand intelligence report types."
+    },
+    {
+      "name": "read_url",
+      "kind": "tool",
+      "bills_as": "url_as_prompt",
+      "category": "Web",
+      "description": "Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Costs 15 API calls."
+    },
+    {
+      "name": "search_graph",
+      "kind": "tool",
+      "bills_as": "topic_research",
+      "category": "Search",
+      "description": "Search expert-curated knowledge graphs for trend clusters, signals, and consumer behavior evidence across retail, beauty, luxury, fashion, sport, consumer electronics, F&B, travel, and 30+ specialist domains. Returns structured trend data with cited evidence chains, source attribution, lifecycle signals (emerging/building/mature/fading), and momentum indicators — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use when the query involves market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search."
+    },
+    {
+      "name": "search_insights",
+      "kind": "tool",
+      "bills_as": "standalone_insights",
+      "category": "Search",
+      "description": "Search for expert quotes, editorial interpretations, and qualitative evidence across knowledge graphs. Returns categorized evidence (metric, quote, interpretation, signal) with source attribution and parent trend context. Works on ALL graphs. Use when you need named-expert voices, strategic framing, or analytical perspectives on a topic — the kind of curated qualitative intelligence that web search cannot surface because it lives inside structured knowledge graphs, not on public web pages."
+    },
+    {
+      "name": "search_statistics",
+      "kind": "tool",
+      "bills_as": "standalone_statistics",
+      "category": "Search",
+      "description": "Search for specific quantitative data points — market sizes, growth rates, expert quotes, and brand case studies — directly in Fodda's knowledge graphs. Each result includes its parent trend context, enabling reverse lookup: data point → expert trend. Use this BEFORE supplemental tools when a query asks for specific numbers or statistics that Fodda's experts may have covered. Works on ALL graphs — PSFK curated graphs AND expert graphs. Try multiple graphs for coverage."
+    },
+    {
+      "name": "send_feedback",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "Forward user feedback, feature requests, complaints, or exit reasons to the Fodda team via email and Slack. Call this whenever a user shares feedback — including when they want to leave, report a problem, or suggest an improvement."
+    },
+    {
+      "name": "sign_up_free_account",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company)."
+    },
+    {
+      "name": "toggle_graph_preference",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says \"Turn off Paralogy\", \"Enable igloo\", \"Disable the economics data\", or similar. The change is permanent until toggled again."
+    },
+    {
+      "name": "update_user_profile",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "description": "Save the user's research profile to improve the relevance of future responses. Call this after you understand the user's role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field."
+    }
+  ]
+}
