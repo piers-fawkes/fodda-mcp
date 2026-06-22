@@ -16,6 +16,59 @@
 
 import crypto from 'crypto';
 import type { Express, Request, Response } from 'express';
+import { MCP_SERVER_VERSION } from './tools.js';
+
+// ---------------------------------------------------------------------------
+// A2A Agent Card — the discovery document agents/registries fetch to learn
+// what Fodda can do. Served at /.well-known/agent-card.json (A2A standard).
+// Skills reflect what the /a2a endpoint can actually fulfil (the classifier's
+// routes), so we never advertise a capability we can't deliver.
+// ---------------------------------------------------------------------------
+const AGENT_CARD = {
+    protocolVersion: '0.3.0',
+    name: 'Fodda Research Agent',
+    description:
+        "Expert-curated trend, brand, research, and earnings intelligence from named experts' knowledge graphs (220+ graphs across retail, beauty, sports, finance, and institutional data). Delegate a task in natural language — Fodda selects the right tools and returns a synthesized result. Pay per task via Stripe Shared Payment Token; no account required.",
+    url: 'https://mcp.fodda.ai/a2a',
+    preferredTransport: 'JSONRPC',
+    version: MCP_SERVER_VERSION,
+    provider: { organization: 'Fodda (PSFK)', url: 'https://www.fodda.ai' },
+    documentationUrl: 'https://fodda.ai/llms.txt',
+    iconUrl: 'https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png',
+    capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },
+    defaultInputModes: ['text/plain'],
+    defaultOutputModes: ['text/plain', 'application/json'],
+    skills: [
+        {
+            id: 'brand-intelligence',
+            name: 'Brand Intelligence',
+            description: "Track a brand's trend footprint, competitive context, and market signals across expert-curated graphs.",
+            tags: ['brand', 'competitive', 'intelligence'],
+            examples: ['What is Nike doing?', 'Brand intelligence for Patagonia'],
+        },
+        {
+            id: 'trend-search',
+            name: 'Trend Search',
+            description: 'Search expert-curated knowledge graphs for trends with supporting evidence and source attribution.',
+            tags: ['trends', 'search', 'research'],
+            examples: ['sustainable packaging trends', 'Gen Z beauty habits'],
+        },
+        {
+            id: 'deep-research',
+            name: 'Deep Research',
+            description: "Synthesize a multi-trend research summary across Fodda's graph network for a topic.",
+            tags: ['research', 'report', 'analysis'],
+            examples: ['comprehensive report on Gen Z luxury', 'detailed analysis of the resale market'],
+        },
+        {
+            id: 'earnings-intelligence',
+            name: 'Earnings Intelligence',
+            description: 'Surface what public companies say on earnings calls — guidance, key topics, and analyst Q&A.',
+            tags: ['earnings', 'financial', 'intelligence'],
+            examples: ['what are hotel companies saying about labor costs', 'Nike earnings highlights'],
+        },
+    ],
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -239,6 +292,11 @@ export function registerA2ARoute(
     app: Express,
     foddaRequest: FoddaRequestFn,
 ): void {
+    // ── A2A Agent Card discovery (skills catalog) ──
+    const serveAgentCard = (_req: Request, res: Response) => res.json(AGENT_CARD);
+    app.get('/.well-known/agent-card.json', serveAgentCard); // A2A current standard
+    app.get('/.well-known/agent.json', serveAgentCard);      // legacy alias
+
     app.post('/a2a', async (req: Request, res: Response) => {
         // ── Parse & validate JSON-RPC envelope ──
         const body = req.body as A2AJsonRpcRequest;
@@ -373,5 +431,5 @@ export function registerA2ARoute(
         }
     });
 
-    console.error('[a2a] A2A endpoint registered at POST /a2a');
+    console.error('[a2a] A2A endpoint registered at POST /a2a (+ agent card at /.well-known/agent-card.json)');
 }

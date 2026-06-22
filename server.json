@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.piers-fawkes/fodda",
+  "name": "ai.fodda/mcp-server",
   "title": "Fodda Knowledge Graphs",
-  "description": "Expert-curated knowledge graphs for AI agents — retail, beauty, sports, plus institutional data",
-  "websiteUrl": "https://fodda.ai",
+  "description": "Expert-curated knowledge graphs for AI agents. Offerings: Brand Intelligence, Deep Research, Topic Research, Earnings Intelligence, and Expert Consult — plus 30+ tools to search trends, evidence, and statistics across 220+ graphs spanning retail, beauty, sports, finance, and institutional data. Pay per task via Stripe Shared Payment Token; no account required.",
+  "websiteUrl": "https://www.fodda.ai",
   "icons": [
     {
       "src": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
@@ -21,7 +21,7 @@
     {
       "registryType": "npm",
       "identifier": "fodda-mcp",
-      "version": "1.7.0",
+      "version": "1.30.0",
       "transport": {
         "type": "stdio"
       },
