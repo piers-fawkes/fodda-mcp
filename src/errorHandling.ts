@@ -121,37 +121,40 @@ export async function handleAccessError(err: any, toolName: string): Promise<{ i
         return { isError: false, content: [{ type: 'text' as const, text: JSON.stringify({ status: 'LEGACY_TRIAL_RETIRED', message: errorMsg, signupUrl }) }] };
     }
     if (accessType === 'credits') {
-        const errorData = err.response?.data?.error || err.response?.data || {};
-        const msg = errorData.message || 'Query limit reached.';
-        const upsell = errorData.upsell || null;
-        const usage = err.response?.data?.usage || null;
-        const payg = err.response?.data?.payg || null;
-        const agentCheckout = err.response?.data?.agent_checkout || null;
+        // Payment details are returned as STRUCTURED FIELDS, never baked into the
+        // human-readable message. This keeps live Stripe URLs / prices out of the
+        // string that gets fed to the model, and lets the client decide how/whether
+        // to surface a payment CTA. (Do not echo the API's raw URL-laden message.)
+        const data = err.response?.data || {};
+        const errorData = (data.error && typeof data.error === 'object') ? data.error : {};
+        const usage = data.usage || null;
+        const payg = data.payg || null;
+        const agentCheckout = data.agent_checkout || null;
 
-        // Try to get an inline checkout link (best-effort, non-blocking)
-        let checkoutUrl = agentCheckout?.url || null;
-        if (!checkoutUrl) {
-            checkoutUrl = await fetchAgentCheckoutLink(null, 'mcp');
+        // Best-effort inline top-up link
+        let topUpUrl = agentCheckout?.url || payg?.checkoutUrl || payg?.url || payg?.link || data.setupUrl || null;
+        if (!topUpUrl) {
+            topUpUrl = await fetchAgentCheckoutLink(null, 'mcp');
         }
+
+        const overageRateUsd = payg?.pricePerCall ?? data.overage_rate_usd ?? null;
+        const renewsAt = data.renews_at || data.nextRenewalDate || usage?.nextRenewalDate || null;
+        const upgradeUrl = data.upgradeUrl || errorData.upgradeUrl || 'https://app.fodda.ai';
 
         const response: Record<string, any> = {
             status: 'CREDITS_EXHAUSTED',
-            message: checkoutUrl
-                ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at https://app.fodda.ai`
-                : msg,
-            upsell: upsell,
-            usage: usage,
-            action: checkoutUrl ? 'CHECKOUT_AVAILABLE' : 'UPGRADE_REQUIRED',
-            note: 'Present the checkout link prominently. Also mention the upgrade option and PAYG as alternatives.',
+            error_code: 'credit_limit',
+            // Clean, URL-free, price-free message. The CTA lives in the fields below.
+            message: 'Monthly credit limit reached. To continue immediately, the account can top up, enable pay-as-you-go, or upgrade — see the structured fields for the relevant links and rate.',
+            upgrade_url: upgradeUrl,
+            action: topUpUrl ? 'CHECKOUT_AVAILABLE' : 'UPGRADE_REQUIRED',
+            note: 'Payment options are structured fields (top_up_url, overage_rate_usd, upgrade_url, renews_at). Surface them only if appropriate for your interface — do not paste raw payment URLs into user-facing text unless the user explicitly asked to pay.',
         };
-        if (checkoutUrl) {
-            response.checkout_url = checkoutUrl;
-        }
-        if (payg) {
-            response.payg = payg;
-            const paygUrl = payg.checkoutUrl || payg.url || payg.link;
-            response.message += `\n\n💳 **Pay-as-you-go:** keep querying without a plan — billed per API call.${paygUrl ? ` Set it up here: ${paygUrl}` : ''}`;
-        }
+        if (topUpUrl) response.top_up_url = topUpUrl;
+        if (overageRateUsd != null) response.overage_rate_usd = overageRateUsd;
+        if (renewsAt) response.renews_at = renewsAt;
+        if (usage) response.usage = usage;
+        if (payg) response.payg = payg;
 
         return {
             isError: true,

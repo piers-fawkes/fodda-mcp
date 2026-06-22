@@ -20,7 +20,7 @@ import { MCP_SERVER_VERSION } from './tools.js';
 import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
 import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme } from './enrichment.js';
-import { handleAccessError, handleTrialCreditExhaustion } from './errorHandling.js';
+import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
 import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
 import type { SkillConfig, SkillResult, DiscoveredSkill } from './skillClient.js';
@@ -602,6 +602,10 @@ export async function createServer(
                     );
                     // Merge rows, deduplicate by trendId + near-duplicate name detection
                     const allRows: any[] = [];
+                    // Capture any per-graph rejection caused by credit/quota exhaustion, so an
+                    // out-of-credits state is surfaced explicitly instead of masquerading as an
+                    // empty NO_MATCH coverage gap (the fan-out otherwise swallows rejections).
+                    let creditRejection: any = null;
                     const seen = new Set<string>();
                     const seenNames: string[] = []; // for near-duplicate check
                     const nameTokens = (name: string) => new Set(name.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(t => t.length > 2));
@@ -614,7 +618,12 @@ export async function createServer(
                     };
                     for (let i = 0; i < results.length; i++) {
                         const r = results[i]!;
-                        if (r.status !== 'fulfilled') continue;
+                        if (r.status !== 'fulfilled') {
+                            if (!creditRejection && classifyAccessError((r as PromiseRejectedResult).reason) === 'credits') {
+                                creditRejection = (r as PromiseRejectedResult).reason;
+                            }
+                            continue;
+                        }
                         const fulfilled = r as PromiseFulfilledResult<any>;
                         const rows = Array.isArray(fulfilled.value) ? fulfilled.value : (fulfilled.value?.rows || []);
                         const graphMeta = relevantGraphs[i];
@@ -739,6 +748,13 @@ export async function createServer(
 
                     const finalRows = diversified.slice(0, effectiveLimit);
                     const actualSourceGraphs = [...new Set(finalRows.map((r: any) => r.graphId || r._use_this_graphId).filter(Boolean))];
+                    // If the fan-out came back empty ONLY because credit/quota blocked the calls,
+                    // surface that explicitly — never let it read as a "no coverage" gap.
+                    if (allRows.length === 0 && creditRejection) {
+                        const trialResult = await handleTrialCreditExhaustion(creditRejection, apiKey, userId);
+                        if (trialResult) return trialResult;
+                        return await handleAccessError(creditRejection, 'search_graph');
+                    }
                     data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs };
                 } else {
                     data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/search`, apiKey, resolveUserId(userId, uid), body);
@@ -1050,11 +1066,12 @@ export async function createServer(
                     })()),
                 ] };
             } catch (err: any) {
-                // Trial-aware credit exhaustion handling
+                // Trial-aware credit exhaustion, then structured access/credit handling.
+                // (Routes credit errors through handleAccessError so payment details are
+                // returned as structured fields, not baked into a raw message string.)
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'search_graph');
             }
         }
     );
