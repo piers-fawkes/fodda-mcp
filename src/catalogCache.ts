@@ -882,3 +882,165 @@ export function getRelevantGraphs(
     return results;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Unified Source Routing (additive — see Brief Unified Source Routing)
+//
+// getRelevantSources() calls getRelevantGraphs() UNCHANGED for graph
+// candidates, then APPENDS earnings/supplemental candidates when the query
+// warrants them. Graph scoring, tier diversity, and the freshness bonus are
+// untouched; extras never displace or re-rank graph results.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type SourceCandidate =
+    | { kind: 'graph'; graphId: string; score: number; graphTier: GraphRelevanceResult['graphTier']; reason: string }
+    | { kind: 'earnings'; ticker?: string; brand?: string; sector?: string; search?: string; score: number; reason: string }
+    | { kind: 'supplemental'; category: string; score: number; reason: string };
+
+// Small, high-confidence map of well-known public consumer companies → tickers.
+// Deliberately conservative: ambiguous common words (Gap, Target, Meta, Visa,
+// Delta, Booking) are excluded — a miss just means no earnings candidate,
+// graphs still run. When unsure, DON'T add.
+const KNOWN_PUBLIC_COMPANIES: Record<string, string> = {
+    'ulta': 'ULTA', 'nike': 'NKE', 'lululemon': 'LULU', 'starbucks': 'SBUX',
+    'walmart': 'WMT', 'costco': 'COST', 'amazon': 'AMZN', 'apple': 'AAPL',
+    'lvmh': 'LVMUY', 'estee lauder': 'EL', 'estée lauder': 'EL', 'coty': 'COTY',
+    "l'oreal": 'LRLCY', "l'oréal": 'LRLCY', 'elf beauty': 'ELF', 'e.l.f.': 'ELF',
+    'marriott': 'MAR', 'hilton': 'HLT', 'airbnb': 'ABNB', 'expedia': 'EXPE',
+    "mcdonald's": 'MCD', 'mcdonalds': 'MCD', 'chipotle': 'CMG', 'coca-cola': 'KO',
+    'pepsico': 'PEP', 'procter & gamble': 'PG', 'unilever': 'UL', 'adidas': 'ADDYY',
+    'abercrombie': 'ANF', 'urban outfitters': 'URBN', 'home depot': 'HD',
+    "lowe's": 'LOW', 'best buy': 'BBY', 'kroger': 'KR', 'shopify': 'SHOP',
+    'etsy': 'ETSY', 'wayfair': 'W', 'williams-sonoma': 'WSM', 'nordstrom': 'JWN',
+    'macy\'s': 'M', 'disney': 'DIS', 'netflix': 'NFLX', 'microsoft': 'MSFT',
+    'tesla': 'TSLA', 'crocs': 'CROX', 'deckers': 'DECK', 'levi\'s': 'LEVI',
+    'ralph lauren': 'RL', 'tapestry': 'TPR', 'capri holdings': 'CPRI',
+    'kering': 'PPRUY', 'hermes': 'HESAY', 'hermès': 'HESAY', 'sprouts': 'SFM',
+    'dollar general': 'DG', 'five below': 'FIVE', 'dick\'s sporting': 'DKS',
+};
+
+// All-caps tokens that look like tickers but aren't — never treat as tickers.
+const TICKER_STOPLIST = new Set([
+    'AI', 'US', 'USA', 'UK', 'EU', 'CEO', 'CFO', 'CMO', 'COO', 'CTO', 'ESG',
+    'DTC', 'D2C', 'B2B', 'B2C', 'GDP', 'ROI', 'API', 'MCP', 'PSFK', 'NIQ',
+    'SXSW', 'FRED', 'OECD', 'BLS', 'BEA', 'USD', 'LLM', 'SEO', 'CPG', 'FMCG',
+    'QSR', 'POS', 'SKU', 'AR', 'VR', 'IT', 'TV', 'PR', 'HR', 'NYC', 'LA',
+    'DIY', 'FAQ', 'AND', 'THE', 'FOR', 'NOT', 'ONLY', 'ALL', 'NEW', 'HOW',
+]);
+
+// Earnings-shaped terms. Strong terms trigger alone; weak terms need 2+.
+const EARNINGS_TERMS_STRONG = /\b(earnings|guidance|quarterly|cfo|q[1-4]\s*(?:'?\d{2}|\d{4})?|wall street|analyst call|earnings call|10-k|10-q)\b/i;
+const EARNINGS_TERMS_WEAK = ['margin', 'margins', 'revenue', 'stock', 'profit', 'profitability', 'investors', 'shareholders'];
+
+// Sector words the earnings snapshot endpoint understands as a sector filter.
+const EARNINGS_SECTORS = ['retail', 'technology', 'travel', 'hospitality', 'luxury', 'beauty', 'fashion', 'apparel', 'automotive', 'hotels', 'restaurants', 'sportswear'];
+
+// Static category → keyword map mirroring the get_supplemental_context catalog
+// (economic indicators/FRED, demographic surveys/Census, trade data, food
+// economics + agricultural production, commodity pricing).
+const SUPPLEMENTAL_CATEGORY_KEYWORDS: Record<string, string[]> = {
+    macro: ['macro', 'economy', 'economic', 'inflation', 'gdp', 'interest rate', 'consumer confidence', 'consumer spending', 'recession', 'fred', 'cost of living', 'purchasing power', 'unemployment'],
+    demographics: ['demographic', 'demographics', 'population', 'census', 'household income', 'age distribution', 'migration'],
+    trade: ['imports', 'exports', 'trade data', 'trade flows', 'tariff', 'tariffs', 'supply chain'],
+    food_economics: ['food prices', 'food costs', 'crop', 'agriculture', 'agricultural', 'nutrition', 'nutritional'],
+    commodities: ['commodity', 'commodities', 'raw materials', 'wholesale prices'],
+};
+
+/**
+ * Detect an earnings candidate for a query. Deterministic and conservative:
+ *  1. Known public company name → ticker (highest confidence)
+ *  2. Explicit ALL-CAPS ticker token, guarded by earnings-context words
+ *  3. "Acme Inc/Corp/Group"-style suffix → brand fuzzy match
+ *  4. Earnings-shaped terms alone (1 strong, or 2+ weak) → sector/search query
+ * When unsure, returns null — no candidate, no cost creep.
+ */
+function detectEarningsCandidate(query: string): SourceCandidate | null {
+    const queryLower = query.toLowerCase();
+
+    const hasStrongTerm = EARNINGS_TERMS_STRONG.test(query);
+    const weakMatches = EARNINGS_TERMS_WEAK.filter(t => new RegExp(`\\b${t}\\b`, 'i').test(query));
+    const hasEarningsContext = hasStrongTerm || weakMatches.length > 0;
+    const sector = EARNINGS_SECTORS.find(s => queryLower.includes(s));
+
+    // 1. Known public company named in query (word-boundary match)
+    for (const [name, ticker] of Object.entries(KNOWN_PUBLIC_COMPANIES)) {
+        const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (new RegExp(`\\b${esc}\\b`, 'i').test(query)) {
+            return { kind: 'earnings', ticker, score: 0.9, reason: `public company named in query (${name} → ${ticker})` };
+        }
+    }
+
+    // 2. Explicit ticker token — ONLY with earnings-context words present
+    if (hasEarningsContext) {
+        const tickerMatch = (query.match(/\b[A-Z]{2,5}\b/g) || []).find(t => !TICKER_STOPLIST.has(t));
+        if (tickerMatch) {
+            return { kind: 'earnings', ticker: tickerMatch, score: 0.8, reason: `ticker ${tickerMatch} with earnings-context terms` };
+        }
+    }
+
+    // 3. Company-suffix heuristic ("Acme Inc", "Foo Holdings")
+    const suffixMatch = query.match(/\b([A-Z][A-Za-z&'.-]+(?:\s+[A-Z][A-Za-z&'.-]+){0,2})\s+(?:Inc|Corp|Corporation|Ltd|PLC|Holdings|Group)\b/);
+    if (suffixMatch && suffixMatch[1]) {
+        return { kind: 'earnings', brand: suffixMatch[1], score: 0.7, reason: `company name with corporate suffix ("${suffixMatch[0]}")` };
+    }
+
+    // 4. Earnings-shaped terms alone: 1 strong term, or 2+ distinct weak terms
+    if (hasStrongTerm || weakMatches.length >= 2) {
+        const termsHit = hasStrongTerm ? 'earnings-shaped terms' : `terms: ${weakMatches.join(', ')}`;
+        return {
+            kind: 'earnings',
+            ...(sector ? { sector } : { search: query.substring(0, 100) }),
+            score: 0.6,
+            reason: sector ? `${termsHit} + sector "${sector}"` : termsHit,
+        };
+    }
+
+    return null;
+}
+
+/** Detect supplemental candidates from the static category → keyword map. */
+function detectSupplementalCandidates(query: string): SourceCandidate[] {
+    const candidates: SourceCandidate[] = [];
+    for (const [category, keywords] of Object.entries(SUPPLEMENTAL_CATEGORY_KEYWORDS)) {
+        const hits = keywords.filter(kw => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(query));
+        if (hits.length > 0) {
+            candidates.push({
+                kind: 'supplemental',
+                category,
+                score: Math.min(0.4 + hits.length * 0.15, 1.0),
+                reason: `keyword match: ${hits.slice(0, 3).join(', ')}`,
+            });
+        }
+    }
+    return candidates;
+}
+
+/**
+ * Unified source selector: graph candidates from getRelevantGraphs()
+ * (UNCHANGED — same scoring, tier diversity, freshness bonus, same order),
+ * plus additive earnings/supplemental candidates appended after.
+ */
+export function getRelevantSources(
+    query: string,
+    opts?: { minGraphs?: number; maxGraphs?: number; threshold?: number },
+): SourceCandidate[] {
+    const graphResults = getRelevantGraphs(query, opts?.minGraphs, opts?.maxGraphs, opts?.threshold);
+    const candidates: SourceCandidate[] = graphResults.map(r => ({
+        kind: 'graph' as const,
+        graphId: r.graph.graph_id,
+        score: r.score,
+        graphTier: r.graphTier,
+        reason: r.score >= 1.0 ? 'named directly in query' : `topic match (score ${r.score.toFixed(2)}, ${r.graphTier})`,
+    }));
+
+    const earnings = detectEarningsCandidate(query);
+    if (earnings) candidates.push(earnings);
+    candidates.push(...detectSupplementalCandidates(query));
+
+    const extras = candidates.filter(c => c.kind !== 'graph');
+    if (extras.length > 0) {
+        console.error(`[sourceRouter] Extra candidates appended: ${extras.map(c => c.kind === 'earnings' ? `earnings(${c.ticker || c.brand || c.sector || 'search'})` : `supplemental(${(c as any).category})`).join(', ')}`);
+    }
+
+    return candidates;
+}
+

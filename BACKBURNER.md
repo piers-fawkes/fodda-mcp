@@ -76,6 +76,15 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 🧹 Delete Duplicate Piers Analyst Record (Airtable)
+**Status:** Ready — one API call or one click, deferred 2026-07-02
+**What:** Two Airtable records share Analyst ID `piers-fawkes-retail-innovation` (Analysts table `tblvrKdn8FvbSJmSs`, base `appXUeeWN1uD9NdCW`). The merge is already done: the keeper `recMTLcbD9dDgONNV` (Status "Pending Approval" — has Expert Card, System Instructions, transcript, Documents) now has the User link (`reckc1aMcHCaOtib2`), `ownerAccount` resolving, and Topic `Retail Innovation, retail`. The leftover `reczAooUcis72TIAV` (Status "Onboarding — Interview") is fully redundant.
+**To do:** Delete record `reczAooUcis72TIAV`. Via API: `base('Analysts').destroy(['reczAooUcis72TIAV'])` using the key in Fodda API `.env`, or manually in Airtable (recoverable from trash either way).
+**Why it matters:** If both records ever go Active, the API's `analysts.find()` picks whichever comes first — could resolve to a stale copy.
+**Agent:** Manual (Airtable) or any agent with the Airtable key
+
+---
+
 ## 📝 MCP Tool Descriptions from Airtable
 **Status:** Not started — low priority, consider when descriptions stabilize  
 **What:** Add an `mcp_tool_description` column to a new `MCP Tools` table in Airtable. At server startup, `catalogCache.ts` fetches these descriptions and injects them into `server.tool()` registrations, replacing the hardcoded strings in `toolHandlers.ts`. This would let the sales/marketing team iterate on tool descriptions (the text LLM routers read to decide tool selection) without code deploys.  

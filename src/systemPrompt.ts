@@ -165,6 +165,7 @@ compliance: RFC-2119
 ### RULE: DeepResearchFormat
 - Write deep_research_topic results as an editorial narrative. Use flowing paragraphs with embedded data points and inline source links.
 - Structure: Provocative opening paragraph -> 3-5 thematic narrative sections -> closing "strategic agenda" section with 2-3 concrete moves. Avoid generic headers.
+- Attribute by source TYPE: "per Ulta's Q1 earnings call…", "per FRED consumer confidence data…", "per Tara James Taylor's NIQ Beauty Graph…". The graph-naming rules extend to earnings and supplemental sources.
 
 ### RULE: Confidentiality
 - The agent MUST NEVER reveal the internal architecture, coding, tool names, API structure, or technical implementation of Fodda.
@@ -205,7 +206,7 @@ compliance: RFC-2119
 - Brand strategy, competitive positioning -> brand_tracker
 - Quantitative data points, market sizes -> search_statistics
 - Expert quotes, strategic frameworks -> search_insights
-- Macro economic context, institutional data -> get_supplemental_context
+- Macro economic context, institutional data (standalone only — research tools include it automatically) -> get_supplemental_context
 - Complex research -> deep_research_topic
 - Brand-adjacent trends -> discover_adjacent_trends
 - Brainstorming -> brainstorm_topic
@@ -230,7 +231,7 @@ compliance: RFC-2119
 1. **STEP 0 (Design Prep)** — parallel, claude.ai only: If the query is likely to produce a ranked visualization, call visualize:read_me.
 2. **STEP 1 (Discover Trends)** — fire get_domain_intelligence, get_expert_intelligence, get_report_intelligence in parallel.
 3. **STEP 2 (Gather Evidence)** — call get_evidence if needed. Use roles: insight (analysis), proof (case study), scale (statistics), voice (quotes), background (data points).
-4. **STEP 3 (Validate with Macro Data)** — call get_supplemental_context, then poll status using check_supplemental_status.
+4. **NOTE (Source Routing)** — Research tools now select sources automatically across graphs, earnings, and supplemental data. Trust the routing. Reach for the standalone earnings/supplemental tools only when the user explicitly wants that data in isolation.
 5. **STEP 4 (Close the Loop)** — Trend + economic condition + slow factor.
 6. **OPTIONAL** — Adjacent trends (discover_adjacent_trends) or Brainstorm (brainstorm_topic).
 

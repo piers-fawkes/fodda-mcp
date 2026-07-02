@@ -11,8 +11,8 @@ import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
 import crypto from 'crypto';
-import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getEnabledSkillConfigs, getSkillGraphs, getAnalysts } from './catalogCache.js';
-import type { CatalogGraph } from './catalogCache.js';
+import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getRelevantSources, getEnabledSkillConfigs, getSkillGraphs, getAnalysts } from './catalogCache.js';
+import type { CatalogGraph, SourceCandidate } from './catalogCache.js';
 import { renderBrandWidget } from './brandTemplate.js';
 import { renderSearchWidget } from './searchTemplate.js';
 import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
@@ -1836,7 +1836,7 @@ export async function createServer(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'Get real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Use AFTER graph searches to add quantitative context, or standalone for market intelligence. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. 5 API calls per standalone use.',
+        'Targeted pull for macro/institutional data — research workflows include this automatically; call directly only for standalone economic context. Gets real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. 5 API calls per standalone use.',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty')"),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design'. If omitted, inferred from query."),
@@ -2116,7 +2116,7 @@ export async function createServer(
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
     server.tool(
         'get_earnings_intelligence',
-        'Query earnings call intelligence across companies, industries, or sectors. Returns structured evidence from public company earnings calls — management commentary, guidance, key topics, and analyst Q&A. Use for cross-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries ("earnings intelligence for consumer electronics"), or explicit earnings requests. For single-brand earnings, use brand_tracker instead — it includes earningsIntelligence automatically. Results include a source field: "knowledge_graph" (high confidence, structured Neo4j data) or "web_supplemental" (backfilled via web search). 5 API calls per use.',
+        'Targeted pull: use when you want ONLY earnings data for a known ticker/sector — not full research. For questions that mix earnings with trends, use deep_research_topic, which includes earnings automatically. Returns structured evidence from public company earnings calls — management commentary, guidance, key topics, and analyst Q&A. Use for cross-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries ("earnings intelligence for consumer electronics"), or explicit earnings requests. For single-brand earnings, use brand_tracker instead — it includes earningsIntelligence automatically. Results include a source field: "knowledge_graph" (high confidence, structured Neo4j data) or "web_supplemental" (backfilled via web search). 5 API calls per use.',
         {
             ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
             brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
@@ -2169,7 +2169,7 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Detect divergence between analyst concerns and management responses in earnings calls. Surfaces where executives are deflecting, reframing, or avoiding specific topics. Premium intelligence — shows the gap between what Wall Street is worried about and what companies are saying. Results include deflected topics, concern-vs-response framing, and connections to Fodda trends via :VALIDATES edges. Use for "where are executives deflecting?" or "divergence in [sector] earnings." 5 API calls per use.',
+        'Targeted pull: use when you want ONLY earnings data for a known ticker/sector — not full research. For questions that mix earnings with trends, use deep_research_topic, which includes earnings automatically. Detects divergence between analyst concerns and management responses in earnings calls — surfaces where executives are deflecting, reframing, or avoiding specific topics. Premium intelligence — shows the gap between what Wall Street is worried about and what companies are saying. Results include deflected topics, concern-vs-response framing, and connections to Fodda trends via :VALIDATES edges. Use for "where are executives deflecting?" or "divergence in [sector] earnings." 5 API calls per use.',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
             industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
@@ -2873,7 +2873,7 @@ export async function createServer(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: "light" (20 API calls, faster single-pass) or "heavy" (30 API calls, comprehensive multi-pass with validation).',
+        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: "light" (20 API calls, faster single-pass) or "heavy" (30 API calls, comprehensive multi-pass with validation). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
         {
             query: z.string().describe('The research query/topic'),
             graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
@@ -2904,16 +2904,44 @@ export async function createServer(
                 });
                 console.error(`[deep_research_topic] Starting ${isHeavy ? 'heavy' : 'light'} research: "${query}"`);
 
-                // Determine relevant graphs
-                const relevantGraphs = graphId
-                    ? [{ graph: { graph_id: graphId } as any }]
-                    : getRelevantGraphs(query).slice(0, maxGraphs);
-                const graphIds = relevantGraphs.map(g => g.graph.graph_id);
+                // Determine relevant sources — unified routing: graph selection is
+                // getRelevantGraphs() unchanged; earnings/supplemental are appended
+                // as additive extras that never displace graph slots.
+                const sourceCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query);
+                const graphCandidates = sourceCandidates
+                    .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
+                    .slice(0, maxGraphs);
+                const graphIds = graphId ? [graphId] : graphCandidates.map(c => c.graphId);
+                const earningsCandidate = sourceCandidates.find(
+                    (c): c is Extract<SourceCandidate, { kind: 'earnings' }> => c.kind === 'earnings');
+                const supplementalCandidates = sourceCandidates.filter(
+                    (c): c is Extract<SourceCandidate, { kind: 'supplemental' }> => c.kind === 'supplemental');
+
+                // Routing visibility: every candidate selected, with why.
+                // Supplemental is async-only (job + poll) — v1 notes the candidate
+                // instead of fetching, pointing at the targeted tool.
+                const sourcePlan: Record<string, any>[] = [
+                    ...(graphId
+                        ? [{ kind: 'graph', id: graphId, reason: 'explicitly requested via graphId' }]
+                        : graphCandidates.map(c => ({ kind: 'graph', id: c.graphId, reason: c.reason }))),
+                    ...(earningsCandidate ? [{
+                        kind: 'earnings',
+                        ...(earningsCandidate.ticker ? { ticker: earningsCandidate.ticker } : {}),
+                        ...(earningsCandidate.brand ? { brand: earningsCandidate.brand } : {}),
+                        ...(earningsCandidate.sector ? { sector: earningsCandidate.sector } : {}),
+                        reason: earningsCandidate.reason,
+                    }] : []),
+                    ...supplementalCandidates.map(c => ({
+                        kind: 'supplemental',
+                        category: c.category,
+                        reason: `${c.reason} — not auto-fetched in v1 (async source); targeted tool available: get_supplemental_context`,
+                    })),
+                ];
 
                 // ── Phase 2: Searching Fodda Knowledge Graphs ──
                 await server.sendLoggingMessage({
                     level: 'info',
-                    data: `🔍 Phase 2/5: Searching ${graphIds.length} knowledge graph${graphIds.length !== 1 ? 's' : ''}...`,
+                    data: `🔍 Phase 2/5: Searching ${graphIds.length} knowledge graph${graphIds.length !== 1 ? 's' : ''}${earningsCandidate ? ' + earnings intelligence' : ''}...`,
                 });
 
                 // Pre-fetch graph data in parallel
@@ -2929,7 +2957,29 @@ export async function createServer(
                     }
                 });
 
-                const graphResults = await Promise.all(graphSearchPromises);
+                // Earnings candidate: same endpoint as get_earnings_intelligence,
+                // fetched in parallel with graph searches. Failure is non-fatal.
+                const earningsPromise: Promise<any> = earningsCandidate
+                    ? (async () => {
+                        try {
+                            const params = new URLSearchParams();
+                            if (earningsCandidate.ticker) params.set('ticker', earningsCandidate.ticker);
+                            if (earningsCandidate.brand) params.set('brand', earningsCandidate.brand);
+                            if (earningsCandidate.sector) params.set('sector', earningsCandidate.sector);
+                            if (earningsCandidate.search) params.set('search', earningsCandidate.search);
+                            params.set('limit', '10');
+                            return await foddaRequest('GET', `/v1/supplemental/earnings/snapshot?${params.toString()}`, apiKey, resolvedUserId);
+                        } catch (err: any) {
+                            console.error(`[deep_research_topic] Earnings snapshot failed (non-fatal): ${err?.message}`);
+                            return null;
+                        }
+                    })()
+                    : Promise.resolve(null);
+
+                const [graphResults, earningsData] = await Promise.all([
+                    Promise.all(graphSearchPromises),
+                    earningsPromise,
+                ]);
                 const totalTrends = graphResults.reduce((sum, g) => sum + g.rows.length, 0);
                 const totalEvidence = graphResults.reduce((sum, g) => sum + g.evidence.length, 0);
                 const activeGraphs = graphResults.filter(g => g.rows.length > 0);
@@ -2985,6 +3035,8 @@ export async function createServer(
                     totalTrends,
                     totalEvidence,
                     focusGraphId: graphId,
+                    // Distinct earnings block — attributed by source type at synthesis
+                    ...(earningsData ? { earningsResults: JSON.stringify(earningsData).substring(0, 15000) } : {}),
                 };
 
                 // Build skill-loaded system instruction
@@ -3106,7 +3158,7 @@ export async function createServer(
                         }
 
                         const header = [
-                            `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed • ${durationSec}s_`,
+                            `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed${earningsData ? ' • earnings intelligence included' : ''} • ${durationSec}s_`,
                             '',
                         ].join('\n');
 
@@ -3121,7 +3173,7 @@ export async function createServer(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is searching the graph and the live web. Job ID: ${jobId}\n\nIMPORTANT: You must use the check_research_status tool with this Job ID to poll the status of the job and retrieve the report.`
+                        text: `Deep research job started! The agent is searching the graph and the live web. Job ID: ${jobId}\n\nsource_plan (sources the router selected and why — earnings/supplemental are included automatically when relevant, so no separate earnings or supplemental calls are needed):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: You must use the check_research_status tool with this Job ID to poll the status of the job and retrieve the report.`
                     }]
                 };
             } catch (err: any) {
@@ -3168,7 +3220,7 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
+        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
         {
             analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic')"),
             query: z.string().describe("The question or topic to discuss with the analyst"),
