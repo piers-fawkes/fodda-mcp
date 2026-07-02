@@ -4,6 +4,78 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 🚨 C1: Move Session State out of In-Memory Maps
+**Status:** Not started — architectural change, deferred; stopgap in place  
+**Severity:** CRITICAL (per claude-opus-4-8 review, June 2026)  
+**Stopgap:** Set `max-instances=1` in Cloud Run until this is fixed. Prevents session loss from cross-instance routing.  
+**Problem:** `transports`, `sessionApiKeys`, `sessionUserIds`, `sessionSources`, `sessionCreatedAt`, `widgetCache`, `activeResearchJobs`, `activeSupplementalJobs` are all process-local Maps. Cloud Run can run multiple instances. A session created on instance A is invisible to instance B. With autoscaling to 3–5 instances under load, session-resume failure rate is ~70–80%.  
+**Solution:**
+1. **Session key/userId mapping** → Firestore collection `mcp_sessions/{sessionId}` with TTL. The transport object itself cannot be stored (it holds an HTTP response object) — only the metadata that maps `sessionId` to `apiKey`, `userId`, `source`, `createdAt`.
+2. **Widget cache** → Firestore (or Cloud Storage) with a 30-minute TTL. Widgets are already served via `/widget/:id` — just change the backing store.
+3. **activeResearchJobs / activeSupplementalJobs** → These track long-running async jobs. Move to Firestore `mcp_jobs/{jobId}` with `status`, `result`, `createdAt`. The MCP polling loop reads from Firestore instead of a local Map.
+4. **Transport recovery:** MCP transports are tied to HTTP connections — they cannot be migrated across instances. The fix for transport is session affinity on Cloud Run (`--session-affinity` flag) combined with storing session metadata in Firestore so lost sessions can return a meaningful error instead of a silent 404.  
+**MCP constraint:** StreamableHTTPServerTransport holds a live HTTP response. If Cloud Run recycles the instance, the transport is gone regardless of where we store metadata. Session affinity (`--session-affinity`) plus Firestore metadata is the correct layered approach.  
+**Firestore dependency:** Already used for trial tracking — the client is already initialized.  
+**Agent:** MCP agent
+
+---
+
+## 🔑 C3: Remove API Keys from URL Query Params
+**Status:** Not started — requires MCP client coordination; higher priority than most backburner items  
+**Severity:** CRITICAL (per claude-opus-4-8 review, June 2026)  
+**Problem:** `?api_key=YOUR_KEY` in URL query params means API keys appear in Cloud Run access logs, proxy logs, browser history, and referrer headers. For a paid product this is a direct credential-leak risk.  
+**What's involved:**
+1. **MCP Server:** Auth already reads from `Authorization: Bearer`, `X-API-Key`, AND `?api_key` query param. The header paths already work. The fix is to stop documenting/using query params as the primary method.
+2. **Documentation + onboarding:** The MCP connection URL distributed to customers is `https://mcp.fodda.ai/mcp?api_key=YOUR_KEY`. This needs to change to require `Authorization: Bearer YOUR_KEY` — but not all MCP clients support custom headers.
+3. **MCP client landscape:** As of mid-2026, Claude Desktop and Cursor support `Authorization` headers. Windsurf does. Some older clients (ChatGPT Connector) do not. A phased approach: move docs to headers-first, keep query-param support as a deprecated fallback, set a deprecation date.
+4. **`/v1/graphs/mine` API response (v1Router.ts:320):** Currently constructs `mcp_url: \`https://mcp.fodda.ai/mcp?api_key=${trialKey}\`` — this also needs updating to use a header-based auth instruction instead.
+5. **Short-lived tokens (longer-term):** Instead of distributing the primary API key directly, issue short-lived signed tokens for MCP sessions. Leaked tokens are scoped and expire.  
+**Migration path:**
+- Phase 1: Update docs to recommend headers. Keep query param working. Log a deprecation warning when query param is used.
+- Phase 2: Issue a deprecation notice to all active users.
+- Phase 3: Remove query-param support. Require header auth only.  
+**Agent:** MCP agent + API agent (update /v1/graphs/mine response) + App agent (update onboarding/setup docs)  
+**Superseded-by note:** This is now the first step of the broader **MCP Identity & Connection-URL Scheme** below — that brief delivers C3 (no key in URL) plus a unique-key identity model in one move. Treat C3 as Phase 1a of that plan.
+
+---
+
+## 🔗 Evidence Over-Linking Prune (deeper root-cause fix)
+**Status:** Not started — deferred follow-up from the Round-2 audit (June 2026). **Non-urgent:** user-facing impact is already neutralized (see below).  
+**Repo/agent:** PSFK Ingestor (the bad join lives in the evidence→trend linking, not the MCP/API).  
+**Problem:** Trends **6779 / 6782 / 6784** carry **469 / 1286 / 1273** evidence items vs a healthy ~12–28 — an over-linking defect (a bad EVIDENCE_FOR join or too-loose similarity threshold). The June quarantine script repaired the *properties* (signal_score, dates, place tokens, graphId) but **did not prune the excess joins**. Gate 6 (evidence-count outlier) only **warns**; it doesn't prevent or prune.  
+**Why it matters (and why it's non-urgent):**
+- `confidenceScore` is an Airtable formula computed from **`evidenceCount`**. While the joins persist, `evidenceCount` stays inflated → `confidenceScore` stays ~**7109** in Airtable and **will not "normalize" on the next sync** (it derives from the count, not from `lastSeen`). The live Neo4j graph is protected only by `clampSignalScore()` (7109 → 0), which parks these nodes at the bottom rather than at a correct mid-rank.
+- **User-facing impact is already neutralized** by the MCP evidence-ranking fix (caps the API's *relevance-ranked* top-3, so the 1286-item bloat no longer surfaces off-topic citations). So this is **latent data debt**, not a live bug.  
+**The actual fix:** analyze which EVIDENCE_FOR links on these nodes are legitimate vs. bad joins; prune the bad ones at source; fix the join logic / similarity threshold that created them so it can't recur; then confidenceScore recomputes to a real value and the clamp becomes moot.  
+**Refs:** `briefs/Brief Round 2 Surface Audit - Evidence Ranking and Node Identity.md` (the 7109 cluster), `briefs/Brief Ingestion Data Integrity - PSFK Cluster and Validation Gates.md`, `briefs/Brief Round 2 MCP Evidence Ranking Fix.md` (the complementary MCP fix).  
+**Agent:** PSFK Ingestor
+
+---
+
+## 💸 Verify Self-Use Fair-Use Cap Is Actually Enforced
+**Status:** Unconfirmed — flagged during onboarding-email work, 2026-07-02
+**Problem:** The expert-onboarding "You're live" email (Fodda Website's `buildExpertApprovedEmail`) now tells every approved expert: *"Using your own agent is free"* with a 25/day self-use cap, billing only kicking in when their agent researches beyond their own knowledge graph. This copy was written from `Brief Expert Onboarding Messaging Own Agent.md`'s stated facts — but **nobody has confirmed the cap, or the free/paid split itself, is actually implemented anywhere in the MCP server or billing path.** Piers: "I have no idea if that's enforced."
+**Risk if unenforced:** Either (a) self-use isn't actually free today, meaning the email over-promises and an expert gets billed for consulting their own agent — the exact "surprised by a charge" failure mode the messaging brief explicitly warns against — or (b) self-use is free but *uncapped*, meaning the "25/day" figure in the email is just wrong.
+**To check:** find wherever MCP requests get billed/metered (this repo, presumably — `index.ts` or the trial/credit-tracking path referenced elsewhere in this file) and confirm: (1) does it distinguish "consulting your own graph" from "researching beyond it," (2) is there an actual daily self-use cap, and if so is it 25, (3) does self-use actually cost $0 today or does that need building.
+**Cross-ref:** related to the connection-URL/identity work below — whatever `internal_user_id`/`billing_account_id` scheme lands there is probably where "is this the expert's own graph" gets decided.
+**Owner:** whoever owns MCP billing/metering — not yet assigned.
+
+---
+
+## 🪪 MCP Identity & Connection-URL Scheme (Unique Key, Not API Key + Email)
+**Status:** Designed for consideration — not scheduled (captured June 2026)  
+**Priority:** P2 — design now, build later; subsumes C3  
+**Problem:** The connection URL carries both the API key and the user's email (`?api_key=…&user_id=<email>`, `index.ts:519/527`), conflating authentication, identity, and billing into two leaky values. Symptoms: secret-in-URL (C3), PII-in-URL, and email-as-identity coupling that produced `profile.name = "recZ1FemUPoLtuIuF"` in the P0 audit. Rotating an API key breaks every URL that embeds it.  
+**Recommendation (two phases):**
+1. **Phase 1 — opaque per-connection token in the path** (`https://mcp.fodda.ai/c/{token}`) resolving server-side to `{ internal_user_id, billing_account_id, scopes }`. The token is neither the API key nor the email; introduce a stable internal `user_id` and demote email to an attribute. Per-connection revocable. Delivers C3 as a side effect. Start opaque/DB-backed (Firestore) over JWT so revocation is free.
+2. **Phase 2 — OAuth 2.1 remote-MCP auth** (Claude connector supports it natively): short-lived bearer + refresh, no static secret, real scopes. Phase 1's `internal_user_id` maps onto OAuth claims, so it's the foundation, not throwaway.  
+**Migration:** dual-accept legacy `?api_key=&user_id=` during a window → mint `/c/{token}` per user, update onboarding + the `mcp_url` from `/v1/graphs/mine` → sunset the legacy form.  
+**Open decisions for Piers:** token format (opaque vs JWT), OAuth now vs later, scope granularity, per-user vs per-connection tokens.  
+**Full brief:** `briefs/Brief MCP Identity and URL Scheme.md`  
+**Agent:** MCP agent + API agent (token issuance + identity store) + App agent (onboarding/URL distribution)
+
+---
+
 ## 📝 MCP Tool Descriptions from Airtable
 **Status:** Not started — low priority, consider when descriptions stabilize  
 **What:** Add an `mcp_tool_description` column to a new `MCP Tools` table in Airtable. At server startup, `catalogCache.ts` fetches these descriptions and injects them into `server.tool()` registrations, replacing the hardcoded strings in `toolHandlers.ts`. This would let the sales/marketing team iterate on tool descriptions (the text LLM routers read to decide tool selection) without code deploys.  
@@ -33,11 +105,11 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 ---
 
 ## 🔇 Ghost Upsell Tool (`check_premium_insights`)
-**Status:** Code complete, commented out in `src/index.ts`  
+**Status:** Code removed — needs reimplementation from BACKBURNER spec  
 **Re-enable when:** Significant user volume warrants cross-sell  
 **What:** Checks the user's graph access via API. Limited-plan users (retail-only, sic-only) see: *"I could cross-reference with graphs and datasets outside of your current subscription..."* with a list of missing graphs. Users with 'all' verticals get "you have full access."  
 **Upgrade URL:** www.fodda.ai  
-**To re-enable:** Search `check_premium_insights` in `src/index.ts`, uncomment the `server.tool` block.  
+**To re-enable:** Reimplement based on the spec below. The original commented-out code was removed during a prior cleanup.  
 **Ref:** implementation_plan.md Phase 2, item 4.2
 
 ---
@@ -279,6 +351,17 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 📉 P0 Audit Follow-up: Hit the Response Size Targets
+**Status:** Not started — P1 follow-up to the shipped P0 surface-audit fixes (June 2026). **Not a regression** — the named bloat (28.8KB brand/place strings, duplicate aliases) is already gone; this is the remaining reduction to hit the budget.  
+**Measured after P0 (verified live on mcp.fodda.ai):** `list_graphs` = **170KB** (was 883KB); `search_graph` = **131KB / max 6KB per row** (was ~233KB). Target for both: **≤25KB**, search **≤2KB/row**.  
+**Two pieces of work:**
+1. **Tiered discovery for `list_graphs`** — the allowlist still keeps the full `description` (with the injected `[ROUTING INSTRUCTION]`), ~810 B × 210 graphs. Drop full `description` from the list; return only `graph_id, name, one_liner, curator, domain, graph_type, trend_count, evidence_count, status, last_updated` + a terse routing field. Add a new **`get_graph(graph_id)`** tool that returns the full profile on demand. (This is P1 item 7 from the audit spec; overlaps with "Rethink `list_graphs`" above.)
+2. **Evidence-transport decision for `search_graph`** — `≤2KB/row` is in tension with evidence inline (item 4 ships 3 evidence items/row, which alone busts 2KB). Decide: keep evidence inline (accept larger rows) **or** move evidence to a separate content block (item 4's Option B) to hit the row target. Also trim per-row enrichment fields and response-level extras (`_render_instructions`, `suggested_next_prompts`, `queryTimeline`) that pad the payload.  
+**Ref:** `briefs/Brief MCP P0 Surface Audit Fixes.md` (items 3 + 7), `briefs/Response - MCP P0 Plan Review.md`  
+**Agent:** MCP agent
+
+---
+
 ## ⚡ Waverunner Internal Call Optimization
 **Status:** Not urgent — current implementation works  
 **What:** `deep_research_topic` currently uses the old granular tools internally (search_graph, get_evidence, search_statistics). It could be refactored to use the new unified endpoints (get_domain_intelligence, get_expert_intelligence, get_report_intelligence) instead — getting bundled evidence in fewer hops and reducing total token count per deep research run.  
@@ -319,3 +402,63 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 **Inspiration:** Wild.ai "AI in Regulated Industries" (Feb 2026), Anthropic "Demystifying evals for AI agents" (Jan 2025)  
 **Agent:** MCP agent
 
+---
+
+## 🗂️ Extract Personas from systemPrompt.ts into .agents/personas/
+**Status:** Not started — deferred from Engineering Policy adoption (May 2026)
+**What:** The MCP server's system prompt currently lives entirely in `src/systemPrompt.ts`. Per the new engineering policy (§2 + agents.yaml), persona files should live in `.agents/personas/`. Extract the Waverunner agent persona and the Fodda MCP persona into:
+- `.agents/personas/waverunner.md` — Waverunner deep research agent system instructions
+- `.agents/personas/fodda-mcp.md` — Core Fodda MCP behavioral rules and system prompt  
+
+`src/systemPrompt.ts` would then import from these files at build time (or read them at startup), keeping the single source of truth in the persona files.  
+**Why not now:** Requires a build-step change and testing to ensure prompt integrity. Low risk but needs a focused session.  
+**Agent:** MCP agent
+
+---
+
+## 🛑 Rollback & Kill-Switch for Waverunner (Unattended Agent)
+**Status:** Not started — deferred from Engineering Policy adoption (May 2026)
+**What:** Per policy §5, cron-triggered or unattended agents must have an emergency stop mechanism. Waverunner runs synchronously today (user-triggered only), but when proactive/background triggers are added, implement:
+1. **Auto-disable:** If Waverunner fails N consecutive times (suggested: 3), write a `WAVERUNNER_DISABLED=true` flag to Firestore and stop accepting new requests until manually re-enabled.
+2. **Rollback procedure:** Document in `.agents/workflows/` how to roll back a Waverunner config/prompt change (mirrors the Cloud Run rollback procedure in deploy.md).
+3. **CHANGELOG entry required** for any prompt or config change (already policy, but needs explicit enforcement in CI).  
+**Why not now:** Waverunner is user-triggered only. Priority rises when background triggers are introduced.  
+**Agent:** MCP agent
+
+---
+
+## 🧪 Golden-Set Prompt Regression Tests
+**Status:** Not started — deferred from Engineering Policy adoption (May 2026)
+**What:** Per policy §4, agent config changes require golden-set testing to catch prompt regressions. This overlaps with the MCP Eval Harness (see above) but is scoped specifically to:
+- A small set (~10) of canonical Waverunner + search queries with expected output shapes
+- Run automatically before any deployment that touches `systemPrompt.ts`, `toolHandlers.ts`, or any `.agents/` file
+- Fail the deploy if outputs deviate from expected structure  
+**Relationship to MCP Eval Harness:** The Eval Harness (see above) is the full implementation. This is the minimal viable version — just enough to gate deploys. Build this first, evolve into the full Eval Harness later.  
+**Agent:** MCP agent
+
+---
+
+## 🔌 Claude Enterprise Plugin — MCP Parity Fixes
+**Status:** Not started — low priority until the plugin is our active route  
+**Context:** The Claude Enterprise Plugin (`/v1/plugin/claude/*` in the Fodda API repo) has diverged from the MCP server. The plugin was last meaningfully updated at v1.1.0 (March 2026) and is missing several MCP capabilities.  
+**What's missing:**
+1. **Server-level formatting instructions** — MCP injects graph attribution rules, hyperlink formatting, and `suggest_next_prompts` into Claude's system prompt via the `instructions` field. Plugin has none of this, so Claude's formatting behaviour is inconsistent between the two integrations.
+2. **`discover_adjacent_trends` endpoint** — MCP exposes this tool; plugin has no `/adjacent` endpoint. Needs `POST /v1/plugin/claude/adjacent` wired to `GET /v1/graphs/:graphId/adjacent`.
+3. **Cross-graph fallback logic** — MCP retries against the `psfk` graph when a vertical graph (`sic`, etc.) returns empty. Plugin has no fallback, so evidence calls silently fail on vertical graphs.
+4. **Stale command descriptions** in `plugin.json` — `/search` and `/evidence` don't include the presentation hints (attribution format, hyperlink formatting) that the MCP tool descriptions now carry.  
+**Reference:** `Plugin_Update_Brief.md` in the Fodda Anthropic Plugin directory has the full spec with code examples.  
+**Why now:** The Claude Enterprise Plugin is not our primary integration route. The MCP is. Fix when the plugin becomes a sales-critical path again.  
+**Agent:** Fodda API agent (plugin code lives in `functions/v1/plugin/claude/`)
+
+---
+
+## 📟 SPT Pricing-Gap Alerting — durable log-based alert policy
+**Status:** Not started — follow-up to the shipped Slack alert (June 2026)
+**Severity:** P2 — revenue hygiene
+**Context:** An unmapped billable route falls through to the $0.50 default (fail-visible). The API now logs a structured `spt_pricing_unmapped_route` ERROR to Cloud Logging AND fires a deduped Slack alert to #fodda-sales (one alert per path per process lifetime). Shipped in `fodda-api-new-00392-snv`.
+**Gap:** The Slack dedup is per-process, so a *sustained* leak goes quiet after the first ping (and re-pings noisily when new instances spin up) — it signals "happened once," not "still happening / how often."
+**Solution:**
+1. Add a Cloud Logging **log-based metric** on `spt_pricing_unmapped_route` + an **alert policy** on its count/rate over a window. That is the authoritative monitor; Slack stays the heads-up nudge.
+2. Confirm the alert reaches whoever actually *fixes* it (adds the route to `TOKEN_COSTS`) — engineering/ops, not only #fodda-sales.
+3. (Optional) revisit fail-visible vs fail-closed if undercharge volume ever warrants it.
+**Agent:** API agent (fodda-api)

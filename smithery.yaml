@@ -1,0 +1,18 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    required:
+      - apiKey
+    properties:
+      apiKey:
+        type: string
+        description: "Your Fodda API key (starts with sk_live_). Get one at app.fodda.ai"
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'fodda-mcp'],
+      env: {
+        FODDA_API_KEY: config.apiKey
+      }
+    })

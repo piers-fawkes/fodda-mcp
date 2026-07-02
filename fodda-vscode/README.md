@@ -110,6 +110,8 @@ AI agents backed by a [Stripe Link wallet](https://link.com/agents) can query Fo
 - Charged per-query — no signup, no subscription
 - Learn more: [Stripe Agentic Commerce](https://docs.stripe.com/agentic-commerce)
 
+> **Note:** SPT (Agent Pay-Per-Query) applies to **direct REST API requests only**. It is **not** available through this MCP connector — MCP usage requires an API key (free Base plan or paid).
+
 ### Payment Channels
 
 | Channel | Best For |
@@ -118,7 +120,7 @@ AI agents backed by a [Stripe Link wallet](https://link.com/agents) can query Fo
 | **Paid Plans** | Teams and power users |
 | **Lava PAYG** | Developers with metered usage |
 | **Top-Up** | Quick refill via Stripe Checkout |
-| **Agent Pay-Per-Query** | Zero-onboarding agent access via SPT |
+| **Agent Pay-Per-Query** | Zero-onboarding agent access via SPT — **direct REST API only** |
 
 See [fodda.ai/pricing](https://www.fodda.ai/pricing) for current pricing.
 

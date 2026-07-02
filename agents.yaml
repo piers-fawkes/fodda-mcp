@@ -1,0 +1,59 @@
+# agents.yaml — Agent Mapping Manifest
+# Per the Fodda Engineering Standards & Code Policy for Agents.
+# This file points to where agent configurations live in this repo.
+# It does NOT force a directory restructure — it provides a discovery map.
+#
+# Tech debt note: null values below indicate items logged in BACKBURNER.md.
+# Do NOT pre-create empty directories. Add paths here only when files exist.
+
+agents:
+
+  # ── Waverunner Deep Research Agent ──────────────────────────────────────────
+  # Manages deep_research_topic and read_url MCP tools.
+  # Calls Google's Interactions API; uses FODDA_INTERNAL_API_KEY for graph calls.
+  # System prompt: in-repo at src/systemPrompt.ts (not Airtable — no audit gap).
+  waverunner:
+    config: null              # BACKBURNER: create src/agents/waverunner/config.yaml when piloting PoC
+    persona: null             # BACKBURNER: extract from src/systemPrompt.ts → .agents/personas/waverunner.md
+    policies: null            # BACKBURNER: define deny_all + selective allow in .agents/policies/waverunner.py
+    brief: briefs/Brief Waverunner Agent Metering.md
+    workflows: .agents/workflows/
+
+  # ── MCP Server (Prompt-as-Agent) ─────────────────────────────────────────────
+  # The Fodda MCP server acts as a prompt orchestrator.
+  # Mapped here as a "prompt-as-agent" entity per policy §2.
+  # System prompt: in-repo at src/systemPrompt.ts (not Airtable — no audit gap).
+  fodda-mcp:
+    config: null              # BACKBURNER: extract model/safety config when formalizing
+    persona: null             # BACKBURNER: extract from src/systemPrompt.ts → .agents/personas/fodda-mcp.md
+    policies: null            # BACKBURNER: formalize existing guardrails in .agents/policies/fodda-mcp.py
+    workflows: .agents/workflows/
+    brief: briefs/Response — Fodda MCP Brief.md
+
+# ── External Prompt Audit (Policy §4) ────────────────────────────────────────
+# Policy requires: prompts outside version control MUST have a documented audit trail.
+# Fodda MCP compliance status:
+#   ✅ System prompt: 100% in-repo (src/systemPrompt.ts → buildSystemPrompt())
+#   ✅ Tool descriptions: in-repo (src/toolHandlers.ts, src/tools.ts)
+#   ⚠️  Airtable dependency: pricingCache.ts fetches PRICING DATA from Airtable,
+#      NOT system instructions. Falls outside this policy's scope, but changes to
+#      pricing rules that affect agent behavior must have a CHANGELOG entry.
+#      (BACKBURNER: MCP Tool Descriptions from Airtable — if that ships, it will
+#       require an audit trail per this policy before going live.)
+
+# ── Environment Lifecycle Defaults ────────────────────────────────────────────
+# Per policy §5: document fork/reuse rules and network egress controls.
+environment:
+  default_behavior: reuse          # reuse conversation state within a session
+  fork_on: new_user_session        # fork environment per user session
+  network_egress: fodda_api_only   # agents may not make arbitrary outbound calls
+  snapshot_on_deploy: true         # export environment snapshot before config changes
+
+# ── Path Conventions ──────────────────────────────────────────────────────────
+# Standard locations used across all Fodda repos (per policy §2).
+conventions:
+  workflows: .agents/workflows/
+  briefs: briefs/
+  personas: .agents/personas/      # create this dir only when first persona file is ready
+  policies: .agents/policies/      # create this dir only when first policy file is ready
+  scratch: .agents/scratch/        # gitignored — temp artifacts and logs

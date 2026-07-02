@@ -116,7 +116,7 @@ export async function handleAccessError(err: any, toolName: string): Promise<{ i
     }
     if (accessType === 'legacy_retired') {
         const errorMsg = err.response?.data?.error?.message || err.response?.data?.error || err.response?.data?.message
-            || 'Legacy trial keys are no longer supported. Sign up at app.fodda.ai.';
+            || 'Legacy trial keys are no longer supported. Sign in at https://app.fodda.ai to get your new API key.';
         const signupUrl = err.response?.data?.signupUrl || 'https://app.fodda.ai';
         return { isError: false, content: [{ type: 'text' as const, text: JSON.stringify({ status: 'LEGACY_TRIAL_RETIRED', message: errorMsg, signupUrl }) }] };
     }

@@ -1,6 +1,6 @@
 # Fodda × Claude Connectors — Co-pilot README
 
-**Last updated:** March 12, 2026
+**Last updated:** June 24, 2026
 
 ---
 
@@ -31,22 +31,65 @@ Anthropic has opened **custom connectors** — a way for third-party services to
 
 Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK covering retail, beauty, sports, and emerging industries.
 
-### Available Tools (8 total)
+### Available Tools (31 total)
+
+**Core Research**
 
 | Tool | What it does |
 |---|---|
 | `list_graphs` | Discover available knowledge graphs and schemas |
-| `search_graph` | Hybrid keyword + semantic search across trend data |
-| `get_neighbors` | Traverse graph relationships to find connected concepts |
-| `get_evidence` | Retrieve source articles with full provenance |
-| `get_node` | Get full metadata for a specific node |
-| `get_label_values` | Discover values for categories (Brand, Location, etc.) |
-| `psfk_overview` | Macro-level industry overview |
-| `discover_adjacent_trends` | Find semantically similar trends |
+| `search_graph` | Find trends across 100+ curated knowledge graphs |
+| `get_neighbors` | Discover what's connected to a specific trend |
+| `get_evidence` | Get source articles and citations behind a trend |
+| `get_node` | Get the full profile of a specific trend |
+| `get_label_values` | List all brands, locations, or trends in a graph |
+| `discover_adjacent_trends` | Find similar trends across domains |
+| `brainstorm_topic` | Explore connections and adjacencies around a topic |
+
+**Intelligence Engines**
+
+| Tool | What it does |
+|---|---|
+| `brand_tracker` | Complete brand intelligence profile |
+| `get_domain_intelligence` | Search PSFK domain graphs (retail, beauty, etc.) |
+| `get_expert_intelligence` | Search specialist graphs from named strategists |
+| `get_report_intelligence` | Search industry report graphs (DHL, PwC, etc.) |
+| `search_statistics` | Find specific numbers and data points |
+| `search_insights` | Find expert quotes and editorial analysis |
+| `get_earnings_intelligence` | Query earnings call intelligence |
+| `get_earnings_divergence` | Detect exec deflection in earnings calls |
+
+**Deep Research & Market Data**
+
+| Tool | What it does |
+|---|---|
+| `deep_research_topic` | Autonomous multi-source research reports (async) |
+| `check_research_status` | Poll for deep research results |
+| `get_supplemental_context` | Real-time market data from 80+ sources (async) |
+| `check_supplemental_status` | Poll for market data results |
+| `read_url` | Extract text from any URL for cross-referencing |
+
+**Analysts & Visualization**
+
+| Tool | What it does |
+|---|---|
+| `list_analysts` | Discover available synthetic expert analysts |
+| `consult_analyst` | Consult a named expert in their domain |
+| `generate_visual` | Create presentation-ready data visualizations |
+
+**Account & Settings**
+
+| Tool | What it does |
+|---|---|
+| `get_my_account` | Check API call balance and plan status |
+| `update_user_profile` | Save research preferences for personalized results |
+| `toggle_graph_preference` | Enable/disable specific graphs or data sources |
+| `manage_scheduled_reports` | Create/manage recurring intelligence briefings |
+| `send_feedback` | Forward feedback to the Fodda team |
+| `sign_up_free_account` | Create a free Base account (100 calls/month) |
 
 ### Key properties
-- **Read-only** — no tools create, modify, or delete data
-- **Deterministic** — same query returns same results (except search, which uses semantic scoring)
+- **Read-only** — no tools create, modify, or delete user data
 - **Source-backed** — every insight is traceable to articles with URLs
 - **All tools have MCP spec annotations** — `readOnlyHint: true`, `title`, etc.
 
@@ -89,6 +132,17 @@ claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
   --header "Authorization: Bearer YOUR_API_KEY"
 ```
 
+### For Claude Tag (Slack)
+
+Claude Tag embeds Claude as a persistent team member in Slack. Admins connect Fodda's MCP tools, and anyone in the channel can `@Claude` with trend research questions.
+
+1. In Claude Tag admin, add Fodda as an MCP connector
+2. Set endpoint to `https://mcp.fodda.ai/mcp`
+3. Set auth type to **Bearer Token** with your Fodda API key
+4. Assign tools to channels (start with `search_graph`, `brand_tracker`, `deep_research_topic`)
+
+> **Full setup guide:** [docs/claude-tag-setup.md](docs/claude-tag-setup.md) — covers tool selection by team type, async tool pairing, billing, and troubleshooting.
+
 ---
 
 ## Current Status
@@ -97,7 +151,8 @@ claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
 |---|---|
 | MCP server live at `mcp.fodda.ai` | ✅ Production |
 | Streamable HTTP + SSE transports | ✅ Both supported |
-| Tool annotations (MCP spec) | ✅ All 8 tools |
+| Tool annotations (MCP spec) | ✅ All 31 tools |
+| Claude Tag readiness (Slack) | ✅ Verified — [setup guide](docs/claude-tag-setup.md) |
 | Connectors Directory submission | ✅ Submitted (March 2026) |
 | MCP Registry listing | ✅ `io.github.piers-fawkes/fodda` |
 | npm package | ✅ `fodda-mcp` |
@@ -138,9 +193,11 @@ Neo4j Knowledge Graphs
 
 | File | Purpose |
 |---|---|
-| `src/index.ts` | Express server, MCP transports, tool handlers |
-| `src/tools.ts` | Tool definitions with schemas and annotations |
-| `src/types.ts` | TypeScript types for API requests/responses |
+| `src/index.ts` | Express server, MCP transports, auth |
+| `src/toolHandlers.ts` | All 31 tool definitions and handlers |
+| `src/tools.ts` | Tool versioning constants |
+| `src/errorHandling.ts` | Structured error responses and credit gating |
+| `docs/claude-tag-setup.md` | Claude Tag (Slack) admin setup guide |
 | `server.json` | MCP Registry manifest |
 | `Enterprise_MCP_Setup.md` | Enterprise deployment guide |
 | `SECURITY_PACK.md` | Security documentation for procurement |

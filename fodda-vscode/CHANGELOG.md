@@ -2,7 +2,7 @@
 
 ## [0.1.3] — 2026-05-03
 ### Changed
-- Updated README with four-channel payment model (SPT agent access, inline token top-up, Lava PAYG, paid plans)
+- Updated README with four-channel payment model (SPT agent access via REST, inline API-call top-up via Stripe Checkout, Lava PAYG, paid plans)
 
 ## [0.1.2] — 2026-05-03
 ### Changed

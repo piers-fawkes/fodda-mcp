@@ -560,7 +560,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Search expert-curated knowledge graphs for trend clusters, signals, and consumer behavior evidence across retail, beauty, luxury, fashion, sport, consumer electronics, F&B, travel, and 30+ specialist domains. Returns structured trend data with cited evidence chains, source attribution, lifecycle signals (emerging/building/mature/fading), and momentum indicators — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use when the query involves market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
         {
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Location terms are auto-detected and used to filter results geographically.'),
@@ -1079,7 +1079,7 @@ export async function createServer(
     // --- get_neighbors ---
     server.tool(
         'get_neighbors',
-        'Traverse graph relationships from a specific trend node to discover connected signals, brands, technologies, and locations. Returns structured relationship data that web search cannot provide — the curated editorial connections between trends. Use after search_graph to map the territory around a specific trend, find which brands are connected, or understand cross-domain links. Requires node_id from a prior search_graph result.',
+        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links that search alone wouldn\'t surface. Returns curated editorial connections between trends that web search cannot provide. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
@@ -1115,7 +1115,7 @@ export async function createServer(
     // --- get_evidence ---
     server.tool(
         'get_evidence',
-        'Retrieve curated source articles and structured evidence for a specific trend node — case studies, statistics, expert quotes, and analysis with full source attribution. Returns evidence that has been editorially selected and categorized, not raw web results. Each item includes sourceUrl, place, brandNames, publishedAt, category, and formatted_citation. Use after search_graph when you need the supporting proof behind a specific trend. This is a node lookup — not a text search tool.',
+        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -1147,7 +1147,7 @@ export async function createServer(
     // --- get_node ---
     server.tool(
         'get_node',
-        'Retrieve complete metadata for a specific trend node — full description, signal score, lifecycle, geographic scope, adjacent possibilities, and all properties. Use when you need the full detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result.',
+        'Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             nodeId: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -1176,7 +1176,7 @@ export async function createServer(
     // --- get_label_values ---
     server.tool(
         'get_label_values',
-        'List all values for a structured category within a graph — Brand names, Locations, Technologies, Audiences, RetailerTypes, or Trend names. Use when you need to enumerate what entities exist in a graph before filtering, or when the user asks "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To enumerate every trend in a graph (especially industry-report graphs, where semantic search/search_insights may return only the top match or nothing if evidence is unlinked), call with label="Trend" — this returns the complete, deterministic list of trend names.',
+        'List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To get a complete list of every trend in a graph, call with label="Trend" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
@@ -1202,7 +1202,7 @@ export async function createServer(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Find trends semantically similar to a given trend using pre-computed embeddings — surfaces connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover unexpected cross-domain connections, or map the territory around a strong signal. Web search cannot replicate this — it uses Fodda\'s internal embedding space.',
+        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -1215,6 +1215,8 @@ export async function createServer(
         async ({ graphId, trend_id, userId: uid, min_score, limit, include_editorial }) => {
             try {
                 if (graphId === 'psfk') graphId = 'retail';
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(trend_id, 'discover_adjacent_trends', graphId);
                 const params = new URLSearchParams({ node_id: trend_id });
                 if (min_score !== undefined) params.set('min_score', String(min_score));
                 params.set('limit', String(Math.min(limit || 10, 20)));
@@ -1834,7 +1836,7 @@ export async function createServer(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'Get institutional market data from up to 10 sources in a single call. The server automatically selects the most relevant sources based on your query and domain — economic indicators, trade data, product landscape, food economics, agricultural production, nutritional composition, commodity pricing, research signals, demographic surveys, and more. Use this AFTER graph searches to add macro context, or standalone for quantitative market intelligence. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. 5 API calls per standalone use.',
+        'Get real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Use AFTER graph searches to add quantitative context, or standalone for market intelligence. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. 5 API calls per standalone use.',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty')"),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design'. If omitted, inferred from query."),
@@ -1845,6 +1847,9 @@ export async function createServer(
         { title: 'Get Market Context Data', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ query, domain, brands, graph_ids, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'supplemental_context');
+
                 const body: Record<string, any> = { query };
                 if (domain) body.domain = domain;
                 if (brands?.length) body.brands = brands;
@@ -1886,7 +1891,7 @@ export async function createServer(
     // --- check_supplemental_status ---
     server.tool(
         'check_supplemental_status',
-        'Check the status of a long-running supplemental data gathering job. If complete, this tool returns the full JSON data payload. You MUST poll this periodically until the status is COMPLETE or FAILED.',
+        'Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED.',
         {
             job_id: z.string().describe('The Job ID returned by get_supplemental_context'),
         },
@@ -1937,6 +1942,9 @@ export async function createServer(
                 if (max_evidence_per_trend !== undefined) body.max_evidence_per_trend = max_evidence_per_trend;
                 if (min_score !== undefined) body.min_score = min_score;
 
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'domain_intelligence');
+
                 const data = await foddaRequest('POST', '/v1/search/domain', apiKey, resolveUserId(userId, uid), body);
                 const domainWithheld = await settleOrWithhold({ queryTypeCode: 'domain_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_domain_intelligence');
                 if (domainWithheld) return domainWithheld;
@@ -1970,6 +1978,9 @@ export async function createServer(
                 if (include_evidence !== undefined) body.include_evidence = include_evidence;
                 if (max_evidence_per_trend !== undefined) body.max_evidence_per_trend = max_evidence_per_trend;
                 if (min_score !== undefined) body.min_score = min_score;
+
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'expert_intelligence');
 
                 const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
                 const expertWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_expert_intelligence');
@@ -2005,6 +2016,9 @@ export async function createServer(
                 if (max_evidence_per_trend !== undefined) body.max_evidence_per_trend = max_evidence_per_trend;
                 if (min_score !== undefined) body.min_score = min_score;
 
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'report_intelligence');
+
                 const data = await foddaRequest('POST', '/v1/search/report', apiKey, resolveUserId(userId, uid), body);
                 const reportWithheld = await settleOrWithhold({ queryTypeCode: 'report_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_report_intelligence');
                 if (reportWithheld) return reportWithheld;
@@ -2021,7 +2035,7 @@ export async function createServer(
     // --- search_statistics ---
     server.tool(
         'search_statistics',
-        "Search for specific quantitative data points — market sizes, growth rates, expert quotes, and brand case studies — directly in Fodda's knowledge graphs. Each result includes its parent trend context, enabling reverse lookup: data point → expert trend. Use this BEFORE supplemental tools when a query asks for specific numbers or statistics that Fodda's experts may have covered. Works on ALL graphs — PSFK curated graphs AND expert graphs. Try multiple graphs for coverage.",
+        "Find specific numbers, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for specific statistics — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. Works on ALL graphs — domain, expert, and report graphs. Search multiple graphs for best coverage.",
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
@@ -2033,6 +2047,9 @@ export async function createServer(
         { title: 'Search Statistics & Data Points', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ graph_id, query, limit, min_score, include_signals, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'search_statistics', graph_id);
+
                 const params = new URLSearchParams();
                 params.set('query', query);
                 if (limit !== undefined) params.set('limit', String(limit));
@@ -2058,7 +2075,7 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        'Search for expert quotes, editorial interpretations, and qualitative evidence across knowledge graphs. Returns categorized evidence (metric, quote, interpretation, signal) with source attribution and parent trend context. Works on ALL graphs. Use when you need named-expert voices, strategic framing, or analytical perspectives on a topic — the kind of curated qualitative intelligence that web search cannot surface because it lives inside structured knowledge graphs, not on public web pages.',
+        'Find expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns categorized evidence (metrics, quotes, interpretations, signals) with source attribution and parent trend context. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide.',
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
@@ -2070,6 +2087,9 @@ export async function createServer(
         { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ graph_id, query, types, limit, min_score, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'search_insights', graph_id);
+
                 const searchTypes = types || 'metric,quote,interpretation';
                 const params = new URLSearchParams();
                 params.set('query', query);
@@ -2111,6 +2131,9 @@ export async function createServer(
         { title: 'Query Earnings Call Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ ticker, brand, industry, sector, search, dateFrom, dateTo, limit, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(search || brand || ticker || industry || sector || 'earnings snapshot', 'earnings_intelligence');
+
                 const params = new URLSearchParams();
                 if (ticker) params.set('ticker', ticker);
                 if (brand) params.set('brand', brand);
@@ -2159,6 +2182,9 @@ export async function createServer(
         { title: 'Detect Earnings Call Divergence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ sector, industry, search, dateFrom, dateTo, limit, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(search || sector || industry || 'earnings divergence', 'earnings_divergence');
+
                 const params = new URLSearchParams();
                 if (sector) params.set('sector', sector);
                 if (industry) params.set('industry', industry);
@@ -2462,6 +2488,9 @@ export async function createServer(
         { title: 'Brainstorm & Explore Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ query, depth, userId: uid }) => {
             try {
+                // Log query to Questions table (fire-and-forget, before cache)
+                logUserQuery(query, 'brainstorm_topic');
+
                 const resolvedUserId = resolveUserId(userId, uid);
                 const traversalDepth = Math.min(depth || 2, 2);
 
@@ -2654,7 +2683,7 @@ export async function createServer(
     // --- generate_visual ---
     server.tool(
         'generate_visual',
-        'Generate a branded SVG data visualization from structured insight data. Use after research to create presentation-ready visuals. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns inline SVG that renders directly in the chat.',
+        'Create a presentation-ready data visualization from research findings. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat.',
         {
             chart_type: z.enum(['cultural_shifts', 'competitive_compass', 'trend_constellation', 'implication_ladder', 'innovation_pathway', 'opportunity_map']).describe('The type of visualization to generate'),
             data: z.string().describe('JSON string containing the chart data. Structure depends on chart_type. cultural_shifts: {shifts:[{from,to}]}. competitive_compass: {brands:[{name,x,y}], axes:{left,right,top,bottom}}. trend_constellation: {trends:[{name,x,y}], connections:[{from,to,strength}]}. implication_ladder: {signal,trend,so_what,do_what}. innovation_pathway: {now,near_term,future}. opportunity_map: {items:[{name,consumer_desire,market_activity}]}'),
@@ -3107,7 +3136,7 @@ export async function createServer(
     // --- check_research_status ---
     server.tool(
         'check_research_status',
-        'Check the status of a long-running deep research job. If complete, this tool returns the final report. You MUST poll this periodically until the status is COMPLETE or FAILED.',
+        'Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED.',
         {
             job_id: z.string().describe('The Job ID returned by deep_research_topic'),
         },

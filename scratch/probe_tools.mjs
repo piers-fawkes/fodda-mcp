@@ -1,0 +1,11 @@
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+const KEY=process.env.FODDA_API_KEY, USER='piers.fawkes@psfk.com';
+const t=new StreamableHTTPClientTransport(new URL(`https://mcp.fodda.ai/mcp?api_key=${KEY}&user_id=${encodeURIComponent(USER)}`));
+const {Client}=await import('@modelcontextprotocol/sdk/client/index.js');
+const c=new Client({name:'t',version:'1'},{capabilities:{}});await c.connect(t);
+const {tools}=await c.listTools();
+const all=JSON.stringify(tools);
+console.log('tools:',tools.length);
+console.log('live descriptions contain "list_available_graphs":', all.includes('list_available_graphs'));
+console.log('live descriptions contain "list_graphs":', all.includes('list_graphs'));
+await c.close();

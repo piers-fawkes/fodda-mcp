@@ -2,7 +2,7 @@
   "name": "fodda",
   "displayName": "Fodda",
   "description": "Connect your AI agent to Fodda knowledge graphs via MCP — one click in Cursor, Windsurf, and VS Code.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "fodda",
   "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",

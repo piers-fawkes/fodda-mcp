@@ -10,10 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Digital Twin Envelope Rendering** (`toolHandlers.ts`): `consult_analyst` handler now surfaces the structured envelope from the API — coverage status (`in`/`adjacent`/`out`), source attribution, referrals, and speaker notes — as delimited blocks in the tool result. Legacy (non-envelope) responses render unchanged.
+- **Jeremy Bergstein analyst entry** (`systemPrompt.ts`): Added `jeremy-bergstein-science-education-innovation` to `ANALYST_ENTRIES` routing table, mapped to the `postpals-expert-graph` graph.
 - **`toggle_graph_preference` tool** (`src/toolHandlers.ts`, `src/tools.ts`): Added a new tool that allows the MCP agent to permanently enable or disable any knowledge graph, supplemental data source, or skill on the user's behalf. It calls the new `POST /v1/user/preferences/toggle` API endpoint.
+- **Claude Tag Setup Guide** (`docs/claude-tag-setup.md`): Step-by-step admin guide for connecting Fodda as a Claude Tag MCP tool connector in Enterprise/Team Slack workspaces. Covers endpoint configuration, authentication, tool selection by team type, billing, and troubleshooting.
 
 ### Changed
+- **Dual-Voice Speaker Rules** (`systemPrompt.ts`): Updated `VirtualExpertConsultation` sequence with three-branch rendering: `in` → expert 1st-person voice; `adjacent` → expert's full answer + referrals offered in platform voice as "also worth checking"; `out` → expert's short decline + narrator 3rd-person referral handoff. The client LLM must never extend the expert's answer beyond the API result or answer off-topic in the expert's voice.
+- **Parallel Hedge Probing** (`systemPrompt.ts`): Consultation sequence now fires `consult_analyst` and targeted `search_graph` hedge probes on 1–2 relevant adjacent graphs in the same tool-call turn rather than serially. `get_supplemental_context` reserved for stats-shaped queries only. `get_expert_intelligence` explicitly excluded from hedges to avoid fan-out billing.
+- **`consult_analyst` tool description** (`toolHandlers.ts`): Updated to mention coverage/referral envelope and the 3rd-person rendering rule.
 - **System Prompt** (`systemPrompt.ts`): Updated rules for skill configuration. Explicitly instruct the LLM to call `toggle_graph_preference` instead of directing users to the dashboard when they ask to turn graphs, sources, or skills on or off.
+- **User ID Extraction** (`src/index.ts`): Enhanced `/mcp` and `/sse` transport handlers to extract `userId` from client-provided headers (`X-User-Id` or `x-user-id`) in addition to URL query parameters.
+- **CORS Configuration** (`src/index.ts`): Added `X-User-Id` to `Access-Control-Allow-Headers` CORS configuration to allow cross-origin browser clients to send custom user identity headers without preflight blocks.
+- **Claude Tag Readiness — Tool Description Polish** (`toolHandlers.ts`): Rewrote 12 tool descriptions for clarity in multiplayer Slack contexts where non-technical users trigger tools via `@Claude`. Removed implementation jargon (e.g. "traverse graph relationships", "pre-computed embeddings", "institutional market data"), led with user outcomes, preserved developer-facing detail in parameter descriptions. Affected tools: `search_graph`, `get_neighbors`, `get_evidence`, `get_node`, `get_label_values`, `discover_adjacent_trends`, `get_supplemental_context`, `search_statistics`, `search_insights`, `check_supplemental_status`, `check_research_status`, `generate_visual`.
+
+### Fixed
+- **Routing instruction leak** (`toolHandlers.ts`): Internal `[ROUTING INSTRUCTION: ...]` blocks were being injected into the public `description` field in `list_graphs` output — visible to any MCP client. Routing guidance now surfaces as a dedicated `routing_hint` field, keeping descriptions client-safe. A defensive `stripRoutingInstruction()` sanitizer also strips any routing text baked into API-side descriptions.
+- **Report graph trend discoverability** (`toolHandlers.ts`): `get_label_values` description now explicitly guides LLMs to use `label="Trend"` for complete, deterministic trend enumeration on industry-report graphs where `search_insights`/`search_statistics` return partial or empty results due to unlinked evidence.
+- **`search_graph` payload size fallback** (`src/toolHandlers.ts`): Fixed a critical bug where `data` (with all heavy evidence arrays) was returned instead of `jsonPayload`/`liteData` (with evidence stripped) when payload size checks (>30KB) were triggered, causing context overflows and massive response payloads.
+- **`search_graph` fallback path** (`src/toolHandlers.ts`): Fixed same issue in the no-widget fallback path, ensuring evidence arrays are stripped before returning.
 
 ## [1.26.0] - 2026-05-12
 

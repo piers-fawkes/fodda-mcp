@@ -1,0 +1,21 @@
+[dotenv@17.2.4] injecting env (6) from .env -- tip: 🔐 prevent committing .env to code: https://dotenvx.com/precommit
+[a2a] A2A endpoint registered at POST /a2a
+[pricingCache] Loaded 16 query types from hardcoded defaults
+[catalogCache] Loaded 210 graphs from catalog (search index: 210 entries)
+[catalogCache] Loaded 13 analysts
+Fodda MCP server v1.29.0 on port 8080
+[persona] Account profile loaded: isProfessionalServices=undefined, jobTitle=undefined, company=undefined
+[skills] User has 0 disabled graph(s)
+[skills] 1 skill(s) enabled: Paralogy
+[skillClient] Discovered 16 tool(s) for Paralogy
+[skills] Discovered 16 interactive tool(s) across 1 skill(s): Paralogy(16)
+Session created: f8fc527b-2f7f-4a99-bfc3-ba197f978daa
+[queryCache] STORE (search) POST /v1/graphs/beauty/search — TTL 300s, cache size: 1
+[queryCache] STORE (supplemental) GET /v1/supplemental/census/retail-snapshot — TTL 900s, cache size: 2
+[queryCache] STORE (supplemental) GET /v1/supplemental/google-trends?query=small%20format%20curated%20retail%20concepts&geo=US&timeframe=today+12-m — TTL 900s, cache size: 3
+[skillClient] Calling 1 output skill(s): Paralogy
+[skillClient] Paralogy failed after 58ms: Tool 'process' not found on skill 'paralogy'. Available tools: anti-homogeneity-check, bad-on-purpose, blind-spot-scan, de-slop, dumb-questions-engine, guilford-engine, macgyver-mode, persona-divergence-engine, random-injection, divergent-thinking-tools-router, short-think, strip-down, think-wrong, wild-to-mild, wrong-problem-detector, analyze_trends
+[search_graph] 1 skill(s) failed: Paralogy: Tool 'process' not found on skill 'paralogy'. Available tools: anti-homogeneity-check, bad-on-purpose, blind-spot-scan, de-slop, dumb-questions-engine, guilford-engine, macgyver-mode, persona-divergence-engine, random-injection, divergent-thinking-tools-router, short-think, strip-down, think-wrong, wild-to-mild, wrong-problem-detector, analyze_trends
+[fillAnalysis] Gemini returned no text: GOOGLE_AI_API_KEY environment variable is not set.
+[search_graph] Payload too large (306.1KB) — skipping widget HTML, sending liteData JSON + design brief
+[chargeQuery] Charged 15 API calls for topic_research. Remaining: 7434

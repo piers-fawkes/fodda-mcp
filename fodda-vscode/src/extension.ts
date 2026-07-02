@@ -5,6 +5,8 @@ import * as vscode from 'vscode';
 // ---------------------------------------------------------------------------
 
 const MCP_BASE_URL = 'https://mcp.fodda.ai/mcp';
+const APP_BASE_URL = 'https://app.fodda.ai';
+const API_BASE_URL = 'https://api.fodda.ai';
 const OUTPUT_CHANNEL_NAME = 'Fodda';
 const STATUS_BAR_PRIORITY = 100;
 
@@ -120,6 +122,12 @@ async function handleConnect(): Promise<void> {
     // Construct MCP URL
     const mcpUrl = buildMcpUrl(apiKey, userEmail);
 
+    // Verify connection and check for trial limit issues
+    const limitReached = await verifyConnection(apiKey, userEmail);
+    if (limitReached) {
+        // Trial limit notification was already shown — still copy URL for reference
+    }
+
     // Copy to clipboard
     await vscode.env.clipboard.writeText(mcpUrl);
 
@@ -192,4 +200,107 @@ function buildMcpUrl(apiKey: string, userEmail: string): string {
         source: 'vscode-extension',
     });
     return `${MCP_BASE_URL}?${params.toString()}`;
+}
+
+/**
+ * Build the portal upgrade URL with pre-filled email.
+ */
+function buildPortalUpgradeUrl(userEmail?: string): string {
+    const params = new URLSearchParams({ action: 'upgrade' });
+    if (userEmail && userEmail.includes('@')) {
+        params.set('email', userEmail);
+    }
+    return `${APP_BASE_URL}/portal?${params.toString()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Connection Verification — detects trial limit-exceeded on connect
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify the API key by hitting the /v1/graphs endpoint.
+ * If the backend returns a 402 or a 403 with limit/trial-related error codes,
+ * show a VS Code notification with an Upgrade Now button.
+ *
+ * Returns true if the trial limit has been reached.
+ */
+async function verifyConnection(apiKey: string, userEmail: string): Promise<boolean> {
+    try {
+        // Use Node's built-in https module (available in VS Code extensions)
+        const https = await import('https');
+        const url = `${API_BASE_URL}/v1/graphs`;
+
+        const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+            const req = https.get(url, {
+                headers: {
+                    'X-API-Key': apiKey,
+                    'X-User-Id': userEmail,
+                    'X-Fodda-Source': 'vscode-extension',
+                    'Accept': 'application/json',
+                },
+                timeout: 8000,
+            }, (res) => {
+                let body = '';
+                res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+                res.on('end', () => resolve({ status: res.statusCode || 0, body }));
+            });
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
+        });
+
+        // Check for limit-exceeded responses
+        if (result.status === 402 || result.status === 403) {
+            let data: any = {};
+            try { data = JSON.parse(result.body); } catch { /* ignore parse errors */ }
+            const code = (data?.error?.code || data?.code || '').toString().toUpperCase();
+            const msg = (data?.error?.message || data?.message || '').toString().toLowerCase();
+            const planCode = data?.planCode ?? data?.plan_code ?? data?.error?.planCode ?? data?.error?.plan_code;
+
+            const isLimitError = (
+                result.status === 402 ||
+                code === 'CREDITS_EXHAUSTED' ||
+                code === 'INSUFFICIENT_CREDITS' ||
+                code === 'LIMIT_EXCEEDED' ||
+                code === 'TRIAL_EXHAUSTED' ||
+                msg.includes('credit') ||
+                msg.includes('limit reached') ||
+                msg.includes('trial limit')
+            );
+
+            const isTrialAccount = (
+                apiKey.startsWith('sk_trial_') ||
+                (planCode !== undefined && String(planCode) === '13') ||
+                data?.isTrial === true ||
+                data?.is_trial === true ||
+                code === 'TRIAL_EXHAUSTED'
+            );
+
+            if (isLimitError && isTrialAccount) {
+                const portalUrl = buildPortalUpgradeUrl(userEmail);
+                const usage = data?.usage;
+                const usedText = (usage?.used !== undefined && usage?.limit !== undefined)
+                    ? `${usage.used}/${usage.limit}`
+                    : '25/25';
+
+                const action = await vscode.window.showInformationMessage(
+                    `Fodda Trial Limit Reached (${usedText} queries used). Please upgrade to the free Base plan or a paid plan to continue.`,
+                    'Upgrade Now',
+                    'Dismiss'
+                );
+
+                if (action === 'Upgrade Now') {
+                    vscode.env.openExternal(vscode.Uri.parse(portalUrl));
+                }
+
+                outputChannel.appendLine(`[trial] Limit reached for ${userEmail} — upgrade at ${portalUrl}`);
+                return true;
+            }
+        }
+
+        return false;
+    } catch (err: any) {
+        // Verification is best-effort — don't block the connect flow
+        outputChannel.appendLine(`[verify] Connection check failed (non-blocking): ${err?.message}`);
+        return false;
+    }
 }
