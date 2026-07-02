@@ -151,7 +151,7 @@ Claude Tag embeds Claude as a persistent team member in Slack. Admins connect Fo
 |---|---|
 | MCP server live at `mcp.fodda.ai` | ✅ Production |
 | Streamable HTTP + SSE transports | ✅ Both supported |
-| Tool annotations (MCP spec) | ✅ All 31 tools |
+| Tool annotations (MCP spec) | ✅ All 30 tools |
 | Claude Tag readiness (Slack) | ✅ Verified — [setup guide](docs/claude-tag-setup.md) |
 | Connectors Directory submission | ✅ Submitted (March 2026) |
 | MCP Registry listing | ✅ `io.github.piers-fawkes/fodda` |

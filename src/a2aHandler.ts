@@ -33,7 +33,7 @@ const AGENT_CARD = {
     preferredTransport: 'JSONRPC',
     version: MCP_SERVER_VERSION,
     provider: { organization: 'Fodda (PSFK)', url: 'https://www.fodda.ai' },
-    documentationUrl: 'https://fodda.ai/llms.txt',
+    documentationUrl: 'https://www.fodda.ai/llms.txt',
     iconUrl: 'https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png',
     capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },
     defaultInputModes: ['text/plain'],
@@ -66,6 +66,13 @@ const AGENT_CARD = {
             description: 'Surface what public companies say on earnings calls — guidance, key topics, and analyst Q&A.',
             tags: ['earnings', 'financial', 'intelligence'],
             examples: ['what are hotel companies saying about labor costs', 'Nike earnings highlights'],
+        },
+        {
+            id: 'expert-consult',
+            name: 'Expert Consult',
+            description: "Consult a named Human Agent — a real expert's digital twin that answers in their voice and researches across expert graphs, earnings calls, and market data on your behalf.",
+            tags: ['expert', 'consult', 'analyst'],
+            examples: ['Consult Ben Dietz about culture-led brand strategy', 'Ask Anu Lingala about 2026 macro trends'],
         },
     ],
 };
@@ -115,10 +122,17 @@ type ToolRoute =
     | { tool: 'search_graph'; params: { query: string; graphId?: string } }
     | { tool: 'brand_tracker'; params: { brand_name: string } }
     | { tool: 'deep_research'; params: { query: string; depth: 'light' | 'heavy' } }
-    | { tool: 'earnings'; params: { query: string } };
+    | { tool: 'earnings'; params: { query: string } }
+    | { tool: 'consult'; params: { expert_name: string; query: string } };
 
 function classifyIntent(text: string): ToolRoute {
     const lower = text.toLowerCase();
+
+    // Expert consult triggers: "Consult Ben Dietz about X", "Ask Anu Lingala: ..."
+    const consultMatch = text.match(/^\s*(?:consult|ask)\s+([A-Z][A-Za-z .'-]{2,40}?)\s*(?:about|on|regarding|:)\s+(.+)/i);
+    if (consultMatch && consultMatch[1] && consultMatch[2]) {
+        return { tool: 'consult', params: { expert_name: consultMatch[1].trim(), query: consultMatch[2].trim() } };
+    }
 
     // Brand-focused queries
     const brandMatch = lower.match(
@@ -241,6 +255,34 @@ async function executeQuery(
                 text: result?.summary || JSON.stringify(result, null, 2),
                 data: result,
             };
+        }
+
+        case 'consult': {
+            // Resolve the free-text expert name against the public analyst roster
+            const roster = await foddaRequest('GET', '/v1/analysts', apiKey, userId);
+            const analysts: any[] = Array.isArray(roster?.analysts) ? roster.analysts
+                : Array.isArray(roster) ? roster : [];
+            const wanted = route.params.expert_name.toLowerCase();
+            const match = analysts.find(a => {
+                const name = String(a?.name || '').toLowerCase();
+                return name && (name.includes(wanted) || wanted.includes(name));
+            });
+            if (!match) {
+                const names = analysts.map(a => a?.name).filter(Boolean).slice(0, 10).join(', ');
+                return { text: `No Fodda expert matched "${route.params.expert_name}". Available experts include: ${names || 'none listed'}.` };
+            }
+            const result = await foddaRequest('POST', '/v1/analysts/consult', apiKey, userId, {
+                analyst_id: match.id,
+                query: route.params.query,
+            });
+            const lines: string[] = [];
+            lines.push(`## Consulting ${match.name}\n`);
+            if (result?.result) lines.push(result.result);
+            if (Array.isArray(result?.referrals) && result.referrals.length > 0) {
+                const refs = result.referrals.map((r: any) => r?.name).filter(Boolean).join(', ');
+                if (refs) lines.push(`\n_Also worth checking: ${refs}_`);
+            }
+            return { text: lines.join('\n') || JSON.stringify(result, null, 2), data: result };
         }
 
         case 'deep_research': {

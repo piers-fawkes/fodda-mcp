@@ -24,14 +24,14 @@
       "kind": "tool",
       "bills_as": "free",
       "category": "Status",
-      "description": "Check the status of a long-running deep research job. If complete, this tool returns the final report. You MUST poll this periodically until the status is COMPLETE or FAILED."
+      "description": "Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED."
     },
     {
       "name": "check_supplemental_status",
       "kind": "tool",
       "bills_as": "free",
       "category": "Status",
-      "description": "Check the status of a long-running supplemental data gathering job. If complete, this tool returns the full JSON data payload. You MUST poll this periodically until the status is COMPLETE or FAILED."
+      "description": "Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED."
     },
     {
       "name": "consult_analyst",
@@ -52,14 +52,14 @@
       "kind": "tool",
       "bills_as": "adjacent_trends",
       "category": "Ideation",
-      "description": "Find trends semantically similar to a given trend using pre-computed embeddings — surfaces connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover unexpected cross-domain connections, or map the territory around a strong signal. Web search cannot replicate this — it uses Fodda's internal embedding space."
+      "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs."
     },
     {
       "name": "generate_visual",
       "kind": "tool",
       "bills_as": "free",
       "category": "Visual",
-      "description": "Generate a branded SVG data visualization from structured insight data. Use after research to create presentation-ready visuals. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns inline SVG that renders directly in the chat."
+      "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat."
     },
     {
       "name": "get_domain_intelligence",
@@ -87,7 +87,7 @@
       "kind": "tool",
       "bills_as": "standalone_evidence",
       "category": "Graph",
-      "description": "Retrieve curated source articles and structured evidence for a specific trend node — case studies, statistics, expert quotes, and analysis with full source attribution. Returns evidence that has been editorially selected and categorized, not raw web results. Each item includes sourceUrl, place, brandNames, publishedAt, category, and formatted_citation. Use after search_graph when you need the supporting proof behind a specific trend. This is a node lookup — not a text search tool."
+      "description": "Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool."
     },
     {
       "name": "get_expert_intelligence",
@@ -101,7 +101,7 @@
       "kind": "tool",
       "bills_as": "free",
       "category": "Graph",
-      "description": "List all values for a structured category within a graph — Brand names, Locations, Technologies, Audiences, RetailerTypes, or Trend names. Use when you need to enumerate what entities exist in a graph before filtering, or when the user asks \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To enumerate every trend in a graph (especially industry-report graphs, where semantic search/search_insights may return only the top match or nothing if evidence is unlinked), call with label=\"Trend\" — this returns the complete, deterministic list of trend names."
+      "description": "List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To get a complete list of every trend in a graph, call with label=\"Trend\" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results."
     },
     {
       "name": "get_my_account",
@@ -115,14 +115,14 @@
       "kind": "tool",
       "bills_as": "free",
       "category": "Graph",
-      "description": "Traverse graph relationships from a specific trend node to discover connected signals, brands, technologies, and locations. Returns structured relationship data that web search cannot provide — the curated editorial connections between trends. Use after search_graph to map the territory around a specific trend, find which brands are connected, or understand cross-domain links. Requires node_id from a prior search_graph result."
+      "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links that search alone wouldn't surface. Returns curated editorial connections between trends that web search cannot provide. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result."
     },
     {
       "name": "get_node",
       "kind": "tool",
       "bills_as": "free",
       "category": "Graph",
-      "description": "Retrieve complete metadata for a specific trend node — full description, signal score, lifecycle, geographic scope, adjacent possibilities, and all properties. Use when you need the full detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result."
+      "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result."
     },
     {
       "name": "get_report_intelligence",
@@ -171,21 +171,21 @@
       "kind": "tool",
       "bills_as": "topic_research",
       "category": "Search",
-      "description": "Search expert-curated knowledge graphs for trend clusters, signals, and consumer behavior evidence across retail, beauty, luxury, fashion, sport, consumer electronics, F&B, travel, and 30+ specialist domains. Returns structured trend data with cited evidence chains, source attribution, lifecycle signals (emerging/building/mature/fading), and momentum indicators — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use when the query involves market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search."
+      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search."
     },
     {
       "name": "search_insights",
       "kind": "tool",
       "bills_as": "standalone_insights",
       "category": "Search",
-      "description": "Search for expert quotes, editorial interpretations, and qualitative evidence across knowledge graphs. Returns categorized evidence (metric, quote, interpretation, signal) with source attribution and parent trend context. Works on ALL graphs. Use when you need named-expert voices, strategic framing, or analytical perspectives on a topic — the kind of curated qualitative intelligence that web search cannot surface because it lives inside structured knowledge graphs, not on public web pages."
+      "description": "Find expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns categorized evidence (metrics, quotes, interpretations, signals) with source attribution and parent trend context. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide."
     },
     {
       "name": "search_statistics",
       "kind": "tool",
       "bills_as": "standalone_statistics",
       "category": "Search",
-      "description": "Search for specific quantitative data points — market sizes, growth rates, expert quotes, and brand case studies — directly in Fodda's knowledge graphs. Each result includes its parent trend context, enabling reverse lookup: data point → expert trend. Use this BEFORE supplemental tools when a query asks for specific numbers or statistics that Fodda's experts may have covered. Works on ALL graphs — PSFK curated graphs AND expert graphs. Try multiple graphs for coverage."
+      "description": "Find specific numbers, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for specific statistics — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. Works on ALL graphs — domain, expert, and report graphs. Search multiple graphs for best coverage."
     },
     {
       "name": "send_feedback",

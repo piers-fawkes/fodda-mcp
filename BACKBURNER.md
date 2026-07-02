@@ -52,13 +52,14 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
-## 💸 Verify Self-Use Fair-Use Cap Is Actually Enforced
-**Status:** Unconfirmed — flagged during onboarding-email work, 2026-07-02
-**Problem:** The expert-onboarding "You're live" email (Fodda Website's `buildExpertApprovedEmail`) now tells every approved expert: *"Using your own agent is free"* with a 25/day self-use cap, billing only kicking in when their agent researches beyond their own knowledge graph. This copy was written from `Brief Expert Onboarding Messaging Own Agent.md`'s stated facts — but **nobody has confirmed the cap, or the free/paid split itself, is actually implemented anywhere in the MCP server or billing path.** Piers: "I have no idea if that's enforced."
-**Risk if unenforced:** Either (a) self-use isn't actually free today, meaning the email over-promises and an expert gets billed for consulting their own agent — the exact "surprised by a charge" failure mode the messaging brief explicitly warns against — or (b) self-use is free but *uncapped*, meaning the "25/day" figure in the email is just wrong.
-**To check:** find wherever MCP requests get billed/metered (this repo, presumably — `index.ts` or the trial/credit-tracking path referenced elsewhere in this file) and confirm: (1) does it distinguish "consulting your own graph" from "researching beyond it," (2) is there an actual daily self-use cap, and if so is it 25, (3) does self-use actually cost $0 today or does that need building.
-**Cross-ref:** related to the connection-URL/identity work below — whatever `internal_user_id`/`billing_account_id` scheme lands there is probably where "is this the expert's own graph" gets decided.
-**Owner:** whoever owns MCP billing/metering — not yet assigned.
+## ✅ Self-Use Fair-Use Cap — CONFIRMED Enforced (resolved 2026-07-02)
+**Status:** Resolved. Was flagged unconfirmed earlier tonight; verified directly against Fodda API source the same night.
+**Confirmed in `Fodda API/functions/v1/analysts.ts`:**
+- `SELF_USE_DAILY_CAP` env var, default `25` (`analysts.ts:245`) — matches the "25/day" figure in the onboarding email exactly.
+- `isOwnerSelfUse` genuinely waives billing at multiple real sites: `totalCost = isOwnerSelfUse ? 0 : ...` (lines 1918, 2224), the free-tier gate bypass (line 1091), and `graphService.ts:880-885`'s `decrementCredits()` skip on self-use graph reads. This isn't a stub — it's wired into the actual billing path.
+- `GET /v1/analysts/me` (also confirmed live, `analysts.ts:924`) already returns a `self_use: { note, daily_cap }` block plus a ready-made `connect` block (`mcp_url`, `instructions`, `example_prompt`) — this is the actual source the onboarding email's copy should be calling live, not hardcoding.
+**Net:** the "You're live" email's claim was accurate all along — self-use really is free, really is capped at 25/day. No further verification needed on this specific point.
+**Follow-up worth doing:** have `buildExpertApprovedEmail` (Fodda Website) call `/v1/analysts/me` with the expert's real API key at send-time instead of hardcoding the connect-block copy, so it can't drift out of sync with this endpoint.
 
 ---
 
