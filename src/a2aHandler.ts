@@ -56,7 +56,7 @@ const AGENT_CARD = {
         {
             id: 'deep-research',
             name: 'Deep Research',
-            description: "Synthesize a multi-trend research summary across Fodda's graph network for a topic.",
+            description: "Synthesize a multi-trend research summary across Fodda's graph network for a topic. Research spans expert graphs, earnings calls, and institutional data.",
             tags: ['research', 'report', 'analysis'],
             examples: ['comprehensive report on Gen Z luxury', 'detailed analysis of the resale market'],
         },

@@ -33,6 +33,9 @@ export interface GraphContext {
     totalEvidence?: number;
     /** Optional specific graph to focus on (undefined = search all) */
     focusGraphId?: string | undefined;
+    /** Pre-fetched earnings-call intelligence (stringified JSON), present when
+     *  the source router flagged a public company / sector / earnings angle */
+    earningsResults?: string;
 }
 
 /**
@@ -87,6 +90,26 @@ Total evidence pieces: ${context.totalEvidence ?? 'unknown'}
 
 ## Graph Data
 ${context.graphResults}`);
+    }
+
+    // ── Pre-fetched earnings-call intelligence ──
+    if (context?.earningsResults) {
+        sections.push('---');
+        sections.push(`# Pre-Loaded Earnings Call Intelligence
+
+The following earnings-call evidence was pre-fetched because the query involves a
+public company, sector, or earnings-shaped question. Treat it as primary source
+material alongside the graph data.
+
+Attribution rule: attribute earnings findings by source TYPE, naming the company
+and period — e.g. "per Ulta's Q1 earnings call…" or "per management commentary on
+Marriott's latest earnings call…". Never attribute earnings data to a knowledge
+graph, and never cite it as generic web research. The same source-type attribution
+applies to any supplemental/institutional data ("per FRED consumer confidence
+data…").
+
+## Earnings Data
+${context.earningsResults}`);
     }
 
     return sections.join('\n\n');
