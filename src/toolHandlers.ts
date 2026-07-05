@@ -2141,9 +2141,16 @@ export async function createServer(
                 engineOpts,
             );
 
-            // Metered as ONE content call (settlement gates delivery for SPT)
-            const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: engineOpts.topic }, toolName);
-            if (withheld) return withheld;
+            // Metered as ONE content call per unique request (settlement gates
+            // delivery for SPT). Identical-request cache hits within 24h are
+            // FREE — you never pay twice for the same answer. Retry/iterate
+            // friendly and un-farmable: any change to topic/angle/voice/brand/
+            // sub-themes is a different cache key → fresh retrieval → billed.
+            const cacheHit = (pack as any)?._cache?.hit === true;
+            if (!cacheHit) {
+                const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: engineOpts.topic }, toolName);
+                if (withheld) return withheld;
+            }
 
             return { content: [{ type: 'text' as const, text: JSON.stringify(pack, null, 2) }] };
         } catch (err: any) {
@@ -2171,7 +2178,7 @@ export async function createServer(
     // --- draft_linkedin_post ---
     server.tool(
         'draft_linkedin_post',
-        'Draft a LinkedIn post about any topic, grounded in Fodda\'s expert knowledge graphs. Use when the user says "draft a LinkedIn post about…", "write a post on…", "turn this into a LinkedIn post", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call.',
+        'Draft a LinkedIn post about any topic, grounded in Fodda\'s expert knowledge graphs. Use when the user says "draft a LinkedIn post about…", "write a post on…", "turn this into a LinkedIn post", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free.',
         {
             topic: z.string().describe("The topic to post about (e.g., 'agentic commerce', 'retail media networks')"),
             angle: z.string().optional().describe('Optional thesis, or a post being responded to'),
@@ -2190,7 +2197,7 @@ export async function createServer(
     // --- draft_linkedin_article ---
     server.tool(
         'draft_linkedin_article',
-        'Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda\'s expert knowledge graphs. Use when the user says "turn this research into an article…", "write a LinkedIn article about…", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the "How we found this" methodology box. Bills as one content call.',
+        'Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda\'s expert knowledge graphs. Use when the user says "turn this research into an article…", "write a LinkedIn article about…", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the "How we found this" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free.',
         {
             topic: z.string().describe("The article topic (e.g., 'the rise of agentic commerce')"),
             thesis: z.string().optional().describe('The argument the article should make — gets pressure-tested by a Fodda analyst before drafting'),
