@@ -330,13 +330,21 @@ export async function createServer(
         }).catch(() => {}); // Never block on logging failures
     }
 
-    // Build skill metadata for system prompt — includes both output-phase and interactive skills
+    // Build skill metadata for system prompt — includes both output-phase and interactive skills.
+    // Mirrors the router-only collapse below: when a skill has a router tool,
+    // the prompt advertises ONLY the router (advertising unregistered tools
+    // would make the model call names that don't exist).
     const skillPromptMeta = sessionSkills.map(s => {
         const discovered = discoveredSkills.find(d => d.skill_id === s.id);
+        const advertised = (() => {
+            if (!discovered) return [];
+            const routerTool = discovered.tools.find(t => /router/i.test(t.name));
+            return (routerTool ? [routerTool] : discovered.tools).map(t => `${s.id}_${t.name}`);
+        })();
         return {
             id: s.id,
             name: s.name,
-            interactiveTools: discovered?.tools.map(t => `${s.id}_${t.name}`) || [],
+            interactiveTools: advertised,
             costPerCall: discovered?.cost_per_call ?? 2,
         };
     });
@@ -363,8 +371,19 @@ export async function createServer(
     });
 
     // ── Register discovered interactive skill tools as MCP tools ──
+    // Router-only collapse (Piers, 2026-07-05): external skills that expose a
+    // router/entry-point tool register ONLY that tool — the router dispatches
+    // to the skill's other techniques internally. Without this, one skill can
+    // fan out into a dozen+ tools (Paralogy published 16), bloating every
+    // session's tool list with a third party's internals. Skills with no
+    // router register all their tools as before.
     for (const discovered of discoveredSkills) {
-        for (const tool of discovered.tools) {
+        const routerTool = discovered.tools.find(t => /router/i.test(t.name));
+        const toolsToRegister = routerTool ? [routerTool] : discovered.tools;
+        if (routerTool && discovered.tools.length > 1) {
+            console.error(`[skills] ${discovered.skill_id}: collapsed ${discovered.tools.length} tools to router-only (${routerTool.name})`);
+        }
+        for (const tool of toolsToRegister) {
             const prefixedName = `${discovered.skill_id}_${tool.name}`;
             const costNote = `(costs ${discovered.cost_per_call} API calls)`;
             const description = `[${discovered.skill_name}] ${tool.description || tool.name} ${costNote}`;
