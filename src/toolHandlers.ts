@@ -1779,6 +1779,11 @@ export async function createServer(
         const earningsSnapshot = earningsRaw?.snapshot || earningsRaw;  // unwrap .snapshot if present
         const earningsItems = earningsSnapshot?.results || earningsSnapshot?.earnings || (Array.isArray(earningsSnapshot) ? earningsSnapshot : []);
         (profile as any).earningsIntelligence = earningsItems.length > 0 ? earningsItems : undefined;
+        // Pass through truth-layer fields for brandTemplate.ts rendering
+        (profile as any).earningsSource = earningsRaw?.earningsSource || (earningsSnapshot?.source === 'truth_layer' ? 'truth_layer' : undefined);
+        (profile as any).earningsTruthLayer = earningsRaw?.earningsTruthLayer || earningsSnapshot?.truth_layer || undefined;
+        (profile as any).validatedTrends = earningsRaw?.validatedTrends || earningsSnapshot?.validated_trends || undefined;
+        (profile as any).analystQA = earningsRaw?.analystQA || undefined;
 
         const widget = await renderBrandWidget(profile);
         const EDITORIAL_INSTRUCTION = widget.open_slots.length === 0
@@ -1836,7 +1841,7 @@ export async function createServer(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'Targeted pull for macro/institutional data — research workflows include this automatically; call directly only for standalone economic context. Gets real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. 5 API calls per standalone use.',
+        'Targeted pull for macro/institutional data — research workflows include this automatically; call directly only for standalone economic context. Gets real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. Uses 5 tokens ($2.50 via SPT) per standalone use.',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty')"),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design'. If omitted, inferred from query."),
@@ -2116,7 +2121,7 @@ export async function createServer(
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
     server.tool(
         'get_earnings_intelligence',
-        'Targeted pull: use when you want ONLY earnings data for a known ticker/sector — not full research. For questions that mix earnings with trends, use deep_research_topic, which includes earnings automatically. Returns structured evidence from public company earnings calls — management commentary, guidance, key topics, and analyst Q&A. Use for cross-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries ("earnings intelligence for consumer electronics"), or explicit earnings requests. For single-brand earnings, use brand_tracker instead — it includes earningsIntelligence automatically. Results include a source field: "knowledge_graph" (high confidence, structured Neo4j data) or "web_supplemental" (backfilled via web search). 5 API calls per use.',
+        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance. Uses 5 tokens ($2.50 via SPT).',
         {
             ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
             brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
@@ -2169,7 +2174,7 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Targeted pull: use when you want ONLY earnings data for a known ticker/sector — not full research. For questions that mix earnings with trends, use deep_research_topic, which includes earnings automatically. Detects divergence between analyst concerns and management responses in earnings calls — surfaces where executives are deflecting, reframing, or avoiding specific topics. Premium intelligence — shows the gap between what Wall Street is worried about and what companies are saying. Results include deflected topics, concern-vs-response framing, and connections to Fodda trends via :VALIDATES edges. Use for "where are executives deflecting?" or "divergence in [sector] earnings." 5 API calls per use.',
+        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Uses 5 tokens ($2.50 via SPT).',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
             industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
@@ -2202,6 +2207,102 @@ export async function createServer(
                 // ── Query-level billing (settlement gates delivery for SPT) ──
                 const divergenceWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || sector || industry || 'divergence' }, 'get_earnings_divergence');
                 if (divergenceWithheld) return divergenceWithheld;
+
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'supplemental');
+            }
+        }
+    );
+
+    // --- get_company_earnings ---
+    // Per-ticker earnings intelligence: SWOT scores, sentiment, guidance, Q&A, competitive analysis.
+    // One tool with a `view` parameter — not 5 separate tools (context budget).
+    server.tool(
+        'get_company_earnings',
+        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Uses 0–15 tokens depending on view (coverage is free, snapshot/history = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
+        {
+            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage']).default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends (10 tokens). history: narrative timeline across quarters (10 tokens). qa: per-analyst Q&A entries with thematic tagging and response directness (5 tokens). compare: side-by-side comparison of 2-5 tickers (15 tokens). coverage: list all covered tickers (free).'),
+            ticker: z.string().optional().describe("Company ticker symbol (e.g. NKE, LULU, ONON). Required for snapshot, history, and qa views."),
+            tickers: z.string().optional().describe("Comma-separated ticker symbols for compare view (2-5 tickers). Only used when view=compare."),
+            period: z.string().optional().describe("Quarter filter (e.g. Q1-2026). Defaults to latest quarter."),
+            metrics: z.string().optional().describe("Comma-separated metric names for history view (e.g. swot_total,ceo_sentiment). Defaults to all."),
+            analyst: z.string().optional().describe("Analyst name filter for qa view."),
+            sector: z.string().optional().describe("Sector filter for guidance view."),
+            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+        },
+        { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ view, ticker, tickers, period, metrics, analyst, sector, userId: uid }) => {
+            try {
+                logUserQuery(ticker || tickers || sector || view || 'company earnings', 'earnings_company');
+
+                // ── Validation: require params per view ──
+                if ((view === 'snapshot' || view === 'history' || view === 'qa') && !ticker) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'MISSING_PARAM', message: `The "${view}" view requires a ticker parameter (e.g. ticker: "NKE").` }) }] };
+                }
+                if (view === 'compare' && !tickers) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'MISSING_PARAM', message: 'The "compare" view requires a tickers parameter with 2-5 comma-separated ticker symbols (e.g. tickers: "NKE,LULU,ONON").' }) }] };
+                }
+
+                // ── Route to API endpoint per view ──
+                let path: string;
+                let queryTypeCode: string;
+
+                switch (view) {
+                    case 'snapshot': {
+                        const params = new URLSearchParams();
+                        if (period) params.set('period', period);
+                        const qs = params.toString();
+                        path = `/v1/earnings/company/${encodeURIComponent(ticker!)}${qs ? '?' + qs : ''}`;
+                        queryTypeCode = 'earnings_company';
+                        break;
+                    }
+                    case 'history': {
+                        const params = new URLSearchParams();
+                        if (metrics) params.set('metrics', metrics);
+                        const qs = params.toString();
+                        path = `/v1/earnings/company/${encodeURIComponent(ticker!)}/history${qs ? '?' + qs : ''}`;
+                        queryTypeCode = 'earnings_history';
+                        break;
+                    }
+                    case 'qa': {
+                        const params = new URLSearchParams();
+                        if (period) params.set('period', period);
+                        if (analyst) params.set('analyst', analyst);
+                        const qs = params.toString();
+                        path = `/v1/earnings/company/${encodeURIComponent(ticker!)}/qa${qs ? '?' + qs : ''}`;
+                        queryTypeCode = 'earnings_qa';
+                        break;
+                    }
+                    case 'compare': {
+                        const params = new URLSearchParams();
+                        params.set('tickers', tickers!);
+                        if (period) params.set('period', period);
+                        path = `/v1/earnings/compare?${params.toString()}`;
+                        queryTypeCode = 'earnings_compare';
+                        break;
+                    }
+                    case 'coverage': {
+                        // Free endpoint — no billing
+                        const data = await foddaRequest('GET', '/v1/earnings/coverage', apiKey, resolveUserId(userId, uid));
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                    }
+                    default:
+                        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'INVALID_VIEW', message: `Unknown view "${view}". Valid views: snapshot, history, qa, compare, guidance, coverage.` }) }] };
+                }
+
+                // ── SPT pre-check ──
+                const guard = sptGuard(queryTypeCode);
+                if (guard) return guard;
+
+                // ── API call ──
+                const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
+
+                // ── Settlement ──
+                const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: ticker || tickers || sector || view }, 'get_company_earnings');
+                if (withheld) return withheld;
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
@@ -2811,7 +2912,7 @@ export async function createServer(
     // --- read_url ---
     server.tool(
         'read_url',
-        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Costs 15 API calls.',
+        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Uses 15 tokens ($7.50 via SPT).',
         {
             url: z.string().describe('The URL to read and extract content from'),
             userId: z.string().optional().describe('Optional user identifier for usage tracking.')

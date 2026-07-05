@@ -393,7 +393,10 @@ compliance: RFC-2119
 - competitive_context: Object { co_occurring: List[CompetitorItem] }
 - geographic_distribution: List[PlaceItem]
 - supplemental_signals: Object { google_trends: Object, wikipedia: List[Object], amazon: Object }
-- earningsIntelligence: List[EarningsItem]
+- earningsSource: 'truth_layer' | 'web_backfill' (discriminator)
+- earningsTruthLayer: Object (when source=truth_layer: headline, analyst_concerns, analyst_sentiment, activity fields, exec_sentiment, quote_from_ceo)
+- validatedTrends: List[ValidatedTrend] (when source=truth_layer: consumer trends cross-validated by earnings data)
+- earningsIntelligence: List[EarningsItem] (backward compat array — single projected item for truth_layer, multiple items for web_backfill)
 - suggested_next_prompts: List[String] (max 10 words each)
 
 ### RULE: TrendsTabRendering

@@ -25,6 +25,7 @@ const BILLS_AS = {
   get_domain_intelligence: 'domain_intelligence',
   get_expert_intelligence: 'expert_intelligence',
   get_report_intelligence: 'report_intelligence',
+  get_company_earnings: 'earnings_company',
 };
 
 const CATEGORY = {
@@ -32,7 +33,7 @@ const CATEGORY = {
   search_graph: 'Search', search_insights: 'Search', search_statistics: 'Search',
   get_evidence: 'Graph', get_node: 'Graph', get_neighbors: 'Graph', get_label_values: 'Graph',
   get_supplemental_context: 'Supplemental',
-  get_earnings_intelligence: 'Financial', get_earnings_divergence: 'Financial',
+  get_earnings_intelligence: 'Financial', get_earnings_divergence: 'Financial', get_company_earnings: 'Financial',
   consult_analyst: 'Expert', list_analysts: 'Expert', get_expert_intelligence: 'Expert',
   brainstorm_topic: 'Ideation', discover_adjacent_trends: 'Ideation',
   read_url: 'Web', get_domain_intelligence: 'Intelligence', get_report_intelligence: 'Intelligence',

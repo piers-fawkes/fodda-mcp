@@ -62,10 +62,22 @@ const AGENT_CARD = {
         },
         {
             id: 'earnings-intelligence',
-            name: 'Earnings Intelligence',
-            description: 'Surface what public companies say on earnings calls — guidance, key topics, and analyst Q&A.',
-            tags: ['earnings', 'financial', 'intelligence'],
-            examples: ['what are hotel companies saying about labor costs', 'Nike earnings highlights'],
+            name: 'Cross-Company Earnings Themes',
+            description: 'Surface cross-company and industry-level themes from earnings calls — analyst concerns, management commentary, guidance trends, and divergence detection across sectors.',
+            tags: ['earnings', 'financial', 'intelligence', 'cross-company'],
+            examples: ['what are hotel companies saying about labor costs', 'where are executives deflecting on margins'],
+        },
+        {
+            id: 'per-ticker-earnings',
+            name: 'Per-Ticker Earnings Intelligence',
+            description: 'SWOT scores, sentiment analysis, guidance tracking, analyst Q&A, and competitive analysis for consumer-sector public companies. Quarterly records with multi-quarter history.',
+            tags: ['earnings', 'finance', 'swot', 'sentiment', 'guidance'],
+            examples: [
+                "What's Nike's latest SWOT score?",
+                'Compare Lululemon and On Running earnings',
+                'Which companies raised guidance this quarter?',
+                "Show me Costco's analyst Q&A themes",
+            ],
         },
         {
             id: 'expert-consult',
@@ -123,6 +135,7 @@ type ToolRoute =
     | { tool: 'brand_tracker'; params: { brand_name: string } }
     | { tool: 'deep_research'; params: { query: string; depth: 'light' | 'heavy' } }
     | { tool: 'earnings'; params: { query: string } }
+    | { tool: 'company_earnings'; params: { ticker: string; query: string } }
     | { tool: 'consult'; params: { expert_name: string; query: string } };
 
 function classifyIntent(text: string): ToolRoute {
@@ -154,7 +167,20 @@ function classifyIntent(text: string): ToolRoute {
         return { tool: 'deep_research', params: { query: text, depth: 'light' } };
     }
 
-    // Earnings triggers
+    // Per-ticker earnings triggers: SWOT, sentiment, guidance, "[ticker] earnings", compare tickers
+    // Must be BEFORE the generic earnings trigger to catch specific per-company queries.
+    const tickerMatch = lower.match(/(?:earnings|swot|sentiment|guidance|q\&?a)\s+(?:for\s+)?([A-Z]{1,5})\b/i)
+        || lower.match(/\b([A-Z]{1,5})(?:'s)?\s+(?:earnings|swot|sentiment|guidance|q\&?a)\b/i);
+    if (tickerMatch && tickerMatch[1]) {
+        return { tool: 'company_earnings', params: { ticker: tickerMatch[1].toUpperCase(), query: text } };
+    }
+    if (lower.includes('swot') || lower.includes('ceo sentiment') || lower.includes('analyst sentiment') ||
+        lower.match(/(?:raised|cut|withdrawn)\s+guidance/) || lower.includes('guidance changes') ||
+        lower.match(/compare\s+(?:earnings|swot|sentiment)/)) {
+        return { tool: 'company_earnings', params: { ticker: '', query: text } };
+    }
+
+    // Cross-company / thematic earnings triggers
     if (lower.includes('earnings') || lower.includes('q1 ') || lower.includes('q2 ') ||
         lower.includes('q3 ') || lower.includes('q4 ') || lower.match(/what (?:are|did) .+ (?:companies|brands) say/)) {
         return { tool: 'earnings', params: { query: text } };
@@ -246,6 +272,24 @@ async function executeQuery(
             }
 
             return { text: lines.join('\n') || JSON.stringify(result, null, 2), data: result };
+        }
+
+        case 'company_earnings': {
+            // Per-ticker earnings — route to the snapshot endpoint if a ticker was captured,
+            // otherwise fall through to the guidance-changes endpoint for thematic queries.
+            if (route.params.ticker) {
+                const result = await foddaRequest('GET', `/v1/earnings/company/${encodeURIComponent(route.params.ticker)}`, apiKey, userId);
+                const lines: string[] = [];
+                lines.push(`## Earnings Intelligence: ${route.params.ticker}\n`);
+                if (result?.swot) lines.push(`**SWOT Score:** ${result.swot.total || 'N/A'}`);
+                if (result?.sentiment) lines.push(`**CEO Sentiment:** ${result.sentiment.ceo || 'N/A'} · **Analyst Sentiment:** ${result.sentiment.analyst || 'N/A'}`);
+                if (result?.guidance?.status) lines.push(`**Guidance:** ${result.guidance.status}`);
+                if (result?.period) lines.push(`\n_Period: ${result.period}_`);
+                return { text: lines.join('\n') || JSON.stringify(result, null, 2), data: result };
+            }
+            // No ticker — likely a guidance/compare query, use guidance-changes
+            const result = await foddaRequest('GET', '/v1/earnings/guidance-changes', apiKey, userId);
+            return { text: result?.summary || JSON.stringify(result, null, 2), data: result };
         }
 
         case 'earnings': {

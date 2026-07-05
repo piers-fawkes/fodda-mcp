@@ -274,8 +274,76 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
 
     // ── Earnings Intelligence section ──
     const earnings = profile.earningsIntelligence || [];
-    const earningsHtml = earnings.length > 0
-        ? earnings.slice(0, 5).map((e: any) => {
+    const earningsSource = profile.earningsSource || 'web_backfill';
+    const truthLayer = profile.earningsTruthLayer || null;
+    const validatedTrends: any[] = profile.validatedTrends || [];
+
+    let earningsHtml = '';
+    if (earningsSource === 'truth_layer' && truthLayer) {
+        // ── Truth layer rendering: structured snapshot ──
+        const parts: string[] = [];
+
+        if (truthLayer.headline) {
+            parts.push(`<div class="ec">
+  <div class="et" style="font-size:13px;font-weight:600;">${esc(truthLayer.company || '')} — ${esc(truthLayer.period || '')}</div>
+  <div class="ex" style="font-weight:500;margin-top:4px;">${esc(truthLayer.headline)}</div>
+</div>`);
+        }
+
+        if (truthLayer.analyst_concerns) {
+            parts.push(`<div class="ec">
+  <div class="et" style="font-size:11px;font-weight:500;color:var(--color-text-warning);">What Analysts Are Pressing On</div>
+  <div class="ex">${esc(truthLayer.analyst_concerns)}</div>
+</div>`);
+        }
+
+        if (truthLayer.analyst_sentiment) {
+            parts.push(`<div class="ec">
+  <div class="et" style="font-size:11px;font-weight:500;">Analyst Sentiment</div>
+  <div class="ex">${esc(truthLayer.analyst_sentiment)}</div>
+</div>`);
+        }
+
+        // Activity fields — show if present
+        const activities = [
+            { key: 'marketing_activity', label: 'Marketing' },
+            { key: 'retail_activity', label: 'Retail' },
+            { key: 'technology_activity', label: 'Technology' },
+            { key: 'sustainability_activity', label: 'Sustainability' },
+        ];
+        const activityPills = activities
+            .filter(a => truthLayer[a.key])
+            .map(a => `<span class="rqp">${esc(a.label)}</span>`)
+            .join('');
+        if (activityPills) {
+            parts.push(`<div class="ec">
+  <div class="et" style="font-size:11px;font-weight:500;">Strategic Activity</div>
+  <div class="rq" style="margin-top:4px;">${activityPills}</div>
+</div>`);
+        }
+
+        if (truthLayer.exec_sentiment) {
+            parts.push(`<div class="ec">
+  <div class="et" style="font-size:11px;font-weight:500;">Executive Sentiment</div>
+  <div class="ex">${esc(truthLayer.exec_sentiment)}${truthLayer.quote_from_ceo ? ` — "${esc(truthLayer.quote_from_ceo)}"` : ''}</div>
+</div>`);
+        }
+
+        // Validated trends — render only when non-empty (graceful empty state)
+        if (validatedTrends.length > 0) {
+            const trendPills = validatedTrends.slice(0, 5)
+                .map((t: any) => `<span class="rqp">${esc(t.trend_name)}</span>`)
+                .join('');
+            parts.push(`<div class="ec">
+  <div class="et" style="font-size:11px;font-weight:500;color:var(--color-text-success);">Validated Consumer Trends</div>
+  <div class="rq" style="margin-top:4px;">${trendPills}</div>
+</div>`);
+        }
+
+        earningsHtml = parts.join('\n');
+    } else if (earnings.length > 0) {
+        // ── Legacy rendering: array of evidence items ──
+        earningsHtml = earnings.slice(0, 5).map((e: any) => {
             const topicPills = (e.key_topics || e.keyTopics || []).slice(0, 5)
                 .map((t: string) => `<span class="rqp">${esc(t)}</span>`).join('');
             const quarter = e.quarter || e.period || '';
@@ -288,8 +356,8 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
   <div class="ex">${esc(provenance)}: ${esc(summary)}</div>
   <div class="rq" style="margin-top:6px;">${topicPills}</div>
 </div>`;
-        }).join('\n')
-        : '';
+        }).join('\n');
+    }
 
     // Enrich trends with lifecycle if missing
     trends.forEach((t: any) => {
