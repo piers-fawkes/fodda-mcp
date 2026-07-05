@@ -277,6 +277,30 @@ const DEFAULT_PRICING: QueryPricing[] = [
         absorbsGeminiCost: false,
     },
     {
+        queryTypeCode: 'linkedin_post',
+        queryTypeName: 'LinkedIn Post (Evidence Pack)',
+        apiCallsCharged: 10,
+        researchCalls: 8,  // 2-4 sub-themes × (domain + expert), + optional earnings snapshot
+        overheadCalls: 0,
+        mcpToolName: 'draft_linkedin_post',
+        meterInteractionType: 'linkedin_post',
+        isActive: true,
+        includesSupplementals: false,
+        absorbsGeminiCost: false,
+    },
+    {
+        queryTypeCode: 'linkedin_article',
+        queryTypeName: 'LinkedIn Article (Evidence Pack)',
+        apiCallsCharged: 20,
+        researchCalls: 14,  // 3-5 sub-themes × 2 + statistics pass + analyst consult
+        overheadCalls: 0,
+        mcpToolName: 'draft_linkedin_article',
+        meterInteractionType: 'linkedin_article',
+        isActive: true,
+        includesSupplementals: false,
+        absorbsGeminiCost: false,
+    },
+    {
         queryTypeCode: 'earnings_guidance',
         queryTypeName: 'Earnings Guidance Changes',
         apiCallsCharged: 10,

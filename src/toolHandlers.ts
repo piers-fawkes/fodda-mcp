@@ -27,6 +27,7 @@ import type { SkillConfig, SkillResult, DiscoveredSkill } from './skillClient.js
 import { createSessionTracker, postToSlack } from './sessionTracker.js';
 import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
+import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -2114,6 +2115,97 @@ export async function createServer(
         }
     );
 
+
+    // ------------------------------------------------------------------
+    // LinkedIn content tools — thin heads on the shared evidence engine
+    // (src/linkedinEngine.ts). Server curates, client composes. The pack +
+    // composition contract is the product; NO finished text is generated here.
+    // ------------------------------------------------------------------
+
+    /** Shared handler body for both LinkedIn tool heads. */
+    const runLinkedInHead = async (
+        toolName: 'draft_linkedin_post' | 'draft_linkedin_article',
+        queryTypeCode: 'linkedin_post' | 'linkedin_article',
+        engineOpts: Parameters<typeof buildEvidencePack>[1],
+        uid: string | undefined,
+    ) => {
+        try {
+            logUserQuery(engineOpts.topic, queryTypeCode);
+
+            // SPT pre-run coverage: refuse before spending compute
+            const guard = sptGuard(queryTypeCode);
+            if (guard) return guard;
+
+            const pack = await buildEvidencePack(
+                { foddaRequest, apiKey, userId: resolveUserId(userId, uid) },
+                engineOpts,
+            );
+
+            // Metered as ONE content call (settlement gates delivery for SPT)
+            const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: engineOpts.topic }, toolName);
+            if (withheld) return withheld;
+
+            return { content: [{ type: 'text' as const, text: JSON.stringify(pack, null, 2) }] };
+        } catch (err: any) {
+            // ── Explicit quota state: refuse to compose from a starved pack ──
+            // The engine aborts the whole run the moment ANY retrieval call hits
+            // CREDITS_EXHAUSTED / PLAN_LIMIT_EXCEEDED — no evidence pack exists,
+            // so nothing thin or padded can ever reach the client model.
+            if (err instanceof QuotaExhaustedError) {
+                const refusal = {
+                    type: 'text' as const,
+                    text: `LINKEDIN_DRAFT_REFUSED: evidence retrieval hit the account's quota limit mid-run. No evidence pack was produced — do NOT draft a ${engineOpts.mode} from partial or remembered data. Resolve the quota state below, then call ${toolName} again.`,
+                };
+                const trialResult = await handleTrialCreditExhaustion(err.causeErr, apiKey, userId);
+                if (trialResult) return { ...trialResult, content: [refusal, ...trialResult.content] };
+                const accessResult = await handleAccessError(err.causeErr, toolName);
+                return { ...accessResult, content: [refusal, ...accessResult.content] };
+            }
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            if (trialResult) return trialResult;
+            const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+            return { isError: true as const, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+        }
+    };
+
+    // --- draft_linkedin_post ---
+    server.tool(
+        'draft_linkedin_post',
+        'Draft a LinkedIn post about any topic, grounded in Fodda\'s expert knowledge graphs. Use when the user says "draft a LinkedIn post about…", "write a post on…", "turn this into a LinkedIn post", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call.',
+        {
+            topic: z.string().describe("The topic to post about (e.g., 'agentic commerce', 'retail media networks')"),
+            angle: z.string().optional().describe('Optional thesis, or a post being responded to'),
+            voice: z.enum(['fodda_first_party', 'practitioner']).optional().describe("Bridge-line voice: 'fodda_first_party' (\"We found these using Fodda…\", default) or 'practitioner' (\"I pulled these from Fodda…\") for users posting about their own industry."),
+            sub_themes: z.array(z.string()).optional().describe("2–4 SPECIFIC sub-themes decomposing the topic (e.g. for 'agentic commerce': ['AI shopping agents checkout', 'retailer agent APIs', 'agent-to-agent payments']). Specific grounded queries consistently beat one broad query — supply these for best results."),
+            brand: z.string().optional().describe("Set ONLY when the topic IS a named brand/company (e.g. 'Nike'). Unlocks the earnings truth layer: analyst concerns, CEO quotes, and market-validated trends as verbal-attribution evidence."),
+            userId: z.string().optional().describe('Optional user identifier for usage tracking.'),
+        },
+        { title: 'Draft LinkedIn Post (Evidence Pack)', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ topic, angle, voice, sub_themes, brand, userId: uid }) =>
+            runLinkedInHead('draft_linkedin_post', 'linkedin_post', {
+                mode: 'post', topic, angle, voice, brand, subThemes: sub_themes,
+            }, uid)
+    );
+
+    // --- draft_linkedin_article ---
+    server.tool(
+        'draft_linkedin_article',
+        'Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda\'s expert knowledge graphs. Use when the user says "turn this research into an article…", "write a LinkedIn article about…", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the "How we found this" methodology box. Bills as one content call.',
+        {
+            topic: z.string().describe("The article topic (e.g., 'the rise of agentic commerce')"),
+            thesis: z.string().optional().describe('The argument the article should make — gets pressure-tested by a Fodda analyst before drafting'),
+            voice: z.enum(['fodda_first_party', 'practitioner']).optional().describe("Bridge-line voice: 'fodda_first_party' (default) or 'practitioner'."),
+            target_length: z.number().optional().describe('Target word count (default ~1,000; contract allows ±20%)'),
+            sub_themes: z.array(z.string()).optional().describe('3–5 SPECIFIC sub-themes decomposing the topic. Specific grounded queries consistently beat one broad query — supply these for best results.'),
+            brand: z.string().optional().describe("Set ONLY when the topic IS a named brand/company. Unlocks the earnings truth layer (analyst concerns, CEO quotes, market-validated trends)."),
+            userId: z.string().optional().describe('Optional user identifier for usage tracking.'),
+        },
+        { title: 'Draft LinkedIn Article (Evidence Pack)', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ topic, thesis, voice, target_length, sub_themes, brand, userId: uid }) =>
+            runLinkedInHead('draft_linkedin_article', 'linkedin_article', {
+                mode: 'article', topic, angle: thesis, voice, brand, subThemes: sub_themes, targetLengthWords: target_length,
+            }, uid)
+    );
 
     // --- get_earnings_intelligence ---
     // Cross-company and industry-level earnings call intelligence.

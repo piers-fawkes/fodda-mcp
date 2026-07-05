@@ -5,7 +5,7 @@
  * This file provides version strings used by index.ts and toolHandlers.ts.
  */
 
-export const MCP_SERVER_VERSION = "1.32.1";
+export const MCP_SERVER_VERSION = "1.33.0";
 
 export const TOOL_VERSIONS = {
     list_graphs: "1.4.0",
@@ -93,4 +93,7 @@ export const TOOL_VERSIONS = {
     toggle_graph_preference: "1.0.0",
     manage_scheduled_reports: "2.0.0",
     get_company_earnings: "1.0.0",
+    // v1.33.0 — LinkedIn content tools (evidence engine heads)
+    draft_linkedin_post: "1.0.0",
+    draft_linkedin_article: "1.0.0",
 };

@@ -2,8 +2,8 @@
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "rate_usd_per_call": 0.5,
   "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $10/$15.",
-  "count": 31,
-  "billable": 17,
+  "count": 33,
+  "billable": 19,
   "tools": [
     {
       "name": "brainstorm_topic",
@@ -53,6 +53,20 @@
       "bills_as": "adjacent_trends",
       "category": "Ideation",
       "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs."
+    },
+    {
+      "name": "draft_linkedin_article",
+      "kind": "tool",
+      "bills_as": "linkedin_article",
+      "category": "Content",
+      "description": "Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda's expert knowledge graphs. Use when the user says \"turn this research into an article…\", \"write a LinkedIn article about…\", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the \"How we found this\" methodology box. Bills as one content call."
+    },
+    {
+      "name": "draft_linkedin_post",
+      "kind": "tool",
+      "bills_as": "linkedin_post",
+      "category": "Content",
+      "description": "Draft a LinkedIn post about any topic, grounded in Fodda's expert knowledge graphs. Use when the user says \"draft a LinkedIn post about…\", \"write a post on…\", \"turn this into a LinkedIn post\", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call."
     },
     {
       "name": "generate_visual",

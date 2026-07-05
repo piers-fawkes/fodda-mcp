@@ -26,6 +26,8 @@ const BILLS_AS = {
   get_expert_intelligence: 'expert_intelligence',
   get_report_intelligence: 'report_intelligence',
   get_company_earnings: 'earnings_company',
+  draft_linkedin_post: 'linkedin_post',
+  draft_linkedin_article: 'linkedin_article',
 };
 
 const CATEGORY = {
@@ -38,6 +40,7 @@ const CATEGORY = {
   brainstorm_topic: 'Ideation', discover_adjacent_trends: 'Ideation',
   read_url: 'Web', get_domain_intelligence: 'Intelligence', get_report_intelligence: 'Intelligence',
   generate_visual: 'Visual',
+  draft_linkedin_post: 'Content', draft_linkedin_article: 'Content',
   list_graphs: 'Account', get_my_account: 'Account', sign_up_free_account: 'Account',
   update_user_profile: 'Account', toggle_graph_preference: 'Account', send_feedback: 'Account',
   manage_scheduled_reports: 'Account', check_research_status: 'Status', check_supplemental_status: 'Status',
