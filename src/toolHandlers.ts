@@ -2040,7 +2040,7 @@ export async function createServer(
     // --- search_statistics ---
     server.tool(
         'search_statistics',
-        "Find specific numbers, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for specific statistics — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. Works on ALL graphs — domain, expert, and report graphs. Search multiple graphs for best coverage.",
+        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage.",
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
@@ -2080,11 +2080,11 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        'Find expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns categorized evidence (metrics, quotes, interpretations, signals) with source attribution and parent trend context. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide.',
+        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide.",
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
-            types: z.string().optional().describe("Comma-separated evidence types to search: metric, quote, interpretation, signal, or 'all' (default: 'metric,quote,interpretation')"),
+            types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ for precise lookups.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
@@ -2095,7 +2095,7 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search_insights', graph_id);
 
-                const searchTypes = types || 'metric,quote,interpretation';
+                const searchTypes = types || 'quote,interpretation';
                 const params = new URLSearchParams();
                 params.set('query', query);
                 params.set('types', searchTypes);

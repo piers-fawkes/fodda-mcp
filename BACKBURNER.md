@@ -4,6 +4,30 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 🏆 Cross-Ticker Trend Validation View (flagship earnings×trends product)
+**Status:** Data live, product unbuilt — added 2026-07-05 from the skills×data match review
+**What:** `validated_trends` is only reachable per-ticker. Build the FORWARD question — "which consumer trends did the market validate this quarter?" — across all 517 covered tickers: new API endpoint (e.g. `GET /v1/earnings/validated-trends?sector=&graph=&period=`) aggregating `:VALIDATES` edges by trend with corroboration counts, + an MCP tool. The single most differentiated question the estate supports; 1,000+ edges already exist.
+**When:** After the PSFK backfill completes (source diversity beyond analyst_question_theme lands).
+**Agent:** API agent + MCP agent
+
+---
+
+## ⚖️ Expert Disagreement / Consensus Tool
+**Status:** Not started — added 2026-07-05
+**What:** 220+ named-expert graphs disagree with each other; no tool surfaces it. A capability that takes a topic and returns where experts CONVERGE vs CONTRADICT ("McKinsey says X accelerates; PSFK evidence points the other way"), with named attribution. Deep research blends; this debates. Nobody else has multiple named expert graphs, so nobody can copy it.
+**Needs:** design — likely fan-out search across graph tiers + a synthesis pass prompted for disagreement, not consensus.
+**Agent:** MCP agent
+
+---
+
+## 👥 Twin Panels + Twin-to-Twin Consults (depth-1)
+**Status:** Blocked by our own guard — decision pending with Piers; added 2026-07-05
+**What:** `NESTED_CONSULT_BLOCKED` (analysts.ts consult endpoint) currently blocks ALL expert-agent→analyst consults. Relax to depth-1: a twin may consult another twin once (`x-fodda-consult-depth` header, reject ≥2 — loop protection stays). Unlocks both organic twin-to-twin ("Ben, ask Anu what her macro work says") and PANELS: ask 3 twins the same question, synthesize their voices — the strongest expression of Human Agents × the estate. Billing: nested consult bills the same client key, itemized in sources_used.
+**Needs:** Piers's go on depth-1; then a small guard change + optional `panel` convenience tool.
+**Agent:** API agent (guard) + MCP agent (panel tool)
+
+---
+
 ## 🚨 C1: Move Session State out of In-Memory Maps
 **Status:** Not started — architectural change, deferred; stopgap in place  
 **Severity:** CRITICAL (per claude-opus-4-8 review, June 2026)  
@@ -141,9 +165,9 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 ---
 
 ## 🆕 Differential Response / "What's New"
-**Status:** Not started — needs persistent storage  
+**Status:** Not started — needs persistent storage. **ELEVATED 2026-07-05** (skills×data match review, item 4): the estate updates constantly (quarterly earnings, weekly graph syncs) but no tool answers "since when?". This is the PULL version; the Weekly Personalized Digest (brief in ~/Downloads, being built) is the PUSH version — build them on the SAME hash store so one persistence layer serves both.
 **What:** Stores result hashes per user+topic. On repeat queries, returns `_newSince` array of trends not in the previous result. Claude leads with what changed.  
-**Needs:** Persistent key-value store (Airtable, Redis, or file).  
+**Needs:** Persistent key-value store (Airtable, Redis, or file) — coordinate with the digest build's hash store.  
 **Ref:** implementation_plan.md Phase 4, item 4.6
 
 ---

@@ -66,7 +66,7 @@
       "kind": "tool",
       "bills_as": "earnings_company",
       "category": "Financial",
-      "description": "Get per-ticker earnings intelligence for consumer-sector public companies. Returns SWOT scores, CEO/analyst sentiment, guidance status, competitive analysis, and validated consumer trends from Fodda's quarterly analysis pipeline. Uses 0–15 tokens depending on view (coverage is free, snapshot/history/guidance = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons."
+      "description": "The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda's quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Uses 0–15 tokens depending on view (coverage is free, snapshot/history = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons."
     },
     {
       "name": "get_domain_intelligence",
@@ -80,14 +80,14 @@
       "kind": "tool",
       "bills_as": "earnings_intelligence",
       "category": "Financial",
-      "description": "Targeted pull: use when you want ONLY earnings data for a known ticker/sector — not full research. For questions that mix earnings with trends, use deep_research_topic, which includes earnings automatically. Detects divergence between analyst concerns and management responses in earnings calls — surfaces where executives are deflecting, reframing, or avoiding specific topics. Premium intelligence — shows the gap between what Wall Street is worried about and what companies are saying. Results include deflected topics, concern-vs-response framing, and connections to Fodda trends via :VALIDATES edges. Use for \"where are executives deflecting?\" or \"divergence in [sector] earnings.\" Uses 5 tokens ($2.50 via SPT). Detects management deflection of analyst concerns."
+      "description": "Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for \"where are executives deflecting?\" or \"divergence in [sector] earnings.\" For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Uses 5 tokens ($2.50 via SPT)."
     },
     {
       "name": "get_earnings_intelligence",
       "kind": "tool",
       "bills_as": "earnings_intelligence",
       "category": "Financial",
-      "description": "Targeted pull: use when you want ONLY earnings data for a known ticker/sector — not full research. For questions that mix earnings with trends, use deep_research_topic, which includes earnings automatically. Returns structured evidence from public company earnings calls — management commentary, guidance, key topics, and analyst Q&A. Use for cross-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries (\"earnings intelligence for consumer electronics\"), or explicit earnings requests. For single-brand earnings, use brand_tracker instead — it includes earningsIntelligence automatically. Results include a source field: \"knowledge_graph\" (high confidence, structured Neo4j data) or \"web_supplemental\" (backfilled via web search). Uses 5 tokens ($2.50 via SPT). For cross-company thematic comparisons. For per-ticker data (SWOT, sentiment, guidance), use get_company_earnings instead."
+      "description": "Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include \"knowledge_graph\" or \"web_supplemental\" provenance. Uses 5 tokens ($2.50 via SPT)."
     },
     {
       "name": "get_evidence",
@@ -185,14 +185,14 @@
       "kind": "tool",
       "bills_as": "standalone_insights",
       "category": "Search",
-      "description": "Find expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns categorized evidence (metrics, quotes, interpretations, signals) with source attribution and parent trend context. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide."
+      "description": "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide."
     },
     {
       "name": "search_statistics",
       "kind": "tool",
       "bills_as": "standalone_statistics",
       "category": "Search",
-      "description": "Find specific numbers, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for specific statistics — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. Works on ALL graphs — domain, expert, and report graphs. Search multiple graphs for best coverage."
+      "description": "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage."
     },
     {
       "name": "send_feedback",
