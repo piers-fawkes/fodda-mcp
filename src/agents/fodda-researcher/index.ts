@@ -36,6 +36,10 @@ export interface GraphContext {
     /** Pre-fetched earnings-call intelligence (stringified JSON), present when
      *  the source router flagged a public company / sector / earnings angle */
     earningsResults?: string;
+    /** Pre-fetched supplemental/macro data (stringified JSON), present when
+     *  the source router detected relevant supplemental categories (macro,
+     *  demographics, trade, food_economics, commodities) */
+    supplementalResults?: string;
 }
 
 /**
@@ -110,6 +114,24 @@ data…").
 
 ## Earnings Data
 ${context.earningsResults}`);
+    }
+
+    // ── Pre-fetched supplemental / macro data ──
+    if (context?.supplementalResults) {
+        sections.push('---');
+        sections.push(`# Pre-Loaded Supplemental / Macro Data
+
+The following macro-economic, demographic, or institutional data was pre-fetched
+because the source router detected supplemental categories relevant to the query.
+Treat it as primary source material alongside graph and earnings data.
+
+Attribution rule: cite by institutional source — e.g. "per FRED consumer
+confidence data…", "per Census Bureau retail figures…", "per BLS employment
+data…", "per OECD economic outlook…". Never attribute institutional data to a
+knowledge graph or generic web search.
+
+## Supplemental Data
+${context.supplementalResults}`);
     }
 
     return sections.join('\n\n');

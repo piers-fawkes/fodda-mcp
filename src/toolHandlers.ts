@@ -3018,9 +3018,15 @@ export async function createServer(
                 const supplementalCandidates = sourceCandidates.filter(
                     (c): c is Extract<SourceCandidate, { kind: 'supplemental' }> => c.kind === 'supplemental');
 
+                // Split supplemental candidates: top 1–2 will be fetched
+                // synchronously (we're inside a background job so latency is
+                // absorbed); remaining are source_plan hints only.
+                const supplementalToFetch = supplementalCandidates
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 2);
+                const supplementalHintOnly = supplementalCandidates.slice(supplementalToFetch.length);
+
                 // Routing visibility: every candidate selected, with why.
-                // Supplemental is async-only (job + poll) — v1 notes the candidate
-                // instead of fetching, pointing at the targeted tool.
                 const sourcePlan: Record<string, any>[] = [
                     ...(graphId
                         ? [{ kind: 'graph', id: graphId, reason: 'explicitly requested via graphId' }]
@@ -3032,10 +3038,15 @@ export async function createServer(
                         ...(earningsCandidate.sector ? { sector: earningsCandidate.sector } : {}),
                         reason: earningsCandidate.reason,
                     }] : []),
-                    ...supplementalCandidates.map(c => ({
+                    ...supplementalToFetch.map(c => ({
                         kind: 'supplemental',
                         category: c.category,
-                        reason: `${c.reason} — not auto-fetched in v1 (async source); targeted tool available: get_supplemental_context`,
+                        reason: `${c.reason} — auto-fetched and folded into research context`,
+                    })),
+                    ...supplementalHintOnly.map(c => ({
+                        kind: 'supplemental',
+                        category: c.category,
+                        reason: `${c.reason} — not auto-fetched (beyond top-2 cap); targeted tool available: get_supplemental_context`,
                     })),
                 ];
 
@@ -3077,9 +3088,30 @@ export async function createServer(
                     })()
                     : Promise.resolve(null);
 
-                const [graphResults, earningsData] = await Promise.all([
+                // Supplemental candidates: fetch top 1–2 detected categories
+                // via /v1/supplemental/context. Only fires when the source
+                // router actually detected supplemental candidates — no
+                // candidates → no fetch, no latency, no cost creep.
+                const supplementalPromise: Promise<any> = supplementalToFetch.length > 0
+                    ? (async () => {
+                        try {
+                            const body: Record<string, any> = { query };
+                            // Pass detected categories as a domain hint to
+                            // help the API's internal source routing.
+                            const categoryHint = supplementalToFetch.map(c => c.category).join(', ');
+                            body.domain = categoryHint;
+                            return await foddaRequest('POST', '/v1/supplemental/context', apiKey, resolvedUserId, body);
+                        } catch (err: any) {
+                            console.error(`[deep_research_topic] Supplemental context failed (non-fatal): ${err?.message}`);
+                            return null;
+                        }
+                    })()
+                    : Promise.resolve(null);
+
+                const [graphResults, earningsData, supplementalData] = await Promise.all([
                     Promise.all(graphSearchPromises),
                     earningsPromise,
+                    supplementalPromise,
                 ]);
                 const totalTrends = graphResults.reduce((sum, g) => sum + g.rows.length, 0);
                 const totalEvidence = graphResults.reduce((sum, g) => sum + g.evidence.length, 0);
@@ -3138,6 +3170,8 @@ export async function createServer(
                     focusGraphId: graphId,
                     // Distinct earnings block — attributed by source type at synthesis
                     ...(earningsData ? { earningsResults: JSON.stringify(earningsData).substring(0, 15000) } : {}),
+                    // Supplemental/macro block — attributed by institutional source
+                    ...(supplementalData ? { supplementalResults: JSON.stringify(supplementalData).substring(0, 15000) } : {}),
                 };
 
                 // Build skill-loaded system instruction
@@ -3259,7 +3293,7 @@ export async function createServer(
                         }
 
                         const header = [
-                            `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed${earningsData ? ' • earnings intelligence included' : ''} • ${durationSec}s_`,
+                            `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed${earningsData ? ' • earnings intelligence included' : ''}${supplementalData ? ' • supplemental macro data included' : ''} • ${durationSec}s_`,
                             '',
                         ].join('\n');
 
