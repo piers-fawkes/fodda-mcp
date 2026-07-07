@@ -3218,15 +3218,16 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph. Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
+        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
         {
             analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic')"),
             query: z.string().describe("The question or topic to discuss with the analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Tesla' or 'TSLA') to bind the analyst to a specific brand context."),
+            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, query, company, userId: uid }) => {
+        async ({ analyst_id, query, company, session_id, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'consult_analyst');
@@ -3234,7 +3235,8 @@ export async function createServer(
                 const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), {
                     analyst_id,
                     query,
-                    company
+                    company,
+                    session_id
                 });
                 
                 // Extract the expert's answer text (legacy-compatible)
@@ -3267,6 +3269,13 @@ export async function createServer(
                 }
                 if (result.speaker_note) {
                     parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
+                }
+
+                // --- Engagement continuation (Agentic Analysts Phase B) ---
+                // Surface the session id so the calling model can thread follow-ups.
+                // The API sends session_note on turn 1 only — pass it through verbatim.
+                if (result.session_id) {
+                    parts.push(`--- SESSION: ${result.session_id}${result.session_note ? ` — ${result.session_note}` : ''} ---`);
                 }
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');

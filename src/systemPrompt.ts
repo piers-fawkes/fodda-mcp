@@ -71,6 +71,11 @@ compliance: RFC-2119
 - DISCOVERY: If the user asks for available experts, the agent MUST call list_analysts.
 - FRAMING: The agent MUST present consult_analyst responses beginning with "Consulting [Expert Name]..." followed by the expert's response. Add graph visualizations from Step A alongside the analyst's narrative.
 
+### ENGAGEMENT PATTERNS
+- One-off question → consult_analyst (no session_id)
+- Ongoing project → keep passing the session_id from the previous consult response; the analyst remembers prior turns and working files, and follow-ups cost less
+- Finished document (plan, review, briefing) → request_deliverable with an offering_key (coming soon — not yet available)
+
 ### RULE: EvidenceCitation
 - When presenting trends, the agent MUST call get_evidence.
 - The agent MUST use the formatted_citation field from each evidence item as-is. If unavailable, construct it as [Article Title](sourceUrl).
