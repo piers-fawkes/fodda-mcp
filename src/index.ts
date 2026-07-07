@@ -736,7 +736,7 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', version: MCP_SERVER_V
 // A2A Protocol Endpoint — agent-to-agent task delegation
 // ---------------------------------------------------------------------------
 
-registerA2ARoute(app, foddaRequest);
+registerA2ARoute(app, foddaRequest, waverunnerRequest);
 
 const PORT = parseInt(process.env.PORT || '8080');
 

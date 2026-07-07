@@ -28,6 +28,7 @@ import { createSessionTracker, postToSlack } from './sessionTracker.js';
 import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
+import { runDeepResearch } from './deepResearch.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -136,23 +137,10 @@ function collectGraphWebpageUrls(graphIds: string[]): Record<string, string> {
 
 // ---------------------------------------------------------------------------
 // Type for injected foddaRequest dependency
+// Canonical definitions live in types.ts; re-exported here for backward compat.
 // ---------------------------------------------------------------------------
-export type FoddaRequestFn = (
-    method: 'GET' | 'POST' | 'PATCH',
-    path: string,
-    apiKey: string,
-    userId: string,
-    body?: any,
-    requestId?: string
-) => Promise<any>;
-
-export type WaverunnerRequestFn = (
-    interactionType: import('./trialTracker.js').TrialInteractionType,
-    tokenCost: number,
-    apiKey: string,
-    userId: string,
-    waverunnerPayload: any
-) => Promise<any>;
+export type { FoddaRequestFn, WaverunnerRequestFn } from './types.js';
+import type { FoddaRequestFn, WaverunnerRequestFn } from './types.js';
 
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 
@@ -3103,10 +3091,7 @@ export async function createServer(
         async ({ query, graphId, depth, userId: uid }) => {
             const resolvedUserId = resolveUserId(userId, uid);
             const isHeavy = depth === 'heavy';
-            const tokenCost = isHeavy ? 3 : 2; // Waverunner trial pool tokens
             const queryTypeCode = isHeavy ? 'deep_research_heavy' : 'deep_research_light';
-            const maxGraphs = isHeavy ? 15 : 8;
-            const startTime = Date.now();
 
             // ── SPT pre-run coverage: refuse before kicking off the (long, expensive) job ──
             const researchGuard = sptGuard(queryTypeCode);
@@ -3116,312 +3101,72 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'deep_research');
 
-                // ── Phase 1: Planning ──
-                await server.sendLoggingMessage({
-                    level: 'info',
-                    data: `📋 Phase 1/5: Planning research approach for "${query.slice(0, 80)}"...`,
-                });
-                console.error(`[deep_research_topic] Starting ${isHeavy ? 'heavy' : 'light'} research: "${query}"`);
-
-                // Determine relevant sources — unified routing: graph selection is
-                // getRelevantGraphs() unchanged; earnings/supplemental are appended
-                // as additive extras that never displace graph slots.
-                const sourceCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query);
-                const graphCandidates = sourceCandidates
-                    .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
-                    .slice(0, maxGraphs);
-                const graphIds = graphId ? [graphId] : graphCandidates.map(c => c.graphId);
-                const earningsCandidate = sourceCandidates.find(
-                    (c): c is Extract<SourceCandidate, { kind: 'earnings' }> => c.kind === 'earnings');
-                const supplementalCandidates = sourceCandidates.filter(
-                    (c): c is Extract<SourceCandidate, { kind: 'supplemental' }> => c.kind === 'supplemental');
-
-                // Split supplemental candidates: top 1–2 will be fetched
-                // synchronously (we're inside a background job so latency is
-                // absorbed); remaining are source_plan hints only.
-                const supplementalToFetch = supplementalCandidates
-                    .sort((a, b) => b.score - a.score)
-                    .slice(0, 2);
-                const supplementalHintOnly = supplementalCandidates.slice(supplementalToFetch.length);
-
-                // Routing visibility: every candidate selected, with why.
-                const sourcePlan: Record<string, any>[] = [
-                    ...(graphId
-                        ? [{ kind: 'graph', id: graphId, reason: 'explicitly requested via graphId' }]
-                        : graphCandidates.map(c => ({ kind: 'graph', id: c.graphId, reason: c.reason }))),
-                    ...(earningsCandidate ? [{
-                        kind: 'earnings',
-                        ...(earningsCandidate.ticker ? { ticker: earningsCandidate.ticker } : {}),
-                        ...(earningsCandidate.brand ? { brand: earningsCandidate.brand } : {}),
-                        ...(earningsCandidate.sector ? { sector: earningsCandidate.sector } : {}),
-                        reason: earningsCandidate.reason,
-                    }] : []),
-                    ...supplementalToFetch.map(c => ({
-                        kind: 'supplemental',
-                        category: c.category,
-                        reason: `${c.reason} — auto-fetched and folded into research context`,
-                    })),
-                    ...supplementalHintOnly.map(c => ({
-                        kind: 'supplemental',
-                        category: c.category,
-                        reason: `${c.reason} — not auto-fetched (beyond top-2 cap); targeted tool available: get_supplemental_context`,
-                    })),
-                ];
-
-                // ── Phase 2: Searching Fodda Knowledge Graphs ──
-                await server.sendLoggingMessage({
-                    level: 'info',
-                    data: `🔍 Phase 2/5: Searching ${graphIds.length} knowledge graph${graphIds.length !== 1 ? 's' : ''}${earningsCandidate ? ' + earnings intelligence' : ''}...`,
-                });
-
-                // Pre-fetch graph data in parallel
-                const graphSearchPromises = graphIds.map(async (gid) => {
-                    try {
-                        const searchBody = { query, limit: isHeavy ? 10 : 5, use_semantic: true, include_evidence: true };
-                        const res = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(gid)}/search`, apiKey, resolvedUserId, searchBody);
-                        const rows = res?.rows || [];
-                        const evidence = rows.flatMap((r: any) => r.evidence || []);
-                        return { graphId: gid, rows, evidence };
-                    } catch {
-                        return { graphId: gid, rows: [], evidence: [] };
-                    }
-                });
-
-                // Earnings candidate: same endpoint as get_earnings_intelligence,
-                // fetched in parallel with graph searches. Failure is non-fatal.
-                const earningsPromise: Promise<any> = earningsCandidate
-                    ? (async () => {
-                        try {
-                            const params = new URLSearchParams();
-                            if (earningsCandidate.ticker) params.set('ticker', earningsCandidate.ticker);
-                            if (earningsCandidate.brand) params.set('brand', earningsCandidate.brand);
-                            if (earningsCandidate.sector) params.set('sector', earningsCandidate.sector);
-                            if (earningsCandidate.search) params.set('search', earningsCandidate.search);
-                            params.set('limit', '10');
-                            return await foddaRequest('GET', `/v1/supplemental/earnings/snapshot?${params.toString()}`, apiKey, resolvedUserId);
-                        } catch (err: any) {
-                            console.error(`[deep_research_topic] Earnings snapshot failed (non-fatal): ${err?.message}`);
-                            return null;
-                        }
-                    })()
-                    : Promise.resolve(null);
-
-                // Supplemental candidates: fetch top 1–2 detected categories
-                // via /v1/supplemental/context. Only fires when the source
-                // router actually detected supplemental candidates — no
-                // candidates → no fetch, no latency, no cost creep.
-                const supplementalPromise: Promise<any> = supplementalToFetch.length > 0
-                    ? (async () => {
-                        try {
-                            const body: Record<string, any> = { query };
-                            // Pass detected categories as a domain hint to
-                            // help the API's internal source routing.
-                            const categoryHint = supplementalToFetch.map(c => c.category).join(', ');
-                            body.domain = categoryHint;
-                            return await foddaRequest('POST', '/v1/supplemental/context', apiKey, resolvedUserId, body);
-                        } catch (err: any) {
-                            console.error(`[deep_research_topic] Supplemental context failed (non-fatal): ${err?.message}`);
-                            return null;
-                        }
-                    })()
-                    : Promise.resolve(null);
-
-                const [graphResults, earningsData, supplementalData] = await Promise.all([
-                    Promise.all(graphSearchPromises),
-                    earningsPromise,
-                    supplementalPromise,
-                ]);
-                const totalTrends = graphResults.reduce((sum, g) => sum + g.rows.length, 0);
-                const totalEvidence = graphResults.reduce((sum, g) => sum + g.evidence.length, 0);
-                const activeGraphs = graphResults.filter(g => g.rows.length > 0);
-
-                // Graceful degradation: if all graph searches failed, the agent
-                // proceeds using ONLY Google Search + URL Context. The report will
-                // be web-only but still useful — no hard failure.
-                if (activeGraphs.length === 0) {
-                    console.error(`[deep_research_topic] All ${graphIds.length} graph searches failed — proceeding with web-only research`);
-                    await server.sendLoggingMessage({
-                        level: 'warning',
-                        data: `⚠️ Knowledge graph search returned no results — proceeding with web-only research...`,
-                    });
-                } else {
-                    await server.sendLoggingMessage({
-                        level: 'info',
-                        data: `📊 Found ${totalTrends} trend${totalTrends !== 1 ? 's' : ''} and ${totalEvidence} evidence pieces across ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''}. Launching deep analysis...`,
-                    });
-                }
-
-                // ── Phase 3: Deep Analysis via Gemini ──
-                await server.sendLoggingMessage({
-                    level: 'info',
-                    data: `🧠 Phase 3/5: Deep analysis with web research — this takes 1-3 minutes...`,
-                });
-
-                // Build graph context for the agent
-                const graphContext: GraphContext = {
-                    graphResults: JSON.stringify(graphResults.map(g => ({
-                        graph_id: g.graphId,
-                        trends: g.rows.map((r: any) => ({
-                            name: String(r.title || r.trendName || '').substring(0, 150),
-                            summary: String(r.summary || r.description || '').substring(0, 600),
-                            signal_score: r.signal_score || r.score,
-                            lifecycle: r.trendLifecycle || r.lifecycle,
-                            evidence: (r.evidence || []).slice(0, 3).map((e: any) => ({
-                                title: String(e.title || '').substring(0, 150),
-                                snippet: String(e.snippet || e.summary || '').substring(0, 400),
-                                source_url: e.sourceUrl || e.url,
-                                category: e.category || e.type,
-                            }))
-                        })),
-                        // Top-level evidence sample for cross-trend validation
-                        evidence: g.evidence.slice(0, isHeavy ? 10 : 5).map((e: any) => ({
-                            title: String(e.title || '').substring(0, 150),
-                            snippet: String(e.snippet || e.summary || '').substring(0, 400),
-                            source_url: e.sourceUrl || e.url,
-                            category: e.category || e.type,
-                            brand: e.brandNames?.[0] || e.brand,
-                        })),
-                    })), null, 2),
-                    graphsSearched: activeGraphs.map(g => g.graphId),
-                    totalTrends,
-                    totalEvidence,
-                    focusGraphId: graphId,
-                    // Distinct earnings block — attributed by source type at synthesis
-                    ...(earningsData ? { earningsResults: JSON.stringify(earningsData).substring(0, 15000) } : {}),
-                    // Supplemental/macro block — attributed by institutional source
-                    ...(supplementalData ? { supplementalResults: JSON.stringify(supplementalData).substring(0, 15000) } : {}),
-                };
-
-                // Build skill-loaded system instruction
-                const systemInstruction = buildResearcherInstruction(query, graphContext);
-
-                // Call Gemini directly via Waverunner with a timeout guard.
-                // Without a timeout, a stuck Gemini call hangs the MCP tool response
-                // indefinitely — the user sees silence until their client times out.
-                const geminiModel = isHeavy ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
-
-                // Build the Interactions API payload.
-                // SDK type: BaseCreateModelInteractionParams supports system_instruction
-                // (snake_case) as a top-level parameter alongside model, input, tools.
-                const interactionPayload = {
-                    model: geminiModel,
-                    system_instruction: systemInstruction,
-                    input: [
-                        {
-                            type: 'text',
-                            text: `Research query: ${query}\n\nProduce a comprehensive research report following the skills in your system instruction. Write in editorial narrative style — like a senior strategist briefing a CMO. IMPORTANT: At the end of the report, you MUST include a "## Sources" section listing all the source URLs you used from the provided context.`,
-                        },
-                    ],
-                    tools: [
-                        { type: 'google_search' as const },
-                        { type: 'url_context' as const },
-                    ],
-                };
-
                 const jobId = crypto.randomUUID();
                 activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null });
 
-                // Run research in the background to avoid Claude Web timeout
+                // Run the extracted pipeline in the background to avoid Claude Web timeout
                 (async () => {
                     try {
-                        let geminiPromise = waverunnerRequest(
-                            'deep_dive', tokenCost, apiKey, resolvedUserId, interactionPayload
-                        );
-
-                        let result: any;
-                        try {
-                            result = await geminiPromise;
-                        } catch (primaryErr: any) {
-                            const errMsg = primaryErr?.response?.data?.error?.message || primaryErr?.message || '';
-                            const isCapacity = errMsg.includes('high demand') || errMsg.includes('overloaded') || errMsg.includes('503');
-                            if (isCapacity && geminiModel !== 'gemini-2.5-flash') {
-                                console.error(`[deep_research_topic] ${geminiModel} capacity error — retrying with gemini-2.5-flash`);
-                                interactionPayload.model = 'gemini-2.5-flash';
-                                geminiPromise = waverunnerRequest(
-                                    'deep_dive', tokenCost, apiKey, resolvedUserId, interactionPayload
-                                );
-                                result = await geminiPromise;
-                            } else {
-                                throw primaryErr;
-                            }
-                        }
-
-                        // Extract text from Gemini response
-                        const outputs = result?.outputs || [];
-                        const textParts = outputs
-                            .filter((o: any) => o.type === 'text')
-                            .map((o: any) => o.text);
-                        let reportText = textParts.join('\n\n');
-
-                        // Extract URLs
-                        const seenUrls = new Set<string>();
-                        const sourceUrls: { title: string; url: string }[] = [];
-
-                        for (const output of outputs) {
-                            if (output.type === 'text' && Array.isArray(output.annotations)) {
-                                for (const ann of output.annotations) {
-                                    if (ann.type === 'url_citation' && ann.url && !seenUrls.has(ann.url)) {
-                                        if (ann.url.includes('vertexaisearch.cloud.google.com')) continue;
-                                        seenUrls.add(ann.url);
-                                        sourceUrls.push({ title: ann.title || '', url: ann.url });
-                                    }
-                                }
-                            }
-                            if (output.type === 'url_context_result' && Array.isArray(output.result)) {
-                                for (const ctx of output.result) {
-                                    if (ctx.url && ctx.status === 'success' && !seenUrls.has(ctx.url)) {
-                                        seenUrls.add(ctx.url);
-                                        sourceUrls.push({ title: '', url: ctx.url });
-                                    }
-                                }
-                            }
-                        }
-
-                        const groundingChunks = result?.groundingMetadata?.groundingChunks || [];
-                        for (const chunk of groundingChunks) {
-                            if (chunk?.web?.uri && !seenUrls.has(chunk.web.uri)) {
-                                seenUrls.add(chunk.web.uri);
-                                sourceUrls.push({ title: chunk.web.title || '', url: chunk.web.uri });
-                            }
-                        }
-
-                        if (sourceUrls.length > 0) {
-                            reportText += '\n\n## Sources\n' + sourceUrls.map(s =>
-                                s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`
-                            ).join('\n');
-                        }
-
-                        if (!reportText) {
-                            activeResearchJobs.set(jobId, { status: 'FAILED', error: 'Research agent returned no output.' });
-                            return;
-                        }
-
-                        const durationSec = ((Date.now() - startTime) / 1000).toFixed(1);
+                        const result = await runDeepResearch({
+                            query,
+                            apiKey,
+                            userId: resolvedUserId,
+                            depth: depth || 'light',
+                            graphId,
+                            foddaRequest,
+                            waverunnerRequest,
+                            onProgress: (msg) => {
+                                server.sendLoggingMessage({ level: 'info', data: msg }).catch(() => {});
+                            },
+                        });
 
                         // ── Settlement gates delivery for SPT: only mark COMPLETE once the charge succeeds. ──
                         if (sptCtx) {
-                            const r = await chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: graphIds, foddaRequest, spt: sptCtx.token });
+                            const r = await chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest, spt: sptCtx.token });
                             if (!r.charged) {
                                 activeResearchJobs.set(jobId, { status: 'FAILED', error: r.error || 'Payment could not be completed; report withheld.' });
                                 return;
                             }
                         } else {
-                            chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: graphIds, foddaRequest })
+                            chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest })
                                 .catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
                         }
 
-                        const header = [
-                            `_Research by Fodda Research Agent • ${activeGraphs.length} graph${activeGraphs.length !== 1 ? 's' : ''} searched • ${totalTrends} trends analyzed${earningsData ? ' • earnings intelligence included' : ''}${supplementalData ? ' • supplemental macro data included' : ''} • ${durationSec}s_`,
-                            '',
-                        ].join('\n');
-
-                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result: header + reportText });
-
+                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result: result.report });
                     } catch (err: any) {
                         const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                         activeResearchJobs.set(jobId, { status: 'FAILED', error: msg });
                     }
                 })();
+
+                // Return source_plan immediately so the caller knows what's happening.
+                // We need to call getRelevantSources here too for the source_plan preview.
+                // (The real routing happens inside runDeepResearch; this is just for the inline response.)
+                const previewCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query);
+                const maxGraphs = isHeavy ? 15 : 8;
+                const previewGraphs = previewCandidates
+                    .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
+                    .slice(0, maxGraphs);
+                const previewEarnings = previewCandidates.find(
+                    (c): c is Extract<SourceCandidate, { kind: 'earnings' }> => c.kind === 'earnings');
+                const previewSupp = previewCandidates.filter(
+                    (c): c is Extract<SourceCandidate, { kind: 'supplemental' }> => c.kind === 'supplemental');
+                const sourcePlan: Record<string, any>[] = [
+                    ...(graphId
+                        ? [{ kind: 'graph', id: graphId, reason: 'explicitly requested via graphId' }]
+                        : previewGraphs.map(c => ({ kind: 'graph', id: c.graphId, reason: c.reason }))),
+                    ...(previewEarnings ? [{
+                        kind: 'earnings',
+                        ...(previewEarnings.ticker ? { ticker: previewEarnings.ticker } : {}),
+                        ...(previewEarnings.brand ? { brand: previewEarnings.brand } : {}),
+                        ...(previewEarnings.sector ? { sector: previewEarnings.sector } : {}),
+                        reason: previewEarnings.reason,
+                    }] : []),
+                    ...previewSupp.slice(0, 2).map(c => ({
+                        kind: 'supplemental', category: c.category,
+                        reason: `${c.reason} — auto-fetched`,
+                    })),
+                ];
 
                 return {
                     content: [{

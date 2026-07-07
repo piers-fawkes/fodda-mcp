@@ -17,6 +17,9 @@
 import crypto from 'crypto';
 import type { Express, Request, Response } from 'express';
 import { MCP_SERVER_VERSION } from './tools.js';
+import type { FoddaRequestFn, WaverunnerRequestFn } from './types.js';
+import { runDeepResearch } from './deepResearch.js';
+import { chargeQuery } from './pricingCache.js';
 
 // ---------------------------------------------------------------------------
 // A2A Agent Card — the discovery document agents/registries fetch to learn
@@ -56,7 +59,10 @@ const AGENT_CARD = {
         {
             id: 'deep-research',
             name: 'Deep Research',
-            description: "Synthesize a multi-trend research summary across Fodda's graph network for a topic. Research spans expert graphs, earnings calls, and institutional data.",
+            description: 'Full multi-source autonomous research: expert-curated knowledge graphs, '
+                + 'earnings-call intelligence, and institutional data, synthesized into a cited '
+                + 'editorial report. Returned as an async task — poll tasks/get for the result. '
+                + 'API key required; SPT support coming.',
             tags: ['research', 'report', 'analysis'],
             examples: ['comprehensive report on Gen Z luxury', 'detailed analysis of the resale market'],
         },
@@ -70,13 +76,13 @@ const AGENT_CARD = {
         {
             id: 'per-ticker-earnings',
             name: 'Per-Ticker Earnings Intelligence',
-            description: 'SWOT scores, sentiment analysis, guidance tracking, analyst Q&A, and competitive analysis for consumer-sector public companies. Quarterly records with multi-quarter history.',
-            tags: ['earnings', 'finance', 'swot', 'sentiment', 'guidance'],
+            description: 'The strategic truth layer per company: what analysts pressed on, where management deflected, marketing/retail/tech/sustainability activity, CEO intelligence, and market-validated consumer trends — quarterly records with multi-quarter history for 500+ consumer-sector companies.',
+            tags: ['earnings', 'analyst-pressure', 'activity', 'validated-trends'],
             examples: [
-                "What's Nike's latest SWOT score?",
-                'Compare Lululemon and On Running earnings',
-                'Which companies raised guidance this quarter?',
+                "What are analysts pressing Nike on?",
+                'Compare how Lululemon and On Running talk about growth',
                 "Show me Costco's analyst Q&A themes",
+                'Which consumer trends do KR\'s earnings validate?',
             ],
         },
         {
@@ -88,6 +94,39 @@ const AGENT_CARD = {
         },
     ],
 };
+
+// ---------------------------------------------------------------------------
+// A2A Task Store — in-memory, same pattern as activeResearchJobs in toolHandlers.
+// Known limitation: tasks lost on restart/redeploy (in-memory under min-instances=1).
+// ---------------------------------------------------------------------------
+
+interface A2ATaskRecord {
+    task: A2ATask;
+    createdAt: number;
+}
+const a2aTasks = new Map<string, A2ATaskRecord>();
+
+// TTL sweep: terminal tasks (completed/failed/canceled) evicted after 30 min;
+// non-terminal tasks (working/submitted) auto-failed after 15 min (pipeline hung).
+const A2A_TERMINAL_TTL_MS = 30 * 60 * 1000;
+const A2A_WORKING_TTL_MS = 15 * 60 * 1000;
+setInterval(() => {
+    const now = Date.now();
+    for (const [id, record] of a2aTasks) {
+        const age = now - record.createdAt;
+        const state = record.task.status.state;
+        const isTerminal = state === 'completed' || state === 'failed' || state === 'canceled';
+        if (isTerminal && age > A2A_TERMINAL_TTL_MS) {
+            a2aTasks.delete(id);
+        } else if (!isTerminal && age > A2A_WORKING_TTL_MS) {
+            record.task.status = {
+                state: 'failed',
+                message: { role: 'agent', parts: [{ kind: 'text', text: 'Research timed out after 15 minutes.' }] },
+            };
+            console.error(`[a2a] Task ${id} auto-failed: exceeded ${A2A_WORKING_TTL_MS / 60000}min working TTL`);
+        }
+    }
+}, 60_000);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -194,20 +233,14 @@ function classifyIntent(text: string): ToolRoute {
 // Tool execution — calls existing Fodda API endpoints
 // ---------------------------------------------------------------------------
 
-type FoddaRequestFn = (
-    method: 'GET' | 'POST' | 'PATCH',
-    path: string,
-    apiKey: string,
-    userId: string,
-    body?: any,
-) => Promise<any>;
+// FoddaRequestFn imported from ./types.js above
 
 async function executeQuery(
     route: ToolRoute,
     apiKey: string,
     userId: string,
     foddaRequest: FoddaRequestFn,
-): Promise<{ text: string; data?: any }> {
+): Promise<{ text: string; data?: any; asyncDeepResearch?: any }> {
     switch (route.tool) {
         case 'search_graph': {
             // Search ALL graphs (no graphId = all-graph parallel search)
@@ -330,30 +363,10 @@ async function executeQuery(
         }
 
         case 'deep_research': {
-            // For A2A MVP, we do a synchronous search (not the async deep_research job)
-            // because A2A registries expect a timely response for health probes.
-            const body = {
-                query: route.params.query,
-                limit: 15,
-                use_semantic: true,
-                include_evidence: true,
-            };
-            const result = await foddaRequest('POST', '/v1/graphs/search', apiKey, userId, body);
-            const rows = result?.rows || [];
-            const lines: string[] = [];
-            lines.push(`## Research Summary: ${route.params.query}\n`);
-            lines.push(`_${rows.length} trends analyzed from Fodda's knowledge graph network._\n`);
-
-            for (const row of rows.slice(0, 10)) {
-                const score = row.signal_score ? ` (signal: ${row.signal_score})` : '';
-                lines.push(`### ${row.title || row.trendName}${score}`);
-                if (row.summary || row.description) {
-                    lines.push((row.summary || row.description).substring(0, 400));
-                }
-                lines.push('');
-            }
-
-            return { text: lines.join('\n'), data: result };
+            // Deep research returns source_plan synchronously for routing
+            // visibility, but the report itself is async — caller must poll
+            // tasks/get. This replaces the sync MVP that just ran graphs/search.
+            return { text: '__ASYNC_DEEP_RESEARCH__', data: null, asyncDeepResearch: route.params };
         }
     }
 }
@@ -377,6 +390,7 @@ function jsonRpcError(id: string | number | null, code: number, message: string,
 export function registerA2ARoute(
     app: Express,
     foddaRequest: FoddaRequestFn,
+    waverunnerRequest: WaverunnerRequestFn,
 ): void {
     // ── A2A Agent Card discovery (skills catalog) ──
     const serveAgentCard = (_req: Request, res: Response) => res.json(AGENT_CARD);
@@ -400,14 +414,43 @@ export function registerA2ARoute(
             case 'message/send':
                 break; // handled below
 
-            // Stubs for future methods — return Method Not Found
             case 'message/stream':
-            case 'tasks/get':
-            case 'tasks/cancel':
             case 'tasks/list':
                 return res.json(
-                    jsonRpcError(requestId, -32601, `Method not found: ${body.method}. Only message/send is supported in this version.`)
+                    jsonRpcError(requestId, -32601, `Method not found: ${body.method}. Supported: message/send, tasks/get, tasks/cancel.`)
                 );
+
+            case 'tasks/get': {
+                const taskId = body.params?.id;
+                if (!taskId) {
+                    return res.json(jsonRpcError(requestId, -32602, 'Invalid params: id is required'));
+                }
+                const record = a2aTasks.get(taskId);
+                if (!record) {
+                    return res.json(jsonRpcError(requestId, -32602, `Task not found: ${taskId}`));
+                }
+                return res.json(jsonRpcSuccess(requestId, record.task));
+            }
+
+            case 'tasks/cancel': {
+                const taskId = body.params?.id;
+                if (!taskId) {
+                    return res.json(jsonRpcError(requestId, -32602, 'Invalid params: id is required'));
+                }
+                const record = a2aTasks.get(taskId);
+                if (!record) {
+                    return res.json(jsonRpcError(requestId, -32602, `Task not found: ${taskId}`));
+                }
+                // Only cancel if still working
+                if (record.task.status.state === 'working' || record.task.status.state === 'submitted') {
+                    record.task.status = {
+                        state: 'canceled',
+                        message: { role: 'agent', parts: [{ kind: 'text', text: 'Task canceled by caller.' }] },
+                    };
+                    console.error(`[a2a] Task ${taskId} canceled`);
+                }
+                return res.json(jsonRpcSuccess(requestId, record.task));
+            }
 
             default:
                 return res.json(
@@ -469,6 +512,103 @@ export function registerA2ARoute(
 
             const result = await executeQuery(route, apiKey, userId, foddaRequest);
 
+            // ── Async deep research path ──
+            if (result.asyncDeepResearch) {
+                const drParams = result.asyncDeepResearch as { query: string; depth: 'light' | 'heavy' };
+                const queryTypeCode = drParams.depth === 'heavy' ? 'deep_research_heavy' : 'deep_research_light';
+
+                // Log to Questions ledger (fire-and-forget, same as MCP)
+                foddaRequest('POST', '/v1/log/question', apiKey, userId, {
+                    question: drParams.query,
+                    graphId: 'all',
+                    interactionType: 'deep_research',
+                    source: 'a2a',
+                }).catch(() => {});
+
+                // Pre-authorize billing — refuse before spending compute
+                const billingResult = await chargeQuery({
+                    queryTypeCode,
+                    apiKey,
+                    userId,
+                    query: drParams.query,
+                    foddaRequest,
+                });
+                if (!billingResult.charged) {
+                    const errMsg = billingResult.error || 'Billing pre-authorization failed';
+                    console.error(`[a2a] Deep research billing rejected: ${errMsg}`);
+                    return res.json(
+                        jsonRpcError(requestId, -32001, `Billing failed: ${errMsg}`)
+                    );
+                }
+
+                // Create task in working state
+                const taskId = `task-${crypto.randomUUID().slice(0, 8)}`;
+                const contextId = `ctx-${crypto.randomUUID().slice(0, 8)}`;
+                const task: A2ATask = {
+                    id: taskId,
+                    contextId,
+                    status: {
+                        state: 'working',
+                        message: { role: 'agent', parts: [{ kind: 'text', text: 'Deep research in progress — poll tasks/get for the result.' }] },
+                    },
+                };
+                a2aTasks.set(taskId, { task, createdAt: Date.now() });
+
+                // Run the real pipeline in the background
+                (async () => {
+                    try {
+                        const drResult = await runDeepResearch({
+                            query: drParams.query,
+                            apiKey,
+                            userId,
+                            depth: drParams.depth,
+                            foddaRequest,
+                            waverunnerRequest,
+                            onProgress: (msg) => console.error(`[a2a][${taskId}] ${msg}`),
+                        });
+
+                        // Check if canceled during run
+                        const current = a2aTasks.get(taskId);
+                        if (current && current.task.status.state === 'canceled') {
+                            console.error(`[a2a] Task ${taskId} was canceled during research — discarding result`);
+                            return;
+                        }
+
+                        // Mark completed with artifacts
+                        if (current) {
+                            current.task.status = { state: 'completed' };
+                            current.task.artifacts = [
+                                {
+                                    name: 'research_report',
+                                    description: `Deep research report: ${drParams.query.substring(0, 100)}`,
+                                    parts: [{ kind: 'text', text: drResult.report }],
+                                },
+                                {
+                                    name: 'source_plan',
+                                    description: 'Source routing plan — which graphs, earnings, and supplemental sources were selected and why',
+                                    parts: [{ kind: 'data', data: drResult.source_plan, mimeType: 'application/json' }],
+                                },
+                            ];
+                        }
+                        console.error(`[a2a] Task ${taskId} completed (${drResult.duration_sec}s, ${drResult.graphs_searched.length} graphs)`);
+
+                    } catch (err: any) {
+                        const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Research failed';
+                        const current = a2aTasks.get(taskId);
+                        if (current && current.task.status.state !== 'canceled') {
+                            current.task.status = {
+                                state: 'failed',
+                                message: { role: 'agent', parts: [{ kind: 'text', text: errMsg }] },
+                            };
+                        }
+                        console.error(`[a2a] Task ${taskId} failed: ${errMsg}`);
+                    }
+                })();
+
+                return res.json(jsonRpcSuccess(requestId, task));
+            }
+
+            // ── Synchronous path (trend-search, brand, earnings, consult) ──
             const taskId = `task-${crypto.randomUUID().slice(0, 8)}`;
             const contextId = `ctx-${crypto.randomUUID().slice(0, 8)}`;
 
