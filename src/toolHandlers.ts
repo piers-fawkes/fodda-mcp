@@ -3298,5 +3298,77 @@ export async function createServer(
         }
     );
 
+    // --- request_deliverable (Agentic Analysts Phase C) ---
+    server.tool(
+        'request_deliverable',
+        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon."',
+        {
+            analyst_id: z.string().describe("The analyst ID producing the deliverable (e.g., 'ben-dietz-sic'). See list_analysts."),
+            offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
+            brief: z.string().describe("2–5 sentences: audience, goal, constraints. Agents imitate the example in the tool description — be concrete."),
+            attachments: z.array(z.object({ content: z.string() })).optional().describe("Optional supporting text files mounted into the analyst's workspace (max 5)."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Request Analyst Deliverable', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ analyst_id, offering_key, brief, attachments, userId: uid }) => {
+            try {
+                logUserQuery(brief, 'skill_deliverable');
+
+                // Billing is server-side in POST /deliver (the offering's published
+                // price is charged up-front there — authoritative, and the meter
+                // path can't express a per-offering price). The MCP does not settle
+                // here, so there's no double-charge.
+                const result = await foddaRequest(
+                    'POST',
+                    `/v1/analysts/${encodeURIComponent(analyst_id)}/deliver`,
+                    apiKey,
+                    resolveUserId(userId, uid),
+                    { offering_key, brief, attachments },
+                );
+
+                const lines = [
+                    `Deliverable commissioned from ${result?.offering?.name || offering_key}.`,
+                    `Job ID: ${result?.job_id}`,
+                    `Status: ${result?.status || 'working'}`,
+                    result?.price_usd != null ? `Price: $${result.price_usd}` : '',
+                    `The analyst is producing this in the background. Poll with check_deliverable_status(job_id: "${result?.job_id}") until status is "completed", then present the artifact links.`,
+                ].filter(Boolean);
+                return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- check_deliverable_status (Agentic Analysts Phase C) ---
+    server.tool(
+        'check_deliverable_status',
+        'Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status ("working" | "completed" | "failed") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s.',
+        {
+            job_id: z.string().describe("The job_id returned by request_deliverable."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Check Deliverable Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ job_id, userId: uid }) => {
+            try {
+                const result = await foddaRequest(
+                    'GET',
+                    `/v1/analysts/deliverables/${encodeURIComponent(job_id)}`,
+                    apiKey,
+                    resolveUserId(userId, uid),
+                );
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
     return server;
 }

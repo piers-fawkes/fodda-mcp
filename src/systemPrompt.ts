@@ -74,7 +74,7 @@ compliance: RFC-2119
 ### ENGAGEMENT PATTERNS
 - One-off question → consult_analyst (no session_id)
 - Ongoing project → keep passing the session_id from the previous consult response; the analyst remembers prior turns and working files, and follow-ups cost less
-- Finished document (plan, review, briefing) → request_deliverable with an offering_key (coming soon — not yet available)
+- Finished document (plan, review, briefing) → request_deliverable with an offering_key (see the offerings on each analyst from list_analysts), then poll check_deliverable_status until it is completed
 
 ### RULE: EvidenceCitation
 - When presenting trends, the agent MUST call get_evidence.

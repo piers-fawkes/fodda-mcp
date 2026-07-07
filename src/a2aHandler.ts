@@ -92,6 +92,16 @@ const AGENT_CARD = {
             tags: ['expert', 'consult', 'analyst'],
             examples: ['Consult Ben Dietz about culture-led brand strategy', 'Ask Anu Lingala about 2026 macro trends'],
         },
+        {
+            // Phase C: skill-based deliverables. One static capability skill for
+            // now; once offerings are seeded (C1), derive one card skill per live
+            // offering (key, price, example_brief) from the analyst offerings.
+            id: 'commissioned-deliverable',
+            name: 'Commissioned Deliverable',
+            description: 'Commission a finished document from an analyst — a marketing plan, deck review, or trend briefing. The analyst researches, then produces the document in the background; returned as an async job (poll for the artifact). Priced per offering; see each analyst\'s offerings.',
+            tags: ['deliverable', 'document', 'analyst', 'async'],
+            examples: ['Commission a marketing plan from Ben Dietz for a Gen-Z skincare launch', 'Ask for a trend briefing deliverable on resale'],
+        },
     ],
 };
 

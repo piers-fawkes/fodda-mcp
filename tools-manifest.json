@@ -2,8 +2,8 @@
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "rate_usd_per_call": 0.5,
   "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $10/$15.",
-  "count": 33,
-  "billable": 19,
+  "count": 35,
+  "billable": 20,
   "tools": [
     {
       "name": "brainstorm_topic",
@@ -18,6 +18,13 @@
       "bills_as": "brand_intelligence",
       "category": "Brand",
       "description": "Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — \"What is Nike doing?\", \"Patagonia's innovation strategy\", \"How is Apple positioned?\". This aggregates intelligence that would require dozens of separate web searches to assemble."
+    },
+    {
+      "name": "check_deliverable_status",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Status",
+      "description": "Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status (\"working\" | \"completed\" | \"failed\") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s."
     },
     {
       "name": "check_research_status",
@@ -186,6 +193,13 @@
       "bills_as": "url_as_prompt",
       "category": "Web",
       "description": "Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Uses 15 tokens ($7.50 via SPT)."
+    },
+    {
+      "name": "request_deliverable",
+      "kind": "tool",
+      "bills_as": "skill_deliverable",
+      "category": "Expert",
+      "description": "Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is \"completed\" to get the artifact links. The offering price is charged on acceptance; the analyst's research is included, not billed separately. Example brief: \"Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon.\""
     },
     {
       "name": "search_graph",
