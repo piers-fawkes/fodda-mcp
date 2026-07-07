@@ -1,6 +1,8 @@
 # Brief: Agentic Analysts — Phase B (finish MCP session passthrough)
 
-> **✅ COMPLETED 2026-07-07** — both halves done. API: `recordSessionTurn` wired + `session_id`/`session_note` in envelope (committed in Fodda API/Fodda). MCP: `session_id` param + SESSION passthrough + ENGAGEMENT PATTERNS + manifest regen (this branch). Post-deploy check still owed: live verification that Antigravity honors `previous_interaction_id` and turn-3 cost < turn-1.
+> **✅ COMPLETED 2026-07-07** — both halves done + one post-deploy bug fixed. API: `recordSessionTurn` wired + `session_id`/`session_note` in envelope. MCP: `session_id` param + SESSION passthrough + ENGAGEMENT PATTERNS + manifest regen (this branch).
+>
+> **Post-deploy live test (2026-07-07) caught a real bug — now fixed, pending API redeploy.** First deploy: turn 1 returned `session_id` correctly (MCP SESSION line ✅), but turn 2 threading came back `engine:null` / flat-consult cost / `session_id:null` — the managed Antigravity `interactions.create()` was **throwing on every threaded turn and silently falling back to `generateContent`**. Coherent-looking follow-up output masked it (a three-word tagline is derivable from graph context alone; context was never truly retained). Root cause: pinning the stored `environment_id` onto the expert agent's inline network-transform environment object — the Interactions API rejects inline-config + id together, and it would also strip the billing-critical user-key transform. Fix (commit in Fodda API): thread via `previous_interaction_id` alone; env rebuilt fresh each turn; working-file persistence deferred. **Owed: redeploy API, then re-run the 2-turn test — expect `engine:antigravity_managed` + `session_id` on turn 2, and turn-3 cost < turn-1.**
 >
 > Extracted from `Brief Agentic Analysts.md` §"Phase B — Multi-turn engagements". Standalone; hand to a fresh thread. Single repo (MCP), no deploy.
 
