@@ -57,5 +57,11 @@ Commit: `feat(mcp): Phase C — request_deliverable…` (+ a `chore(sync)` commi
 
 ---
 
+## LIVE VERIFICATION RESULTS (2026-07-07, post-deploy)
+
+- ✅ **Phase B threading — PROVEN.** 2-turn consult on `ben-dietz-sic`: turn 2 passed the turn-1 `session_id` and got the **same** id back (threaded, not new), `engine: antigravity_managed` (no fallback), `session_note` correctly absent. Bare follow-up "a three-word tagline for it" → "Untamed. Unfiltered. Real." — context retained via `previous_interaction_id`. **Last night's env-reuse bug is fixed and confirmed live.**
+- ✅ **Phase C deliver — works end-to-end.** `request_deliverable(ben-dietz-sic, trend_briefing)` → job launched, offering resolved + priced ($5 / 10 units), agent **researched via 10 MCP tool calls** (Phase A working inside the deliverable), completed in ~60s. Billing charged server-side.
+- ⚠️ **Phase C document payload — bug found + fixed (needs 1 more API redeploy).** First run returned `artifacts: []` and no document: the agent wrote to `/workspace/deliverable.md`, but the interaction API doesn't expose sandbox files, and its final message was just a summary. **Fixed** (commit `fix(analysts): Phase C deliverable payload is the final text…`): the prompt now tells the agent to output the COMPLETE document as its final message, and the poll returns it as a `document` field. **Owed: redeploy API, re-run the deliverable, confirm `document` is the full briefing.**
+
 ## Nothing was faked
 No live calls were made against Phase C (it isn't deployed). Every "verify" above is genuinely owed. The only thing I ran live was last night's Phase B test, which is what surfaced the threading bug now fixed and awaiting redeploy.
