@@ -150,7 +150,8 @@ interface A2AJsonRpcRequest {
 }
 
 interface A2APart {
-    kind: 'text' | 'data' | 'file';
+    kind?: 'text' | 'data' | 'file';   // A2A v1.0 spec
+    type?: 'text' | 'data' | 'file';   // Google / older A2A variants
     text?: string;
     data?: any;
     mimeType?: string;
@@ -476,7 +477,15 @@ export function registerA2ARoute(
             );
         }
 
-        const textPart = message.parts.find(p => p.kind === 'text' && p.text);
+        // Accept the three A2A part shapes seen in the wild: A2A v1.0 spec ({ kind:'text' }),
+        // the Google/older variant ({ type:'text' }), and bare ({ text }) — see Brief A2A Part Format Fix.
+        const textPart = message.parts.find(p => {
+            if (!p.text) return false;
+            if (p.kind === 'text') return true;   // A2A v1.0 spec
+            if (p.type === 'text') return true;   // Google variant
+            if (!p.kind && !p.type) return true;  // bare { text: "..." }
+            return false;
+        });
         if (!textPart?.text) {
             return res.json(
                 jsonRpcError(requestId, -32602, 'Invalid params: no text part found in message')
