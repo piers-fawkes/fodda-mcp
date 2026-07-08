@@ -199,8 +199,12 @@ async function foddaRequest(
 
     const url = `${API_BASE_URL}${path}`;
     // Base timeout: 30s aligns with MCP client expectations.
-    // Extended to 60s for analyst consult — multi-turn LLM + tool calls can legitimately exceed 30s.
-    const AXIOS_TIMEOUT_MS = /\/analysts\/consult/.test(path) ? 60000 : 30000;
+    // Extended to 60s for analyst consult, and 35s for supplemental.
+    const AXIOS_TIMEOUT_MS = /\/analysts\/consult/.test(path)
+        ? 60000
+        : /\/supplemental\//.test(path)
+        ? 35000
+        : 30000;
     const response = method === 'GET'
         ? await axios.get(url, { headers, timeout: AXIOS_TIMEOUT_MS })
         : method === 'PATCH'
