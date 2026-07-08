@@ -496,3 +496,12 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 2. Confirm the alert reaches whoever actually *fixes* it (adds the route to `TOKEN_COSTS`) — engineering/ops, not only #fodda-sales.
 3. (Optional) revisit fail-visible vs fail-closed if undercharge volume ever warrants it.
 **Agent:** API agent (fodda-api)
+
+---
+
+## 👁️ "Your Agent" page — human-eyes check of the authenticated panel
+**Status:** Not started — the one manual gate left after the `/your-agent` deploy (website rev `fodda-the-ai-context-layer-website-00422-mtd`, live 2026-07-07). Everything automated is green.
+**Severity:** P3 — visual confirmation only; not a likely crash.
+**Context:** `/your-agent` (W1, the expert self-use front door) is live and all automated checks pass — route returns 200, the page's API contract matches `GET /v1/analysts/me`, build/typecheck clean. But the **authenticated 200 panel was never rendered end-to-end**: the build sandbox blocks `api.fodda.ai`, so no real analyst identity has actually loaded. Residual risk is purely visual (layout of the real payload).
+**Action:** Open [https://www.fodda.ai/your-agent](https://www.fodda.ai/your-agent), paste a real Fodda API key, and eyeball the loaded panel — portrait, status chip, backing-graph pills, the Connect block (real MCP URL + masked key + copy buttons), prompt chips, and the self-use "the deal" line. Multi-analyst keys should show tabs.
+**Agent:** Piers (manual eyeball) → Website agent only if a layout fix is needed (`pages/YourAgent.tsx`).
