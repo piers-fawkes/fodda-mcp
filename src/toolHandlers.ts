@@ -565,6 +565,150 @@ export async function createServer(
         }
     );
 
+function isDemandShaped(query: string): boolean {
+    const q = query.toLowerCase();
+    const demandKeywords = [
+        /\binterest\b/,
+        /\bgrowing\b/,
+        /\bdemand\b/,
+        /\bsearch\b/,
+        /\battention\b/,
+        /\bvolume\b/,
+        /\bforecasts?\b/,
+        /\bpopularity\b/,
+        /\bpopular\b/,
+        /\bgrowth\b/,
+        /\bhistorical\b/,
+        /\bdata\s+series\b/,
+        /\bstatistics\b/,
+        /\bcharts?\b/
+    ];
+    return demandKeywords.some(pat => pat.test(q));
+}
+
+function addCoverageAnnotation(
+    data: any,
+    query: string,
+    searchedGraphs: any[],
+    limit: number | undefined,
+    skipEvidenceCheck: boolean = false
+): any {
+    if (!data || typeof data !== 'object') return data;
+
+    let normalizedData = data;
+    if (Array.isArray(data)) {
+        normalizedData = { rows: data, dataStatus: 'ok' };
+    }
+
+    // Explicitly target rows/results/trends/matches fields, mirroring normalizeTrends
+    let rows = normalizedData.rows;
+    if (!Array.isArray(rows)) {
+        if (Array.isArray(normalizedData.results)) {
+            rows = normalizedData.results;
+        } else if (Array.isArray(normalizedData.trends)) {
+            rows = normalizedData.trends;
+        } else if (Array.isArray(normalizedData.matches)) {
+            rows = normalizedData.matches;
+        } else if (Array.isArray(normalizedData.statistics)) {
+            rows = normalizedData.statistics;
+        } else if (Array.isArray(normalizedData.items)) {
+            rows = normalizedData.items;
+        } else {
+            // Find any array property
+            for (const key of Object.keys(normalizedData)) {
+                if (Array.isArray(normalizedData[key])) {
+                    rows = normalizedData[key];
+                    break;
+                }
+            }
+        }
+    }
+    if (!Array.isArray(rows)) {
+        rows = [];
+    }
+
+    const resultCount = rows.length;
+
+    let status: 'ok' | 'thin' | 'empty' = 'ok';
+    if (resultCount === 0) {
+        status = 'empty';
+    } else {
+        let isThinCount = resultCount < 3;
+        if (limit !== undefined && limit < 3 && resultCount === limit) {
+            isThinCount = false;
+        }
+
+        let isThinEvidence = false;
+        if (!skipEvidenceCheck) {
+            isThinEvidence = rows.every((r: any) => {
+                const count = Array.isArray(r.evidence) 
+                    ? r.evidence.length 
+                    : Array.isArray(r.evidence_items) 
+                        ? r.evidence_items.length 
+                        : Array.isArray(r.evidenceItems)
+                            ? r.evidenceItems.length
+                            : Array.isArray(r.trendEvidence)
+                                ? r.trendEvidence.length
+                                : (r.evidence_count || r.evidenceCount || 0);
+                return count < 3;
+            });
+        }
+
+        if (isThinCount || isThinEvidence) {
+            status = 'thin';
+        }
+    }
+
+    const layerMap: Record<string, string> = {
+        'industry report': 'report'
+    };
+    const uniqueTypes = new Set(searchedGraphs.map(g => layerMap[g.graph_type] || g.graph_type).filter(Boolean));
+    const layersSearched = Array.from(uniqueTypes);
+
+    const isDemand = isDemandShaped(query);
+    let suggestedAction: any = undefined;
+
+    if (status === 'empty' || status === 'thin' || isDemand) {
+        let reason = '';
+        if (status === 'empty') {
+            reason = 'curated coverage empty; supplemental provides external trends and data series';
+        } else if (status === 'thin') {
+            reason = 'curated coverage thin; supplemental covers demand and participation signals for this domain';
+        } else {
+            reason = 'curated coverage is OK, but query is explicitly demand- or attention-shaped; supplemental adds value via live signals';
+        }
+
+        const suggestedArgs: any = { query };
+
+        // Sourced from graph ids present in the result rows, fall back to searchedGraphs
+        const rowGraphIds = [...new Set(rows.map((r: any) => r.graphId || r._use_this_graphId || r.psfk_graph_slug || r.graph_id).filter(Boolean))] as string[];
+        if (rowGraphIds.length > 0) {
+            suggestedArgs.graph_ids = rowGraphIds;
+        } else if (searchedGraphs.length > 0) {
+            suggestedArgs.graph_ids = searchedGraphs.map(g => g.graph_id);
+        }
+
+        suggestedAction = {
+            tool: 'get_supplemental_context',
+            arguments: suggestedArgs,
+            reason
+        };
+    }
+
+    normalizedData.coverage = {
+        status,
+        results_returned: resultCount,
+        layers_searched: layersSearched,
+    };
+    if (suggestedAction) {
+        normalizedData.coverage.suggested_action = suggestedAction;
+    }
+
+    console.error(`[coverage] status: ${status}, results: ${resultCount}/${limit || 'default'}, query: "${query}"`);
+
+    return normalizedData;
+}
+
     // --- search_graph ---
     server.tool(
         'search_graph',
@@ -595,12 +739,14 @@ export async function createServer(
                 // ── Supplemental data is deferred until we know results are relevant ──
 
                 let data: any;
+                let searchedGraphs: any[] = [];
 
                 // If no graphId or deprecated 'psfk', use smart 2-step routing
                 if (!graphId || graphId === 'psfk') {
                     // Step 1: Score query against graph metadata to find relevant graphs
                     const relevantGraphs = getRelevantGraphs(query);
                     const graphsToSearch = relevantGraphs.map(r => r.graph);
+                    searchedGraphs = graphsToSearch;
 
                     const perGraphLimit = Math.max(5, Math.ceil(effectiveLimit / Math.max(graphsToSearch.length, 1)));
                     const results = await Promise.allSettled(
@@ -765,6 +911,10 @@ export async function createServer(
                     }
                     data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs };
                 } else {
+                    const matchedGraph = getGraphs().find(g => g.graph_id === graphId);
+                    if (matchedGraph) {
+                        searchedGraphs = [matchedGraph];
+                    }
                     data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/search`, apiKey, resolveUserId(userId, uid), body);
                 }
 
@@ -909,7 +1059,6 @@ export async function createServer(
                 if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.evidence_count || r.evidenceCount || 0) < 3)) {
                     data.research_gaps = { thin_coverage: true, note: 'The graph has limited coverage on this topic. These are the closest matches.' };
                 }
-
                 // Confidence-gated fallback: auto-broaden thin results
                 if (enrichedRows.length < 3 && query.split(' ').length > 3 && effectiveGraphId) {
                     try {
@@ -928,6 +1077,8 @@ export async function createServer(
                         }
                     } catch { /* Broadening failed silently */ }
                 }
+
+                data = addCoverageAnnotation(data, query, searchedGraphs, limit);
 
                 // ── Low-credit warning for all users — utilizes dynamic Stripe links from API ──
                 appendUsageWarning(data, resolveUserId(userId));
@@ -1234,6 +1385,7 @@ export async function createServer(
                 appendUsageWarning(data, resolveUserId(userId));
                 const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
                 if (adjacentWithheld) return adjacentWithheld;
+
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1849,7 +2001,7 @@ export async function createServer(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'Targeted pull for macro/institutional data — research workflows include this automatically; call directly only for standalone economic context. Gets real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. Uses 5 tokens ($2.50 via SPT) per standalone use.',
+        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses 5 tokens ($2.50 via SPT) per standalone use.',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty')"),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design'. If omitted, inferred from query."),
@@ -1961,7 +2113,10 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/search/domain', apiKey, resolveUserId(userId, uid), body);
                 const domainWithheld = await settleOrWithhold({ queryTypeCode: 'domain_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_domain_intelligence');
                 if (domainWithheld) return domainWithheld;
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+
+                const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'domain');
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -1998,7 +2153,10 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
                 const expertWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_expert_intelligence');
                 if (expertWithheld) return expertWithheld;
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+
+                const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report');
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -2035,7 +2193,10 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/search/report', apiKey, resolveUserId(userId, uid), body);
                 const reportWithheld = await settleOrWithhold({ queryTypeCode: 'report_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_report_intelligence');
                 if (reportWithheld) return reportWithheld;
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+
+                const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'industry report');
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -2076,7 +2237,10 @@ export async function createServer(
                 }
                 const statsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_statistics', apiKey, userId: resolveUserId(userId, uid), query }, 'search_statistics');
                 if (statsWithheld) return statsWithheld;
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+
+                const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -2113,7 +2277,10 @@ export async function createServer(
                 const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
                 const insightsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_insights', apiKey, userId: resolveUserId(userId, uid), query }, 'search_insights');
                 if (insightsWithheld) return insightsWithheld;
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+
+                const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
