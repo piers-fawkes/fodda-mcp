@@ -1,8 +1,14 @@
+import 'dotenv/config';
 import neo4j from 'neo4j-driver';
 
+const NEO4J_URI = process.env.NEO4J_URI ?? 'neo4j+s://337edc3e.databases.neo4j.io';
+const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
+const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD;
+if (!NEO4J_PASSWORD) throw new Error('NEO4J_PASSWORD is not set — add it to .env');
+
 const driver = neo4j.driver(
-    'neo4j+s://337edc3e.databases.neo4j.io',
-    neo4j.auth.basic('neo4j', 'y2Fp1PU1QeuiYrwLPHjjOpebpAbvST6Z9hPwUG9CWHU')
+    NEO4J_URI,
+    neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD)
 );
 
 async function main() {
