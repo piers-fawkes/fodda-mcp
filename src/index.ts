@@ -191,8 +191,8 @@ async function foddaRequest(
     // HMAC sign the request
     const secret = process.env.FODDA_MCP_SECRET;
     if (secret) {
-        const payload = (method === 'POST' || method === 'PATCH') && body
-            ? timestamp + '.' + JSON.stringify(body)
+        const payload = (method === 'POST' || method === 'PATCH')
+            ? timestamp + '.' + JSON.stringify(body ?? {})
             : timestamp + '.' + path;
         const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
         headers['X-Fodda-Signature'] = signature;
@@ -210,8 +210,8 @@ async function foddaRequest(
     const response = method === 'GET'
         ? await axios.get(url, { headers, timeout: AXIOS_TIMEOUT_MS })
         : method === 'PATCH'
-        ? await axios.patch(url, body, { headers, timeout: AXIOS_TIMEOUT_MS })
-        : await axios.post(url, body, { headers, timeout: AXIOS_TIMEOUT_MS });
+        ? await axios.patch(url, body ?? {}, { headers, timeout: AXIOS_TIMEOUT_MS })
+        : await axios.post(url, body ?? {}, { headers, timeout: AXIOS_TIMEOUT_MS });
 
     // ── Cache store ──
     cacheSet(method, path, body, response.data);
