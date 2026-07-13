@@ -3545,7 +3545,7 @@ function addCoverageAnnotation(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Instruct the agent/LLM to ask the expert for their topic focus first, and then their recency window. Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, tell the user exactly what to type: Reply "reviewed — I accept the terms".',
+        'Begin the Fodda expert onboarding process. Instruct the agent/LLM to manage expectations immediately: tell the expert that we will perform "background research" and compile an "expertise map and voice study" before scheduling a "voice interview." Instruct the agent/LLM to ask the expert for their topic focus first, and then their recency window. Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, tell the user exactly what to type: Reply "reviewed - I accept the terms".',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -3676,7 +3676,12 @@ function addCoverageAnnotation(
             }
             try {
                 const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nNext step: Instruct the expert on scheduling their voice interview." }] };
+                const extendedResult = {
+                    ...result,
+                    next: 'schedule_interview',
+                    message: 'The voice interview is your next step — please schedule it by calling the schedule_interview tool.'
+                };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(extendedResult, null, 2) }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3702,6 +3707,34 @@ function addCoverageAnnotation(
                     path += `?analystId=${encodeURIComponent(analystId)}`;
                 }
                 const result = await foddaRequest('GET', path, apiKey, userEmail);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'schedule_interview',
+        'Schedule your voice interview. You can specify a datetime (UTC ISO string) and localTimeStr (human-readable time, e.g. "Tuesday, July 14 at 3:00 PM EDT"), or request an instant interview now.',
+        {
+            datetime: z.string().optional().describe('ISO-8601 UTC datetime for the scheduled interview (e.g. "2026-07-14T19:00:00.000Z")'),
+            localTimeStr: z.string().optional().describe('Human-readable local time representation (e.g. "Tuesday, July 14 at 3:00 PM EDT")'),
+            now: z.boolean().optional().describe('Set to true to dispatch an instant interview bot immediately'),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'the interview scheduling step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ datetime, localTimeStr, now, userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
+            try {
+                const userEmail = resolveUserId(userId, uid);
+                const result = await foddaRequest('POST', '/api/voice-interview/request', apiKey, userEmail, {
+                    datetime,
+                    localTimeStr,
+                    now
+                });
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
