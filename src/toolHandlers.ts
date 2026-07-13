@@ -3545,11 +3545,11 @@ function addCoverageAnnotation(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Call this tool when the user requests to onboard (e.g. "Onboard me as a Fodda expert" or "Onclaude me as a Fodda expert"). Returns the onboarding prompt templates needed to extract the voice study and expertise map from the user\'s context.',
+        'Begin the Fodda expert onboarding process. Instruct the agent/LLM to ask the expert for their topic focus first, and then their recency window. Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, tell the user exactly what to type: Reply "reviewed — I accept the terms".',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Begin Expert Onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the onboarding kickoff step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
@@ -3557,6 +3557,9 @@ function addCoverageAnnotation(
             try {
                 const userEmail = resolveUserId(userId, uid);
                 const result = await foddaRequest('GET', '/api/onboarding-prompts', apiKey, userEmail);
+                if (result.alreadyActive) {
+                    return { content: [{ type: 'text' as const, text: result.message }] };
+                }
                 const identityWarning = `[IDENTITY WARNING]\nI'll register this under **${userEmail}** — is that the address you want your expert profile tied to? If you want to use a different address, please stop here and re-provision your connection at https://www.fodda.ai/join-experts (sign in with the account you want your profile tied to).\n\n`;
                 return { content: [{ type: 'text' as const, text: identityWarning + JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
@@ -3567,21 +3570,21 @@ function addCoverageAnnotation(
 
     server.tool(
         'submit_basic_info',
-        'Submit basic information (name, role, knowledge area) for the expert onboarding process. The identity is derived from your connector session; the userId parameter is a legacy override and is not required.',
+        'Submit basic information (name, role, knowledge area) for the expert onboarding process. IMPORTANT: analystId is an internal reference — do not display it to the expert.',
         {
             name: z.string().describe("The expert's full name"),
             role: z.string().describe("The expert's current role or title"),
             knowledgeArea: z.string().describe("The expert's primary knowledge area"),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Register you as an expert', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ name, role, knowledgeArea, userId: uid }) => {
             if (!apiKey) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { action: 'basic_info', name, role, knowledgeArea });
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nIMPORTANT: analystId is an internal reference — do not display it to the expert. Next step: Run run_deep_research tool." }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3590,18 +3593,18 @@ function addCoverageAnnotation(
 
     server.tool(
         'run_deep_research',
-        'Kick off asynchronous background research on your public work for the expert onboarding. The identity is derived from your connector session; the userId parameter is a legacy override and is not required.',
+        'Kick off asynchronous background research on your public work for the expert onboarding. The identity is derived from your connector session.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Run Background Research', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the background research step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nNext step: Once research completes, perform voice and topic analysis and call submit_expertise_analysis." }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3610,14 +3613,14 @@ function addCoverageAnnotation(
 
     server.tool(
         'submit_expertise_analysis',
-        'Submit the analyzed voice study and expertise map JSON outputs from the LLM. Must explicitly accept Fodda Terms and Privacy. The identity is derived from your connector session; the userId parameter is a legacy override and is not required.',
+        'Submit the analyzed voice study and expertise map JSON outputs from the LLM. Once submitted, the next steps in the chain are to call get_detected_themes, then confirm_themes, and finally receive the scheduling/interview instructions. Note: The expert profile is not publicly listed until approved. IMPORTANT: analystId is an internal reference — do not display it to the expert.',
         {
             voiceStudy: z.string().describe("JSON string of the voice study"),
             expertTopics: z.string().describe("JSON string of the expertise topics"),
             termsAccepted: z.boolean().describe("Must be true. The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after you present the links to them."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Submit your expertise & tone-of-voice analysis', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the expertise analysis submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ voiceStudy, expertTopics, termsAccepted, userId: uid }) => {
             if (!termsAccepted) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'You must explicitly accept the Fodda Terms of Service and Privacy Policy to proceed.' }] };
@@ -3632,7 +3635,7 @@ function addCoverageAnnotation(
                     expertTopicsRaw: expertTopics,
                     termsAccepted: true
                 });
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nIMPORTANT: analystId is an internal reference — do not display it to the expert. Next step: Call get_detected_themes." }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3641,18 +3644,18 @@ function addCoverageAnnotation(
 
     server.tool(
         'get_detected_themes',
-        'Fetch the detected themes derived from the expertise analysis and background research. The identity is derived from your connector session; the userId parameter is a legacy override and is not required.',
+        'Fetch the detected themes derived from the expertise analysis and background research. The identity is derived from your connector session.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Get Detected Themes', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'the detected expertise themes list', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nNext step: Select themes to confirm and call confirm_themes." }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3661,19 +3664,19 @@ function addCoverageAnnotation(
 
     server.tool(
         'confirm_themes',
-        'Confirm the selected themes to generate the interview questionnaire. The identity is derived from your connector session; the userId parameter is a legacy override and is not required.',
+        'Confirm the selected themes to generate the interview questionnaire. The identity is derived from your connector session.',
         {
             themes: z.array(z.string()).describe("Array of confirmed theme names"),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Confirm Themes', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the theme confirmation step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ themes, userId: uid }) => {
             if (!apiKey) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nNext step: Instruct the expert on scheduling their voice interview." }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3682,17 +3685,23 @@ function addCoverageAnnotation(
 
     server.tool(
         'get_onboarding_status',
-        'Check the status of the expert onboarding process. The identity is derived from your connector session; the userId parameter is a legacy override and is not required.',
+        'Check the status of the expert onboarding process. The identity is derived from your connector session. IMPORTANT: analystId is an internal reference — do not display it to the expert.',
         {
+            analystId: z.string().optional().describe('Optional specific Analyst ID to check status for.'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Check your onboarding progress', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
+        { title: 'the onboarding progress status check', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ analystId, userId: uid }) => {
             if (!apiKey) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
-                const result = await foddaRequest('GET', '/api/onboarding-status', apiKey, resolveUserId(userId, uid));
+                const userEmail = resolveUserId(userId, uid);
+                let path = '/api/onboarding-status';
+                if (analystId) {
+                    path += `?analystId=${encodeURIComponent(analystId)}`;
+                }
+                const result = await foddaRequest('GET', path, apiKey, userEmail);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
