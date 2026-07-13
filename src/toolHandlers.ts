@@ -3540,7 +3540,7 @@ function addCoverageAnnotation(
     // --- Expert Onboarding (Connector Flow) ---
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Returns the onboarding prompt templates needed to extract the voice study and expertise map from the user\'s context.',
+        'Begin the Fodda expert onboarding process. Call this tool when the user requests to onboard (e.g. "Onboard me as a Fodda expert" or "Onclaude me as a Fodda expert"). Returns the onboarding prompt templates needed to extract the voice study and expertise map from the user\'s context.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
