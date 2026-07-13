@@ -36,6 +36,7 @@ process.on('uncaughtException', (err: any) => {
 });
 
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
+const WEBSITE_BASE_URL = process.env.WEBSITE_BASE_URL || 'https://www.fodda.ai';
 
 const app = express();
 app.use(express.json({ limit: '512kb' }));
@@ -197,7 +198,8 @@ async function foddaRequest(
         headers['X-Fodda-Signature'] = signature;
     }
 
-    const url = `${API_BASE_URL}${path}`;
+    const baseUrl = path.startsWith('/api/') ? WEBSITE_BASE_URL : API_BASE_URL;
+    const url = `${baseUrl}${path}`;
     // Base timeout: 30s aligns with MCP client expectations.
     // Extended to 60s for analyst consult, and 35s for supplemental.
     const AXIOS_TIMEOUT_MS = /\/analysts\/consult/.test(path)
@@ -565,11 +567,43 @@ app.get('/mcp', (req, res, next) => {
 </html>`);
 });
 
+interface TokenResolution {
+    apiKey: string;
+    email: string;
+    name: string;
+    analystId: string;
+    fetchedAt: number;
+}
+
+const tokenCache = new Map<string, TokenResolution>();
+const TOKEN_CACHE_TTL_MS = 60 * 1000; // 1 minute TTL
+
+async function resolveMcpToken(token: string, websiteBaseUrl: string): Promise<TokenResolution> {
+    const cached = tokenCache.get(token);
+    if (cached && (Date.now() - cached.fetchedAt < TOKEN_CACHE_TTL_MS)) {
+        return cached;
+    }
+    const response = await axios.get(`${websiteBaseUrl}/api/mcp-tokens/${token}`, { timeout: 5000 });
+    const data = response.data;
+    if (!data.apiKey || !data.email) {
+        throw new Error('Invalid token resolution payload');
+    }
+    const val = {
+        apiKey: data.apiKey,
+        email: data.email,
+        name: data.name || '',
+        analystId: data.analystId || '',
+        fetchedAt: Date.now()
+    };
+    tokenCache.set(token, val);
+    return val;
+}
+
 // ---------------------------------------------------------------------------
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all('/mcp', async (req, res) => {
+app.all(['/mcp', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
@@ -583,19 +617,36 @@ app.all('/mcp', async (req, res) => {
             || '';
         const isSpt = !!spt;
 
+        const token = req.params.token;
+        let resolvedApiKey = '';
+        let resolvedEmail = '';
+        let resolvedEntryId = '';
+
+        if (token) {
+            try {
+                const resolved = await resolveMcpToken(token as string, WEBSITE_BASE_URL);
+                resolvedApiKey = resolved.apiKey;
+                resolvedEmail = resolved.email;
+                resolvedEntryId = resolved.analystId;
+            } catch (err: any) {
+                console.error(`[token-resolver] Failed to resolve token ${token}:`, err.message);
+                return res.status(401).json({ error: 'Invalid or expired connection token' });
+            }
+        }
+
         // Extract API key, userId, and entry ID from URL or headers.
-        // Priority: X-API-Key header → Authorization Bearer → query string (fallback).
-        // Header is preferred so the key isn't required in the URL — query strings
-        // get captured in access/proxy logs and browser history. Query param is kept
-        // as a fallback so existing connector-URL clients keep working.
+        // Priority: X-API-Key header → Authorization Bearer → resolved token key → query string (fallback).
         const apiKey = isSpt ? '' : ((req.headers['x-api-key'] as string)
             || (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
+            || resolvedApiKey
             || (req.query.api_key as string)
             || '');
-        const entryId = (req.query.id as string) || '';
+        const entryId = resolvedEntryId || (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup
         const isEmailId = entryId.includes('@') && entryId.includes('.');
-        const userId = isSpt ? 'spt_agent' : ((req.query.user_id as string)
+        // Priority for userId: resolved token email → query user_id → header X-User-Id → query id / anonymous
+        const userId = isSpt ? 'spt_agent' : (resolvedEmail
+            || (req.query.user_id as string)
             || (req.headers['x-user-id'] as string)
             || (isEmailId ? entryId : 'anonymous'));
         const source = (req.query.source as string) || (isSpt ? 'spt' : '');

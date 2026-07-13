@@ -3601,15 +3601,20 @@ function addCoverageAnnotation(
         {
             voiceStudy: z.string().describe("JSON string of the voice study"),
             expertTopics: z.string().describe("JSON string of the expertise topics"),
+            termsAccepted: z.boolean().describe("Must be true. The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after you present the links to them."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Submit Expertise Analysis', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ voiceStudy, expertTopics, userId: uid }) => {
+        async ({ voiceStudy, expertTopics, termsAccepted, userId: uid }) => {
+            if (!termsAccepted) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'You must explicitly accept the Fodda Terms of Service and Privacy Policy to proceed.' }] };
+            }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { 
                     action: 'expertise_analysis', 
                     voiceStudyRaw: voiceStudy, 
-                    expertTopicsRaw: expertTopics 
+                    expertTopicsRaw: expertTopics,
+                    termsAccepted: true
                 });
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
@@ -3628,7 +3633,7 @@ function addCoverageAnnotation(
         { title: 'Get Detected Themes', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             try {
-                const result = await foddaRequest('GET', '/api/generate-questions/themes', apiKey, resolveUserId(userId, uid));
+                const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
