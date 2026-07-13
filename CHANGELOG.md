@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`/c/:token` SSE Transport and Token Resolution Cache** (`src/index.ts`): Implemented a route for token-resolved connector connection and an in-memory resolution cache (1 minute TTL) to minimize redundant requests.
+
+### Changed
+- **`begin_expert_onboarding` description** (`src/toolHandlers.ts`): Updated description to register explicit support for both `"Onboard me as a Fodda expert"` and `"Onclaude me as a Fodda expert"` triggers.
+- **API Routing** (`src/index.ts`): Routed `/api/*` calls in `foddaRequest` directly to `www.fodda.ai`.
 - **Digital Twin Envelope Rendering** (`toolHandlers.ts`): `consult_analyst` handler now surfaces the structured envelope from the API — coverage status (`in`/`adjacent`/`out`), source attribution, referrals, and speaker notes — as delimited blocks in the tool result. Legacy (non-envelope) responses render unchanged.
 - **Jeremy Bergstein analyst entry** (`systemPrompt.ts`): Added `jeremy-bergstein-science-education-innovation` to `ANALYST_ENTRIES` routing table, mapped to the `postpals-expert-graph` graph.
 - **`toggle_graph_preference` tool** (`src/toolHandlers.ts`, `src/tools.ts`): Added a new tool that allows the MCP agent to permanently enable or disable any knowledge graph, supplemental data source, or skill on the user's behalf. It calls the new `POST /v1/user/preferences/toggle` API endpoint.
