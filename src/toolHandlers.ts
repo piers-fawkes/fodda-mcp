@@ -3546,12 +3546,15 @@ function addCoverageAnnotation(
         },
         { title: 'Begin Expert Onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-prompts', apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
@@ -3567,12 +3570,15 @@ function addCoverageAnnotation(
         },
         { title: 'Submit Basic Info', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ name, role, knowledgeArea, userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { action: 'basic_info', name, role, knowledgeArea });
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
@@ -3585,12 +3591,15 @@ function addCoverageAnnotation(
         },
         { title: 'Run Deep Research', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
@@ -3609,6 +3618,9 @@ function addCoverageAnnotation(
             if (!termsAccepted) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'You must explicitly accept the Fodda Terms of Service and Privacy Policy to proceed.' }] };
             }
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { 
                     action: 'expertise_analysis', 
@@ -3618,8 +3630,8 @@ function addCoverageAnnotation(
                 });
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
@@ -3632,12 +3644,15 @@ function addCoverageAnnotation(
         },
         { title: 'Get Detected Themes', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
@@ -3651,12 +3666,15 @@ function addCoverageAnnotation(
         },
         { title: 'Confirm Themes', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ themes, userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
@@ -3669,12 +3687,15 @@ function addCoverageAnnotation(
         },
         { title: 'Get Onboarding Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
+            if (!apiKey) {
+                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+            }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-status', apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const msg = err.response?.data?.message || err.response?.data?.error?.message || err.response?.data?.error || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: msg }] };
             }
         }
     );
