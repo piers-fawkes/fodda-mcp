@@ -76,15 +76,17 @@ Individual users can add Fodda as a custom connector directly in Claude:
 
 ### Claude Enterprise (Admin-Managed Connectors)
 Enterprise workspace admins can register the Fodda MCP server via the Admin Console:
-- **URL:** `https://mcp.fodda.ai/mcp?api_key=YOUR_ORG_API_KEY`
+- **URL:** `https://mcp.fodda.ai/mcp?api_key=<your_org_api_key_from_dashboard>`
 - **OAuth fields:** Leave blank (not used)
-- **Fallback (SSE):** `https://mcp.fodda.ai/sse?api_key=YOUR_ORG_API_KEY`
+- **Fallback (SSE):** `https://mcp.fodda.ai/sse?api_key=<your_org_api_key_from_dashboard>`
 - **Auto-discovery:** `https://mcp.fodda.ai/.well-known/mcp.json`
+
+*(Note: Workspace admins should retrieve their organization API key from the Fodda Dashboard under Account -> Developer settings.)*
 
 ### Claude Code (CLI)
 ```bash
 claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
-  --header "Authorization: Bearer YOUR_API_KEY"
+  --header "Authorization: Bearer <your_api_key_from_dashboard>"
 ```
 
 ## 5. Security & Error Handling
