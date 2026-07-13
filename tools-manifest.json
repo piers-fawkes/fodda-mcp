@@ -164,7 +164,7 @@
       "kind": "tool",
       "bills_as": "standalone_supplemental",
       "category": "Supplemental",
-      "description": "Targeted pull for macro/institutional data — research workflows include this automatically; call directly only for standalone economic context. Gets real-time market data from 80+ authoritative sources in a single call — economic indicators, trade statistics, consumer demand signals, research trends, demographics, and more. The server automatically selects the most relevant sources for your query. Returns categorized data blocks (demand_signals, economic_context, market_data, research_signals, demographic_context) with source attribution for citations. Uses 5 tokens ($2.50 via SPT) per standalone use."
+      "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses 5 tokens ($2.50 via SPT) per standalone use."
     },
     {
       "name": "list_analysts",

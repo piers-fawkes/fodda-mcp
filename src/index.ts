@@ -583,11 +583,14 @@ app.all('/mcp', async (req, res) => {
             || '';
         const isSpt = !!spt;
 
-        // Extract API key, userId, and entry ID from URL or headers
-        // Priority: query string (existing MCP clients) → X-API-Key header → Authorization Bearer (Remote MCP)
-        const apiKey = isSpt ? '' : ((req.query.api_key as string)
-            || (req.headers['x-api-key'] as string)
+        // Extract API key, userId, and entry ID from URL or headers.
+        // Priority: X-API-Key header → Authorization Bearer → query string (fallback).
+        // Header is preferred so the key isn't required in the URL — query strings
+        // get captured in access/proxy logs and browser history. Query param is kept
+        // as a fallback so existing connector-URL clients keep working.
+        const apiKey = isSpt ? '' : ((req.headers['x-api-key'] as string)
             || (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
+            || (req.query.api_key as string)
             || '');
         const entryId = (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup

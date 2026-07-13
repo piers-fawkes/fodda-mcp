@@ -3537,5 +3537,161 @@ function addCoverageAnnotation(
         }
     );
 
+    // --- Expert Onboarding (Connector Flow) ---
+    server.tool(
+        'begin_expert_onboarding',
+        'Begin the Fodda expert onboarding process. Returns the onboarding prompt templates needed to extract the voice study and expertise map from the user\'s context.',
+        {
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Begin Expert Onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ userId: uid }) => {
+            try {
+                const result = await foddaRequest('GET', '/api/onboarding-prompts', apiKey, resolveUserId(userId, uid));
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'submit_basic_info',
+        'Submit basic information (name, role, knowledge area) for the expert onboarding process.',
+        {
+            name: z.string().describe("The expert's full name"),
+            role: z.string().describe("The expert's current role or title"),
+            knowledgeArea: z.string().describe("The expert's primary knowledge area"),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Submit Basic Info', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ name, role, knowledgeArea, userId: uid }) => {
+            try {
+                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { action: 'basic_info', name, role, knowledgeArea });
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'run_deep_research',
+        'Kick off asynchronous deep research for the expert onboarding.',
+        {
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Run Deep Research', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ userId: uid }) => {
+            try {
+                const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'submit_expertise_analysis',
+        'Submit the analyzed voice study and expertise map JSON outputs from the LLM.',
+        {
+            voiceStudy: z.string().describe("JSON string of the voice study"),
+            expertTopics: z.string().describe("JSON string of the expertise topics"),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Submit Expertise Analysis', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ voiceStudy, expertTopics, userId: uid }) => {
+            try {
+                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { 
+                    action: 'expertise_analysis', 
+                    voiceStudyRaw: voiceStudy, 
+                    expertTopicsRaw: expertTopics 
+                });
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'get_detected_themes',
+        'Fetch the detected themes derived from the expertise analysis and deep research.',
+        {
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Get Detected Themes', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ userId: uid }) => {
+            try {
+                const result = await foddaRequest('GET', '/api/generate-questions/themes', apiKey, resolveUserId(userId, uid));
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'confirm_themes',
+        'Confirm the selected themes to generate the interview questionnaire.',
+        {
+            themes: z.array(z.string()).describe("Array of confirmed theme names"),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Confirm Themes', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ themes, userId: uid }) => {
+            try {
+                const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'get_onboarding_status',
+        'Check the status of the expert onboarding process.',
+        {
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Get Onboarding Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ userId: uid }) => {
+            try {
+                const result = await foddaRequest('GET', '/api/onboarding-status', apiKey, resolveUserId(userId, uid));
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'get_my_earnings',
+        'Check the expert\'s Fodda earnings.',
+        {
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Get My Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ userId: uid }) => {
+            try {
+                // Mapped to /v1/analysts/me/earnings as requested by Brief 402 + Agentic Access constraints
+                const result = await foddaRequest('GET', '/v1/analysts/me/earnings', apiKey, resolveUserId(userId, uid));
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
     return server;
 }
