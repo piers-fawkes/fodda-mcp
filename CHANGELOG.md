@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Onboarding Gating and Error Propagation** (`src/toolHandlers.ts`): Added pre-flight key checks to all onboarding tools to immediately short-circuit if `apiKey` is empty. Propagated server credentials-missing warnings verbatim as plain text to show the `join-experts` connector URL directly inside Claude.
 - **`/c/:token` SSE Transport and Token Resolution Cache** (`src/index.ts`): Implemented a route for token-resolved connector connection and an in-memory resolution cache (1 minute TTL) to minimize redundant requests.
 
 ### Changed
