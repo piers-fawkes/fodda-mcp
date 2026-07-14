@@ -3545,7 +3545,7 @@ function addCoverageAnnotation(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Instruct the agent/LLM to manage expectations immediately: tell the expert that we will perform "background research" and compile an "expertise map and voice study" before scheduling a "voice interview." Instruct the agent/LLM to ask the expert for their topic focus first, and then their recency window. Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.',
+        'Begin the Fodda expert onboarding process. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "With this information we\'ll run a background research project on your public work, run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You\'ll get to review everything before anything is submitted." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -3644,7 +3644,7 @@ function addCoverageAnnotation(
 
     server.tool(
         'get_detected_themes',
-        'Fetch the detected themes derived from the expertise analysis and background research. The identity is derived from your connector session.',
+        'Fetch the detected themes derived from the expertise analysis and background research. Instruct the agent/LLM that when themes come back, it must reframe the introduction exactly as: "Sixteen expert topics were identified from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what you want your Human Agent to be an expert in — the selection matters." The agent/LLM must present all identified topics in one single numbered list, or state explicitly "recommending N of the M" (e.g. recommending 9 of the 16) — it must never say "sixteen" and then number nine without explanation. The identity is derived from your connector session.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -3655,7 +3655,9 @@ function addCoverageAnnotation(
             }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nNext step: Select themes to confirm and call confirm_themes." }] };
+                const text = JSON.stringify(result, null, 2) + 
+                    "\n\nInstructions for Agent/LLM: Reframe the introduction to the expert exactly as: \"Sixteen expert topics were identified from the material you shared. These become the foundation of your Human Agent's expertise and shape the questionnaire for your interview. This is your moment to decide what you want your Human Agent to be an expert in — the selection matters.\" Present all topics in one numbered list, or state explicitly \"recommending N of the M\" — never say \"sixteen\" and then number nine. Next step: Select themes to confirm and call confirm_themes.";
+                return { content: [{ type: 'text' as const, text }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3664,7 +3666,7 @@ function addCoverageAnnotation(
 
     server.tool(
         'confirm_themes',
-        'Confirm the selected themes to generate the interview questionnaire. The identity is derived from your connector session.',
+        'Confirm the selected themes to generate the interview questionnaire. Instruct the agent/LLM that when themes/topics are confirmed/returned, it must reframe the introduction exactly as: "Sixteen expert topics were identified from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what you want your Human Agent to be an expert in — the selection matters." The agent/LLM must present all identified topics in one single numbered list, or state explicitly "recommending N of the M" (e.g. recommending 9 of the 16) — it must never say "sixteen" and then number nine without explanation. The identity is derived from your connector session.',
         {
             themes: z.array(z.string()).describe("Array of confirmed theme names"),
             userId: z.string().optional().describe('Optional user identifier.')
