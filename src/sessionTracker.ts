@@ -52,7 +52,7 @@ export async function postToSlack(text: string): Promise<void> {
         const resp = await fetch('https://slack.com/api/chat.postMessage', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: 'fodda-sales', text, unfurl_links: false }),
+            body: JSON.stringify({ channel: '#fodda-sales', text, unfurl_links: false }),
         });
         const body = await resp.json() as any;
         if (!body.ok) {
