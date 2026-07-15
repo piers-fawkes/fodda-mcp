@@ -4,6 +4,16 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 📦 NPM Registry Publish (v1.33.0) & 2FA Resolution
+**Status:** Deployed to Cloud Run; NPM Publish Deferred — added 2026-07-14
+**What:** Cloud Run has been updated to revision `fodda-mcp-00362-sn4` containing the latest onboarding, tool rename, and caching features. The NPM package version `1.33.0` is built locally but cannot be published directly via automated tokens due to NPM's new 2FA-bypass token deprecation rules (effective July 2026).
+**When:** When Piers is available to enter the OTP code to publish, or after configuring the NPM account's 2FA settings.
+**Command:** `npm publish --access public --otp=YOUR_OTP`
+**Agent:** Manual (Piers) + MCP agent
+
+---
+
+
 ## 🏆 Cross-Ticker Trend Validation View (flagship earnings×trends product)
 **Status:** Data live, product unbuilt — added 2026-07-05 from the skills×data match review
 **What:** `validated_trends` is only reachable per-ticker. Build the FORWARD question — "which consumer trends did the market validate this quarter?" — across all 517 covered tickers: new API endpoint (e.g. `GET /v1/earnings/validated-trends?sector=&graph=&period=`) aggregating `:VALIDATES` edges by trend with corroboration counts, + an MCP tool. The single most differentiated question the estate supports; 1,000+ edges already exist.
