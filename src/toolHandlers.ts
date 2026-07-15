@@ -3679,6 +3679,15 @@ function addCoverageAnnotation(
             }
             try {
                 const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
+                if (!result || result.success === false) {
+                    return {
+                        isError: true,
+                        content: [{
+                            type: 'text' as const,
+                            text: "Theme confirmation didn't complete — the interview questionnaire wasn't generated. Please call confirm_themes again to retry. Do NOT proceed to schedule_interview yet."
+                        }]
+                    };
+                }
                 const extendedResult = {
                     ...result,
                     next: 'schedule_interview',
@@ -3719,7 +3728,7 @@ function addCoverageAnnotation(
 
     server.tool(
         'schedule_interview',
-        'Schedule your voice interview. You can specify a datetime (UTC ISO string) and localTimeStr (human-readable time, e.g. "Tuesday, July 14 at 3:00 PM EDT"), or request an instant interview now.',
+        'Schedule your voice interview. You can specify a datetime (UTC ISO string) and localTimeStr (human-readable time, e.g. "Tuesday, July 14 at 3:00 PM EDT"), or request an instant interview now.\n\n[SCHEDULING BEHAVIOR]\nIf the expert chooses to schedule for later rather than start now: first check whether a calendar tool/connector is available in this session. If one is, look at their availability and proactively offer 2-3 specific open windows within the next 24 hours, in their local timezone, instead of asking them to name a time cold. If no calendar is connected, simply ask for a preferred day and time (assume the expert\'s local timezone; confirm it if unclear).\n\n[AFTER BOOKING]\nOnce a time is confirmed and this tool returns a Google Meet join link, add the interview to the expert\'s calendar automatically - create the event at the booked time with the join link inside it - rather than asking whether they want it added. Then confirm in one line that it is on their calendar. Only skip the auto-add if no calendar tool is available in the session.',
         {
             datetime: z.string().optional().describe('ISO-8601 UTC datetime for the scheduled interview (e.g. "2026-07-14T19:00:00.000Z")'),
             localTimeStr: z.string().optional().describe('Human-readable local time representation (e.g. "Tuesday, July 14 at 3:00 PM EDT")'),
