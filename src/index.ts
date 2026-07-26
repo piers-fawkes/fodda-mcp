@@ -19,6 +19,7 @@ import { createServer } from './toolHandlers.js';
 // reactively via errorHandling.ts (TRIAL_EXHAUSTED). Only the type is still used.
 import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
+import { getTelemetryStats, recordFeedbackEntry } from './telemetry.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -63,6 +64,62 @@ app.get('/.well-known/oauth-authorization-server', (_req, res) => {
 });
 app.post('/register', (_req, res) => {
     res.status(404).json({ error: 'OAuth not supported.' });
+});
+
+// ---------------------------------------------------------------------------
+// .well-known MCP Server Discovery Card & Pricing Metadata Tier
+// ---------------------------------------------------------------------------
+
+app.get(['/.well-known/mcp-server.json', '/.well-known/mcp'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({
+        $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
+        name: 'ai.fodda/mcp-server',
+        title: 'Fodda Knowledge Graphs',
+        description: 'Expert-curated knowledge, brand, research & earnings intelligence — 31 tools, 220+ graphs.',
+        websiteUrl: 'https://www.fodda.ai',
+        version: MCP_SERVER_VERSION,
+        capabilities: {
+            tools: { listChanged: false },
+            resources: { listChanged: false, subscribe: false },
+            prompts: { listChanged: false },
+        },
+        pricingTier: {
+            structure: 'free',
+            substance: 'metered',
+            tokenModel: 'Canonical token costs defined in API metering.ts ($0.50 via SPT / API credits)',
+        },
+        resourceSchemes: [
+            'fodda://expert/{slug}/insight/{id}',
+            'fodda://graph/{vertical}/trend/{slug}',
+        ],
+        endpoints: {
+            mcpStreamableHttp: `${getServiceUrl()}/mcp`,
+            mcpSse: `${getServiceUrl()}/sse`,
+            telemetry: `${getServiceUrl()}/telemetry`,
+            feedback: `${getServiceUrl()}/v1/feedback`,
+        },
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Telemetry & Error-Rate Instrumentation Endpoints
+// ---------------------------------------------------------------------------
+
+app.get(['/telemetry', '/v1/telemetry'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json(getTelemetryStats());
+});
+
+app.post('/v1/feedback', (req, res) => {
+    const { category, feedback, user_email, user } = req.body || {};
+    if (!feedback) {
+        return res.status(400).json({ error: 'Missing required field: feedback' });
+    }
+    const userLabel = user_email || user || 'anonymous HTTP user';
+    const catLabel = category || 'general';
+    recordFeedbackEntry(catLabel, feedback, userLabel);
+    res.json({ status: 'LOGGED', message: 'Feedback recorded successfully.' });
 });
 
 // ---------------------------------------------------------------------------

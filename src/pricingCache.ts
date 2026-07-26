@@ -25,6 +25,7 @@ export interface QueryPricing {
     researchCalls: number;
     overheadCalls: number;
     mcpToolName: string;
+    mode?: string;
     meterInteractionType: string | null;
     isActive: boolean;
     includesSupplementals: boolean;
@@ -43,6 +44,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 8,
         overheadCalls: 3,
         mcpToolName: 'search_graph',
+        mode: 'research',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: true,
@@ -79,6 +81,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 10,
         overheadCalls: 3,
         mcpToolName: 'deep_research_topic',
+        mode: 'light',
         meterInteractionType: 'deep_dive_fast',
         isActive: true,
         includesSupplementals: true,
@@ -91,6 +94,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 15,
         overheadCalls: 3,
         mcpToolName: 'deep_research_topic',
+        mode: 'heavy',
         meterInteractionType: 'deep_dive_comprehensive',
         isActive: true,
         includesSupplementals: true,
@@ -127,6 +131,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 8,
         overheadCalls: 3,
         mcpToolName: 'search_graph',
+        mode: 'compare',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: true,
@@ -235,6 +240,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 1,
         overheadCalls: 0,
         mcpToolName: 'get_company_earnings',
+        mode: 'snapshot',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: false,
@@ -247,6 +253,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 1,
         overheadCalls: 0,
         mcpToolName: 'get_company_earnings',
+        mode: 'history',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: false,
@@ -259,6 +266,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 1,
         overheadCalls: 0,
         mcpToolName: 'get_company_earnings',
+        mode: 'qa',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: false,
@@ -271,6 +279,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 1,
         overheadCalls: 0,
         mcpToolName: 'get_company_earnings',
+        mode: 'compare',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: false,
@@ -307,6 +316,7 @@ const DEFAULT_PRICING: QueryPricing[] = [
         researchCalls: 1,
         overheadCalls: 0,
         mcpToolName: 'get_company_earnings',
+        mode: 'guidance',
         meterInteractionType: null,
         isActive: true,
         includesSupplementals: false,
@@ -439,17 +449,25 @@ export function getQueryPricing(queryTypeCode: string): QueryPricing | null {
 }
 
 /**
- * Get the query type code for a given MCP tool name.
- * Returns null if no matching query type is found.
- *
- * Note: Some tools map to multiple query types (e.g., deep_research_topic
- * maps to both deep_research_light and deep_research_heavy).
- * Use getQueryTypeForTool() for the default, or specify the exact code.
+ * Get the query type code for a given MCP tool name and optional arguments.
+ * Resolves explicit mode/view/depth to yield a single deterministic cost mapping.
  */
-export function getQueryTypeForTool(toolName: string): string | null {
-    for (const [code, pricing] of pricingMap.entries()) {
+export function getQueryTypeForTool(toolName: string, args?: Record<string, any>): string | null {
+    const requestedMode = (args?.mode || args?.view || args?.depth || '').toString().toLowerCase();
+
+    // 1. If explicit mode passed in args, find exact tool + mode match
+    if (requestedMode) {
+        for (const pricing of pricingMap.values()) {
+            if (pricing.mcpToolName === toolName && pricing.mode === requestedMode && pricing.isActive) {
+                return pricing.queryTypeCode;
+            }
+        }
+    }
+
+    // 2. Fallback to default tool pricing match
+    for (const pricing of pricingMap.values()) {
         if (pricing.mcpToolName === toolName && pricing.isActive) {
-            return code;
+            return pricing.queryTypeCode;
         }
     }
     return null;
@@ -475,12 +493,17 @@ export function getAllPricing(): QueryPricing[] {
 /**
  * Compact tool→cost summary for surfacing to the agent/user (system prompt,
  * get_my_account). Sourced from the same pricing table so it never drifts.
- * Only billable tools (cost > 0) with a real MCP tool name.
+ * Includes explicit tool + mode mapping for multi-price tools.
  */
-export function getToolCostSummary(): Array<{ tool: string; name: string; apiCalls: number }> {
+export function getToolCostSummary(): Array<{ tool: string; mode?: string; name: string; apiCalls: number }> {
     return getAllPricing()
         .filter(p => p.apiCallsCharged > 0 && !!p.mcpToolName)
-        .map(p => ({ tool: p.mcpToolName, name: p.queryTypeName, apiCalls: p.apiCallsCharged }));
+        .map(p => ({
+            tool: p.mcpToolName,
+            ...(p.mode ? { mode: p.mode } : {}),
+            name: p.queryTypeName,
+            apiCalls: p.apiCallsCharged
+        }));
 }
 
 /**

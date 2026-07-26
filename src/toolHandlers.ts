@@ -6,7 +6,9 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { ListResourcesRequestSchema, ListPromptsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { ListResourcesRequestSchema, ListPromptsRequestSchema, ListResourceTemplatesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { recordToolOutcome, recordFeedbackEntry } from './telemetry.js';
+import { FODDA_RESOURCE_TEMPLATES, readFoddaResource, listFoddaSampleResources } from './resources.js';
 import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
@@ -344,14 +346,40 @@ export async function createServer(
         instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId),
     });
 
-    // Register empty capabilities and handlers to silence directory warnings
+    // Register capabilities and citable fodda:// resource handlers
     server.server.registerCapabilities({
-        resources: {},
+        resources: {
+            subscribe: false,
+            listChanged: false,
+        },
         prompts: {}
     });
 
     server.server.setRequestHandler(ListResourcesRequestSchema, async () => {
-        return { resources: [] };
+        return { resources: listFoddaSampleResources() };
+    });
+
+    server.server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => {
+        return {
+            resourceTemplates: FODDA_RESOURCE_TEMPLATES.map(t => ({
+                uriTemplate: t.uriTemplate,
+                name: t.name,
+                description: t.description,
+                mimeType: t.mimeType,
+            }))
+        };
+    });
+
+    server.server.setRequestHandler(ReadResourceRequestSchema, async (request: any) => {
+        const uri = request.params?.uri;
+        const res = await readFoddaResource(uri, apiKey, userId, foddaRequest);
+        return {
+            contents: [{
+                uri: res.uri,
+                mimeType: res.mimeType,
+                text: res.text
+            }]
+        };
     });
 
     server.server.setRequestHandler(ListPromptsRequestSchema, async () => {
@@ -714,6 +742,7 @@ function addCoverageAnnotation(
         'search_graph',
         'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
         {
+            mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research (15 API calls), "compare" for upload & compare intelligence (20 API calls). Defaults to "research".'),
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Location terms are auto-detected and used to filter results geographically.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -723,7 +752,7 @@ function addCoverageAnnotation(
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled skills (Paralogy, Igloo, etc.) for this query only. Use when the user says "without skills", "skip Paralogy", or "just the raw results". Default: false.')
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
+        async ({ mode, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search', graphId);
@@ -2497,7 +2526,8 @@ function addCoverageAnnotation(
         'get_company_earnings',
         'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Uses 0–15 tokens depending on view (coverage is free, snapshot/history = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
         {
-            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage']).default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends (10 tokens). history: narrative timeline across quarters (10 tokens). qa: per-analyst Q&A entries with thematic tagging and response directness (5 tokens). compare: side-by-side comparison of 2-5 tickers (15 tokens). coverage: list all covered tickers (free).'),
+            mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot (10 tokens), history (10 tokens), qa (5 tokens), compare (15 tokens), guidance (10 tokens), coverage (free).'),
+            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends (10 tokens). history: narrative timeline across quarters (10 tokens). qa: per-analyst Q&A entries with thematic tagging and response directness (5 tokens). compare: side-by-side comparison of 2-5 tickers (15 tokens). coverage: list all covered tickers (free).'),
             ticker: z.string().optional().describe("Company ticker symbol (e.g. NKE, LULU, ONON). Required for snapshot, history, and qa views."),
             tickers: z.string().optional().describe("Comma-separated ticker symbols for compare view (2-5 tickers). Only used when view=compare."),
             period: z.string().optional().describe("Quarter filter (e.g. Q1-2026). Defaults to latest quarter."),
@@ -2507,15 +2537,16 @@ function addCoverageAnnotation(
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
         { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ view, ticker, tickers, period, metrics, analyst, sector, userId: uid }) => {
+        async ({ mode, view, ticker, tickers, period, metrics, analyst, sector, userId: uid }) => {
+            const effectiveView = mode || view || 'snapshot';
             try {
                 logUserQuery(ticker || tickers || sector || view || 'company earnings', 'earnings_company');
 
                 // ── Validation: require params per view ──
-                if ((view === 'snapshot' || view === 'history' || view === 'qa') && !ticker) {
-                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'MISSING_PARAM', message: `The "${view}" view requires a ticker parameter (e.g. ticker: "NKE").` }) }] };
+                if ((effectiveView === 'snapshot' || effectiveView === 'history' || effectiveView === 'qa') && !ticker) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'MISSING_PARAM', message: `The "${effectiveView}" view requires a ticker parameter (e.g. ticker: "NKE").` }) }] };
                 }
-                if (view === 'compare' && !tickers) {
+                if (effectiveView === 'compare' && !tickers) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'MISSING_PARAM', message: 'The "compare" view requires a tickers parameter with 2-5 comma-separated ticker symbols (e.g. tickers: "NKE,LULU,ONON").' }) }] };
                 }
 
@@ -2523,7 +2554,7 @@ function addCoverageAnnotation(
                 let path: string;
                 let queryTypeCode: string;
 
-                switch (view) {
+                switch (effectiveView) {
                     case 'snapshot': {
                         const params = new URLSearchParams();
                         if (period) params.set('period', period);
@@ -2699,6 +2730,9 @@ function addCoverageAnnotation(
                 const entryLabel = entryId ? ` (entry: ${entryId})` : '';
                 const catLabel = category || 'general';
                 const emoji = FEEDBACK_CATEGORY_EMOJI[catLabel] || '💬';
+
+                // Record in local telemetry feedback buffer
+                recordFeedbackEntry(catLabel, feedback, userLabel);
 
                 // ── Slack alert (fire-and-forget) ──
                 const slackText = [
@@ -3251,13 +3285,15 @@ function addCoverageAnnotation(
         {
             query: z.string().describe('The research query/topic'),
             graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
+            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster single-pass (20 API calls), "heavy" for comprehensive multi-pass (30 API calls). Defaults to "light".'),
             depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster single-pass (20 API calls), "heavy" for comprehensive multi-pass (30 API calls). Defaults to "light".'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Deep Research Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ query, graphId, depth, userId: uid }) => {
+        async ({ query, graphId, mode, depth, userId: uid }) => {
             const resolvedUserId = resolveUserId(userId, uid);
-            const isHeavy = depth === 'heavy';
+            const effectiveDepth = mode || depth || 'light';
+            const isHeavy = effectiveDepth === 'heavy';
             const queryTypeCode = isHeavy ? 'deep_research_heavy' : 'deep_research_light';
 
             // ── SPT pre-run coverage: refuse before kicking off the (long, expensive) job ──
