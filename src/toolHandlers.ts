@@ -2834,9 +2834,9 @@ function addCoverageAnnotation(
                             type: 'text' as const,
                             text: JSON.stringify({
                                 status: 'UPGRADED',
-                                message: `I've created your Base account — you'll get ${response.data.monthlyTokens || 100} tokens/month. Check your email to confirm and then log in at https://app.fodda.ai to grab your MCP URL and update your connector.`,
+                                message: `I've created your Base account — you'll get ${response.data.monthlyTokens || 100} API calls/month. Check your email to confirm and then log in at https://app.fodda.ai to grab your MCP URL and update your connector.`,
                                 plan: response.data.plan || 'Base',
-                                monthly_token_limit: response.data.monthlyTokens || 100,
+                                monthly_api_call_limit: response.data.monthlyTokens || 100,
                                 graphId: response.data.graphId || null,
                                 accountId: response.data.accountId || null,
                             }, null, 2)
