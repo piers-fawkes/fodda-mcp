@@ -153,6 +153,7 @@ const GRAPH_LIST_ALLOWLIST: ReadonlySet<string> = new Set([
     'graph_id', 'name', 'one_liner', 'description', 'curator',
     'domain', 'graph_type', 'trend_count', 'evidence_count',
     'status', 'last_updated',
+    'topics', 'verticals',
 ]);
 const SNAKE_TO_CAMEL: Record<string, string> = {
     'graph_id': 'graphId', 'one_liner': 'oneLiner', 'graph_type': 'graphType',

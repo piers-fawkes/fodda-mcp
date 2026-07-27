@@ -10,6 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unmask `topics` and `verticals` in `list_graphs`** (`src/toolHandlers.ts`):
+  - Added `'topics'` and `'verticals'` to `GRAPH_LIST_ALLOWLIST` so curated graph objects in `graphs[]` surface their topic tags and vertical classifications alongside `supplemental_sources[]`.
+  - **Before:**
+    ```json
+    {
+      "graph_id": "beauty",
+      "name": "Beauty & Personal Care",
+      "one_liner": "Trend signals across skincare, cosmetics, wellness...",
+      "trend_count": 42
+    }
+    ```
+  - **After:**
+    ```json
+    {
+      "graph_id": "beauty",
+      "name": "Beauty & Personal Care",
+      "one_liner": "Trend signals across skincare, cosmetics, wellness...",
+      "trend_count": 42,
+      "topics": ["beauty", "health", "skincare"],
+      "verticals": ["consumer-goods"]
+    }
+    ```
 - **Offering-Scoped MCP Endpoints Rollout (5 Marquee Offerings)** (`src/index.ts`, `src/toolHandlers.ts`, `fodda_mcp_*_server.json`):
   - **Scoped Tool Filtering (`src/toolHandlers.ts`)**: Added `allowedTools` filtering to `createServer()` via SDK `disable()` method, enforcing endpoint-level tool subsetting across all scoped endpoints.
   - **5 Scoped Routes & Source Attribution (`src/index.ts`)**: Stood up all 5 marquee endpoints: `/brand-intelligence` (12 tools), `/topic-research` (13 tools), `/deep-research` (13 tools), `/earnings-intelligence` (11 tools), and `/expert-consult` (12 tools). Requests arriving at each endpoint automatically set matching `source: '<slug>'` for connection telemetry.
