@@ -3822,8 +3822,6 @@ function addCoverageAnnotation(
                 }
             }
         }
-        const kept = Object.entries(registered).filter(([, t]: any) => t.enabled).map(([n]: any) => n);
-        console.error(`[scoped-tools-filter] allowedCount=${allowedSet.size} totalRegistered=${Object.keys(registered).length} keptCount=${kept.length}`);
     }
 
     return server;

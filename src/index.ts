@@ -716,7 +716,6 @@ app.all(['/mcp', '/brand-intelligence', '/c/:token'], async (req, res) => {
         const rawPath = req.path || '';
         const offeringSlug = (rawPath.replace(/^\//, '').split('/')[0] || '') as string;
         const allowedTools = OFFERING_SCOPED_TOOLS[offeringSlug];
-        console.error(`[scoped-tools] path=${rawPath} offeringSlug=${offeringSlug} allowedCount=${allowedTools?.length ?? 'none'}`);
 
         // SPT (anonymous Shared Payment Token) detection — MUST precede api-key
         // extraction so an `spt_xxx` Bearer is never treated as an API key.
