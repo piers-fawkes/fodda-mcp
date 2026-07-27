@@ -347,16 +347,6 @@ export async function createServer(
         instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId),
     });
 
-    if (allowedTools && (Array.isArray(allowedTools) ? allowedTools.length > 0 : allowedTools.size > 0)) {
-        const allowedSet = allowedTools instanceof Set ? allowedTools : new Set(allowedTools);
-        const origTool = server.tool.bind(server);
-        (server as any).tool = (name: string, ...args: any[]) => {
-            if (allowedSet.has(name)) {
-                return (origTool as any)(name, ...args);
-            }
-        };
-    }
-
     // Register capabilities and citable fodda:// resource handlers
     server.server.registerCapabilities({
         resources: {
@@ -3819,6 +3809,20 @@ function addCoverageAnnotation(
             }
         }
     );
+
+    if (allowedTools && (Array.isArray(allowedTools) ? allowedTools.length > 0 : allowedTools.size > 0)) {
+        const allowedSet = allowedTools instanceof Set ? allowedTools : new Set(allowedTools);
+        const registered = (server as any)._registeredTools || {};
+        for (const [name, tool] of Object.entries(registered)) {
+            if (!allowedSet.has(name)) {
+                if (typeof (tool as any).disable === 'function') {
+                    (tool as any).disable();
+                } else {
+                    delete registered[name];
+                }
+            }
+        }
+    }
 
     return server;
 }
