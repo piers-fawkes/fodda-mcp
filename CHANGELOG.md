@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Offering-Scoped MCP Endpoints & Brand Intelligence Pilot** (`src/index.ts`, `src/toolHandlers.ts`, `fodda_mcp_brand_intelligence_server.json`):
+  - **Scoped Tool Filtering (`src/toolHandlers.ts`)**: Added `allowedTools` support to `createServer()` allowing endpoint-level tool subsetting. Unapproved tools are omitted from `tools/list` registrations.
+  - **`/brand-intelligence` Route & Source Attribution (`src/index.ts`)**: Stood up the `/brand-intelligence` endpoint exposing the 12-tool Brand Intelligence product subset (`brand_tracker`, `search_graph`, `read_url`, `get_supplemental_context`, `check_supplemental_status`, `get_evidence`, `get_node`, `get_neighbors`, `get_label_values`, `list_graphs`, `get_my_account`, `generate_visual`). Requests arriving at `/brand-intelligence` automatically set `source: 'brand-intelligence'` for connection telemetry.
+  - **Discovery Card (`src/index.ts`)**: Added `/.well-known/brand-intelligence` discovery card endpoint returning the `ai.fodda/brand-intelligence` MCP server metadata.
+  - **MCP Registry Record (`fodda_mcp_brand_intelligence_server.json`)**: Created canonical domain-verified registry definition for `ai.fodda/brand-intelligence` with remote URL `https://mcp.fodda.ai/brand-intelligence`.
 - **Pricing Infrastructure Handoff (§2, §5, §6, §7)** (`src/pricingCache.ts`, `src/toolHandlers.ts`, `src/index.ts`, `src/resources.ts`, `src/telemetry.ts`):
   - **§2 — 1-Call 1-Price (`query_costs` explicit mode args)**: Added explicit `mode` parameter enums to multi-price tools (`search_graph`: `research`|`compare`, `deep_research_topic`: `light`|`heavy`, `get_company_earnings`: `snapshot`|`history`|`qa`|`compare`|`guidance`|`coverage`). Updated `getQueryTypeForTool` and `getToolCostSummary` so tool + mode arguments map deterministically to a single cost.
   - **§5 — Discovery Surface & Card**: Implemented `/.well-known/mcp-server.json` and `/.well-known/mcp` metadata endpoints detailing server capabilities, structure (free) vs substance (metered) pricing tiers.

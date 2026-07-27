@@ -213,6 +213,7 @@ export async function createServer(
     entryId: string = '',
     // anonymous SPT session: token (settlement payer) + connect-time cap/prices (pre-run coverage)
     sptCtx?: { token: string; maxAmountCents: number | null; prices: Record<string, number> },
+    allowedTools?: Set<string> | string[],
 ): Promise<McpServer> {
     // ── SPT settlement helpers (inert for credit/API-key sessions: sptCtx is undefined) ──
     // Pre-run guard: refuse a task BEFORE spending compute if this payment token can't cover it.
@@ -345,6 +346,16 @@ export async function createServer(
     }, {
         instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId),
     });
+
+    if (allowedTools && (Array.isArray(allowedTools) ? allowedTools.length > 0 : allowedTools.size > 0)) {
+        const allowedSet = allowedTools instanceof Set ? allowedTools : new Set(allowedTools);
+        const origTool = server.tool.bind(server);
+        (server as any).tool = (name: string, ...args: any[]) => {
+            if (allowedSet.has(name)) {
+                return (origTool as any)(name, ...args);
+            }
+        };
+    }
 
     // Register capabilities and citable fodda:// resource handlers
     server.server.registerCapabilities({

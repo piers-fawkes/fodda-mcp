@@ -70,8 +70,55 @@ app.post('/register', (_req, res) => {
 // .well-known MCP Server Discovery Card & Pricing Metadata Tier
 // ---------------------------------------------------------------------------
 
-app.get(['/.well-known/mcp-server.json', '/.well-known/mcp'], (_req, res) => {
+export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
+    'brand-intelligence': [
+        'brand_tracker',
+        'search_graph',
+        'read_url',
+        'get_supplemental_context',
+        'check_supplemental_status',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'get_my_account',
+        'generate_visual',
+    ],
+};
+
+app.get(['/.well-known/mcp-server.json', '/.well-known/mcp', '/.well-known/brand-intelligence', '/.well-known/brand-intelligence.json'], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
+    if (req.path.includes('brand-intelligence')) {
+        return res.json({
+            $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
+            name: 'ai.fodda/brand-intelligence',
+            title: 'Fodda Brand Intelligence',
+            description: "Track brand health across PSFK's expert-curated trend graphs (20+ yrs of research). Returns a brand's trend footprint, competitive landscape, and named-analyst perspective with citable sources — not web summaries. Parallel graph search + Google Trends/Wikipedia/Amazon signals.",
+            websiteUrl: 'https://www.fodda.ai',
+            version: MCP_SERVER_VERSION,
+            capabilities: {
+                tools: { listChanged: false },
+                resources: { listChanged: false, subscribe: false },
+                prompts: { listChanged: false },
+            },
+            pricingTier: {
+                structure: 'free',
+                substance: 'metered',
+                tokenModel: 'Canonical token costs defined in API metering.ts ($0.50 via SPT / API credits)',
+            },
+            resourceSchemes: [
+                'fodda://expert/{slug}/insight/{id}',
+                'fodda://graph/{vertical}/trend/{slug}',
+            ],
+            endpoints: {
+                mcpStreamableHttp: `${getServiceUrl()}/brand-intelligence`,
+                mcpSse: `${getServiceUrl()}/sse`,
+                telemetry: `${getServiceUrl()}/telemetry`,
+                feedback: `${getServiceUrl()}/v1/feedback`,
+            },
+        });
+    }
     res.json({
         $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
         name: 'ai.fodda/mcp-server',
@@ -373,7 +420,7 @@ async function waverunnerRequest(
 // Browser Landing Page — catch humans who paste the MCP URL into a browser
 // ---------------------------------------------------------------------------
 
-app.get('/mcp', (req, res, next) => {
+app.get(['/mcp', '/brand-intelligence'], (req, res, next) => {
     // Only intercept browser requests (Accept: text/html).
     // MCP SDK clients send application/json or text/event-stream, so they
     // fall through to the app.all('/mcp') transport handler below.
@@ -660,10 +707,15 @@ async function resolveMcpToken(token: string, websiteBaseUrl: string): Promise<T
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all(['/mcp', '/c/:token'], async (req, res) => {
+app.all(['/mcp', '/brand-intelligence', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
+
+        // Determine offering slug and tool filtering from URL path
+        const rawPath = req.path || '';
+        const offeringSlug = (rawPath.replace(/^\//, '').split('/')[0] || '') as string;
+        const allowedTools = OFFERING_SCOPED_TOOLS[offeringSlug];
 
         // SPT (anonymous Shared Payment Token) detection — MUST precede api-key
         // extraction so an `spt_xxx` Bearer is never treated as an API key.
@@ -706,7 +758,8 @@ app.all(['/mcp', '/c/:token'], async (req, res) => {
             || (req.query.user_id as string)
             || (req.headers['x-user-id'] as string)
             || (isEmailId ? entryId : 'anonymous'));
-        const source = (req.query.source as string) || (isSpt ? 'spt' : '');
+        const defaultSource = (offeringSlug !== 'mcp' && allowedTools !== undefined) ? offeringSlug : (isSpt ? 'spt' : '');
+        const source = (req.query.source as string) || defaultSource;
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;
@@ -737,7 +790,7 @@ app.all(['/mcp', '/c/:token'], async (req, res) => {
                     : (source
                         ? (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest)
                         : foddaRequest);
-                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined);
+                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools);
                 transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: () => crypto.randomUUID(),
                     onsessioninitialized: (sid) => {
