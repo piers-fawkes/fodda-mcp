@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "ai.fodda/brand-intelligence",
   "title": "Fodda Brand Intelligence",
-  "description": "Track brand health across PSFK's expert-curated trend graphs (20+ yrs of research). Returns a brand's trend footprint, competitive landscape, and named-analyst perspective with citable sources — not web summaries. Parallel graph search + Google Trends/Wikipedia/Amazon signals.",
+  "description": "Brand health & trend footprint across PSFK expert graphs with citable sources, not web summaries.",
   "websiteUrl": "https://www.fodda.ai",
   "icons": [
     {
