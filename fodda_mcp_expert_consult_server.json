@@ -1,0 +1,34 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.fodda/expert-consult",
+  "title": "Fodda Synthetic Expert Consult",
+  "description": "Consult synthetic industry experts grounded in PSFK trend graphs with citable analyst perspectives.",
+  "websiteUrl": "https://www.fodda.ai",
+  "icons": [
+    {
+      "src": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
+      "sizes": [
+        "any"
+      ]
+    }
+  ],
+  "version": "1.33.0",
+  "repository": {
+    "url": "https://github.com/piers-fawkes/fodda-mcp",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.fodda.ai/expert-consult",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token with your Fodda API key (e.g. 'Bearer sk_live_...')",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}

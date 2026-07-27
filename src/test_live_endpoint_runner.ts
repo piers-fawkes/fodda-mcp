@@ -1,56 +1,61 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import axios from 'axios';
+import { OFFERING_SCOPED_TOOLS } from './index.js';
 
 async function testLiveEndpoint() {
     const BASE_URL = process.env.TEST_URL || 'https://mcp.fodda.ai';
-    console.log(`=== Verifying MCP Endpoint via Official SDK Client: ${BASE_URL}/brand-intelligence ===\n`);
+    console.log(`=== Verifying ALL 5 Marquee Offering Endpoints: ${BASE_URL} ===\n`);
 
-    // Step 1: Verify Discovery endpoint
-    console.log('1. Testing GET /.well-known/brand-intelligence...');
-    const discResp = await axios.get(`${BASE_URL}/.well-known/brand-intelligence`);
-    console.log('   Status:', discResp.status);
-    console.log('   Name:', discResp.data.name);
-    console.log('   Remote URL:', discResp.data.endpoints?.mcpStreamableHttp);
-    if (discResp.data.name !== 'ai.fodda/brand-intelligence') {
-        throw new Error('Unexpected discovery name');
+    const marqueeOfferings = [
+        'brand-intelligence',
+        'topic-research',
+        'deep-research',
+        'earnings-intelligence',
+        'expert-consult',
+    ];
+
+    for (const slug of marqueeOfferings) {
+        console.log(`--- Testing ${slug} ---`);
+        const expectedTools = OFFERING_SCOPED_TOOLS[slug]?.slice().sort() || [];
+        if (!expectedTools.length) throw new Error(`No tool definition for ${slug}`);
+
+        // 1. Discovery card
+        const discResp = await axios.get(`${BASE_URL}/.well-known/${slug}`);
+        if (discResp.status !== 200 || discResp.data.name !== `ai.fodda/${slug}`) {
+            throw new Error(`Invalid discovery card for ${slug}: ${discResp.data?.name}`);
+        }
+        console.log(`  ✅ GET /.well-known/${slug} -> ${discResp.data.name} (title: "${discResp.data.title}")`);
+
+        // 2. MCP Client connection
+        const transport = new StreamableHTTPClientTransport(
+            new URL(`${BASE_URL}/${slug}?api_key=sk_live_test_verifier`)
+        );
+        const client = new Client({ name: 'verifier-client', version: '1.0.0' });
+        await client.connect(transport as any);
+
+        // 3. List tools
+        const toolsResult = await client.listTools();
+        const toolsReturned = toolsResult.tools.map(t => t.name).sort();
+        console.log(`  ✅ client.listTools() on /${slug} returned ${toolsReturned.length} tools`);
+
+        const isMatch = toolsReturned.length === expectedTools.length &&
+            toolsReturned.every((t, i) => t === expectedTools[i]);
+
+        if (!isMatch) {
+            console.error(`❌ Mismatch for ${slug}!`);
+            console.error('  Expected:', expectedTools);
+            console.error('  Got:', toolsReturned);
+            await client.close();
+            throw new Error(`Tool subset mismatch on /${slug}`);
+        }
+
+        console.log(`  ✅ Tools match EXACTLY: [${toolsReturned.join(', ')}]\n`);
+        await client.close();
     }
-    console.log('   ✅ Discovery endpoint verified!\n');
 
-    // Step 2: Connect via SDK Client to /brand-intelligence
-    console.log('2. Connecting official MCP SDK Client to /brand-intelligence...');
-    const brandTransport = new StreamableHTTPClientTransport(
-        new URL(`${BASE_URL}/brand-intelligence?api_key=sk_live_test_verifier`)
-    );
-    const brandClient = new Client({ name: 'verifier-client', version: '1.0.0' });
-    await brandClient.connect(brandTransport as any);
-    console.log('   ✅ SDK Client connected!\n');
-
-    // Step 3: List tools on /brand-intelligence
-    console.log('3. Requesting client.listTools() on /brand-intelligence...');
-    const brandToolsResult = await brandClient.listTools();
-    const brandTools = brandToolsResult.tools.map(t => t.name).sort();
-    console.log(`   Tools returned (${brandTools.length}):`, brandTools.join(', '));
-
-    const expectedTools = [
-        'brand_tracker', 'check_supplemental_status', 'generate_visual',
-        'get_evidence', 'get_label_values', 'get_my_account', 'get_neighbors',
-        'get_node', 'get_supplemental_context', 'list_graphs', 'read_url', 'search_graph'
-    ].sort();
-
-    const isMatch = brandTools.length === expectedTools.length && brandTools.every((t, i) => t === expectedTools[i]);
-
-    if (!isMatch) {
-        console.error('❌ Mismatch!');
-        console.error('Expected:', expectedTools);
-        console.error('Got:', brandTools);
-        await brandClient.close();
-        throw new Error('Scoped tool list mismatch');
-    }
-    console.log('   ✅ Scoped tools match EXACTLY the 12-tool Brand Intelligence product set!\n');
-
-    // Step 4: Compare against main gateway /mcp session
-    console.log('4. Connecting official MCP SDK Client to main gateway /mcp...');
+    // Compare with main gateway
+    console.log('--- Testing Main Gateway /mcp ---');
     const mainTransport = new StreamableHTTPClientTransport(
         new URL(`${BASE_URL}/mcp?api_key=sk_live_test_verifier`)
     );
@@ -59,18 +64,15 @@ async function testLiveEndpoint() {
 
     const mainToolsResult = await mainClient.listTools();
     const mainToolsCount = mainToolsResult.tools.length;
-    console.log(`   Main gateway tool count: ${mainToolsCount}`);
+    console.log(`  ✅ Main gateway /mcp returned ${mainToolsCount} tools`);
 
     if (mainToolsCount < 30) {
-        await brandClient.close();
         await mainClient.close();
         throw new Error('Main gateway should return full toolset (30+ tools)');
     }
-    console.log('   ✅ Main gateway verified with full toolset vs 12-tool scoped endpoint!\n');
 
-    await brandClient.close();
     await mainClient.close();
-    console.log('🎉 LIVE MCP SDK CLIENT VERIFICATION SUCCESSFUL!');
+    console.log('\n🎉 ALL 5 MARQUEE OFFERING ENDPOINTS VERIFIED SUCCESSFULLY!');
 }
 
 testLiveEndpoint().catch(err => {

@@ -85,16 +85,110 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'get_my_account',
         'generate_visual',
     ],
+    'topic-research': [
+        'search_graph',
+        'search_statistics',
+        'search_insights',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'get_my_account',
+        'generate_visual',
+        'read_url',
+        'get_supplemental_context',
+        'check_supplemental_status',
+    ],
+    'deep-research': [
+        'deep_research_topic',
+        'check_research_status',
+        'search_graph',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'get_my_account',
+        'generate_visual',
+        'read_url',
+        'get_supplemental_context',
+        'check_supplemental_status',
+    ],
+    'earnings-intelligence': [
+        'get_earnings_intelligence',
+        'get_earnings_divergence',
+        'get_company_earnings',
+        'search_graph',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'get_my_account',
+        'generate_visual',
+    ],
+    'expert-consult': [
+        'consult_analyst',
+        'list_analysts',
+        'request_deliverable',
+        'check_deliverable_status',
+        'search_graph',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'get_my_account',
+        'generate_visual',
+    ],
 };
 
-app.get(['/.well-known/mcp-server.json', '/.well-known/mcp', '/.well-known/brand-intelligence', '/.well-known/brand-intelligence.json'], (req, res) => {
+const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; description: string }> = {
+    'brand-intelligence': {
+        name: 'ai.fodda/brand-intelligence',
+        title: 'Fodda Brand Intelligence',
+        description: 'Brand health & trend footprint across PSFK expert graphs with citable sources, not web summaries.',
+    },
+    'topic-research': {
+        name: 'ai.fodda/topic-research',
+        title: 'Fodda Topic & Trend Research',
+        description: 'Trend, statistics & insight search across PSFK expert graphs with citable sources, not web summaries.',
+    },
+    'deep-research': {
+        name: 'ai.fodda/deep-research',
+        title: 'Fodda Deep Research',
+        description: 'Autonomous deep research reports merging PSFK knowledge graphs & web validation with citable sources.',
+    },
+    'earnings-intelligence': {
+        name: 'ai.fodda/earnings-intelligence',
+        title: 'Fodda Earnings Intelligence',
+        description: 'Cross-company earnings trends, executive divergence & ticker analysis with citable sources.',
+    },
+    'expert-consult': {
+        name: 'ai.fodda/expert-consult',
+        title: 'Fodda Synthetic Expert Consult',
+        description: 'Consult synthetic industry experts grounded in PSFK trend graphs with citable analyst perspectives.',
+    },
+};
+
+app.get([
+    '/.well-known/mcp-server.json', '/.well-known/mcp',
+    '/.well-known/brand-intelligence', '/.well-known/brand-intelligence.json',
+    '/.well-known/topic-research', '/.well-known/topic-research.json',
+    '/.well-known/deep-research', '/.well-known/deep-research.json',
+    '/.well-known/earnings-intelligence', '/.well-known/earnings-intelligence.json',
+    '/.well-known/expert-consult', '/.well-known/expert-consult.json',
+], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    if (req.path.includes('brand-intelligence')) {
+    const matchedOffering = Object.keys(OFFERING_CARD_METADATA).find(slug => req.path.includes(slug));
+    if (matchedOffering && OFFERING_CARD_METADATA[matchedOffering]) {
+        const meta = OFFERING_CARD_METADATA[matchedOffering]!;
         return res.json({
             $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
-            name: 'ai.fodda/brand-intelligence',
-            title: 'Fodda Brand Intelligence',
-            description: "Track brand health across PSFK's expert-curated trend graphs (20+ yrs of research). Returns a brand's trend footprint, competitive landscape, and named-analyst perspective with citable sources — not web summaries. Parallel graph search + Google Trends/Wikipedia/Amazon signals.",
+            name: meta.name,
+            title: meta.title,
+            description: meta.description,
             websiteUrl: 'https://www.fodda.ai',
             version: MCP_SERVER_VERSION,
             capabilities: {
@@ -112,7 +206,7 @@ app.get(['/.well-known/mcp-server.json', '/.well-known/mcp', '/.well-known/brand
                 'fodda://graph/{vertical}/trend/{slug}',
             ],
             endpoints: {
-                mcpStreamableHttp: `${getServiceUrl()}/brand-intelligence`,
+                mcpStreamableHttp: `${getServiceUrl()}/${matchedOffering}`,
                 mcpSse: `${getServiceUrl()}/sse`,
                 telemetry: `${getServiceUrl()}/telemetry`,
                 feedback: `${getServiceUrl()}/v1/feedback`,
@@ -420,7 +514,7 @@ async function waverunnerRequest(
 // Browser Landing Page — catch humans who paste the MCP URL into a browser
 // ---------------------------------------------------------------------------
 
-app.get(['/mcp', '/brand-intelligence'], (req, res, next) => {
+app.get(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult'], (req, res, next) => {
     // Only intercept browser requests (Accept: text/html).
     // MCP SDK clients send application/json or text/event-stream, so they
     // fall through to the app.all('/mcp') transport handler below.
@@ -707,7 +801,7 @@ async function resolveMcpToken(token: string, websiteBaseUrl: string): Promise<T
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all(['/mcp', '/brand-intelligence', '/c/:token'], async (req, res) => {
+app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
