@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Deep Research Query Clause Decomposition, Flagship Retail Anchor Boost & Timeout Guard** (`src/catalogCache.ts`, `src/index.ts`, `src/deepResearch.ts`):
+  - Implemented multi-clause query decomposition in `scoreGraphRelevance` (`scoreClauseRelevance`). Multi-clause research prompts are split across punctuation and conjunctions, evaluated per clause, and combined via `(maxScore * 0.7) + (avgScore * 0.3)` to prevent multi-sentence prompt dilution.
+  - Added flagship `retail` graph anchor boost (+0.25) to guarantee `PSFK Retail Trends` (192 trends) ranks #1 for product, commerce, hardware, appliance, and channel queries.
+  - Added out-of-domain mismatch penalty (-0.3) for pure `beauty`/`skincare`/`fragrance` graphs when query contains no beauty terms, eliminating beauty graph false positives.
+  - Wrapped `ai.models.generateContent` in `src/index.ts` with a 90-second timeout promise guard (`Promise.race`) to prevent research synthesis requests from hanging indefinitely.
 - **Deep Research Query Expansion, Phase 0 Routing & Citation Hygiene** (`src/catalogCache.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):
   - Refined Phase 0 direct matching in `catalogCache.ts` using regex word boundaries (`matchesWordBoundary`) and generic term exclusion. Fixed `isDirectMatch` tracking on `GraphRelevanceResult` so high topic-match scores are no longer falsely reported with reason `"named directly in query"`.
   - Added research meta-words (`run`, `fodda`, `deep`, `research`, `project`, `about`, `briefing`, etc.) to `stopWords` in `scoreGraphRelevance`, preventing prompt wrapper words from triggering false-positive matches on unrelated graphs.

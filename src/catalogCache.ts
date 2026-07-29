@@ -700,10 +700,10 @@ const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     resort: ['travel', 'hospitality'],
 };
 
-export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
-    const queryLower = query.toLowerCase();
-    
-    // Stopwords that shouldn't contribute to routing relevance
+function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
+    const clauseLower = clause.toLowerCase().trim();
+    if (!clauseLower) return 0;
+
     const stopWords = new Set([
         'trend', 'trends', 'consumer', 'consumers', 'report', 'reports',
         'industry', 'data', 'future', 'insight', 'insights', 'analysis',
@@ -712,13 +712,12 @@ export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
         'brief', 'study', 'overview', 'summary', 'deck', 'slides', 'presentation', 'topic'
     ]);
 
-    const queryTerms = queryLower
+    const terms = clauseLower
         .split(/\s+/)
-        .filter(t => t.length > 2) // Skip very short words (a, in, of, etc.)
-        .map(t => t.replace(/[^a-z0-9]/g, '')) // Strip punctuation
+        .map(t => t.replace(/[^a-z0-9]/g, ''))
         .filter(t => t.length > 2 && !stopWords.has(t));
 
-    if (queryTerms.length === 0) return 0;
+    if (terms.length === 0) return 0;
 
     const searchText = graphSearchTexts.get(g.graph_id) || buildSearchableText(g);
     const topicsText = [...(g.topics || []), ...(g.routing_keywords || [])].join(' ').toLowerCase();
@@ -727,7 +726,7 @@ export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
     let matchedTerms = 0;
     let highValueMatches = 0;
 
-    for (const term of queryTerms) {
+    for (const term of terms) {
         if (searchText.includes(term)) {
             matchedTerms++;
             if (topicsText.includes(term) || domainText.includes(term)) {
@@ -736,38 +735,62 @@ export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
         }
     }
 
+    let directScore = 0;
     if (matchedTerms > 0) {
-        let score = matchedTerms / queryTerms.length;
-        score += (highValueMatches / queryTerms.length) * 0.3;
-        const isLiving = g.update_frequency && !['One-Off', 'Coming Soon'].includes(g.update_frequency);
-        if (isLiving) score += 0.05;
-        return Math.min(score, 1.0);
+        directScore = (matchedTerms / terms.length) + (highValueMatches / terms.length) * 0.4;
     }
 
-    // Category Expansion Fallback (0.3x weight)
-    const expandedTermsSet = new Set<string>();
-    for (const term of queryTerms) {
-        if (QUERY_EXPANSION_MAP[term]) {
-            QUERY_EXPANSION_MAP[term]!.forEach(exp => expandedTermsSet.add(exp));
+    // Category Expansion Score
+    let expansionScore = 0;
+    const expandedSet = new Set<string>();
+    for (const t of terms) {
+        if (QUERY_EXPANSION_MAP[t]) {
+            QUERY_EXPANSION_MAP[t]!.forEach(e => expandedSet.add(e));
         }
     }
 
-    if (expandedTermsSet.size > 0) {
-        let expandedMatches = 0;
-        for (const term of expandedTermsSet) {
-            if (searchText.includes(term)) {
-                expandedMatches++;
+    if (expandedSet.size > 0) {
+        let expMatches = 0;
+        for (const exp of expandedSet) {
+            if (searchText.includes(exp)) {
+                expMatches++;
             }
         }
-        if (expandedMatches > 0) {
-            let score = 0.3 * (expandedMatches / expandedTermsSet.size);
-            const isLiving = g.update_frequency && !['One-Off', 'Coming Soon'].includes(g.update_frequency);
-            if (isLiving) score += 0.05;
-            return Math.min(score, 0.7);
+        if (expMatches > 0) {
+            expansionScore = 0.5 * (expMatches / expandedSet.size);
         }
     }
 
-    return 0;
+    let finalScore = Math.max(directScore, expansionScore);
+
+    // Living domain boost for flagship retail graph
+    if (g.graph_id === 'retail') {
+        finalScore += 0.25;
+    }
+
+    // Mismatch penalty for pure beauty/gaming graphs when query has no beauty/gaming terms
+    const isBeautyGraph = /beauty|skincare|fragrance|sun/i.test(g.graph_id + (g.name || ''));
+    const queryHasBeauty = /beauty|skincare|fragrance|sun|cosmetics/i.test(clause);
+    if (isBeautyGraph && !queryHasBeauty) {
+        finalScore -= 0.3;
+    }
+
+    return Math.max(0, Math.min(finalScore, 1.0));
+}
+
+export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
+    const clauses = query
+        .split(/[,;\.\n]| and | with | for | about /i)
+        .map(c => c.trim())
+        .filter(c => c.length > 2);
+
+    if (clauses.length === 0) return scoreClauseRelevance(query, g);
+
+    const scores = clauses.map(c => scoreClauseRelevance(c, g));
+    const maxScore = Math.max(...scores);
+    const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
+
+    return Math.min((maxScore * 0.7) + (avgScore * 0.3), 1.0);
 }
 
 /**

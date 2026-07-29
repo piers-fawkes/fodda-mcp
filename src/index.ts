@@ -535,7 +535,7 @@ async function waverunnerRequest(
         }
     }
 
-    const response = await ai.models.generateContent({
+    const generatePromise = ai.models.generateContent({
         model,
         contents: [
             {
@@ -545,6 +545,12 @@ async function waverunnerRequest(
         ],
         config
     });
+
+    const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini model generation timed out after 90 seconds.')), 90000)
+    );
+
+    const response: any = await Promise.race([generatePromise, timeoutPromise]);
 
     const reportText = response.text || '';
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
