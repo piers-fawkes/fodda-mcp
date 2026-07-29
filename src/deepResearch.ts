@@ -81,7 +81,13 @@ export function cleanResearchQuery(q: string): string {
 }
 
 export function fallbackSubThemes(topic: string, isHeavy: boolean): string[] {
-    const cleanTopic = extractRoutingTopic(topic).slice(0, 45).trim();
+    let cleanTopic = extractRoutingTopic(topic).trim();
+    if (cleanTopic.length > 40) {
+        const lastSpace = cleanTopic.lastIndexOf(' ', 40);
+        cleanTopic = lastSpace > 0 ? cleanTopic.slice(0, lastSpace) : cleanTopic.slice(0, 40);
+    }
+    cleanTopic = cleanTopic.replace(/[\s,.:;]+$/, '').trim();
+
     const themes = [
         `category sizing and growth forecasts for ${cleanTopic}`,
         `key players, brands and challengers in ${cleanTopic}`,
@@ -115,11 +121,16 @@ async function generateSubThemes(
             'Sub-theme expansion'
         );
         const text = result?.outputs?.[0]?.text || '';
-        const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
-        const parsed = JSON.parse(cleanedText);
-        if (Array.isArray(parsed) && parsed.length >= 3) {
-            console.error(`[deep_research] LLM sub-theme expansion succeeded:`, parsed);
-            return parsed.slice(0, count).map((s: any) => String(s).trim());
+        const match = text.match(/\[[\s\S]*\]/);
+        if (match) {
+            const parsed = JSON.parse(match[0]);
+            if (Array.isArray(parsed) && parsed.length >= 3) {
+                const cleaned = parsed.slice(0, count).map((s: any) => String(s).trim()).filter(Boolean);
+                if (cleaned.length >= 3) {
+                    console.error(`[deep_research] LLM sub-theme expansion succeeded (${cleaned.length} themes):`, cleaned);
+                    return cleaned;
+                }
+            }
         }
     } catch (err: any) {
         console.error(`[deep_research] Sub-theme LLM generation failed:`, err?.stack || err?.message || err);

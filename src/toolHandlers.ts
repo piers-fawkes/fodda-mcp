@@ -3578,6 +3578,17 @@ function addCoverageAnnotation(
                 const jobId = crypto.randomUUID();
                 activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null });
 
+                const jobTimeoutTimer = setTimeout(() => {
+                    const current = activeResearchJobs.get(jobId);
+                    if (current && current.status === 'RUNNING') {
+                        console.error(`[deep_research_topic] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
+                        activeResearchJobs.set(jobId, {
+                            status: 'FAILED',
+                            error: 'Research job exceeded the 240-second maximum execution timeout.'
+                        });
+                    }
+                }, 240000);
+
                 // Run the extracted pipeline in the background to avoid Claude Web timeout
                 (async () => {
                     try {
@@ -3595,6 +3606,8 @@ function addCoverageAnnotation(
                             },
                         });
 
+                        clearTimeout(jobTimeoutTimer);
+
                         // ── Settlement gates delivery for SPT: only mark COMPLETE once the charge succeeds. ──
                         if (sptCtx) {
                             const r = await chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest, spt: sptCtx.token });
@@ -3609,6 +3622,7 @@ function addCoverageAnnotation(
 
                         activeResearchJobs.set(jobId, { status: 'COMPLETE', result });
                     } catch (err: any) {
+                        clearTimeout(jobTimeoutTimer);
                         const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                         activeResearchJobs.set(jobId, { status: 'FAILED', error: msg });
                     }
@@ -3649,7 +3663,7 @@ function addCoverageAnnotation(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.33.8\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
+                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.33.9\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
                     }]
                 };
             } catch (err: any) {

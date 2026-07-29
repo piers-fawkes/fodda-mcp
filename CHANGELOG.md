@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.33.9] - 2026-07-29
+
+### Fixed
+- **Word-Boundary Truncation Fix, Hard 240s Job Timeout Guard & LLM Sub-Theme Expander Prompting** (`src/deepResearch.ts`, `src/toolHandlers.ts`):
+  - Fixed sub-theme truncation bug in `fallbackSubThemes()`: clean topics now snap back to the last complete word boundary (`lastIndexOf(' ', 40)`), eliminating broken search tokens like `"wine glasswa"`.
+  - Added a guaranteed hard 240s background timer guard (`jobTimeoutTimer`) on `activeResearchJobs` in `toolHandlers.ts` that automatically transitions stalled jobs to `FAILED` status, eliminating background hangs.
+  - Enhanced `generateSubThemes()` with robust JSON regex parsing (`match(/\[[\s\S]*\]/)`) and explicit error stack logging.
+  - Bumped `server_version` to `1.33.9`.
+
 ## [1.33.8] - 2026-07-29
 
 ### Fixed
