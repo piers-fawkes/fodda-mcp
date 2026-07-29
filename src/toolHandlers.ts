@@ -38,6 +38,55 @@ import { runDeepResearch } from './deepResearch.js';
 // ---------------------------------------------------------------------------
 const RENDER_SPEC_VERSION = '1.0';
 
+export function resolveAnalystAlias(analystIdInput: string, companyInput?: string): { analyst_id: string; company?: string | undefined } {
+    if (!analystIdInput) return { analyst_id: analystIdInput, company: companyInput };
+
+    const rawId = analystIdInput.trim();
+    const existingCompany = companyInput?.trim();
+
+    const formatCompany = (str: string): string => {
+        const s = str.trim();
+        if (!s) return s;
+        if (s === s.toLowerCase()) {
+            return s.replace(/\b\w/g, char => char.toUpperCase());
+        }
+        return s;
+    };
+
+    const roleRules: Array<{ roleId: string; pattern: RegExp }> = [
+        { roleId: 'brand-cmo', pattern: /\b(brand[-_ ]?cmo|synthetic[-_ ]?cmo|chief[-_ ]marketing[-_ ]officer|vp[-_ ]of[-_ ]marketing|head[-_ ]of[-_ ]marketing|cmo)\b/i },
+        { roleId: 'brand-ceo', pattern: /\b(brand[-_ ]?ceo|synthetic[-_ ]?ceo|chief[-_ ]executive[-_ ]officer|ceo)\b/i },
+        { roleId: 'brand-cfo', pattern: /\b(brand[-_ ]?cfo|synthetic[-_ ]?cfo|chief[-_ ]financial[-_ ]officer|cfo)\b/i },
+        { roleId: 'brand-cro', pattern: /\b(brand[-_ ]?cro|synthetic[-_ ]?cro|chief[-_ ]revenue[-_ ]officer|cro)\b/i },
+        { roleId: 'brand-cto', pattern: /\b(brand[-_ ]?cto|synthetic[-_ ]?cto|chief[-_ ]technology[-_ ]officer|cto)\b/i },
+        { roleId: 'brand-coo', pattern: /\b(brand[-_ ]?coo|synthetic[-_ ]?coo|chief[-_ ]operating[-_ ]officer|coo)\b/i }
+    ];
+
+    for (const rule of roleRules) {
+        if (rule.pattern.test(rawId)) {
+            let extractedCompany = existingCompany;
+            if (!extractedCompany) {
+                const companyPart = rawId
+                    .replace(rule.pattern, '')
+                    .replace(/\b(ask|consult|talk|to|query|get|synthetic|expert|analyst|the|brand)\b/gi, '')
+                    .replace(/[-_]/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                if (companyPart) {
+                    extractedCompany = formatCompany(companyPart);
+                }
+            }
+            return {
+                analyst_id: rule.roleId,
+                company: extractedCompany ? extractedCompany : undefined
+            };
+        }
+    }
+
+    return { analyst_id: rawId, company: existingCompany ? existingCompany : undefined };
+}
+
 function buildRenderInstructions(opts: {
     hasWidget: boolean;
     hasPrompts: boolean;
@@ -576,16 +625,162 @@ export async function createServer(
         }
     );
 
+    // --- get_capabilities ---
+    server.tool(
+        'get_capabilities',
+        'Returns Fodda\'s main capabilities / features / offerings / products / services / tools and what they cost. Call this for any question about what Fodda can do or what\'s available.',
+        { userId: z.string().optional().describe('Optional user identifier.') },
+        { title: 'Get Fodda Capabilities & Pricing', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async () => {
+            const toolCosts = getToolCostSummary();
+            const getCostStr = (toolName: string, fallback: string) => {
+                const matches = toolCosts.filter(c => c.tool === toolName);
+                if (matches.length > 0) {
+                    const costs = matches.map(m => m.apiCalls);
+                    const min = Math.min(...costs);
+                    const max = Math.max(...costs);
+                    return min === max ? `${min} API calls` : `${min}–${max} API calls`;
+                }
+                return fallback;
+            };
+
+            return {
+                content: [{
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                        scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
+                        capabilities: [
+                            {
+                                id: 'brand_intelligence',
+                                name: 'Brand Intelligence',
+                                value: 'Brand health, trend footprint & competitive landscape for any brand.',
+                                tools: ['brand_tracker'],
+                                cost_units: getCostStr('brand_tracker', '20 API calls'),
+                                audience: 'Brand strategists, market researchers, competitive intelligence teams',
+                                example_prompts: [
+                                    'Run a brand intelligence footprint for Patagonia focusing on circular economy signals.',
+                                    'Audit Nike\'s competitive landscape across expert graphs.'
+                                ]
+                            },
+                            {
+                                id: 'deep_research',
+                                name: 'Deep Research',
+                                value: 'Autonomous multi-graph research briefing report with multi-source synthesis.',
+                                tools: ['deep_research_topic'],
+                                cost_units: getCostStr('deep_research_topic', '20–30 API calls'),
+                                audience: 'Strategists needing exhaustive, executive-ready briefing decks',
+                                example_prompts: [
+                                    'Write a comprehensive briefing on how Gen Z is reshaping luxury retail in APAC.'
+                                ]
+                            },
+                            {
+                                id: 'earnings_intelligence',
+                                name: 'Earnings Intelligence',
+                                value: 'Earnings-call analysis, divergence & per-ticker canonical records.',
+                                tools: ['get_company_earnings', 'get_earnings_intelligence', 'get_earnings_divergence', 'get_validated_trends'],
+                                cost_units: '0–15 API calls (coverage is free)',
+                                audience: 'Financial analysts, equity researchers, corporate strategy',
+                                example_prompts: [
+                                    'What are retail executives saying about inventory levels?',
+                                    'Show analyst-management divergence for hotel companies in Q1.'
+                                ]
+                            },
+                            {
+                                id: 'topic_research',
+                                name: 'Topic Research',
+                                value: 'Multi-graph topic search + evidence + stats across expert knowledge graphs.',
+                                tools: ['search_graph', 'search_statistics', 'search_insights'],
+                                cost_units: getCostStr('search_graph', '15 API calls'),
+                                audience: 'Researchers, planners, innovation teams',
+                                example_prompts: [
+                                    'Pressure-test our sustainability strategy against Fodda\'s packaging trends.',
+                                    'Search statistics for resale market growth rates.'
+                                ]
+                            },
+                            {
+                                id: 'expert_consult',
+                                name: 'Expert Consult & Deliverables',
+                                value: 'Direct chat with named synthetic experts & commissioned finished deliverables.',
+                                tools: ['consult_analyst', 'list_analysts', 'request_deliverable'],
+                                cost_units: '5–10 API calls',
+                                audience: 'Teams seeking specialized domain perspectives or marketing plans',
+                                example_prompts: [
+                                    'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
+                                    'List available synthetic experts and their domain focus.'
+                                ]
+                            }
+                        ],
+                        additional_services: [
+                            {
+                                name: 'Scheduled Intelligence Briefings',
+                                tool: 'manage_scheduled_reports',
+                                cost_units: getCostStr('manage_scheduled_reports', '20 API calls'),
+                                description: 'Track brand positioning or topic trends on a weekly automated schedule.'
+                            },
+                            {
+                                name: 'Executive Content Studio',
+                                tools: ['draft_linkedin_post', 'draft_linkedin_article'],
+                                cost_units: '10 API calls',
+                                description: 'Draft evidence-backed executive articles and posts from Fodda graph data.'
+                            }
+                        ]
+                    }, null, 2)
+                }]
+            };
+        }
+    );
+
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to "talk to" or "consult" an expert, or when you need specialist depth on culture, strategy, or innovation topics.',
+        'Lists available synthetic analyst personas (e.g. brand-cmo, brand-ceo, brand-cfo). To query a company-specific synthetic expert (e.g., "Nike CMO", "Apple CMO", "Adidas CEO"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: "Nike").',
         { userId: z.string().optional().describe('Optional user identifier.') },
         { title: 'List Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             try {
                 const data = await foddaRequest('GET', '/v1/analysts', apiKey, resolveUserId(userId, uid));
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                let analystsList: any[] = [];
+                if (Array.isArray(data)) {
+                    analystsList = data;
+                } else if (data && typeof data === 'object') {
+                    analystsList = data.analysts || data.rows || data.data || [];
+                }
+
+                const company_query_guide = "To consult a company-specific executive (e.g., 'Nike CMO', 'Target CFO'), call consult_analyst with analyst_id='brand-cmo' and company='Nike'.";
+
+                if (Array.isArray(analystsList) && analystsList.length > 0) {
+                    const seen = new Map<string, any>();
+                    for (const a of analystsList) {
+                        const key = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+                        if (!key) continue;
+                        const hasOfferings = Array.isArray(a.offerings) && a.offerings.length > 0;
+                        const enriched = {
+                            ...a,
+                            commissionable: hasOfferings,
+                            ...(!hasOfferings ? { note: 'Analyst profile available for consultation (consult_analyst); deliverables not yet commissionable.' } : {})
+                        };
+                        if (!seen.has(key)) {
+                            seen.set(key, enriched);
+                        } else {
+                            const existing = seen.get(key);
+                            if (!existing.commissionable && hasOfferings) {
+                                seen.set(key, enriched);
+                            }
+                        }
+                    }
+                    const deduplicated = Array.from(seen.values());
+                    const result = {
+                        company_query_guide,
+                        analysts: deduplicated,
+                        ...(typeof data === 'object' && !Array.isArray(data) ? data : {})
+                    };
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                }
+
+                const fallbackResult = (typeof data === 'object' && !Array.isArray(data))
+                    ? { company_query_guide, ...data }
+                    : { company_query_guide, analysts: data };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(fallbackResult, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -628,6 +823,26 @@ function addCoverageAnnotation(
     let normalizedData = data;
     if (Array.isArray(data)) {
         normalizedData = { rows: data, dataStatus: 'ok' };
+    }
+
+    const layerMap: Record<string, string> = {
+        'industry report': 'report'
+    };
+    const uniqueTypes = new Set(searchedGraphs.map(g => layerMap[g.graph_type] || g.graph_type).filter(Boolean));
+    const layersSearched = Array.from(uniqueTypes);
+
+    // ── Check for explicit backend errors (e.g. NEO4J_AUTH_MISSING, auth failures, 5xx) ──
+    const errDetail = normalizedData.error || normalizedData.error_code || normalizedData.code;
+    const isErrStatus = normalizedData.dataStatus === 'error' || normalizedData.status === 'error';
+    if (errDetail || isErrStatus) {
+        normalizedData.coverage = {
+            status: 'error',
+            error: (typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail)) || 'Backend service error',
+            results_returned: 0,
+            layers_searched: layersSearched,
+        };
+        console.error(`[coverage] status: error (${normalizedData.coverage.error}), query: "${query}"`);
+        return normalizedData;
     }
 
     // Explicitly target rows/results/trends/matches fields, mirroring normalizeTrends
@@ -689,11 +904,7 @@ function addCoverageAnnotation(
         }
     }
 
-    const layerMap: Record<string, string> = {
-        'industry report': 'report'
-    };
-    const uniqueTypes = new Set(searchedGraphs.map(g => layerMap[g.graph_type] || g.graph_type).filter(Boolean));
-    const layersSearched = Array.from(uniqueTypes);
+
 
     const isDemand = isDemandShaped(query);
     let suggestedAction: any = undefined;
@@ -1110,6 +1321,9 @@ function addCoverageAnnotation(
                 }
 
                 data = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                if (data?.coverage?.status === 'error' || data?.error) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                }
 
                 // ── Low-credit warning for all users — utilizes dynamic Stripe links from API ──
                 appendUsageWarning(data, resolveUserId(userId));
@@ -2147,6 +2361,9 @@ function addCoverageAnnotation(
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'domain');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+                }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2187,6 +2404,9 @@ function addCoverageAnnotation(
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+                }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2227,6 +2447,9 @@ function addCoverageAnnotation(
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'industry report');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+                }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2271,6 +2494,9 @@ function addCoverageAnnotation(
 
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
+                if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+                }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2311,6 +2537,9 @@ function addCoverageAnnotation(
 
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
+                if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+                }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2608,6 +2837,45 @@ function addCoverageAnnotation(
 
                 // ── Settlement ──
                 const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: ticker || tickers || sector || view }, 'get_company_earnings');
+                if (withheld) return withheld;
+
+                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'supplemental');
+            }
+        }
+    );
+
+    // --- get_validated_trends ---
+    server.tool(
+        'get_validated_trends',
+        'Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda\'s analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals.',
+        {
+            ticker: z.string().optional().describe("Filter by company ticker symbol (e.g. 'NKE', 'LULU')."),
+            sector: z.string().optional().describe("Filter by sector (e.g. 'retail', 'sportswear', 'beauty')."),
+            search: z.string().optional().describe("Free text search in validated trends (e.g. 'resale', 'inventory', 'pricing')."),
+            limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
+            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+        },
+        { title: 'Get Validated Consumer Trends from Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ ticker, sector, search, limit, userId: uid }) => {
+            try {
+                logUserQuery(search || ticker || sector || 'validated trends', 'get_validated_trends');
+                const params = new URLSearchParams();
+                if (ticker) params.set('ticker', ticker);
+                if (sector) params.set('sector', sector);
+                if (search) params.set('search', search);
+                if (limit !== undefined) params.set('limit', String(Math.min(limit, 50)));
+
+                const qs = params.toString();
+                const guard = sptGuard('earnings_intelligence');
+                if (guard) return guard;
+
+                const data = await foddaRequest('GET', `/v1/earnings/validated-trends${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
+
+                const withheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || ticker || sector || 'validated_trends' }, 'get_validated_trends');
                 if (withheld) return withheld;
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
@@ -3423,24 +3691,27 @@ function addCoverageAnnotation(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
+        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
         {
-            analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic')"),
+            analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic', 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
-            company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Tesla' or 'TSLA') to bind the analyst to a specific brand context."),
+            company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, userId: uid }) => {
             try {
+                // Resolve potential alias IDs (e.g., "Nike CMO" -> analyst_id: "brand-cmo", company: "Nike")
+                const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'consult_analyst');
 
                 const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), {
-                    analyst_id,
+                    analyst_id: resolvedAnalystId,
                     query,
-                    company,
+                    company: resolvedCompany,
                     session_id
                 });
                 
@@ -3622,7 +3893,7 @@ function addCoverageAnnotation(
             }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { action: 'basic_info', name, role, knowledgeArea });
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nIMPORTANT: analystId is an internal reference — do not display it to the expert. Next step: Run run_deep_research tool." }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + "\n\nIMPORTANT: analystId is an internal reference — do not display it to the expert. Next step: Run expert_onboarding_research tool." }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
@@ -3630,7 +3901,7 @@ function addCoverageAnnotation(
     );
 
     server.tool(
-        'run_deep_research',
+        'expert_onboarding_research',
         'Kick off asynchronous background research on your public work for the expert onboarding. The identity is derived from your connector session.',
         {
             userId: z.string().optional().describe('Optional user identifier.')

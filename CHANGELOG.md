@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Backend Error Visibility & Non-Silent Failures** (`src/toolHandlers.ts`):
+  - Updated `addCoverageAnnotation` to explicitly check for backend error signals (`normalizedData.error`, `error_code`, `code`, `status === 'error'`, `dataStatus === 'error'`). Sets `coverage.status = 'error'` instead of falling through to `coverage.status = 'empty'`.
+  - Updated search tool handlers (`search_graph`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `search_statistics`, `search_insights`) to check for `coverage.status === 'error'` or `error` and return `{ isError: true, ... }`. This prevents backend authentication failures (such as `NEO4J_AUTH_MISSING` or API 401/5xx) from being misreported as "zero results across graphs due to low domain coverage."
+
+### Added
+- **Company-Specific Executive Routing ("Nike CMO")** (`src/toolHandlers.ts`, `tools-manifest.json`):
+  - Updated `list_analysts` description and return payload to include a top-level `company_query_guide` explaining how company-specific queries (e.g., 'Nike CMO', 'Apple CEO', 'Target CFO') map to role-based analyst IDs (`brand-cmo`, `brand-ceo`, `brand-cfo`) with a `company` parameter.
+  - Implemented `resolveAnalystAlias` in `consult_analyst` to automatically parse and resolve alias strings (e.g., `"Nike CMO"`, `"nike-cmo"`, `"Nike Synthetic CMO"`, `"Apple CEO"`) into the target role ID (`brand-cmo`) and extracted `company` parameter (`"Nike"`).
+
+### Added
+- **Fodda MCP Discoverability & Orientation Refactor** (`src/systemPrompt.ts`, `src/catalogCache.ts`, `src/tools.ts`, `src/index.ts`, `src/toolHandlers.ts`):
+  - **Front-Loaded Capabilities Instructions**: Replaced buried text in `buildSystemPrompt()` with a ~600 character marquee capabilities block at the very start of `instructions`. Includes explicit scope rules establishing platform capabilities as the default interpretation for unqualified "offerings", "features", and "what can you do" queries.
+  - **Graph Naming Table Eviction**: Evicted the 193-line `graphId` lookup table from `instructions` (~90% payload reduction), replacing it with concise attribution guidance pointing models to `list_graphs`.
+  - **Broadly-Named Orientation Tool (`get_capabilities`)**: Added `get_capabilities` tool across all endpoints (`/brand-intelligence`, `/topic-research`, `/deep-research`, `/earnings-intelligence`, `/expert-consult`), carrying a phrasing-agnostic synonym list in its description. Sourced pricing dynamically from `getToolCostSummary()` / `getQueryPricing()` at runtime.
+  - **Market-Validated Consumer Trends Tool (`get_validated_trends`)**: Added `get_validated_trends` tool connected to `/v1/earnings/validated-trends` (with snapshot fallback) and surfaced on `/earnings-intelligence` and `/topic-research` endpoints.
+  - **Renamed Onboarding Tool**: Renamed `run_deep_research` to `expert_onboarding_research` to avoid naming collision with `deep_research_topic`.
+  - **Safe Analyst Deduplication**: Refactored `list_analysts` to deduplicate duplicate analyst records by ID/slug without dropping analysts with empty offerings, surfacing non-commissionable experts with `commissionable: false`.
+
 ### Added
 - **Unmask `topics` and `verticals` in `list_graphs`** (`src/toolHandlers.ts`):
   - Added `'topics'` and `'verticals'` to `GRAPH_LIST_ALLOWLIST` so curated graph objects in `graphs[]` surface their topic tags and vertical classifications alongside `supplemental_sources[]`.
