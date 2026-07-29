@@ -1007,7 +1007,8 @@ export function getRelevantSources(
     query: string,
     opts?: { minGraphs?: number; maxGraphs?: number; threshold?: number },
 ): SourceCandidate[] {
-    const graphResults = getRelevantGraphs(query, opts?.minGraphs, opts?.maxGraphs, opts?.threshold);
+    const minGraphs = opts?.minGraphs ?? 2;
+    const graphResults = getRelevantGraphs(query, minGraphs, opts?.maxGraphs, opts?.threshold);
     const candidates: SourceCandidate[] = graphResults.map(r => ({
         kind: 'graph' as const,
         graphId: r.graph.graph_id,

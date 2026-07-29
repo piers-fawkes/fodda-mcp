@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Deep Research Gemini API Migration & Source Plan Fallback** (`src/index.ts`, `src/catalogCache.ts`):
+  - Migrated `waverunnerRequest` from deprecated `ai.interactions.create()` to the supported `@google/genai` `ai.models.generateContent()` API, resolving the 400 legacy schema error (`interactions-breaking-changes-may-2026`).
+  - Updated `getRelevantSources` in `catalogCache.ts` to default `minGraphs = 2` when not specified, ensuring `source_plan` and knowledge graph candidates are always populated for broad research queries.
 - **Backend Error Visibility & Non-Silent Failures** (`src/toolHandlers.ts`):
   - Updated `addCoverageAnnotation` to explicitly check for backend error signals (`normalizedData.error`, `error_code`, `code`, `status === 'error'`, `dataStatus === 'error'`). Sets `coverage.status = 'error'` instead of falling through to `coverage.status = 'empty'`.
   - Updated search tool handlers (`search_graph`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `search_statistics`, `search_insights`) to check for `coverage.status === 'error'` or `error` and return `{ isError: true, ... }`. This prevents backend authentication failures (such as `NEO4J_AUTH_MISSING` or API 401/5xx) from being misreported as "zero results across graphs due to low domain coverage."

@@ -499,14 +499,55 @@ async function waverunnerRequest(
     // ── Pre-check credits ──
     // (sk_trial_ pre-check removed — new trial accounts are metered server-side by the API)
 
-    // ── Call Waverunner via Gemini SDK ──
-    const geminiKey = process.env.GEMINI_API_KEY;
+    // ── Call Waverunner via Gemini SDK (generateContent) ──
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
     if (!geminiKey) {
         throw new Error('GEMINI_API_KEY environment variable is required for Waverunner calls.');
     }
     const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey: geminiKey });
-    const result = await ai.interactions.create(waverunnerPayload);
+
+    const model = waverunnerPayload.model || 'gemini-2.5-flash';
+    const systemInstruction = waverunnerPayload.system_instruction;
+    const inputParts = Array.isArray(waverunnerPayload.input)
+        ? waverunnerPayload.input.map((i: any) => i.text || '').filter(Boolean).join('\n\n')
+        : (typeof waverunnerPayload.input === 'string' ? waverunnerPayload.input : (waverunnerPayload.prompt || ''));
+
+    const config: Record<string, any> = {};
+    if (systemInstruction) {
+        config.systemInstruction = systemInstruction;
+    }
+    if (Array.isArray(waverunnerPayload.tools) && waverunnerPayload.tools.length > 0) {
+        const toolsMapped: any[] = [];
+        let googleSearchAdded = false;
+        for (const t of waverunnerPayload.tools) {
+            if (t.type === 'google_search' || t.type === 'url_context') {
+                if (!googleSearchAdded) {
+                    toolsMapped.push({ googleSearch: {} });
+                    googleSearchAdded = true;
+                }
+            } else {
+                toolsMapped.push(t);
+            }
+        }
+        if (toolsMapped.length > 0) {
+            config.tools = toolsMapped;
+        }
+    }
+
+    const response = await ai.models.generateContent({
+        model,
+        contents: [
+            {
+                role: 'user',
+                parts: [{ text: inputParts }]
+            }
+        ],
+        config
+    });
+
+    const reportText = response.text || '';
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
     // ── Post-decrement (paid accounts) ──
     foddaRequest('POST', '/v1/research/meter', userApiKey, userId, {
@@ -514,7 +555,10 @@ async function waverunnerRequest(
         billable_units: tokenCost,
     }).catch(err => console.error('[waverunnerRequest] Metering failed:', err.message));
 
-    return result;
+    return {
+        outputs: [{ type: 'text', text: reportText }],
+        groundingMetadata: { groundingChunks }
+    };
 }
 
 // ---------------------------------------------------------------------------
