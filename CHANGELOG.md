@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.33.8] - 2026-07-29
+
+### Fixed
+- **LLM Sub-Theme Expander (`response_mime_type`), `check_research_status` Payload & URL Parser Normalization** (`src/deepResearch.ts`, `src/toolHandlers.ts`, `src/index.ts`):
+  - Added `response_mime_type` support to `waverunnerRequest` in `index.ts`, enabling structured JSON response output for LLM calls.
+  - Configured `generateSubThemes` to pass `response_mime_type: 'application/json'` and full error stack logging, ensuring topic-specific LLM sub-themes generate reliably.
+  - Cleaned `fallbackSubThemes` to truncate 20-word multi-clause queries and include explicit moderation & lifestyle shift angles in heavy mode (addressing Bompas & Parr's "New Night Sips" trend data).
+  - Explicitly surfaced `sub_themes_used` in `check_research_status` completion response payload.
+  - Upgraded `normalizeUrl` with `new URL(u)` parser validation: strips inner spaces in paths (e.g. `funded- startups`), rejects missing hostnames (`https.com`), and validates http/https protocol.
+  - Bumped `server_version` to `1.33.8`.
+
 ## [1.33.7] - 2026-07-29
 
 ### Fixed

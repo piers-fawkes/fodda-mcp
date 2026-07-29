@@ -3607,7 +3607,7 @@ function addCoverageAnnotation(
                                 .catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
                         }
 
-                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result: result.report });
+                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result });
                     } catch (err: any) {
                         const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                         activeResearchJobs.set(jobId, { status: 'FAILED', error: msg });
@@ -3649,7 +3649,7 @@ function addCoverageAnnotation(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.33.7\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
+                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.33.8\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
                     }]
                 };
             } catch (err: any) {
@@ -3686,7 +3686,13 @@ function addCoverageAnnotation(
 
             if (job.status === 'COMPLETE') {
                 activeResearchJobs.delete(job_id); // cleanup
-                return { content: [{ type: 'text' as const, text: job.result }] };
+                const res = typeof job.result === 'object' && job.result !== null ? job.result : { report: String(job.result), sub_themes_used: [] };
+                const payloadText = [
+                    `sub_themes_used:\n${JSON.stringify(res.sub_themes_used || [], null, 2)}`,
+                    '',
+                    res.report
+                ].join('\n\n');
+                return { content: [{ type: 'text' as const, text: payloadText }] };
             }
 
             return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };

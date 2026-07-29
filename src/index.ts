@@ -517,6 +517,9 @@ async function waverunnerRequest(
     if (systemInstruction) {
         config.systemInstruction = systemInstruction;
     }
+    if (waverunnerPayload.response_mime_type || waverunnerPayload.responseMimeType) {
+        config.responseMimeType = waverunnerPayload.response_mime_type || waverunnerPayload.responseMimeType;
+    }
     if (Array.isArray(waverunnerPayload.tools) && waverunnerPayload.tools.length > 0) {
         const toolsMapped: any[] = [];
         let googleSearchAdded = false;

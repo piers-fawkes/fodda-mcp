@@ -81,15 +81,15 @@ export function cleanResearchQuery(q: string): string {
 }
 
 export function fallbackSubThemes(topic: string, isHeavy: boolean): string[] {
-    const t = topic.trim();
+    const cleanTopic = extractRoutingTopic(topic).slice(0, 45).trim();
     const themes = [
-        `category sizing and growth forecasts for ${t}`,
-        `key players, brands and challengers in ${t}`,
-        `${t} consumer behavior shifts and demand drivers`,
-        `${t} channel dynamics: DTC, wholesale, marketplace`,
+        `category sizing and growth forecasts for ${cleanTopic}`,
+        `key players, brands and challengers in ${cleanTopic}`,
+        `consumer behavior shifts and demand drivers for ${cleanTopic}`,
+        `channel dynamics: DTC, wholesale and marketplace for ${cleanTopic}`,
     ];
     if (isHeavy) {
-        themes.push(`${t} technology, innovation and emerging formats`);
+        themes.push(`moderation, premiumization and lifestyle trends impacting ${cleanTopic}`);
     }
     return themes;
 }
@@ -105,8 +105,9 @@ async function generateSubThemes(
     try {
         const payload = {
             model: 'gemini-2.0-flash',
-            system_instruction: `You are a research planner. Given a topic, generate exactly ${count} specific, differently-shaped research sub-themes. Each sub-theme MUST name a concrete research angle — not a restatement of the topic. Good angles: category sizing with growth forecasts, key competitive players/brands, channel dynamics (DTC vs wholesale vs marketplace), consumer behavior shifts, technology/format innovation. Output ONLY a JSON array of strings.`,
+            system_instruction: `You are a senior research strategist. Given a topic, generate exactly ${count} specific, distinct research sub-themes. Each sub-theme MUST name a concrete angle relevant to the specific topic (e.g. category sizing with forecasts, key competitive players/brands, channel dynamics like DTC vs wholesale, consumer behavior or moderation shifts, technology and format innovation). Output ONLY a JSON array of ${count} short strings (5-12 words each). Do NOT repeat the full query phrase verbatim in every string.`,
             input: [{ type: 'text', text: routingTopic }],
+            response_mime_type: 'application/json',
         };
         const result = await withTimeout(
             waverunnerRequest('deep_dive', 0, apiKey, userId, payload),
@@ -121,7 +122,7 @@ async function generateSubThemes(
             return parsed.slice(0, count).map((s: any) => String(s).trim());
         }
     } catch (err: any) {
-        console.error(`[deep_research] Sub-theme LLM generation failed, using fallback: ${err?.message}`);
+        console.error(`[deep_research] Sub-theme LLM generation failed:`, err?.stack || err?.message || err);
     }
     return fallbackSubThemes(routingTopic, isHeavy);
 }
@@ -444,14 +445,33 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     console.error(`[deep_research] Raw groundingChunks count:`, (result?.groundingMetadata?.groundingChunks || []).length);
 
     // ── Extract URLs ──
-    const normalizeUrl = (rawUrl: string): string => {
-        if (!rawUrl) return rawUrl;
+    const normalizeUrl = (rawUrl: string): string | null => {
+        if (!rawUrl) return null;
         let u = rawUrl.trim();
-        // Fix https.domain.com or http.domain.com -> https://domain.com
-        u = u.replace(/^(https?)\.([a-z0-9])/i, '$1://$2');
-        // Fix httpss:// -> https://
+
+        // Strip inner spaces/newlines in URL (e.g. "funded- startups-in-wine")
+        u = u.replace(/\s+/g, '');
+
+        // Fix scheme typos (httpss:// -> https://)
         u = u.replace(/^httpss:\/\//i, 'https://');
-        return u;
+        u = u.replace(/^https?:\/\/\//i, 'https://');
+
+        // Fix typos where :// was replaced by dot (e.g., https.www.domain.com -> https://www.domain.com)
+        // ONLY if it starts with http/https followed by dot and valid domain
+        if (/^https?\.[a-z0-9]/i.test(u)) {
+            u = u.replace(/^(https?)\./i, '$1://');
+        }
+
+        try {
+            const parsed = new URL(u);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+            if (!parsed.hostname || !parsed.hostname.includes('.')) return null;
+            // Reject hostname missing real domain (e.g., "https.com")
+            if (parsed.hostname === 'https.com' || parsed.hostname === 'http.com') return null;
+            return parsed.toString();
+        } catch {
+            return null;
+        }
     };
 
     const isInternalOrSearchUrl = (url: string): boolean => {
