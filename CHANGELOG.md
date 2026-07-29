@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.35.0] - 2026-07-29
+
+### Fixed
+- **Grounding API Redirect URL Stripping & Topic Specialist Router Release** (`src/deepResearch.ts`, `src/catalogCache.ts`):
+  - Fixed Sources list URL leak: added regex post-processor to detect and strip self-generated `## Sources` sections containing raw `vertexaisearch.cloud.google.com` or `google.com/url` redirect links, replacing them with clean, verified `sourceUrls`.
+  - Released 100% topic-agnostic graph router in `catalogCache.ts`: Topic Specialist Boost (+0.10) surfaces `waldo-coffee-maker-innovation-trends`, `pinterest-home`, `trendbible-on-the-horizon-2026`, `restaurant-dining-trends`, and `bompasparr-future-of-p-leisure-2026-nightlife` alongside `retail`.
+  - Bumped `server_version` to `1.35.0`.
+
 ## [1.34.4] - 2026-07-29
 
 ### Fixed

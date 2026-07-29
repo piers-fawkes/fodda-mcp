@@ -455,6 +455,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
 
     // Strip/unwrap grounding API redirect links embedded in markdown text by Gemini
     reportText = reportText.replace(/\[([^\]]+)\]\(https?:\/\/(?:vertexaisearch\.cloud\.google\.com|www\.google\.com\/url)[^\)]+\)/gi, '$1');
+    reportText = reportText.replace(/https?:\/\/vertexaisearch\.cloud\.google\.com\/[^\s\)]+/gi, '');
 
     // Diagnostic logging for citation payloads
     console.error(`[deep_research] Raw annotations payload:`, JSON.stringify(outputs.flatMap((o: any) => o.annotations || [])));
@@ -537,6 +538,13 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
             seenUrls.add(norm);
             sourceUrls.push({ title: chunk.web.title || '', url: norm });
         }
+    }
+
+    // Strip self-generated Sources section if it contains raw grounding API redirect URLs
+    const sourcesRegex = /(#+\s*(?:sources|references)[\s\S]*$)/i;
+    const sourcesMatch = reportText.match(sourcesRegex);
+    if (sourcesMatch && /vertexaisearch|google\.com\/url|googleusercontent/i.test(sourcesMatch[0])) {
+        reportText = reportText.replace(sourcesRegex, '').trim();
     }
 
     const hasSourcesSection = /#+\s*(sources|references)/i.test(reportText);
