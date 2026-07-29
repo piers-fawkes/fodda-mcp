@@ -170,4 +170,8 @@ compliance: RFC-2119
 - When multiple sources provide conflicting quantitative estimates for the same metric (e.g. market size, growth rate, CAGR), the agent MUST surface ALL estimates with their sources rather than silently selecting one.
 - Present conflicting data as: "Estimates range from $X (Source A) to $Y (Source B), reflecting [methodological, scope, or forecast horizon differences]."
 - Never present a subset figure (e.g. built-in cabinets) as smaller than a total figure if the source numbers contradict; explicitly flag and reconcile the divergence.
+
+### RULE: OutlierOrderOfMagnitudeGuardrail
+- When reported market size figures for a specific product category differ by an order of magnitude or more from the general consensus cluster (e.g. $430 billion vs $1.5-$3.5 billion for wine fridges/coolers), ALWAYS treat the extreme outlier as a data or unit annotation error (e.g. millions mistranslated as billions) and DISCARD it.
+- NEVER present, include, or hedge an impossible outlier number (e.g. claiming a single niche appliance sub-category is worth hundreds of billions).
 `;

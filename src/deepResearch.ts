@@ -453,6 +453,9 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         .map((o: any) => o.text);
     let reportText = textParts.join('\n\n');
 
+    // Strip/unwrap grounding API redirect links embedded in markdown text by Gemini
+    reportText = reportText.replace(/\[([^\]]+)\]\(https?:\/\/(?:vertexaisearch\.cloud\.google\.com|www\.google\.com\/url)[^\)]+\)/gi, '$1');
+
     // Diagnostic logging for citation payloads
     console.error(`[deep_research] Raw annotations payload:`, JSON.stringify(outputs.flatMap((o: any) => o.annotations || [])));
     console.error(`[deep_research] Raw groundingChunks count:`, (result?.groundingMetadata?.groundingChunks || []).length);
@@ -469,8 +472,15 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         u = u.replace(/^httpss:\/\//i, 'https://');
         u = u.replace(/^https?:\/\/\//i, 'https://');
 
+        // Extract real destination from google redirect URLs if present
+        if (u.includes('google.com/url?') || u.includes('google.com/url&')) {
+            const match = u.match(/[?&](?:url|q)=(https?%3A%2F%2F[^&]+|https?:\/\/[^&]+)/i);
+            if (match && match[1]) {
+                u = decodeURIComponent(match[1]);
+            }
+        }
+
         // Fix typos where :// was replaced by dot (e.g., https.www.domain.com -> https://www.domain.com)
-        // ONLY if it starts with http/https followed by dot and valid domain
         if (/^https?\.[a-z0-9]/i.test(u)) {
             u = u.replace(/^(https?)\./i, '$1://');
         }
@@ -492,7 +502,10 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         const u = url.toLowerCase();
         return u.includes('vertexaisearch.cloud.google.com') ||
                u.includes('fodda.ai') ||
-               u.includes('localhost');
+               u.includes('localhost') ||
+               u.includes('google.com/search') ||
+               u.includes('google.com/url') ||
+               u.includes('googleusercontent.com');
     };
 
     const isFabricatedUrl = (url: string): boolean => {

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.34.4] - 2026-07-29
+
+### Fixed
+- **Outlier Order-of-Magnitude Market Sizing Guardrail & Grounding Redirect URL Filter** (`src/agents/fodda-researcher/skills.ts`, `src/deepResearch.ts`):
+  - Added `RULE: OutlierOrderOfMagnitudeGuardrail` to `SKILL_SOURCE_QUALITY`: requires Gemini to discard wild outlier market size estimates that differ by an order of magnitude or more (e.g. $430 billion vs $1.5-$3.5 billion for wine fridges) rather than hedging or keeping them.
+  - Added regex unwrap filter to strip raw `vertexaisearch.cloud.google.com` and `google.com/url` redirect links embedded in markdown text by Gemini.
+  - Enhanced `normalizeUrl` and `isInternalOrSearchUrl` to extract target destinations from Google redirect URLs and filter internal search/grounding domains.
+  - Bumped `server_version` to `1.34.4`.
+
 ## [1.34.3] - 2026-07-29
 
 ### Fixed
