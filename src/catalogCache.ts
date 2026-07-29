@@ -160,12 +160,13 @@ export function getAnalysts(): CatalogAnalyst[] {
  * Get all graphs from the cached catalog.
  */
 export function getGraphs(): CatalogGraph[] {
-    return cachedCatalog?.graphs ?? [];
+    return cachedCatalog?.graphs || [];
 }
 
-/**
- * Get only graphs with status === 'live'.
- */
+export function getGraphDetails(graphId: string): CatalogGraph | undefined {
+    return getGraphs().find(g => g.graph_id === graphId);
+}
+
 export function getLiveGraphs(): CatalogGraph[] {
     return getGraphs().filter(g => g.status === 'live');
 }
@@ -638,6 +639,7 @@ let graphSearchTexts = new Map<string, string>();
  */
 function rebuildSearchIndex(): void {
     graphSearchTexts.clear();
+    flushSourcePlanCache();
     for (const g of getGraphs()) {
         graphSearchTexts.set(g.graph_id, buildSearchableText(g));
     }
@@ -1145,6 +1147,14 @@ function detectSupplementalCandidates(query: string): SourceCandidate[] {
     return candidates;
 }
 
+const sourcePlanCache = new Map<string, { result: SourceCandidate[]; timestamp: number }>();
+const SOURCE_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+export function flushSourcePlanCache(): void {
+    sourcePlanCache.clear();
+    console.error('[catalogCache] Source plan cache flushed');
+}
+
 /**
  * Unified source selector: graph candidates from getRelevantGraphs()
  * (UNCHANGED — same scoring, tier diversity, freshness bonus, same order),
@@ -1155,7 +1165,16 @@ export function getRelevantSources(
     opts?: { minGraphs?: number; maxGraphs?: number; threshold?: number },
 ): SourceCandidate[] {
     const minGraphs = opts?.minGraphs ?? 2;
-    const graphResults = getRelevantGraphs(query, minGraphs, opts?.maxGraphs, opts?.threshold);
+    const maxGraphs = opts?.maxGraphs ?? 15;
+    const threshold = opts?.threshold ?? 0.10;
+    const cacheKey = `v1.35.2:${query.trim().toLowerCase()}:${minGraphs}:${maxGraphs}:${threshold}`;
+
+    const cached = sourcePlanCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < SOURCE_CACHE_TTL_MS)) {
+        return cached.result;
+    }
+
+    const graphResults = getRelevantGraphs(query, minGraphs, maxGraphs, threshold);
     const candidates: SourceCandidate[] = graphResults.map(r => ({
         kind: 'graph' as const,
         graphId: r.graph.graph_id,
@@ -1173,6 +1192,7 @@ export function getRelevantSources(
         console.error(`[sourceRouter] Extra candidates appended: ${extras.map(c => c.kind === 'earnings' ? `earnings(${c.ticker || c.brand || c.sector || 'search'})` : `supplemental(${(c as any).category})`).join(', ')}`);
     }
 
+    sourcePlanCache.set(cacheKey, { result: candidates, timestamp: Date.now() });
     return candidates;
 }
 

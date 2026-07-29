@@ -10,7 +10,7 @@
 
 import crypto from 'crypto';
 import type { FoddaRequestFn, WaverunnerRequestFn } from './types.js';
-import { getRelevantSources } from './catalogCache.js';
+import { getRelevantSources, getGraphDetails } from './catalogCache.js';
 import type { SourceCandidate } from './catalogCache.js';
 import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
@@ -518,6 +518,39 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     const seenUrls = new Set<string>();
     const sourceUrls: { title: string; url: string }[] = [];
 
+    // ── Harvest Graph Provenance Sources (P2) ──
+    for (const gId of searchedGraphIds) {
+        const g = getGraphDetails(gId);
+        const graphTitle = g?.name || gId;
+        const curatorAttr = g ? [g.curator, g.company].filter(Boolean).join(' / ') : '';
+        const titleText = curatorAttr ? `${graphTitle} (${curatorAttr})` : graphTitle;
+
+        const graphTrends = curatedGraphsMap.get(gId) || [];
+
+        // 1. Evidence item formatted_citation / sourceUrl
+        for (const t of graphTrends) {
+            for (const ev of (t.evidence || [])) {
+                const rawEvUrl = typeof ev === 'string' ? ev : (ev?.sourceUrl || ev?.formatted_citation || '');
+                const normEv = normalizeUrl(rawEvUrl);
+                if (normEv && !isInternalOrSearchUrl(normEv) && !isFabricatedUrl(normEv) && !seenUrls.has(normEv)) {
+                    seenUrls.add(normEv);
+                    sourceUrls.push({ title: titleText, url: normEv });
+                }
+            }
+        }
+
+        // 2. Fallback: Graph webpage_url or deep link
+        const deepLink = normalizeUrl(g?.webpage_url || `https://fodda.ai/graphs/${gId}`) || normalizeUrl(g?.source_url || '');
+        if (deepLink && !seenUrls.has(deepLink)) {
+            seenUrls.add(deepLink);
+            sourceUrls.push({
+                title: curatorAttr ? `${graphTitle} — Curated by ${curatorAttr}` : graphTitle,
+                url: deepLink
+            });
+        }
+    }
+
+    // Harvest Web Grounding URLs
     for (const output of outputs) {
         if (output.type === 'text' && Array.isArray(output.annotations)) {
             for (const ann of output.annotations) {
@@ -536,7 +569,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         const norm = normalizeUrl(uri);
         if (norm && !isInternalOrSearchUrl(norm) && !isFabricatedUrl(norm) && !seenUrls.has(norm)) {
             seenUrls.add(norm);
-            sourceUrls.push({ title: chunk.web.title || '', url: norm });
+            sourceUrls.push({ title: chunk?.web?.title || '', url: norm });
         }
     }
 
@@ -549,7 +582,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
 
     const hasSourcesSection = /#+\s*(sources|references)/i.test(reportText);
     if (!hasSourcesSection && sourceUrls.length > 0) {
-        reportText += '\n\n## Sources\n' + sourceUrls.map(s =>
+        reportText += '\n\n## Sources & References\n' + sourceUrls.map(s =>
             s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`
         ).join('\n');
     }

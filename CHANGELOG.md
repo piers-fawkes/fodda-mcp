@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.35.2] - 2026-07-29
+
+### Fixed
+- **Source Plan Cache-Busting (P1) & Graph Provenance Sources with Curator Links (P2)** (`src/catalogCache.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):
+  - **P1 (Source Plan Cache-Busting)**: Folded server version `v1.35.2` into `sourcePlanCache` keys in `catalogCache.ts` and added auto-flushing on `initCatalogCache()` and `rebuildSearchIndex()`. Guaranteed that server deployments invalidate all stale cached source plans immediately.
+  - **P2 (Graph Provenance Links & Attributions)**: Extended `deepResearch.ts` to harvest graph provenance sources for every active knowledge graph searched. Implemented fallback citation link order: (1) evidence-level external `sourceUrl` / `formatted_citation`, (2) resolved graph deep-link (`webpage_url` or `https://fodda.ai/graphs/${g.graph_id}`), (3) curator publication `source_url`. Added curator attributions (e.g. `Heather Bennett / Michaels`, `Susie Hogarth / Firefish`).
+  - Guaranteed every report (corpus-native, web, or mixed) emits a complete `## Sources & References` section with zero dead ends or raw redirect links.
+  - Bumped `server_version` to `1.35.2`.
+
 ## [1.35.1] - 2026-07-29
 
 ### Fixed
