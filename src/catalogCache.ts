@@ -765,15 +765,23 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
             }
         }
         if (expMatches > 0) {
-            expansionScore = 0.5 * (expMatches / expandedSet.size);
+            // Expansion score: rewarding graphs that match 2+ expanded domain categories
+            expansionScore = 0.25 + 0.25 * Math.min(expMatches / 3, 1.0);
         }
     }
 
     let finalScore = Math.max(directScore, expansionScore);
 
-    // Living domain boost for flagship retail graph
+    // Flagship retail graph anchor boost
     if (g.graph_id === 'retail') {
-        finalScore += 0.25;
+        finalScore += 0.30;
+    }
+
+    // Specialist domain boost for home, appliances, dining, food, beverage, hospitality & nightlife
+    const isSpecialistDomain = /home|appliance|kitchen|dining|restaurant|nightlife|beverage|food|hospitality|leisure/i.test(g.graph_id + (g.name || '') + (g.domain || ''));
+    const queryHasSpecialistTerm = /wine|fridge|refrigerator|furniture|glassware|barware|coffee|dining|restaurant|beer|spirits|nightlife/i.test(clause);
+    if (isSpecialistDomain && queryHasSpecialistTerm) {
+        finalScore += 0.12;
     }
 
     // Mismatch penalty for pure beauty/gaming graphs when query has no beauty/gaming terms
@@ -781,6 +789,12 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     const queryHasBeauty = /beauty|skincare|fragrance|sun|cosmetics/i.test(clause);
     if (isBeautyGraph && !queryHasBeauty) {
         finalScore -= 0.3;
+    }
+
+    // Soft penalty for generic agency marketing reports (Dentsu, Edelman, Michaels) on specific product queries
+    const isGenericAgency = /dentsu|edelman|michaels|forrester|postpals/i.test(g.graph_id);
+    if (isGenericAgency && queryHasSpecialistTerm) {
+        finalScore -= 0.10;
     }
 
     return Math.max(0, Math.min(finalScore, 1.0));

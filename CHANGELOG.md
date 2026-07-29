@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.34.2] - 2026-07-29
+
+### Fixed
+- **Domain-Specialist Graph Routing & Expansion** (`src/catalogCache.ts`):
+  - Updated `scoreClauseRelevance` in `catalogCache.ts` with a specialist domain boost (+0.12) for home, appliances, kitchen, dining, beverage, hospitality, and nightlife graphs when product/lifestyle queries are present.
+  - Added a soft penalty (-0.10) for generic marketing agency reports (`Dentsu`, `Edelman`, `Michaels`, `Forrester`), preventing generic agency graphs from crowding out specialized appliance and nightlife graphs.
+  - Successfully surfaces `waldo-coffee-maker-innovation-trends` (#3), `pinterest-home` (#4), `restaurant-dining-trends` (#6), `trendbible-on-the-horizon-2026` (#7), and `bompasparr-future-of-p-leisure-2026-nightlife` (#11) alongside `retail` (#1).
+  - Bumped `server_version` to `1.34.2`.
+
 ## [1.34.1] - 2026-07-29
 
 ### Fixed
