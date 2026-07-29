@@ -903,8 +903,14 @@ export function getRelevantGraphs(
         }
 
         // Check company name (e.g., "TBWA", "Delta", "Havas", "Kantar")
+        // Skip generic publisher/consultancy names so mentioning a firm doesn't force all its graphs
         const companyLower = (g.company || '').trim().toLowerCase();
-        if (companyLower && companyLower.length > 3 && matchesWordBoundary(queryLower, companyLower)) {
+        const genericPublishers = new Set([
+            'mckinsey', 'bcg', 'deloitte', 'kpmg', 'forrester', 'gartner',
+            'pwc', 'ey', 'capgemini', 'bain', 'niq', 'mintel', 'dentsu',
+            'accenture', 'youtube', 'google', 'microsoft'
+        ]);
+        if (companyLower && companyLower.length > 3 && !genericPublishers.has(companyLower) && matchesWordBoundary(queryLower, companyLower)) {
             directMatchIds.add(g.graph_id);
             continue;
         }

@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Deep Research Phase 0 Publisher Exclusions, 150s Timeout Guard & Regression Test Suite** (`src/catalogCache.ts`, `src/index.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):
+  - Excluded generic publisher/consultancy names (`mckinsey`, `bcg`, `deloitte`, `kpmg`, `forrester`, `gartner`, `pwc`, `ey`, `capgemini`, `bain`, `niq`, `mintel`, `dentsu`) from Phase 0 company name matching in `catalogCache.ts`.
+  - Added `server_version: 1.33.2` to `deep_research_topic` initial `source_plan` payload.
+  - Increased synthesis timeout guard in `src/index.ts` to 150s with explicit `clearTimeout` cleanup.
+  - Mandated web-grounded quantitative market sizing, dollar values, and CAGRs in `src/deepResearch.ts`.
+  - Created automated regression test suite `scratch/test_regression_suite.ts` verifying `retail` at Rank #1 (`0.357`), `0.250` score spread, and 0 automotive false positives on multi-clause strategist briefs.
+
+### Fixed
 - **Deep Research Query Clause Decomposition, Flagship Retail Anchor Boost & Timeout Guard** (`src/catalogCache.ts`, `src/index.ts`, `src/deepResearch.ts`):
   - Implemented multi-clause query decomposition in `scoreGraphRelevance` (`scoreClauseRelevance`). Multi-clause research prompts are split across punctuation and conjunctions, evaluated per clause, and combined via `(maxScore * 0.7) + (avgScore * 0.3)` to prevent multi-sentence prompt dilution.
   - Added flagship `retail` graph anchor boost (+0.25) to guarantee `PSFK Retail Trends` (192 trends) ranks #1 for product, commerce, hardware, appliance, and channel queries.

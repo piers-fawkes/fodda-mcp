@@ -546,11 +546,17 @@ async function waverunnerRequest(
         config
     });
 
-    const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini model generation timed out after 90 seconds.')), 90000)
-    );
+    let timeoutTimer: any;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutTimer = setTimeout(() => reject(new Error('Gemini model generation timed out after 150 seconds.')), 150000);
+    });
 
-    const response: any = await Promise.race([generatePromise, timeoutPromise]);
+    let response: any;
+    try {
+        response = await Promise.race([generatePromise, timeoutPromise]);
+    } finally {
+        clearTimeout(timeoutTimer);
+    }
 
     const reportText = response.text || '';
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
