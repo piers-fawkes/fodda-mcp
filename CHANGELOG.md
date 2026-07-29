@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.35.1] - 2026-07-29
+
+### Fixed
+- **Source Plan Discrepancy Fix (`extractRoutingTopic`)** (`src/toolHandlers.ts`):
+  - Resolved routing source_plan mismatch: `toolHandlers.ts` was passing `cleanQuery` (the full 90-word raw user prompt containing generic words like "market sizing", "forecasts", "growth") to `getRelevantSources()` for building `sourcePlan` / `previewCandidates`, whereas `deepResearch.ts` was using `extractRoutingTopic(query)`.
+  - Updated `toolHandlers.ts` to pass `extractRoutingTopic(query)` ("wine fridges, wine furniture and wine glassware and accessories") to `getRelevantSources()`.
+  - Guarantees `source_plan` in `deep_research_topic` matches the specialist-boosted graph candidate ranking (`retail` #1, `mintel-food-and-drink` #2, `waldo-coffee-maker-innovation` #3, `pinterest-home` #4, `restaurant-dining-trends` #6, `trendbible-home` #7).
+  - Bumped `server_version` to `1.35.1`.
+
 ## [1.35.0] - 2026-07-29
 
 ### Fixed

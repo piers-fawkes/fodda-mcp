@@ -30,7 +30,7 @@ import { createSessionTracker, postToSlack } from './sessionTracker.js';
 import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
-import { runDeepResearch, cleanResearchQuery, fallbackSubThemes } from './deepResearch.js';
+import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -3630,8 +3630,8 @@ function addCoverageAnnotation(
 
                 // Return source_plan immediately so the caller knows what's happening.
                 const maxGraphs = isHeavy ? 15 : 8;
-                const cleanQuery = cleanResearchQuery(query);
-                const previewCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(cleanQuery, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
+                const routingTopic = extractRoutingTopic(query);
+                const previewCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(routingTopic, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
                 const previewGraphs = previewCandidates
                     .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
                     .slice(0, maxGraphs);
@@ -3658,12 +3658,12 @@ function addCoverageAnnotation(
 
                 const subThemesPreview = (sub_themes && sub_themes.length > 0)
                     ? sub_themes
-                    : fallbackSubThemes(cleanQuery, isHeavy);
+                    : fallbackSubThemes(routingTopic, isHeavy);
 
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.35.0\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
+                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.35.1\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
                     }]
                 };
             } catch (err: any) {
