@@ -104,7 +104,7 @@ async function generateSubThemes(
     const count = isHeavy ? 5 : 4;
     try {
         const payload = {
-            model: 'gemini-2.0-flash-lite',
+            model: 'gemini-2.0-flash',
             system_instruction: `You are a research planner. Given a topic, generate exactly ${count} specific, differently-shaped research sub-themes. Each sub-theme MUST name a concrete research angle — not a restatement of the topic. Good angles: category sizing with growth forecasts, key competitive players/brands, channel dynamics (DTC vs wholesale vs marketplace), consumer behavior shifts, technology/format innovation. Output ONLY a JSON array of strings.`,
             input: [{ type: 'text', text: routingTopic }],
         };
@@ -117,6 +117,7 @@ async function generateSubThemes(
         const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
         const parsed = JSON.parse(cleanedText);
         if (Array.isArray(parsed) && parsed.length >= 3) {
+            console.error(`[deep_research] LLM sub-theme expansion succeeded:`, parsed);
             return parsed.slice(0, count).map((s: any) => String(s).trim());
         }
     } catch (err: any) {
@@ -443,6 +444,16 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     console.error(`[deep_research] Raw groundingChunks count:`, (result?.groundingMetadata?.groundingChunks || []).length);
 
     // ── Extract URLs ──
+    const normalizeUrl = (rawUrl: string): string => {
+        if (!rawUrl) return rawUrl;
+        let u = rawUrl.trim();
+        // Fix https.domain.com or http.domain.com -> https://domain.com
+        u = u.replace(/^(https?)\.([a-z0-9])/i, '$1://$2');
+        // Fix httpss:// -> https://
+        u = u.replace(/^httpss:\/\//i, 'https://');
+        return u;
+    };
+
     const isInternalOrSearchUrl = (url: string): boolean => {
         if (!url) return true;
         const u = url.toLowerCase();
@@ -453,7 +464,6 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
 
     const isFabricatedUrl = (url: string): boolean => {
         if (!url) return true;
-        if (url.startsWith('httpss://')) return true;
         if (/YOUR_\w+/i.test(url)) return true;
         return false;
     };
@@ -464,9 +474,10 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     for (const output of outputs) {
         if (output.type === 'text' && Array.isArray(output.annotations)) {
             for (const ann of output.annotations) {
-                if (ann.type === 'url_citation' && ann.url && !isInternalOrSearchUrl(ann.url) && !isFabricatedUrl(ann.url) && !seenUrls.has(ann.url)) {
-                    seenUrls.add(ann.url);
-                    sourceUrls.push({ title: ann.title || '', url: ann.url });
+                const norm = normalizeUrl(ann.url);
+                if (ann.type === 'url_citation' && norm && !isInternalOrSearchUrl(norm) && !isFabricatedUrl(norm) && !seenUrls.has(norm)) {
+                    seenUrls.add(norm);
+                    sourceUrls.push({ title: ann.title || '', url: norm });
                 }
             }
         }
@@ -475,9 +486,10 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     const groundingChunks = result?.groundingMetadata?.groundingChunks || [];
     for (const chunk of groundingChunks) {
         const uri = chunk?.web?.uri;
-        if (uri && !isInternalOrSearchUrl(uri) && !isFabricatedUrl(uri) && !seenUrls.has(uri)) {
-            seenUrls.add(uri);
-            sourceUrls.push({ title: chunk.web.title || '', url: uri });
+        const norm = normalizeUrl(uri);
+        if (norm && !isInternalOrSearchUrl(norm) && !isFabricatedUrl(norm) && !seenUrls.has(norm)) {
+            seenUrls.add(norm);
+            sourceUrls.push({ title: chunk.web.title || '', url: norm });
         }
     }
 
