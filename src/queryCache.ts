@@ -72,6 +72,8 @@ let stats = {
 // Key generation
 // ---------------------------------------------------------------------------
 
+import { MCP_SERVER_VERSION } from './tools.js';
+
 /**
  * Build a deterministic cache key from the request signature.
  * Uses raw string for small payloads (< 200 chars) to avoid crypto overhead.
@@ -79,10 +81,19 @@ let stats = {
  */
 function buildCacheKey(method: string, path: string, body?: any): string {
     const bodyStr = body ? JSON.stringify(body) : '';
-    const raw = `${method}:${path}:${bodyStr}`;
-    // Skip SHA-256 for small keys — most GET requests and light POST bodies
+    const raw = `${MCP_SERVER_VERSION}:${method}:${path}:${bodyStr}`;
     if (raw.length < 200) return raw;
     return crypto.createHash('sha256').update(raw).digest('hex');
+}
+
+/** Explicitly clear the query cache (called on startup/deploy). */
+export function cacheClear(): void {
+    cache.clear();
+    stats.hits = 0;
+    stats.misses = 0;
+    stats.evictions = 0;
+    stats.stores = 0;
+    console.error('[queryCache] Query cache cleared');
 }
 
 // ---------------------------------------------------------------------------

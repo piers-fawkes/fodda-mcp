@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.35.3] - 2026-07-29
+
+### Fixed
+- **Query Cache Invalidation (`queryCache.ts`) & Exact P2 Graph Provenance Rendering** (`src/queryCache.ts`, `src/catalogCache.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):
+  - **P1 (Evict Stale Query Cache)**: Added `MCP_SERVER_VERSION` keying to `buildCacheKey()` in `queryCache.ts` and exported `cacheClear()` to purge the HTTP API query cache on server startup (`initCatalogCache()`). Guaranteed that any deploy invalidates stale cached responses for identical query strings.
+  - **P2 (Exact Graph Provenance Links & Attributions)**:
+    - Restricted tier-2 graph links to `g.webpage_url` or `g.source_url` only; eliminated fabricated `fodda.ai/graphs/${gId}` URLs (no 404s).
+    - Appended tier-3 curator attributions (`Piers Fawkes / PSFK`, `Heather Bennett / Michaels`, `Susie Hogarth / Firefish`) for all graph entries; replaced `<graph_id> (Fodda internal)` placeholders.
+    - Standardized output section header to `## Sources & References` and ensured Gemini's self-generated section is always replaced.
+  - Bumped `server_version` to `1.35.3`.
+
 ## [1.35.2] - 2026-07-29
 
 ### Fixed

@@ -526,8 +526,9 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         const titleText = curatorAttr ? `${graphTitle} (${curatorAttr})` : graphTitle;
 
         const graphTrends = curatedGraphsMap.get(gId) || [];
+        let hasEvidenceUrl = false;
 
-        // 1. Evidence item formatted_citation / sourceUrl
+        // 1. Evidence item formatted_citation / sourceUrl (real external links)
         for (const t of graphTrends) {
             for (const ev of (t.evidence || [])) {
                 const rawEvUrl = typeof ev === 'string' ? ev : (ev?.sourceUrl || ev?.formatted_citation || '');
@@ -535,18 +536,29 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
                 if (normEv && !isInternalOrSearchUrl(normEv) && !isFabricatedUrl(normEv) && !seenUrls.has(normEv)) {
                     seenUrls.add(normEv);
                     sourceUrls.push({ title: titleText, url: normEv });
+                    hasEvidenceUrl = true;
                 }
             }
         }
 
-        // 2. Fallback: Graph webpage_url or deep link
-        const deepLink = normalizeUrl(g?.webpage_url || `https://fodda.ai/graphs/${gId}`) || normalizeUrl(g?.source_url || '');
+        // 2. Fallback: Graph webpage_url from catalog ONLY (never construct fodda.ai/graphs/${gId})
+        const deepLink = normalizeUrl(g?.webpage_url || '') || normalizeUrl(g?.source_url || '');
         if (deepLink && !seenUrls.has(deepLink)) {
             seenUrls.add(deepLink);
             sourceUrls.push({
                 title: curatorAttr ? `${graphTitle} — Curated by ${curatorAttr}` : graphTitle,
                 url: deepLink
             });
+        } else if (!hasEvidenceUrl && !deepLink) {
+            // 3. Fallback when no URL exists: emit clean curator attribution text
+            const textEntry = curatorAttr ? `${graphTitle} — Curated by ${curatorAttr}` : graphTitle;
+            if (!seenUrls.has(textEntry)) {
+                seenUrls.add(textEntry);
+                sourceUrls.push({
+                    title: textEntry,
+                    url: ''
+                });
+            }
         }
     }
 
@@ -573,17 +585,13 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         }
     }
 
-    // Strip self-generated Sources section if it contains raw grounding API redirect URLs
+    // ALWAYS strip any self-generated Sources / References section from Gemini
     const sourcesRegex = /(#+\s*(?:sources|references)[\s\S]*$)/i;
-    const sourcesMatch = reportText.match(sourcesRegex);
-    if (sourcesMatch && /vertexaisearch|google\.com\/url|googleusercontent/i.test(sourcesMatch[0])) {
-        reportText = reportText.replace(sourcesRegex, '').trim();
-    }
+    reportText = reportText.replace(sourcesRegex, '').trim();
 
-    const hasSourcesSection = /#+\s*(sources|references)/i.test(reportText);
-    if (!hasSourcesSection && sourceUrls.length > 0) {
+    if (sourceUrls.length > 0) {
         reportText += '\n\n## Sources & References\n' + sourceUrls.map(s =>
-            s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`
+            s.url ? `- [${s.title}](${s.url})` : `- ${s.title}`
         ).join('\n');
     }
 

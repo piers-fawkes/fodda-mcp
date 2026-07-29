@@ -6,6 +6,7 @@
  * and is the same endpoint the website and app use.
  */
 import axios from 'axios';
+import { cacheClear } from './queryCache.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,6 +118,7 @@ async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
  */
 export async function initCatalogCache(): Promise<void> {
     try {
+        cacheClear();
         cachedCatalog = await fetchCatalog();
         cachedAnalysts = await fetchAnalysts();
         lastFetchedAt = Date.now();
