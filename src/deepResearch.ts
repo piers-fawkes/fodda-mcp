@@ -50,14 +50,25 @@ export interface DeepResearchResult {
 // Pipeline
 // ---------------------------------------------------------------------------
 
-export function cleanResearchQuery(q: string): string {
+/**
+ * Extract a clean, concise noun-focused topic for Knowledge Graph routing.
+ * Isolates core product/domain terms without prompt wrapper noise or multi-sentence instructions.
+ */
+export function extractRoutingTopic(q: string): string {
     if (!q) return q;
     let s = q;
-    // Strip leading conversational wrapper
-    s = s.replace(/^(run|do|execute|start|launch|create|generate|write)(\s+a)?\s+(fodda\s+)?(deep\s+research\s+project|deep\s+research|report|briefing|session|analysis)(\s+about|\s+on|\s+for|\s+regarding)?/i, '');
-    // Strip trailing diagnosis notes, headers, or conversation transcripts attached to query
-    s = s.split(/\n|diagnos|troubleshoot|conversation|system message|user request/i)[0] || s;
-    return s.replace(/^[?\s,.:]+|[?\s,.:]+$/g, '').trim() || q;
+    // Strip leading conversational/task wrappers (e.g. "Give me a strategic breakdown of...", "What are the key trends in...", "Run a Fodda Deep Research project about...")
+    s = s.replace(/^(run|do|execute|start|launch|create|generate|write|give\s+me|provide|show\s+me|research|explore|synthesize|analyze|what\s+are|tell\s+me|can\s+you)(\s+a|\s+an|\s+the|\s+me|\s+us)?\s+(fodda\s+)?(deep\s+research\s+project|deep\s+research|strategic\s+breakdown|strategic\s+analysis|report|briefing|session|analysis|overview|breakdown|key\s+trends|trends|deep\s+dive)?(\s+about|\s+on|\s+for|\s+regarding|\s+in|\s+of)?/i, '');
+    // Take the primary topic clause before multi-sentence instructions or questions
+    const clauses = s.split(/\n|\?|\.|;|diagnos|troubleshoot|conversation|system message|user request/i)
+        .map(c => c.trim())
+        .filter(c => c.length > 2);
+    const topicClause = clauses[0] || s;
+    return topicClause.replace(/^[?\s,.:]+|[?\s,.:]+$/g, '').trim() || q;
+}
+
+export function cleanResearchQuery(q: string): string {
+    return extractRoutingTopic(q);
 }
 
 export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResearchResult> {
@@ -67,17 +78,22 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         onProgress = () => {},
     } = opts;
 
-    const query = cleanResearchQuery(rawQuery);
+    // Dual-Query Architecture:
+    // 1. routingTopic: Concise noun-based topic for Graph Router metadata selection
+    // 2. researchBrief: Full, untouched 90-word strategist brief for Gemini web search & narrative synthesis
+    const routingTopic = extractRoutingTopic(rawQuery);
+    const researchBrief = rawQuery.trim();
+
     const isHeavy = depth === 'heavy';
     const tokenCost = isHeavy ? 3 : 2;
     const maxGraphs = isHeavy ? 15 : 8;
     const startTime = Date.now();
 
     // ── Phase 1: Planning ──
-    onProgress(`📋 Phase 1/5: Planning research approach for "${query.slice(0, 80)}"...`);
-    console.error(`[deep_research] Starting ${isHeavy ? 'heavy' : 'light'} research: "${query}"`);
+    onProgress(`📋 Phase 1/5: Planning research approach for "${routingTopic.slice(0, 80)}"...`);
+    console.error(`[deep_research] Starting ${isHeavy ? 'heavy' : 'light'} research for topic: "${routingTopic}" (brief length: ${researchBrief.length} chars)`);
 
-    const sourceCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
+    const sourceCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(routingTopic, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
     const graphCandidates = sourceCandidates
         .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
         .slice(0, maxGraphs);
@@ -121,7 +137,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
 
     const graphSearchPromises = graphIds.map(async (gid) => {
         try {
-            const searchBody = { query, limit: isHeavy ? 10 : 5, use_semantic: true, include_evidence: true };
+            const searchBody = { query: routingTopic, limit: isHeavy ? 10 : 5, use_semantic: true, include_evidence: true };
             const res = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(gid)}/search`, apiKey, userId, searchBody);
             const rows = res?.rows || [];
             const evidence = rows.flatMap((r: any) => r.evidence || []);
@@ -151,7 +167,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     const supplementalPromise: Promise<any> = supplementalToFetch.length > 0
         ? (async () => {
             try {
-                const body: Record<string, any> = { query };
+                const body: Record<string, any> = { query: researchBrief };
                 const categoryHint = supplementalToFetch.map(c => c.category).join(', ');
                 body.domain = categoryHint;
                 return await foddaRequest('POST', '/v1/supplemental/context', apiKey, userId, body);
@@ -212,7 +228,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         ...(supplementalData ? { supplementalResults: JSON.stringify(supplementalData).substring(0, 15000) } : {}),
     };
 
-    const systemInstruction = buildResearcherInstruction(query, graphContext);
+    const systemInstruction = buildResearcherInstruction(researchBrief, graphContext);
     const geminiModel = isHeavy ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
 
     const interactionPayload = {
@@ -221,7 +237,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         input: [
             {
                 type: 'text',
-                text: `Research query: ${query}\n\nProduce a comprehensive research report following the skills in your system instruction. Write in editorial narrative style — like a senior strategist briefing a CMO.\n\nCRITICAL MANDATE: You MUST actively leverage your web search tool to find and integrate quantitative market sizing data (dollar market values, projected CAGRs, category growth rates, and volume vs value figures) for all key categories in the query. Combine curated knowledge graph trends with live web evidence to deliver a complete brief.\n\nIMPORTANT: At the end of the report, you MUST include a "## Sources" section listing all the source URLs you used from the provided context.`,
+                text: `Full Research Brief:\n${researchBrief}\n\nProduce a comprehensive research report addressing EVERY requirement in the research brief above. Write in editorial narrative style — like a senior strategist briefing a CMO.\n\nCRITICAL MANDATE: You MUST actively leverage your web search tool to find and integrate quantitative market sizing data (dollar market values, projected CAGRs, category growth rates, and volume vs value figures), competitive brand players, and channel dynamics for all key categories in the brief. Combine curated knowledge graph trends with live web evidence to deliver a complete, highly specific brief.\n\nIMPORTANT: At the end of the report, you MUST include a "## Sources" section listing all the source URLs you used from the provided context.`,
             },
         ],
         tools: [

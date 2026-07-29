@@ -656,6 +656,12 @@ function rebuildSearchIndex(): void {
 const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     // Wine & Beverages
     wine: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'luxury', 'cpg', 'retail'],
+    beverage: ['beverage', 'food', 'drink', 'cpg', 'retail', 'hospitality'],
+    beverages: ['beverage', 'food', 'drink', 'cpg', 'retail', 'hospitality'],
+    drinks: ['beverage', 'drink', 'food', 'cpg', 'retail'],
+    drink: ['beverage', 'drink', 'food', 'cpg', 'retail'],
+    mocktail: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'wellness'],
+    mocktails: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'wellness'],
     vin: ['beverage', 'food', 'hospitality'],
     sommelier: ['beverage', 'food', 'hospitality', 'dining'],
     beer: ['beverage', 'drink', 'food', 'hospitality', 'cpg'],

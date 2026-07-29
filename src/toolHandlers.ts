@@ -3645,7 +3645,7 @@ function addCoverageAnnotation(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is searching the graph and the live web. Job ID: ${jobId}\n\nserver_version: 1.33.2\nsource_plan (sources the router selected and why — earnings/supplemental are included automatically when relevant, so no separate earnings or supplemental calls are needed):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: You must use the check_research_status tool with this Job ID to poll the status of the job and retrieve the report.`
+                        text: `Deep research job started! The agent is searching the graph and the live web. Job ID: ${jobId}\n\nserver_version: 1.33.4\nsource_plan (sources the router selected and why — earnings/supplemental are included automatically when relevant, so no separate earnings or supplemental calls are needed):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: You must use the check_research_status tool with this Job ID to poll the status of the job and retrieve the report.`
                     }]
                 };
             } catch (err: any) {
