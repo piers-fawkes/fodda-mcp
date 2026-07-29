@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.34.1] - 2026-07-29
+
+### Fixed
+- **Query Expansion for Home, Appliance Innovation & Nightlife Graphs** (`src/catalogCache.ts`):
+  - Expanded `QUERY_EXPANSION_MAP` for `wine`, `beverage`, `dining`, `glassware`, `fridge`, `appliances`, and `furniture` to map to `nightlife`, `leisure`, `entertainment`, `kitchen`, and `interior`.
+  - Enables the router to reach specialized home/appliance innovation graphs (`pinterest-home`, `trendbible-on-the-horizon-2026`, `waldo-coffee-maker-innovation-trends`) and nightlife/hospitality graphs (`bompasparr-future-of-p-leisure-2026-nightlife`, `restaurant-dining-trends`, `eventbrite-live-experiences-2026`).
+  - Bumped `server_version` to `1.34.1`.
+
 ## [1.34.0] - 2026-07-29
 
 ### Optimized & Fixed
