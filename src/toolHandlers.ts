@@ -3551,16 +3551,17 @@ function addCoverageAnnotation(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: "light" (20 API calls, faster single-pass) or "heavy" (30 API calls, comprehensive multi-pass with validation). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
+        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: "light" (25–30 API calls, faster tiered search) or "heavy" (40–50 API calls, comprehensive tiered search with sub-theme expansion). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
         {
-            query: z.string().describe('The research query/topic'),
+            query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
+            sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
             graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
-            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster single-pass (20 API calls), "heavy" for comprehensive multi-pass (30 API calls). Defaults to "light".'),
-            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster single-pass (20 API calls), "heavy" for comprehensive multi-pass (30 API calls). Defaults to "light".'),
+            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster tiered search (25–30 API calls), "heavy" for comprehensive tiered search (40–50 API calls). Defaults to "light".'),
+            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster tiered search (25–30 API calls), "heavy" for comprehensive tiered search (40–50 API calls). Defaults to "light".'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Deep Research Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ query, graphId, mode, depth, userId: uid }) => {
+        async ({ query, sub_themes, graphId, mode, depth, userId: uid }) => {
             const resolvedUserId = resolveUserId(userId, uid);
             const effectiveDepth = mode || depth || 'light';
             const isHeavy = effectiveDepth === 'heavy';
@@ -3582,6 +3583,7 @@ function addCoverageAnnotation(
                     try {
                         const result = await runDeepResearch({
                             query,
+                            subThemes: sub_themes,
                             apiKey,
                             userId: resolvedUserId,
                             depth: effectiveDepth,
@@ -3613,8 +3615,6 @@ function addCoverageAnnotation(
                 })();
 
                 // Return source_plan immediately so the caller knows what's happening.
-                // We need to call getRelevantSources here too for the source_plan preview.
-                // (The real routing happens inside runDeepResearch; this is just for the inline response.)
                 const maxGraphs = isHeavy ? 15 : 8;
                 const cleanQuery = cleanResearchQuery(query);
                 const previewCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(cleanQuery, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
@@ -3645,7 +3645,7 @@ function addCoverageAnnotation(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is searching the graph and the live web. Job ID: ${jobId}\n\nserver_version: 1.33.5\nsource_plan (sources the router selected and why — earnings/supplemental are included automatically when relevant, so no separate earnings or supplemental calls are needed):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: You must use the check_research_status tool with this Job ID to poll the status of the job and retrieve the report.`
+                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.33.6\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
                     }]
                 };
             } catch (err: any) {

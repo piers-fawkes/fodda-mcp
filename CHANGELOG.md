@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.33.6] - 2026-07-29
+
+### Added & Fixed
+- **Sub-Themes Tiered Architecture & Per-Call Timeout Guards for `deep_research_topic`** (`src/deepResearch.ts`, `src/toolHandlers.ts`, `src/agents/fodda-researcher/index.ts`, `src/agents/fodda-researcher/skills.ts`):
+  - Implemented `sub_themes` optional array parameter in `deep_research_topic` tool schema and `runDeepResearch` pipeline. If omitted, sub-themes are generated automatically server-side via `gemini-2.0-flash-lite` (with deterministic fallback).
+  - Transitioned graph retrieval to a **Tiered Two-Pass Architecture**: Pass 1 runs broad discovery (`routingTopic`) across all graphs (limit 3); Pass 2 runs deep sub-theme searches on top-hit graphs only (limit 5, ranked by max row relevance score + router score tiebreaker).
+  - Ported `linkedinEngine.ts` curation/deduplication layer: keyed by `(graphId, trendName)` to preserve multi-graph corroboration signals and aggregated `subThemes: Set<string>` on each trend. Deep hits take priority so Gemini's synthesis context explicitly maps which trends support which sub-themes.
+  - Added per-call 8s timeout guards (`withTimeout`) inside `Promise.all` search mapping loops, preventing a single slow graph from failing the entire pass.
+  - Refined citation guards: dropped false-positive digit regexes in favor of strictly verbatim source-metadata URLs from Gemini annotations (`url_citation` / `groundingChunks`), with `httpss://` scheme and `YOUR_\w+` placeholder checks. Added raw citation payload logging.
+  - Added `subThemesUsed` to `GraphContext` and injected `## Mandatory Research Sub-Themes` into the researcher agent instruction. Added `ConflictingEstimates` rule to `SKILL_SOURCE_QUALITY` requiring all conflicting quantitative estimates to be surfaced with sources.
+  - Updated tool descriptions and cost units to reflect repriced tiered call budgets (Light: 25–30 API calls, Heavy: 40–50 API calls) with a 240s global execution ceiling. Bumped `server_version` to `1.33.6`.
+
+## [1.33.5] - 2026-07-29
 
 ### Fixed
 - **Deep Research Phase 0 Publisher Exclusions, 150s Timeout Guard & Regression Test Suite** (`src/catalogCache.ts`, `src/index.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):

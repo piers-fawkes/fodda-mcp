@@ -40,6 +40,8 @@ export interface GraphContext {
      *  the source router detected relevant supplemental categories (macro,
      *  demographics, trade, food_economics, commodities) */
     supplementalResults?: string;
+    /** Sub-themes generated or passed for this research run */
+    subThemesUsed?: string[];
 }
 
 /**
@@ -60,6 +62,7 @@ editorial-quality intelligence reports by combining curated knowledge graph data
 with web research.
 
 Your research query is: "${query}"
+${context?.subThemesUsed && context.subThemesUsed.length > 0 ? `\nResearch sub-themes to address (you MUST address ALL of these):\n${context.subThemesUsed.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : ''}
 ${context?.focusGraphId ? `\nFocus graph: ${context.focusGraphId}` : 'Search all accessible knowledge graphs.'}
 
 Follow the skills below precisely. They encode Fodda's research methodology, 

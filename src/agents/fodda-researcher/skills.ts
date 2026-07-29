@@ -166,7 +166,8 @@ compliance: RFC-2119
 - At least 60% of cited evidence SHOULD be tier 3 or above.
 - The agent MUST NOT present a tier 1-2 source without qualification ("industry reports suggest...").
 - Acknowledge explicitly if a finding relies on a single source.
-- Recency: Prefer evidence less than 12 months old.
-- Note geographic concentration (e.g., US-only).
-- Trust the graph over web sources in case of conflicts.
+### RULE: ConflictingEstimates
+- When multiple sources provide conflicting quantitative estimates for the same metric (e.g. market size, growth rate, CAGR), the agent MUST surface ALL estimates with their sources rather than silently selecting one.
+- Present conflicting data as: "Estimates range from $X (Source A) to $Y (Source B), reflecting [methodological, scope, or forecast horizon differences]."
+- Never present a subset figure (e.g. built-in cabinets) as smaller than a total figure if the source numbers contradict; explicitly flag and reconcile the divergence.
 `;
