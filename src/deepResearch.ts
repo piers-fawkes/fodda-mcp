@@ -366,15 +366,17 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         totalTrends++;
         totalEvidence += trend.evidence.length;
         const list = curatedGraphsMap.get(trend.graphId) || [];
-        list.push({
-            name: trend.trendName,
-            sub_themes_supported: Array.from(trend.subThemes),
-            summary: trend.summary,
-            signal_score: trend.signalScore,
-            lifecycle: trend.lifecycle,
-            evidence: trend.evidence,
-        });
-        curatedGraphsMap.set(trend.graphId, list);
+        if (list.length < (isHeavy ? 6 : 4)) {
+            list.push({
+                name: trend.trendName,
+                sub_themes_supported: Array.from(trend.subThemes),
+                summary: trend.summary,
+                signal_score: trend.signalScore,
+                lifecycle: trend.lifecycle,
+                evidence: trend.evidence,
+            });
+            curatedGraphsMap.set(trend.graphId, list);
+        }
     }
 
     const structuredGraphResults = Array.from(curatedGraphsMap.entries()).map(([gid, trends]) => ({

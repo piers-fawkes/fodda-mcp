@@ -551,7 +551,7 @@ async function waverunnerRequest(
 
     let timeoutTimer: any;
     const timeoutPromise = new Promise((_, reject) => {
-        timeoutTimer = setTimeout(() => reject(new Error('Gemini model generation timed out after 150 seconds.')), 150000);
+        timeoutTimer = setTimeout(() => reject(new Error('Gemini model generation timed out after 180 seconds.')), 180000);
     });
 
     let response: any;

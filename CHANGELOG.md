@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.34.0] - 2026-07-29
+
+### Optimized & Fixed
+- **Heavy Synthesis Optimization & 180s Gemini Timeout Window** (`src/deepResearch.ts`, `src/index.ts`):
+  - Capped curated trends per graph (top 6 in heavy, top 4 in light) to keep synthesis prompt context high-density and prevent model generation timeouts on heavy multi-pass runs.
+  - Increased Gemini generation timeout promise guard from 150s to 180s in `index.ts`.
+  - Bumped `server_version` to `1.34.0`.
+
 ## [1.33.9] - 2026-07-29
 
 ### Fixed

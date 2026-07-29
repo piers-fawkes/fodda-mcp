@@ -3663,7 +3663,7 @@ function addCoverageAnnotation(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.33.9\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
+                        text: `Deep research job started! The agent is performing tiered graph searches and live web synthesis. Job ID: ${jobId}\n\nserver_version: 1.34.0\nsub_themes_used:\n${JSON.stringify(subThemesPreview, null, 2)}\n\nsource_plan (sources the router selected and why):\n${JSON.stringify(sourcePlan, null, 2)}\n\nIMPORTANT: Use the check_research_status tool with Job ID ${jobId} to poll status (every 10-15s, max execution time 240s) until status is COMPLETE or FAILED.`
                     }]
                 };
             } catch (err: any) {
