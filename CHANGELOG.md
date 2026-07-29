@@ -10,10 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Deep Research Query Expansion & Graph Routing Fix** (`src/catalogCache.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):
-  - Added `QUERY_EXPANSION_MAP` to `catalogCache.ts` (`scoreGraphRelevance`) to perform domain & category expansion for niche product terms (`wine`, `fridges`, `furniture`, `glassware`, `accessories`, `barware`, `appliances`, `skincare`, etc.). When literal query terms don't match graph titles exactly, expanded category terms match relevant graphs (e.g., Home & Living, Beverage Tech, Food & Beverage, CPG & Retail Futures) instead of returning 0.00 score across all graphs.
-  - Added `ensureTierPresent('living')` to ensure living domain graphs (`PSFK Retail Trends`, `PSFK Beauty Trends`, etc.) are represented in graph routing diversity.
-  - Added `cleanResearchQuery` to strip conversational prefixes (`"Run a Fodda Deep Research project about..."`) before passing queries to graph search and source routing.
+- **Deep Research Query Expansion, Phase 0 Routing & Citation Hygiene** (`src/catalogCache.ts`, `src/deepResearch.ts`, `src/toolHandlers.ts`):
+  - Refined Phase 0 direct matching in `catalogCache.ts` using regex word boundaries (`matchesWordBoundary`) and generic term exclusion. Fixed `isDirectMatch` tracking on `GraphRelevanceResult` so high topic-match scores are no longer falsely reported with reason `"named directly in query"`.
+  - Added research meta-words (`run`, `fodda`, `deep`, `research`, `project`, `about`, `briefing`, etc.) to `stopWords` in `scoreGraphRelevance`, preventing prompt wrapper words from triggering false-positive matches on unrelated graphs.
+  - Added `QUERY_EXPANSION_MAP` to `catalogCache.ts` (`scoreGraphRelevance`) for niche product term expansion (`wine`, `fridges`, `furniture`, `glassware`, `accessories`, `barware`, `appliances`, etc.), mapping queries to relevant graphs (Home & Living, Beverage Tech, Food & Beverage, CPG & Retail Futures).
+  - Cleaned up citation output in `deepResearch.ts`: filtered out internal `fodda.ai` self-citations and Google Vertex search URLs, prevented un-cited graph background URLs from dumping into the sources list, and eliminated duplicate `## Sources` headers in report payloads.
 - **Deep Research Gemini API Migration & Source Plan Fallback** (`src/index.ts`, `src/catalogCache.ts`):
   - Migrated `waverunnerRequest` from deprecated `ai.interactions.create()` to the supported `@google/genai` `ai.models.generateContent()` API, resolving the 400 legacy schema error (`interactions-breaking-changes-may-2026`).
   - Updated `getRelevantSources` in `catalogCache.ts` to default `minGraphs = 2` when not specified, ensuring `source_plan` and knowledge graph candidates are always populated for broad research queries.

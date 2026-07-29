@@ -252,24 +252,23 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     let reportText = textParts.join('\n\n');
 
     // ── Extract URLs ──
+    const isInternalOrSearchUrl = (url: string): boolean => {
+        if (!url) return true;
+        const u = url.toLowerCase();
+        return u.includes('vertexaisearch.cloud.google.com') ||
+               u.includes('fodda.ai') ||
+               u.includes('localhost');
+    };
+
     const seenUrls = new Set<string>();
     const sourceUrls: { title: string; url: string }[] = [];
 
     for (const output of outputs) {
         if (output.type === 'text' && Array.isArray(output.annotations)) {
             for (const ann of output.annotations) {
-                if (ann.type === 'url_citation' && ann.url && !seenUrls.has(ann.url)) {
-                    if (ann.url.includes('vertexaisearch.cloud.google.com')) continue;
+                if (ann.type === 'url_citation' && ann.url && !isInternalOrSearchUrl(ann.url) && !seenUrls.has(ann.url)) {
                     seenUrls.add(ann.url);
                     sourceUrls.push({ title: ann.title || '', url: ann.url });
-                }
-            }
-        }
-        if (output.type === 'url_context_result' && Array.isArray(output.result)) {
-            for (const ctx of output.result) {
-                if (ctx.url && ctx.status === 'success' && !seenUrls.has(ctx.url)) {
-                    seenUrls.add(ctx.url);
-                    sourceUrls.push({ title: '', url: ctx.url });
                 }
             }
         }
@@ -277,13 +276,15 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
 
     const groundingChunks = result?.groundingMetadata?.groundingChunks || [];
     for (const chunk of groundingChunks) {
-        if (chunk?.web?.uri && !seenUrls.has(chunk.web.uri)) {
-            seenUrls.add(chunk.web.uri);
-            sourceUrls.push({ title: chunk.web.title || '', url: chunk.web.uri });
+        const uri = chunk?.web?.uri;
+        if (uri && !isInternalOrSearchUrl(uri) && !seenUrls.has(uri)) {
+            seenUrls.add(uri);
+            sourceUrls.push({ title: chunk.web.title || '', url: uri });
         }
     }
 
-    if (sourceUrls.length > 0) {
+    const hasSourcesSection = /#+\s*(sources|references)/i.test(reportText);
+    if (!hasSourcesSection && sourceUrls.length > 0) {
         reportText += '\n\n## Sources\n' + sourceUrls.map(s =>
             s.title ? `- [${s.title}](${s.url})` : `- ${s.url}`
         ).join('\n');

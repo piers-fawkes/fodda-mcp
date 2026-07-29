@@ -707,7 +707,9 @@ export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
     const stopWords = new Set([
         'trend', 'trends', 'consumer', 'consumers', 'report', 'reports',
         'industry', 'data', 'future', 'insight', 'insights', 'analysis',
-        'what', 'how', 'why', 'who', 'when', 'where', 'are', 'the', 'and', 'for', 'with'
+        'what', 'how', 'why', 'who', 'when', 'where', 'are', 'the', 'and', 'for', 'with',
+        'run', 'fodda', 'deep', 'research', 'project', 'about', 'session', 'briefing',
+        'brief', 'study', 'overview', 'summary', 'deck', 'slides', 'presentation', 'topic'
     ]);
 
     const queryTerms = queryLower
@@ -795,6 +797,7 @@ export interface GraphRelevanceResult {
     graph: CatalogGraph;
     score: number;
     graphTier: 'living' | 'static_expert' | 'report' | 'supplemental' | 'skill';
+    isDirectMatch: boolean;
 }
 
 /**
@@ -838,23 +841,32 @@ export function getRelevantGraphs(
     }
 
     // ── Phase 0: Direct name matching ──
-    // When users explicitly name a graph, curator, or company (e.g. "Pull from
-    // TBWA/Alyson Stevens Macro, SIC (Ben Dietz), Marieke Neleman..."), keyword
-    // scoring dilutes these names across 100+ query terms, dropping them below
-    // the threshold. Direct matches get automatic inclusion at score 1.0.
     const queryLower = query.toLowerCase();
     const directMatchIds = new Set<string>();
 
+    const matchesWordBoundary = (text: string, term: string): boolean => {
+        if (!term || term.length < 3) return false;
+        // Ignore generic topic/format words from forcing Phase 0 direct inclusion
+        const genericNames = new Set([
+            'trends', 'report', 'graph', 'data', '2026', 'state', 'outlook',
+            'beauty', 'food', 'home', 'retail', 'fashion', 'travel', 'design'
+        ]);
+        if (genericNames.has(term.toLowerCase())) return false;
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rx = new RegExp(`\\b${escaped}\\b`, 'i');
+        return rx.test(text);
+    };
+
     for (const g of syncedGraphs) {
         // Check graph_id (e.g., "alyson-stevens-macro", "sic")
-        if (queryLower.includes(g.graph_id)) {
+        if (g.graph_id.length > 3 && matchesWordBoundary(queryLower, g.graph_id)) {
             directMatchIds.add(g.graph_id);
             continue;
         }
 
         // Check curator full name (e.g., "Alyson Stevens", "Ben Dietz")
-        const curatorLower = (g.curator || '').toLowerCase();
-        if (curatorLower && curatorLower.length > 3 && queryLower.includes(curatorLower)) {
+        const curatorLower = (g.curator || '').trim().toLowerCase();
+        if (curatorLower && curatorLower.length > 4 && matchesWordBoundary(queryLower, curatorLower)) {
             directMatchIds.add(g.graph_id);
             continue;
         }
@@ -862,21 +874,21 @@ export function getRelevantGraphs(
         // Check curator last name (>3 chars to avoid false positives like "AI", "NIQ")
         const curatorParts = curatorLower.split(/\s+/);
         const curatorLastName = curatorParts[curatorParts.length - 1];
-        if (curatorLastName && curatorLastName.length > 3 && queryLower.includes(curatorLastName)) {
+        if (curatorLastName && curatorLastName.length > 3 && matchesWordBoundary(queryLower, curatorLastName)) {
             directMatchIds.add(g.graph_id);
             continue;
         }
 
         // Check company name (e.g., "TBWA", "Delta", "Havas", "Kantar")
-        const companyLower = (g.company || '').toLowerCase();
-        if (companyLower && companyLower.length > 2 && queryLower.includes(companyLower)) {
+        const companyLower = (g.company || '').trim().toLowerCase();
+        if (companyLower && companyLower.length > 3 && matchesWordBoundary(queryLower, companyLower)) {
             directMatchIds.add(g.graph_id);
             continue;
         }
 
         // Check graph name (e.g., "SIC", "Connection Index")
-        const nameLower = (g.name || '').toLowerCase();
-        if (nameLower && nameLower.length > 3 && queryLower.includes(nameLower)) {
+        const nameLower = (g.name || '').trim().toLowerCase();
+        if (nameLower && nameLower.length > 3 && matchesWordBoundary(queryLower, nameLower)) {
             directMatchIds.add(g.graph_id);
             continue;
         }
@@ -887,11 +899,15 @@ export function getRelevantGraphs(
     }
 
     // Score ALL graph types together — domain, expert, industry report compete on merit
-    const scored: GraphRelevanceResult[] = syncedGraphs.map(g => ({
-        graph: g,
-        score: directMatchIds.has(g.graph_id) ? 1.0 : scoreGraphRelevance(query, g),
-        graphTier: classifyGraphTier(g),
-    }));
+    const scored: GraphRelevanceResult[] = syncedGraphs.map(g => {
+        const isDirect = directMatchIds.has(g.graph_id);
+        return {
+            graph: g,
+            score: isDirect ? 1.0 : scoreGraphRelevance(query, g),
+            graphTier: classifyGraphTier(g),
+            isDirectMatch: isDirect,
+        };
+    });
 
     // Sort by score descending
     scored.sort((a, b) => b.score - a.score);
@@ -1078,7 +1094,7 @@ export function getRelevantSources(
         graphId: r.graph.graph_id,
         score: r.score,
         graphTier: r.graphTier,
-        reason: r.score >= 1.0 ? 'named directly in query' : `topic match (score ${r.score.toFixed(2)}, ${r.graphTier})`,
+        reason: r.isDirectMatch ? 'named directly in query' : `topic match (score ${r.score.toFixed(2)}, ${r.graphTier})`,
     }));
 
     const earnings = detectEarningsCandidate(query);
