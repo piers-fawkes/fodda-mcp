@@ -653,6 +653,53 @@ function rebuildSearchIndex(): void {
  *  - Living graphs get a modest freshness boost (+0.05)
  *  - Brand-name queries (single capitalized word) always include domain graphs
  */
+const QUERY_EXPANSION_MAP: Record<string, string[]> = {
+    // Wine & Beverages
+    wine: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'luxury', 'cpg', 'retail'],
+    vin: ['beverage', 'food', 'hospitality'],
+    sommelier: ['beverage', 'food', 'hospitality', 'dining'],
+    beer: ['beverage', 'drink', 'food', 'hospitality', 'cpg'],
+    spirits: ['beverage', 'drink', 'food', 'hospitality', 'luxury', 'cpg'],
+    cocktail: ['beverage', 'drink', 'food', 'hospitality', 'dining'],
+    barware: ['beverage', 'home', 'appliances', 'dining', 'retail'],
+    glassware: ['home', 'dining', 'beverage', 'design', 'retail'],
+    decanter: ['home', 'dining', 'beverage', 'luxury'],
+    fridge: ['appliances', 'home', 'electronics', 'retail'],
+    fridges: ['appliances', 'home', 'electronics', 'retail'],
+    refrigerator: ['appliances', 'home', 'electronics', 'retail'],
+    cellar: ['home', 'luxury', 'architecture', 'design'],
+    furniture: ['home', 'design', 'living', 'decor', 'retail'],
+    racking: ['home', 'design', 'storage'],
+    accessories: ['consumer-goods', 'home', 'retail', 'products'],
+    // Food & Dining
+    restaurant: ['food', 'beverage', 'dining', 'hospitality'],
+    dining: ['food', 'beverage', 'hospitality', 'home'],
+    kitchen: ['home', 'appliances', 'food', 'design'],
+    // Home & Living
+    lighting: ['home', 'design', 'decor'],
+    decor: ['home', 'design', 'living'],
+    appliance: ['appliances', 'home', 'consumer-electronics', 'retail'],
+    appliances: ['appliances', 'home', 'consumer-electronics', 'retail'],
+    // Fashion & Apparel
+    sneakers: ['fashion', 'apparel', 'footwear', 'streetwear', 'retail'],
+    footwear: ['fashion', 'apparel', 'retail'],
+    clothing: ['fashion', 'apparel', 'retail'],
+    apparel: ['fashion', 'retail'],
+    // Beauty & Skincare
+    skincare: ['beauty', 'wellness', 'cpg', 'retail'],
+    cosmetics: ['beauty', 'cpg', 'retail'],
+    fragrance: ['beauty', 'luxury', 'cpg', 'retail'],
+    // Tech & Electronics
+    smartphone: ['technology', 'electronics', 'consumer-electronics', 'retail'],
+    gadget: ['technology', 'electronics', 'consumer-electronics'],
+    // Luxury & Travel
+    watch: ['luxury', 'fashion', 'retail'],
+    watches: ['luxury', 'fashion', 'retail'],
+    jewelry: ['luxury', 'fashion', 'retail'],
+    hotel: ['travel', 'hospitality'],
+    resort: ['travel', 'hospitality'],
+};
+
 export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
     const queryLower = query.toLowerCase();
     
@@ -681,28 +728,44 @@ export function scoreGraphRelevance(query: string, g: CatalogGraph): number {
     for (const term of queryTerms) {
         if (searchText.includes(term)) {
             matchedTerms++;
-            // High-value match: the term appears in topics, routing_keywords, or domain
             if (topicsText.includes(term) || domainText.includes(term)) {
                 highValueMatches++;
             }
         }
     }
 
-    if (matchedTerms === 0) return 0;
-
-    // Base score: fraction of query terms that match
-    let score = matchedTerms / queryTerms.length;
-
-    // Boost for high-value matches (topics/domain/routing)
-    score += (highValueMatches / queryTerms.length) * 0.3;
-
-    // Living graphs (any type with recurring updates) get a modest freshness boost
-    const isLiving = g.update_frequency && !['One-Off', 'Coming Soon'].includes(g.update_frequency);
-    if (isLiving) {
-        score += 0.05;  // Freshness tiebreaker, not an inclusion floor
+    if (matchedTerms > 0) {
+        let score = matchedTerms / queryTerms.length;
+        score += (highValueMatches / queryTerms.length) * 0.3;
+        const isLiving = g.update_frequency && !['One-Off', 'Coming Soon'].includes(g.update_frequency);
+        if (isLiving) score += 0.05;
+        return Math.min(score, 1.0);
     }
 
-    return Math.min(score, 1.0);
+    // Category Expansion Fallback (0.3x weight)
+    const expandedTermsSet = new Set<string>();
+    for (const term of queryTerms) {
+        if (QUERY_EXPANSION_MAP[term]) {
+            QUERY_EXPANSION_MAP[term]!.forEach(exp => expandedTermsSet.add(exp));
+        }
+    }
+
+    if (expandedTermsSet.size > 0) {
+        let expandedMatches = 0;
+        for (const term of expandedTermsSet) {
+            if (searchText.includes(term)) {
+                expandedMatches++;
+            }
+        }
+        if (expandedMatches > 0) {
+            let score = 0.3 * (expandedMatches / expandedTermsSet.size);
+            const isLiving = g.update_frequency && !['One-Off', 'Coming Soon'].includes(g.update_frequency);
+            if (isLiving) score += 0.05;
+            return Math.min(score, 0.7);
+        }
+    }
+
+    return 0;
 }
 
 /**
@@ -858,6 +921,7 @@ export function getRelevantGraphs(
             results.push(best);
         }
     };
+    ensureTierPresent('living');
     ensureTierPresent('report');
     ensureTierPresent('static_expert');
 

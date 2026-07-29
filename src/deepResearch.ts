@@ -50,13 +50,22 @@ export interface DeepResearchResult {
 // Pipeline
 // ---------------------------------------------------------------------------
 
+export function cleanResearchQuery(q: string): string {
+    if (!q) return q;
+    return q
+        .replace(/^(run|do|execute|start|launch|create|generate|write)(\s+a)?\s+(fodda\s+)?(deep\s+research\s+project|deep\s+research|report|briefing|session|analysis)(\s+about|\s+on|\s+for|\s+regarding)?/i, '')
+        .replace(/^[?\s,.:]+|[?\s,.:]+$/g, '')
+        .trim() || q;
+}
+
 export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResearchResult> {
     const {
-        query, apiKey, userId, foddaRequest, waverunnerRequest,
+        query: rawQuery, apiKey, userId, foddaRequest, waverunnerRequest,
         depth = 'light', graphId,
         onProgress = () => {},
     } = opts;
 
+    const query = cleanResearchQuery(rawQuery);
     const isHeavy = depth === 'heavy';
     const tokenCost = isHeavy ? 3 : 2;
     const maxGraphs = isHeavy ? 15 : 8;
@@ -66,7 +75,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     onProgress(`📋 Phase 1/5: Planning research approach for "${query.slice(0, 80)}"...`);
     console.error(`[deep_research] Starting ${isHeavy ? 'heavy' : 'light'} research: "${query}"`);
 
-    const sourceCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query);
+    const sourceCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
     const graphCandidates = sourceCandidates
         .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
         .slice(0, maxGraphs);

@@ -30,7 +30,7 @@ import { createSessionTracker, postToSlack } from './sessionTracker.js';
 import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
-import { runDeepResearch } from './deepResearch.js';
+import { runDeepResearch, cleanResearchQuery } from './deepResearch.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -3615,8 +3615,9 @@ function addCoverageAnnotation(
                 // Return source_plan immediately so the caller knows what's happening.
                 // We need to call getRelevantSources here too for the source_plan preview.
                 // (The real routing happens inside runDeepResearch; this is just for the inline response.)
-                const previewCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(query);
                 const maxGraphs = isHeavy ? 15 : 8;
+                const cleanQuery = cleanResearchQuery(query);
+                const previewCandidates: SourceCandidate[] = graphId ? [] : getRelevantSources(cleanQuery, { minGraphs: isHeavy ? 6 : 4, maxGraphs });
                 const previewGraphs = previewCandidates
                     .filter((c): c is Extract<SourceCandidate, { kind: 'graph' }> => c.kind === 'graph')
                     .slice(0, maxGraphs);
