@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.33.7] - 2026-07-29
+
+### Fixed
+- **URL Scheme Normalization, `sub_themes_used` Payload Visibility & `gemini-2.0-flash` Expansion** (`src/deepResearch.ts`, `src/toolHandlers.ts`):
+  - Added URL scheme normalization (`normalizeUrl`) to recover malformed Gemini grounding URLs (`https.domain.com` -> `https://domain.com` and `httpss://` -> `https://`), restoring 9+ valid publisher citations.
+  - Included `sub_themes_used` in the initial `deep_research_topic` tool payload response for immediate caller visibility.
+  - Switched sub-theme expansion model to `gemini-2.0-flash`, ensuring LLM-generated topic-specific sub-themes fire consistently.
+  - Bumped `server_version` to `1.33.7`.
+
 ## [1.33.6] - 2026-07-29
 
 ### Added & Fixed
