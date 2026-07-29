@@ -221,7 +221,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         input: [
             {
                 type: 'text',
-                text: `Research query: ${query}\n\nProduce a comprehensive research report following the skills in your system instruction. Write in editorial narrative style — like a senior strategist briefing a CMO. IMPORTANT: At the end of the report, you MUST include a "## Sources" section listing all the source URLs you used from the provided context.`,
+                text: `Research query: ${query}\n\nProduce a comprehensive research report following the skills in your system instruction. Write in editorial narrative style — like a senior strategist briefing a CMO.\n\nCRITICAL MANDATE: You MUST actively leverage your web search tool to find and integrate quantitative market sizing data (dollar market values, projected CAGRs, category growth rates, and volume vs value figures) for all key categories in the query. Combine curated knowledge graph trends with live web evidence to deliver a complete brief.\n\nIMPORTANT: At the end of the report, you MUST include a "## Sources" section listing all the source URLs you used from the provided context.`,
             },
         ],
         tools: [
