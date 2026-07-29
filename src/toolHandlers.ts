@@ -3584,7 +3584,7 @@ function addCoverageAnnotation(
                             query,
                             apiKey,
                             userId: resolvedUserId,
-                            depth: depth || 'light',
+                            depth: effectiveDepth,
                             graphId,
                             foddaRequest,
                             waverunnerRequest,

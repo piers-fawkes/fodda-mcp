@@ -52,10 +52,12 @@ export interface DeepResearchResult {
 
 export function cleanResearchQuery(q: string): string {
     if (!q) return q;
-    return q
-        .replace(/^(run|do|execute|start|launch|create|generate|write)(\s+a)?\s+(fodda\s+)?(deep\s+research\s+project|deep\s+research|report|briefing|session|analysis)(\s+about|\s+on|\s+for|\s+regarding)?/i, '')
-        .replace(/^[?\s,.:]+|[?\s,.:]+$/g, '')
-        .trim() || q;
+    let s = q;
+    // Strip leading conversational wrapper
+    s = s.replace(/^(run|do|execute|start|launch|create|generate|write)(\s+a)?\s+(fodda\s+)?(deep\s+research\s+project|deep\s+research|report|briefing|session|analysis)(\s+about|\s+on|\s+for|\s+regarding)?/i, '');
+    // Strip trailing diagnosis notes, headers, or conversation transcripts attached to query
+    s = s.split(/\n|diagnos|troubleshoot|conversation|system message|user request/i)[0] || s;
+    return s.replace(/^[?\s,.:]+|[?\s,.:]+$/g, '').trim() || q;
 }
 
 export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResearchResult> {
