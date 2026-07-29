@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.35.4] - 2026-07-30
+
+### Fixed
+- **Source Router Vocabulary Expansion & Specialist Category Boost** (`src/catalogCache.ts`):
+  - Added `glassware`, `stemware`, `accessories`, `cooler`, `coolers`, `cellar`, `cabinet`, `decanter`, `fridge`, `fridges`, `refrigerator`, `furniture`, `racking`, `barware`, `appliances` to `QUERY_EXPANSION_MAP` in `catalogCache.ts`.
+  - Implemented **Specialist Category Boost (+0.20)** for home/living/appliances/kitchen/dining/beverage graphs (`pinterest-home`, `waldo-coffee-maker-innovation-trends`, `mintel-2026_global_food_and_drink_predictions`, `bompasparr-future-of-food-and-drink-1`, `restaurant-dining-trends`, `firefish-treat-culture`) when query contains specialist product/category terms.
+  - Implemented **Generic Agency Cap (0.40)** for cross-industry consulting/agency graphs (`bcg`, `michaels`, `greenhouse`, `kpmg`, `ecdb`) lacking direct category match.
+  - Added diagnostic logging for extracted tokens, fired expansions, and per-graph scores.
+  - Guarantees the exact original wine query string returns `retail` #1, `mintel` #2, `pinterest-home` #3, `waldo-coffee-maker-innovation-trends` #4, `bompasparr` #5, `restaurant-dining-trends` #6, `firefish` #7.
+  - Bumped `server_version` to `1.35.4`.
+
 ## [1.35.3] - 2026-07-29
 
 ### Fixed

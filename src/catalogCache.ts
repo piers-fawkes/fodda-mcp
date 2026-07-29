@@ -659,7 +659,7 @@ function rebuildSearchIndex(): void {
  */
 const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     // Wine & Beverages
-    wine: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'nightlife', 'leisure', 'entertainment', 'luxury', 'home', 'cpg', 'retail'],
+    wine: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'nightlife', 'leisure', 'entertainment', 'luxury', 'home', 'appliances', 'kitchen', 'dining', 'cpg', 'retail'],
     beverage: ['beverage', 'food', 'drink', 'cpg', 'retail', 'hospitality', 'dining', 'nightlife'],
     beverages: ['beverage', 'food', 'drink', 'cpg', 'retail', 'hospitality', 'dining', 'nightlife'],
     drinks: ['beverage', 'drink', 'food', 'cpg', 'retail', 'nightlife', 'hospitality'],
@@ -671,16 +671,20 @@ const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     beer: ['beverage', 'drink', 'food', 'hospitality', 'nightlife', 'cpg'],
     spirits: ['beverage', 'drink', 'food', 'hospitality', 'nightlife', 'luxury', 'cpg'],
     cocktail: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'nightlife'],
-    barware: ['beverage', 'home', 'appliances', 'dining', 'nightlife', 'retail'],
-    glassware: ['home', 'dining', 'beverage', 'design', 'nightlife', 'retail'],
-    decanter: ['home', 'dining', 'beverage', 'luxury', 'design'],
-    fridge: ['appliances', 'home', 'kitchen', 'electronics', 'retail'],
-    fridges: ['appliances', 'home', 'kitchen', 'electronics', 'retail'],
-    refrigerator: ['appliances', 'home', 'kitchen', 'electronics', 'retail'],
-    cellar: ['home', 'luxury', 'architecture', 'design', 'interior'],
+    barware: ['beverage', 'home', 'appliances', 'dining', 'nightlife', 'tableware', 'retail'],
+    glassware: ['home', 'dining', 'beverage', 'design', 'nightlife', 'tableware', 'barware', 'retail'],
+    stemware: ['home', 'dining', 'beverage', 'design', 'luxury', 'tableware', 'barware', 'retail'],
+    decanter: ['home', 'dining', 'beverage', 'luxury', 'design', 'barware', 'tableware'],
+    fridge: ['appliances', 'home', 'kitchen', 'electronics', 'consumer-electronics', 'retail'],
+    fridges: ['appliances', 'home', 'kitchen', 'electronics', 'consumer-electronics', 'retail'],
+    refrigerator: ['appliances', 'home', 'kitchen', 'electronics', 'consumer-electronics', 'retail'],
+    cooler: ['appliances', 'home', 'kitchen', 'electronics', 'beverage', 'cooling', 'retail'],
+    coolers: ['appliances', 'home', 'kitchen', 'electronics', 'beverage', 'cooling', 'retail'],
+    cellar: ['home', 'luxury', 'architecture', 'design', 'interior', 'wine'],
+    cabinet: ['furniture', 'home', 'interior', 'design', 'decor', 'storage'],
     furniture: ['home', 'design', 'living', 'decor', 'interior', 'retail'],
     racking: ['home', 'design', 'storage'],
-    accessories: ['consumer-goods', 'home', 'retail', 'products'],
+    accessories: ['consumer-goods', 'home', 'retail', 'products', 'design'],
     // Food & Dining
     restaurant: ['food', 'beverage', 'dining', 'hospitality', 'nightlife'],
     dining: ['food', 'beverage', 'hospitality', 'restaurant', 'dining-trends', 'nightlife', 'home'],
@@ -804,6 +808,28 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     // Topic Specialist Boost: if graph's explicit topics, name or routing keywords match query terms directly
     if (highValueMatches > 0) {
         finalScore += 0.10;
+    }
+
+    // Specialist Category Boost & Generic Agency Cap
+    const specialistProductTerms = new Set([
+        'fridge', 'fridges', 'refrigerator', 'cooler', 'coolers', 'cellar', 'cabinet',
+        'furniture', 'glassware', 'stemware', 'decanter', 'appliance', 'appliances',
+        'barware', 'tableware', 'racking', 'kitchen', 'lighting', 'decor'
+    ]);
+
+    const queryHasSpecialistProduct = terms.some(t => specialistProductTerms.has(t));
+
+    if (queryHasSpecialistProduct) {
+        const isGenericAgency = /bcg|dentsu|ecdb|kpmg|postpals|greenhouse|michaels|agency|consulting/i.test(g.graph_id + ' ' + (g.domain || ''));
+        const isSpecialistGraph = !isGenericAgency && /home|living|interior|decor|appliances?|kitchen|dining|beverage|food|hospitality|leisure/i.test(
+            g.graph_id + ' ' + (g.domain || '') + ' ' + (g.topics || []).join(' ') + ' ' + (g.routing_keywords || []).join(' ')
+        );
+
+        if (isSpecialistGraph || g.graph_id === 'retail') {
+            finalScore += 0.20; // Specialist Category Boost
+        } else if (isGenericAgency && directScore === 0) {
+            finalScore = Math.min(finalScore, 0.40); // Cap generic agency floor
+        }
     }
 
     // Generalized Narrow-Domain Mismatch Penalty
@@ -1012,6 +1038,20 @@ export function getRelevantGraphs(
     ensureTierPresent('report');
     ensureTierPresent('static_expert');
 
+    const stopWords = new Set([
+        'trend', 'trends', 'consumer', 'consumers', 'report', 'reports',
+        'industry', 'data', 'future', 'insight', 'insights', 'analysis',
+        'what', 'how', 'why', 'who', 'when', 'where', 'are', 'the', 'and', 'for', 'with',
+        'run', 'fodda', 'deep', 'research', 'project', 'about', 'session', 'briefing',
+        'brief', 'study', 'overview', 'summary', 'deck', 'slides', 'presentation', 'topic',
+        '2024', '2025', '2026', '2027', '2030', 'year', 'years', 'strategic', 'breakdown',
+        'give', 'provide', 'show', 'tell', 'key'
+    ]);
+    const debugTokens = query.toLowerCase().split(/\s+/).map(t => t.replace(/[^a-z0-9]/g, '')).filter(t => t.length > 2 && !stopWords.has(t));
+    const debugExpansions = new Set<string>();
+    debugTokens.forEach(t => (QUERY_EXPANSION_MAP[t] || []).forEach(e => debugExpansions.add(e)));
+
+    console.error(`[graphRouter] Extracted tokens: [${debugTokens.join(', ')}] | Fired expansions: [${Array.from(debugExpansions).join(', ')}]`);
     console.error(`[graphRouter] Query: "${query.substring(0, 60)}..." → ${results.length}/${syncedGraphs.length} synced graphs selected (${skippedShells} shells skipped): ${results.map(r => `${r.graph.graph_id}(${r.score.toFixed(2)},${r.graphTier})`).join(', ')}`);
 
     return results;
