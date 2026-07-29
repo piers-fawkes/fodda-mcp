@@ -715,7 +715,9 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
         'industry', 'data', 'future', 'insight', 'insights', 'analysis',
         'what', 'how', 'why', 'who', 'when', 'where', 'are', 'the', 'and', 'for', 'with',
         'run', 'fodda', 'deep', 'research', 'project', 'about', 'session', 'briefing',
-        'brief', 'study', 'overview', 'summary', 'deck', 'slides', 'presentation', 'topic'
+        'brief', 'study', 'overview', 'summary', 'deck', 'slides', 'presentation', 'topic',
+        '2024', '2025', '2026', '2027', '2030', 'year', 'years', 'strategic', 'breakdown',
+        'give', 'provide', 'show', 'tell', 'key'
     ]);
 
     const terms = clauseLower
