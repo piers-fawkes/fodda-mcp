@@ -227,23 +227,7 @@ export function getDomainGraphIds(): Set<string> {
  * Generates: - graphId "retail" → "PSFK's Retail Graph"
  */
 export function buildGraphNamingBlock(): string {
-    const graphs = getLiveGraphs();
-    if (graphs.length === 0) return ''; // fallback — will use hardcoded
-
-    const lines: string[] = [];
-    lines.push('GRAPH NAMING: Never call results "the Fodda graph." Fodda is the platform — the knowledge graphs are created by named experts. Always attribute to the expert:');
-
-    for (const g of graphs) {
-        const displayName = buildDisplayName(g);
-        const domainHint = g.domain ? ` (${g.domain})` : '';
-        lines.push(`- graphId "${g.graph_id}" → "${displayName}"${domainHint}`);
-    }
-
-    lines.push('Example: "PSFK\'s Retail Graph identifies Retailer-Operated Value-Recovery Programs as a top signal (score: 100)" — NOT "the Fodda graph shows..."');
-    lines.push('Fodda is the delivery mechanism. The experts are the authority.');
-    lines.push('When presenting results from community Pattern Graphs, use the creator\'s name in attribution (e.g., "According to [creator]\'s [Graph Name] Pattern Graph on Fodda...").');
-
-    return lines.join('\n');
+    return 'GRAPH NAMING: Never call results "the Fodda graph." Fodda is the platform — knowledge graphs are created by named experts. Always attribute each graph to its named expert; call `list_graphs` for graph names, curators, and domain details. Example: "PSFK\'s Retail Graph identifies Retailer-Operated Value-Recovery Programs as a top signal (score: 100)" — NOT "the Fodda graph shows..."';
 }
 
 /**

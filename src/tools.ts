@@ -91,8 +91,10 @@ export const TOOL_VERSIONS = {
     list_analysts: "1.0.0",
     consult_analyst: "1.0.0",
     toggle_graph_preference: "1.0.0",
-    manage_scheduled_reports: "2.0.0",
     get_company_earnings: "1.0.0",
+    get_validated_trends: "1.0.0",
+    get_capabilities: "1.0.0",
+    expert_onboarding_research: "1.0.0",
     // v1.33.0 — LinkedIn content tools (evidence engine heads)
     draft_linkedin_post: "1.0.0",
     draft_linkedin_article: "1.0.0",

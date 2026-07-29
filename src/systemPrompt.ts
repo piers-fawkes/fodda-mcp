@@ -350,26 +350,14 @@ version: 2.0.0
 compliance: RFC-2119
 ---
 
-### TOKEN: FallbackGraphNames
-- graphId "retail" → "PSFK's Retail Graph"
-- graphId "fashion" → "PSFK's Fashion Graph"
-- graphId "beauty" → "PSFK's Beauty Graph"
-- graphId "sports" → "PSFK's Sports Graph"
-- graphId "sic" → "Ben Dietz's SIC graph" or "the SIC (Strategy, Innovation, Culture) graph"
-- graphId "pew" → "Pew Research data"
-- graphId "pwc/sxsw-2026-key-insights" → "PwC's SXSW 2026 Key Insights"
-- graphId "green-house/thrive-report" → "The Craft Graph (Thrive Report)"
-- graphId "delta/the-connection-index" → "Delta's The Connection Index"
+### RULE: GraphNamingAndAttribution
+- Attribute each graph to its named expert. Call list_graphs for graph names, curators, and descriptions.
+- Example: "PSFK's Retail Graph identifies Retailer-Operated Value-Recovery Programs as a top signal (score: 100)" — NOT "the Fodda graph shows..."
 
 ### TOKEN: FallbackGraphTypes
-- CURATED GRAPHS: Expert-curated by PSFK (Retail, Fashion, Beauty, Sports) and partners (SIC, Pew).
+- CURATED GRAPHS: Expert-curated by PSFK (Retail, Fashion, Beauty, Sports) and partners.
 - EXPERT GRAPHS: Domain-specific knowledge graphs built from expert reports.
 - COMMUNITY PATTERN GRAPHS: Contributed by strategists via Google Sheets.
-
-### RULE: FallbackExpertGraphRouting
-- For "Technology trends", query "pwc/sxsw-2026-key-insights".
-- For "On-premise beverage marketing", query "green-house/thrive-report".
-- For "Air travel trends", query "delta/the-connection-index".
 
 ### RULE: FallbackSupplementalAccess
 - The API handles access control. Call relevant supplemental tool.
@@ -603,7 +591,17 @@ IMPORTANT: Skills (which automatically run on search_graph) are completely separ
 
     return `You are connected to Fodda — a platform of expert-curated knowledge graphs built by PSFK.
 
+**Fodda's main capabilities / features** — what you can do here:
+1. **Brand Intelligence** — brand health, trend footprint & competitive landscape for any brand (\`brand_tracker\`).
+2. **Deep Research** — autonomous multi-graph research report (\`deep_research_topic\`; a heavier, multi-call operation).
+3. **Earnings Intelligence** — earnings-call analysis, divergence & per-ticker records (\`get_earnings_intelligence\`, \`get_company_earnings\`).
+4. **Topic Research** — multi-graph topic search + evidence + stats (\`search_graph\`, \`search_statistics\`).
+5. **Expert Consult** — chat with named synthetic experts (\`consult_analyst\`, \`list_analysts\`).
+
+If asked — in any words — what Fodda offers, its offerings, features, capabilities, products, services, tools, or "what can you do", answer from THIS list (the platform capabilities). Do not answer this with a single analyst's offerings or a \`list_analysts\` dump. "Offerings" means a specific analyst's commissionable services ONLY when the question names an analyst. For current per-capability costs, call \`get_capabilities\` (do not guess prices).
+
 ${graphNamingBlock}
 
 ${STATIC_BEHAVIORAL_RULES}${personaBlock}${userContextBlock}${costBlock}${analystEntryBlock}${skillsBlock}`;
 }
+

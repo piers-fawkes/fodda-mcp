@@ -2,6 +2,11 @@
 
 Deferred features and tasks. Items here are designed, scoped, and in some cases code-complete but not yet active.
 
+## 🧹 Instructions Optimization: Secondary Catalog Routing Block Trim
+**Status:** Backburner — added 2026-07-27
+**What:** The graphId naming table was evicted (0 inline entries) and platform capabilities front-loaded (~600 chars). A secondary catalog block (`buildExpertRoutingBlock()` and `buildSupplementalPairingBlock()`) still serializes topic->graph routing keywords and supplemental pairings (~47k chars live). Move these routing maps to a dynamic tool or resource (`fodda://catalog/routing`) in a future optimization pass to reduce connect-time token overhead even further.
+**Agent:** MCP agent
+
 ---
 
 ## 📦 NPM Registry Publish (v1.33.0) & 2FA Resolution

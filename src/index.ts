@@ -72,6 +72,7 @@ app.post('/register', (_req, res) => {
 
 export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
     'brand-intelligence': [
+        'get_capabilities',
         'brand_tracker',
         'search_graph',
         'read_url',
@@ -86,9 +87,11 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'generate_visual',
     ],
     'topic-research': [
+        'get_capabilities',
         'search_graph',
         'search_statistics',
         'search_insights',
+        'get_validated_trends',
         'get_evidence',
         'get_node',
         'get_neighbors',
@@ -101,6 +104,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'check_supplemental_status',
     ],
     'deep-research': [
+        'get_capabilities',
         'deep_research_topic',
         'check_research_status',
         'search_graph',
@@ -116,9 +120,11 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'check_supplemental_status',
     ],
     'earnings-intelligence': [
+        'get_capabilities',
         'get_earnings_intelligence',
         'get_earnings_divergence',
         'get_company_earnings',
+        'get_validated_trends',
         'search_graph',
         'get_evidence',
         'get_node',
@@ -129,6 +135,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'generate_visual',
     ],
     'expert-consult': [
+        'get_capabilities',
         'consult_analyst',
         'list_analysts',
         'request_deliverable',

@@ -2,9 +2,16 @@
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "rate_usd_per_call": 0.5,
   "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $10/$15.",
-  "count": 35,
+  "count": 46,
   "billable": 20,
   "tools": [
+    {
+      "name": "begin_expert_onboarding",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Begin the Fodda expert onboarding process. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: \"With this information we'll run a background research project on your public work, run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You'll get to review everything before anything is submitted.\" Do not announce \"I'll read back through your conversation history\" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: \"We'll use these to set up your Human Agent.\" After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply \"reviewed - I accept the terms\". Never solicit or record consent before the links have been shown in the conversation. [INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED] Do not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially. Q1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert's work, plus a final option \"Analyze broadly across all of it\". Options must be specific to this expert. Never use generic placeholder categories. Q2 - Recency window (single select): \"90 days\", \"120 days (default)\", \"12 months\", \"All time\". State in the framing line that older material is demoted to legacy canon, not discarded. If no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers. [FLOW VISUALIZATION - REQUIRED IF SUPPORTED] Before asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked \"You are here\". Use Fodda's brand accent color #663399 for the active stage, highlights, and connectors. The \"You are here\" label MUST stay legible on any page background (this often renders on a dark/black page): give the label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. A soft #f5f0ff halo may sit behind the active stage dot itself. Stages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Audio interview -> Human Agent live. Restate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage."
+    },
     {
       "name": "brainstorm_topic",
       "kind": "tool",
@@ -41,11 +48,18 @@
       "description": "Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED."
     },
     {
+      "name": "confirm_themes",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Confirm the selected themes to generate the interview questionnaire. Instruct the agent/LLM that when themes/topics are confirmed/returned, it must reframe the introduction using the ACTUAL number of topics returned in the payload (themes.length), e.g. \"N expert topics were detected from the material you shared. These become the foundation of your Human Agent's expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters.\" NEVER state a hardcoded count; the number MUST equal the count of themes actually returned. The agent/LLM must present all identified topics in one single numbered list, or state explicitly \"recommending N of the M\". Also restate the onboarding stepper with the \"Choose your themes\" stage marked as current (You are here) before presenting them. The identity is derived from your connector session."
+    },
+    {
       "name": "consult_analyst",
       "kind": "tool",
       "bills_as": "expert_agent",
       "category": "Expert",
-      "description": "Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. Use when the user asks to talk to or consult a specific expert, or when you need a specialist perspective on culture, strategy, or innovation topics. Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda's graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`."
+      "description": "Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda's graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`."
     },
     {
       "name": "deep_research_topic",
@@ -76,6 +90,13 @@
       "description": "Draft a LinkedIn post about any topic, grounded in Fodda's expert knowledge graphs. Use when the user says \"draft a LinkedIn post about…\", \"write a post on…\", \"turn this into a LinkedIn post\", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free."
     },
     {
+      "name": "expert_onboarding_research",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Kick off asynchronous background research on your public work for the expert onboarding. The identity is derived from your connector session."
+    },
+    {
       "name": "generate_visual",
       "kind": "tool",
       "bills_as": "free",
@@ -83,11 +104,25 @@
       "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat."
     },
     {
+      "name": "get_capabilities",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Returns Fodda's main capabilities / features / offerings / products / services / tools and what they cost. Call this for any question about what Fodda can do or what's available."
+    },
+    {
       "name": "get_company_earnings",
       "kind": "tool",
       "bills_as": "earnings_company",
       "category": "Financial",
-      "description": "The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda's quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Uses 0–15 tokens depending on view (coverage is free, snapshot/history = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons."
+      "description": "The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda's quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Uses 0–15 API calls depending on mode/view (coverage is free, snapshot/history = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons."
+    },
+    {
+      "name": "get_detected_themes",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Fetch the detected themes derived from the expertise analysis and background research. Instruct the agent/LLM that when themes come back, it must reframe the introduction using the ACTUAL number of topics returned in the payload (themes.length), e.g. \"N expert topics were detected from the material you shared. These become the foundation of your Human Agent's expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters.\" NEVER state a hardcoded count; the number MUST equal the count of themes actually returned. The agent/LLM must present all identified topics in one single numbered list, or state explicitly \"recommending N of the M\". Also restate the onboarding stepper with the \"Choose your themes\" stage marked as current (You are here) before presenting them. The identity is derived from your connector session."
     },
     {
       "name": "get_domain_intelligence",
@@ -139,6 +174,13 @@
       "description": "Check the current user's account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks \"how many API calls do I have?\", \"what plan am I on?\", \"what graphs can I access?\", or similar account questions. Returns live data — not cached from session start."
     },
     {
+      "name": "get_my_earnings",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Check the expert's Fodda earnings."
+    },
+    {
       "name": "get_neighbors",
       "kind": "tool",
       "bills_as": "free",
@@ -151,6 +193,13 @@
       "bills_as": "free",
       "category": "Graph",
       "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result."
+    },
+    {
+      "name": "get_onboarding_status",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Check the status of the expert onboarding process. The identity is derived from your connector session. IMPORTANT: analystId is an internal reference — do not display it to the expert."
     },
     {
       "name": "get_report_intelligence",
@@ -167,11 +216,18 @@
       "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses 5 tokens ($2.50 via SPT) per standalone use."
     },
     {
+      "name": "get_validated_trends",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda's analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals."
+    },
+    {
       "name": "list_analysts",
       "kind": "tool",
       "bills_as": "free",
       "category": "Expert",
-      "description": "List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to \"talk to\" or \"consult\" an expert, or when you need specialist depth on culture, strategy, or innovation topics."
+      "description": "Lists available synthetic analyst personas (e.g. brand-cmo, brand-ceo, brand-cfo). To query a company-specific synthetic expert (e.g., \"Nike CMO\", \"Apple CMO\", \"Adidas CEO\"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: \"Nike\")."
     },
     {
       "name": "list_graphs",
@@ -200,6 +256,13 @@
       "bills_as": "skill_deliverable",
       "category": "Expert",
       "description": "Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is \"completed\" to get the artifact links. The offering price is charged on acceptance; the analyst's research is included, not billed separately. Example brief: \"Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon.\""
+    },
+    {
+      "name": "schedule_interview",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Schedule your voice interview. You can specify a datetime (UTC ISO string) and localTimeStr (human-readable time, e.g. \"Tuesday, July 14 at 3:00 PM EDT\"), or request an instant interview now. [SCHEDULING BEHAVIOR] If the expert chooses to schedule for later rather than start now: first check whether a calendar tool/connector is available in this session. If one is, look at their availability and proactively offer 2-3 specific open windows within the next 24 hours, in their local timezone, instead of asking them to name a time cold. If no calendar is connected, simply ask for a preferred day and time (assume the expert's local timezone; confirm it if unclear). [AFTER BOOKING] Once a time is confirmed and this tool returns a Google Meet join link, add the interview to the expert's calendar automatically - create the event at the booked time, titled \"Fodda Human Agent — audio interview with <the expert's full name>\", with the join link inside it - rather than asking whether they want it added. Then confirm in one line that it is on their calendar, and include the calendar event link in that confirmation. Only skip the auto-add if no calendar tool is available in the session."
     },
     {
       "name": "search_graph",
@@ -235,6 +298,20 @@
       "bills_as": "free",
       "category": "Account",
       "description": "Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company)."
+    },
+    {
+      "name": "submit_basic_info",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Submit basic information (name, role, knowledge area) for the expert onboarding process. IMPORTANT: analystId is an internal reference — do not display it to the expert."
+    },
+    {
+      "name": "submit_expertise_analysis",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Other",
+      "description": "Submit the analyzed voice study and expertise map JSON outputs from the LLM. Once submitted, the next steps in the chain are to call get_detected_themes, then confirm_themes, and finally receive the scheduling/interview instructions. Note: The expert profile is not publicly listed until approved. IMPORTANT: analystId is an internal reference — do not display it to the expert."
     },
     {
       "name": "toggle_graph_preference",
