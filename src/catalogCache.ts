@@ -702,8 +702,25 @@ const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     watch: ['luxury', 'fashion', 'retail'],
     watches: ['luxury', 'fashion', 'retail'],
     jewelry: ['luxury', 'fashion', 'retail'],
-    hotel: ['travel', 'hospitality'],
-    resort: ['travel', 'hospitality'],
+    // Automotive & Mobility
+    ev: ['automotive', 'mobility', 'transportation', 'energy', 'sustainability', 'technology'],
+    electric: ['automotive', 'mobility', 'energy', 'sustainability', 'technology'],
+    automotive: ['automotive', 'mobility', 'transportation', 'manufacturing'],
+    car: ['automotive', 'mobility', 'transportation'],
+    cars: ['automotive', 'mobility', 'transportation'],
+    vehicle: ['automotive', 'mobility', 'transportation'],
+    vehicles: ['automotive', 'mobility', 'transportation'],
+    // Pet & Animal Care
+    pet: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    pets: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    dog: ['pet', 'cpg', 'food', 'wellness'],
+    cat: ['pet', 'cpg', 'food', 'wellness'],
+    // Tech, AI & SaaS
+    ai: ['technology', 'ai', 'software', 'enterprise', 'innovation'],
+    saas: ['technology', 'software', 'enterprise', 'b2b'],
+    software: ['technology', 'software', 'enterprise', 'b2b'],
+    cloud: ['technology', 'enterprise', 'software'],
+    cybersecurity: ['technology', 'enterprise', 'security'],
 };
 
 function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
@@ -728,7 +745,7 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     if (terms.length === 0) return 0;
 
     const searchText = graphSearchTexts.get(g.graph_id) || buildSearchableText(g);
-    const topicsText = [...(g.topics || []), ...(g.routing_keywords || [])].join(' ').toLowerCase();
+    const topicsText = [...(g.topics || []), ...(g.routing_keywords || []), g.name || '', g.graph_id || ''].join(' ').toLowerCase();
     const domainText = (g.domain || '').toLowerCase();
 
     let matchedTerms = 0;
@@ -745,7 +762,7 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
 
     let directScore = 0;
     if (matchedTerms > 0) {
-        directScore = (matchedTerms / terms.length) + (highValueMatches / terms.length) * 0.4;
+        directScore = (matchedTerms / terms.length) * 0.6 + (highValueMatches / terms.length) * 0.5;
     }
 
     // Category Expansion Score
@@ -759,14 +776,17 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
 
     if (expandedSet.size > 0) {
         let expMatches = 0;
+        let expHighValueMatches = 0;
         for (const exp of expandedSet) {
             if (searchText.includes(exp)) {
                 expMatches++;
+                if (topicsText.includes(exp) || domainText.includes(exp)) {
+                    expHighValueMatches++;
+                }
             }
         }
         if (expMatches > 0) {
-            // Expansion score: rewarding graphs that match 2+ expanded domain categories
-            expansionScore = 0.25 + 0.25 * Math.min(expMatches / 3, 1.0);
+            expansionScore = 0.20 + 0.20 * Math.min(expMatches / 3, 1.0) + 0.15 * Math.min(expHighValueMatches / 2, 1.0);
         }
     }
 
@@ -777,24 +797,20 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
         finalScore += 0.30;
     }
 
-    // Specialist domain boost for home, appliances, dining, food, beverage, hospitality & nightlife
-    const isSpecialistDomain = /home|appliance|kitchen|dining|restaurant|nightlife|beverage|food|hospitality|leisure/i.test(g.graph_id + (g.name || '') + (g.domain || ''));
-    const queryHasSpecialistTerm = /wine|fridge|refrigerator|furniture|glassware|barware|coffee|dining|restaurant|beer|spirits|nightlife/i.test(clause);
-    if (isSpecialistDomain && queryHasSpecialistTerm) {
-        finalScore += 0.12;
+    // Topic Specialist Boost: if graph's explicit topics, name or routing keywords match query terms directly
+    if (highValueMatches > 0) {
+        finalScore += 0.10;
     }
 
-    // Mismatch penalty for pure beauty/gaming graphs when query has no beauty/gaming terms
-    const isBeautyGraph = /beauty|skincare|fragrance|sun/i.test(g.graph_id + (g.name || ''));
-    const queryHasBeauty = /beauty|skincare|fragrance|sun|cosmetics/i.test(clause);
-    if (isBeautyGraph && !queryHasBeauty) {
-        finalScore -= 0.3;
-    }
-
-    // Soft penalty for generic agency marketing reports (Dentsu, Edelman, Michaels) on specific product queries
-    const isGenericAgency = /dentsu|edelman|michaels|forrester|postpals/i.test(g.graph_id);
-    if (isGenericAgency && queryHasSpecialistTerm) {
-        finalScore -= 0.10;
+    // Generalized Narrow-Domain Mismatch Penalty
+    const narrowDomains = ['beauty', 'gaming', 'automotive', 'fashion'];
+    for (const dom of narrowDomains) {
+        const isNarrowGraph = (g.graph_id + (g.domain || '')).toLowerCase().includes(dom);
+        const queryHasDom = terms.some(t => t.includes(dom) || (QUERY_EXPANSION_MAP[t] && QUERY_EXPANSION_MAP[t]!.includes(dom)));
+        if (isNarrowGraph && !queryHasDom) {
+            finalScore -= 0.30;
+            break;
+        }
     }
 
     return Math.max(0, Math.min(finalScore, 1.0));

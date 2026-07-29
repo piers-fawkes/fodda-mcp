@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.34.3] - 2026-07-29
+
+### Fixed
+- **Topic-Agnostic Graph Relevance Scoring** (`src/catalogCache.ts`):
+  - Refactored `scoreClauseRelevance` in `catalogCache.ts` to be 100% topic-agnostic without any hardcoded query strings or hardcoded graph penalties.
+  - Rewarded topic specialist matches (+0.10) whenever a graph's explicit `topics`, `routing_keywords`, `name`, or `graph_id` matches query terms or expanded category clusters directly.
+  - Expanded `QUERY_EXPANSION_MAP` across all major industry verticals (Automotive & EV, Pet & Animal Care, AI & SaaS, Home & Living, Food & Dining, Retail & E-Commerce).
+  - Generalized narrow-domain mismatch penalties so unrelated narrow graphs (beauty, gaming, automotive) are safely penalized on irrelevant queries.
+  - Bumped `server_version` to `1.34.3`.
+
 ## [1.34.2] - 2026-07-29
 
 ### Fixed
