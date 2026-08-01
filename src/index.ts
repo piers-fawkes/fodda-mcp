@@ -954,17 +954,22 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         }
 
         // Extract API key, userId, and entry ID from URL or headers.
-        // Priority: X-API-Key header → Authorization Bearer → resolved token key → query string (fallback).
-        const apiKey = isSpt ? '' : ((req.headers['x-api-key'] as string)
-            || (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
+        // Priority: resolved OAuth key → X-API-Key header → Authorization Bearer (if non-Clerk) → resolved token key → query string (fallback).
+        const resolvedOAuthKey = (req as any).__resolvedApiKey || '';
+        const resolvedOAuthUser = (req as any).__resolvedUserId || '';
+
+        const apiKey = isSpt ? '' : (resolvedOAuthKey
+            || (req.headers['x-api-key'] as string)
+            || (!isClerkJwt ? (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, '')) : '')
             || resolvedApiKey
             || (req.query.api_key as string)
             || '');
         const entryId = resolvedEntryId || (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup
         const isEmailId = entryId.includes('@') && entryId.includes('.');
-        // Priority for userId: resolved token email → query user_id → header X-User-Id → query id / anonymous
-        const userId = isSpt ? 'spt_agent' : (resolvedEmail
+        // Priority for userId: resolved OAuth user → resolved token email → query user_id → header X-User-Id → query id / anonymous
+        const userId = isSpt ? 'spt_agent' : (resolvedOAuthUser
+            || resolvedEmail
             || (req.query.user_id as string)
             || (req.headers['x-user-id'] as string)
             || (isEmailId ? entryId : 'anonymous'));
