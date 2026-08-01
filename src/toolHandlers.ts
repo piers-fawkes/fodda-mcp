@@ -445,15 +445,33 @@ export async function createServer(
     // session's tool list with a third party's internals. Skills with no
     // router register all their tools as before.
     for (const discovered of discoveredSkills) {
+        // Skill-level directory_visible filter — opt-out from directory build
+        if ((discovered as any).directory_visible === false) continue;
+
         const routerTool = discovered.tools.find(t => /router/i.test(t.name));
         const toolsToRegister = routerTool ? [routerTool] : discovered.tools;
         if (routerTool && discovered.tools.length > 1) {
             console.error(`[skills] ${discovered.skill_id}: collapsed ${discovered.tools.length} tools to router-only (${routerTool.name})`);
         }
         for (const tool of toolsToRegister) {
+            // Tool-level directory_visible filter
+            if ((tool as any).directory_visible === false) continue;
+
             const prefixedName = `${discovered.skill_id}_${tool.name}`;
             const costNote = `(costs ${discovered.cost_per_call} API calls)`;
             const description = `[${discovered.skill_name}] ${tool.description || tool.name} ${costNote}`;
+
+            // Build per-tool annotations from skills API, with safe defaults.
+            // IMPORTANT: readOnlyHint defaults to false (write-capable) when not provided by the API —
+            // the fail-safe direction is to assume writes may occur, not assume read-only.
+            const toolAnnotations = (tool as any).annotations as Record<string, boolean> | undefined;
+            const annotations = {
+                title: `${discovered.skill_name}: ${tool.name}`,
+                readOnlyHint: toolAnnotations?.readOnlyHint ?? false,
+                destructiveHint: toolAnnotations?.destructiveHint ?? false,
+                idempotentHint: toolAnnotations?.idempotentHint ?? false,
+                openWorldHint: toolAnnotations?.openWorldHint ?? true,
+            };
 
             // Build a Zod schema from the tool's inputSchema
             // The inputSchema from the API is a JSON Schema object — we accept
@@ -462,7 +480,7 @@ export async function createServer(
                 prefixedName,
                 description,
                 { arguments: z.record(z.string(), z.any()).optional().describe('Arguments for the skill tool. Check the tool description for expected parameters.') },
-                { title: `${discovered.skill_name}: ${tool.name}`, readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+                annotations,
                 async ({ arguments: toolArgs }) => {
                     try {
                         const { output, durationMs } = await executeSkillTool(
@@ -964,7 +982,7 @@ function addCoverageAnnotation(
             include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled skills (Paralogy, Igloo, etc.) for this query only. Use when the user says "without skills", "skip Paralogy", or "just the raw results". Default: false.')
         },
-        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ mode, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -2210,7 +2228,7 @@ function addCoverageAnnotation(
             include_evidence: z.boolean().optional().describe('If true (default), include individual evidence items. Set to false for summary-only.'),
             max_evidence: z.number().optional().describe('Maximum evidence items per graph. Default: 10. Max: 25.'),
         },
-        { title: 'Brand Intelligence Profile', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Brand Intelligence Profile', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ brand_name, userId: uid, graph_ids, include_evidence, max_evidence }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -2254,7 +2272,7 @@ function addCoverageAnnotation(
             graph_ids: z.array(z.string()).optional().describe("Graph IDs from prior search results — helps refine domain inference."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
-        { title: 'Get Market Context Data', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Get Market Context Data', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ query, domain, brands, graph_ids, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -3074,12 +3092,19 @@ function addCoverageAnnotation(
         'Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company).',
         {
             email: z.string().describe('User\'s email address (required)'),
+            user_confirmed: z.literal(true).describe('Must be true — the user must have explicitly asked to create an account before this tool is called. Never set this to true speculatively or on behalf of the user.'),
             name: z.string().optional().describe('User\'s full name (optional — collect conversationally after signup)'),
             job_title: z.string().optional().describe('User\'s job title (optional)'),
             company: z.string().optional().describe('User\'s company name (optional)'),
         },
         { title: 'Create Base Account', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ email, name, job_title, company }) => {
+        async ({ email, user_confirmed, name, job_title, company }) => {
+            if (!user_confirmed) {
+                return {
+                    isError: true,
+                    content: [{ type: 'text' as const, text: JSON.stringify({ error: 'user_confirmed must be true — only call this tool after the user has explicitly asked to create an account.' }) }],
+                };
+            }
             try {
                 // Derive firstName from name or email prefix
                 const firstName: string = name

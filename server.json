@@ -4,6 +4,9 @@
   "title": "Fodda Knowledge Graphs",
   "description": "Expert-curated knowledge, brand, research & earnings intelligence — 31 tools, 220+ graphs.",
   "websiteUrl": "https://www.fodda.ai",
+  "privacyPolicyUrl": "https://www.fodda.ai/privacy",
+  "termsOfServiceUrl": "https://www.fodda.ai/terms",
+  "supportContact": "support@fodda.ai",
   "icons": [
     {
       "src": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
@@ -12,16 +15,26 @@
       ]
     }
   ],
-  "version": "1.32.1",
+  "version": "1.35.0",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"
   },
+  "remotes": [
+    {
+      "transportType": "streamable-http",
+      "url": "https://mcp.fodda.ai/mcp",
+      "authorizationServerMetadataUrl": "https://mcp.fodda.ai/.well-known/oauth-authorization-server",
+      "clientAuthentication": {
+        "type": "oauth2"
+      }
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
       "identifier": "fodda-mcp",
-      "version": "1.32.1",
+      "version": "1.35.0",
       "transport": {
         "type": "stdio"
       },

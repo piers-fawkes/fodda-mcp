@@ -52,18 +52,29 @@ app.use((req, res, next) => {
     next();
 });
 
-// OAuth discovery endpoints — return 404 to indicate no OAuth support
+// OAuth discovery endpoints — Clerk-backed OAuth for the MCP Connectors Directory.
+// The authorization server is Clerk (configured as CLERK_ISSUER_URL).
+// These endpoints follow RFC 8414 / draft-ietf-oauth-security-topics so MCP clients
+// can auto-discover the auth server and initiate PKCE flows.
+const CLERK_ISSUER = process.env.CLERK_ISSUER_URL || 'https://clerk.fodda.ai';
 app.get('/.well-known/oauth-protected-resource', (_req, res) => {
-    res.status(404).json({ error: 'OAuth not supported. Use API key auth via URL: ?api_key=YOUR_KEY' });
+    res.status(200).json({
+        resource: 'https://mcp.fodda.ai',
+        authorization_servers: [CLERK_ISSUER],
+    });
 });
-app.get('/.well-known/oauth-protected-resource/:path', (_req, res) => {
-    res.status(404).json({ error: 'OAuth not supported.' });
+app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+    res.status(200).json({
+        resource: 'https://mcp.fodda.ai/mcp',
+        authorization_servers: [CLERK_ISSUER],
+    });
 });
 app.get('/.well-known/oauth-authorization-server', (_req, res) => {
-    res.status(404).json({ error: 'OAuth not supported.' });
+    res.redirect(302, `${CLERK_ISSUER}/.well-known/oauth-authorization-server`);
 });
 app.post('/register', (_req, res) => {
-    res.status(404).json({ error: 'OAuth not supported.' });
+    // DCR not handled here — managed by Clerk dashboard
+    res.status(501).json({ error: 'Dynamic client registration is managed via the Clerk dashboard.' });
 });
 
 // ---------------------------------------------------------------------------
@@ -929,8 +940,18 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // For an SPT (anonymous) session: validate the token ONCE now (no charge)
                 // so we can refuse a task the SPT can't cover before running it. Reject the
                 // connection if the token is bad/unfunded.
+                //
+                // Directory connector policy: SPT lane is disabled on this endpoint when
+                // ENABLE_SPT !== 'true'. The listed connector is OAuth + account credits only.
                 let sptInfo: { token: string; maxAmountCents: number | null; prices: Record<string, number> } | null = null;
                 if (isSpt) {
+                    if (process.env.ENABLE_SPT !== 'true') {
+                        return res.status(401).json({
+                            jsonrpc: '2.0',
+                            error: { code: -32000, message: 'SPT payment tokens are not accepted on this endpoint. Connect via OAuth at https://app.fodda.ai.' },
+                            id: body?.id ?? null,
+                        });
+                    }
                     const v = await validateSpt(spt);
                     if (!v.valid) {
                         return res.status(402).json({
