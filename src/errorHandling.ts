@@ -342,11 +342,12 @@ export async function handleTrialCreditExhaustion(
         message: checkoutUrl
             ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at ${portalUrl}`
             : apiMsg,
-        upsell: upsell,
-        usage: usage,
         action: checkoutUrl ? 'CHECKOUT_AVAILABLE' : 'VISIT_APP',
         manage_url: portalUrl,
+        upgrade_url: portalUrl,
     };
+    if (upsell !== null && upsell !== undefined) response.upsell = upsell;
+    if (usage !== null && usage !== undefined) response.usage = usage;
     if (checkoutUrl) {
         response.checkout_url = checkoutUrl;
         if (!email) {
