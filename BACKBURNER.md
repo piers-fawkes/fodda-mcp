@@ -125,6 +125,22 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 
 ---
 
+## 💳 SPT Lane (Anonymous Agent Pay-Per-Task via Stripe)
+**Status:** Code complete and E2E-validated (June 20, 2026: API 8/8 + MCP E2E 3/3 pass) — being disabled for the Claude Connectors Directory review, July 31, 2026
+**Why removed:** Anthropic's directory prohibits connectors that "execute financial transactions on behalf of users," and agentic payments is likely the policy category behind our escalated review. The directory-listed connector will authenticate via Clerk OAuth with account/credit billing only. Removing SPT from the listed surface takes the sharpest policy question off the reviewer's desk. This is a positioning decision, not a product retirement — SPT remains the intended rail for A2A/anonymous agent commerce.
+**What the lane is (for re-enablement):**
+- Token intake: `?spt=`, `X-Stripe-SPT` header, or `Bearer spt_…` — `src/index.ts:573-581`; `userId` forced to `'spt_agent'` (`:591`)
+- Validation: `validateSpt()` → `GET /v1/spt/validate`, returns `max_amount_cents` + per-task prices; invalid token → HTTP 402 at connect (`src/index.ts:247-263`, `:610-616`)
+- Spend cap: `sptGuard()` refuses tasks priced above the token cap (`src/toolHandlers.ts:228-236`)
+- Settlement-as-gate: `settleOrWithhold()` awaits the charge and withholds results on failure (`src/toolHandlers.ts:240-249`); settles via `chargeQuery(..., spt)` → `POST /v1/research/meter` with `Bearer spt_…` (`src/index.ts:181-184`)
+- Marketing copy: "Pay per task via Stripe Shared Payment Token; no account required" in `server.json:5`, `fodda_mcp_server.json:5`, and the A2A agent card (`src/a2aHandler.ts:31`)
+**Removal approach:** gate behind `ENABLE_SPT` env flag (default off) rather than delete — keeps the validated code path intact and makes re-enable a config flip. Strip the SPT marketing line from both manifests and the A2A card while the flag is off.
+**Re-enable when:** Anthropic publishes its agentic-payments policy and it permits capped, consented pay-per-task; or SPT is deployed on a separate non-directory endpoint (e.g. the A2A rail at its own URL, which is invisible to the directory listing and could run today).
+**Prep for the conversation:** a one-pager for mcp-review@anthropic.com exists as Phase 5.3 of `Brief MCP Directory Remediation Plan.md` — hard spend caps, price gating, settle-after-delivery, no stored-value transfer.
+**Agent:** MCP agent (flag + manifest edits); API agent (none — API-side SPT stays live)
+
+---
+
 ## 📝 MCP Tool Descriptions from Airtable
 **Status:** Not started — low priority, consider when descriptions stabilize  
 **What:** Add an `mcp_tool_description` column to a new `MCP Tools` table in Airtable. At server startup, `catalogCache.ts` fetches these descriptions and injects them into `server.tool()` registrations, replacing the hardcoded strings in `toolHandlers.ts`. This would let the sales/marketing team iterate on tool descriptions (the text LLM routers read to decide tool selection) without code deploys.  

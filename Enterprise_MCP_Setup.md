@@ -66,27 +66,20 @@ gcloud run deploy fodda-mcp \
 ```
 
 ### Claude (Web — Pro, Max, Team)
-Individual users can add Fodda as a custom connector directly in Claude:
-1. Go to **Settings → Connectors → Add custom connector**
-2. URL: `https://mcp.fodda.ai/mcp?api_key=YOUR_API_KEY`
-3. Under **Advanced settings** — leave OAuth Client ID and Secret **blank** (Fodda uses API key auth, not OAuth)
-4. Click **Add**
+1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration (format: `https://mcp.fodda.ai/c/<your-token>`)
+2. Go to **Settings → Connectors → Add custom connector**, paste the URL, click **Add**
 
-> **Why the key is in the URL:** Claude's web connector form only supports OAuth for auth — it doesn't have a "Custom headers" option. Since Fodda uses API key authentication, the key is passed as a URL parameter instead. The connection is over HTTPS, so the key is encrypted in transit.
+> **Legacy `?api_key=` URLs are retired.** The server rejects them — raw keys in URLs leak into server logs, browser history, and referrers — and tells the user to get a new MCP URL at app.fodda.ai. Connection tokens are opaque and revocable; one-click OAuth arrives with the Anthropic directory listing.
 
 ### Claude Enterprise (Admin-Managed Connectors)
 Enterprise workspace admins can register the Fodda MCP server via the Admin Console:
-- **URL:** `https://mcp.fodda.ai/mcp?api_key=<your_org_api_key_from_dashboard>`
-- **OAuth fields:** Leave blank (not used)
-- **Fallback (SSE):** `https://mcp.fodda.ai/sse?api_key=<your_org_api_key_from_dashboard>`
-- **Auto-discovery:** `https://mcp.fodda.ai/.well-known/mcp.json`
-
-*(Note: Workspace admins should retrieve their organization API key from the Fodda Dashboard under Account -> Developer settings.)*
+- **URL:** `https://mcp.fodda.ai/mcp` (authentication via `Authorization: Bearer` header or the OAuth connector once live — never in the URL)
+- **Fallback (SSE):** `https://mcp.fodda.ai/sse` with an `Authorization: Bearer YOUR_ORG_API_KEY` header
 
 ### Claude Code (CLI)
 ```bash
 claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
-  --header "Authorization: Bearer <your_api_key_from_dashboard>"
+  --header "Authorization: Bearer YOUR_API_KEY"
 ```
 
 ## 5. Security & Error Handling

@@ -4,10 +4,11 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 async function main() {
-    // We use a trial key just to pass auth
+    // We use a trial key just to pass auth (header only — URL keys are rejected)
     const apiKey = "sk_trial_test_12345";
     const transport = new SSEClientTransport(
-        new URL(`https://fodda-mcp-7mopqjzhwq-uk.a.run.app/mcp?api_key=${apiKey}`)
+        new URL(`https://fodda-mcp-7mopqjzhwq-uk.a.run.app/mcp`),
+        { requestInit: { headers: { Authorization: `Bearer ${apiKey}` } } }
     );
 
     const client = new Client({ name: "test-client", version: "1.0.0" }, { capabilities: {} });

@@ -99,29 +99,18 @@ Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK cover
 
 ### For Individual Users (Pro / Max)
 
-**⚡ Quick Connect Method:**
-Use this [Add to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Fodda&connectorUrl=https%3A%2F%2Fmcp.fodda.ai%2Fmcp%3Fapi_key%3DYOUR_API_KEY%26user_id%3DYOUR_EMAIL) quick link. *(You will need to manually replace `YOUR_API_KEY` and `YOUR_EMAIL` in the browser URL bar before hitting enter).*
+1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration (format: `https://mcp.fodda.ai/c/<your-token>`)
+2. Go to [Settings → Connectors](https://claude.ai/settings/connectors) → **"Add custom connector"** → paste the URL → **"Add"**
+3. In a new conversation, click **"+"** → **Connectors** → enable **Fodda**
+4. Start prompting — e.g. *"What are the top emerging trends in omnichannel retail?"*
 
-**Manual Setup Method:**
-1. Go to [Settings → Connectors](https://claude.ai/settings/connectors)
-2. Click **"Add custom connector"**
-3. Paste the Fodda connector URL:
-   ```
-   https://mcp.fodda.ai/mcp?api_key=YOUR_API_KEY&user_id=YOUR_EMAIL
-   ```
-4. Leave OAuth Client ID and Secret **blank** → click **"Add"**
-5. In a new conversation, click **"+"** → **Connectors** → enable **Fodda**
-6. Start prompting — e.g. *"What are the top emerging trends in omnichannel retail?"*
-
-> Get your API key at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration.
+> **Legacy `?api_key=` URLs are retired** — the server rejects them (raw keys in URLs leak into logs and browser history) with a message pointing users to [app.fodda.ai](https://app.fodda.ai) for a fresh MCP URL. Developer clients can use an `Authorization: Bearer` header instead.
 
 ### For Enterprise / Team (Admin-Managed)
 
 1. Workspace **Owner** goes to [Organization Settings → Connectors](https://claude.ai/admin-settings/connectors)
-2. Click **"Add custom connector"**
-3. Paste the connector URL (with account API key)
-4. Leave OAuth fields blank → click **"Add"**
-5. Team members then go to [Settings → Connectors](https://claude.ai/settings/connectors) → find Fodda → click **"Connect"**
+2. Click **"Add custom connector"** and enter `https://mcp.fodda.ai/mcp` (auth via the OAuth connector once live; URL-embedded API keys are no longer accepted)
+3. Team members then go to [Settings → Connectors](https://claude.ai/settings/connectors) → find Fodda → click **"Connect"**
 
 > Owners control which tools are available. All tools are read-only — safe for enterprise governance.
 

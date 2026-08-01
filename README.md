@@ -18,17 +18,12 @@
 
 ### Claude (Web — Pro, Max, Team, Enterprise)
 
-**⚡ Quick Connect:** Use this [Add to Claude](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=Fodda&connectorUrl=https%3A%2F%2Fmcp.fodda.ai%2Fmcp%3Fapi_key%3DYOUR_API_KEY%26user_id%3DYOUR_EMAIL) quick link (replace `YOUR_API_KEY` and `YOUR_EMAIL` in the URL before pressing enter).
+1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration (format: `https://mcp.fodda.ai/c/<your-token>`)
+2. In Claude, go to **Settings → Connectors → Add custom connector**, paste the URL, and click **Add**
+3. Start chatting with your Fodda knowledge graphs
 
-**Manual Setup:**
-1. In Claude, go to **Settings → Connectors → Add custom connector**
-2. Enter URL: `https://mcp.fodda.ai/mcp?api_key=YOUR_API_KEY&user_id=YOUR_EMAIL`
-3. Under **Advanced settings** — leave OAuth Client ID and Secret **blank** (Fodda uses API key auth, not OAuth)
-4. Click **Add** — then start chatting with your Fodda knowledge graphs
+> **Note:** legacy `?api_key=` URLs are no longer accepted (raw keys in URLs leak into logs and browser history). If your connector stops working, just grab a fresh MCP URL at [app.fodda.ai](https://app.fodda.ai). One-click OAuth connect arrives with Fodda's Anthropic Connectors Directory listing.
 
-> Get your API key at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration.  
-> Your API key starts with `sk_live_...`  
-> Use the email address associated with your Fodda account for `user_id`.
 
 ### Claude Code (CLI — SSE)
 
