@@ -897,6 +897,45 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             || '';
         const isSpt = !!spt;
 
+        const rawBearer = !isSpt ? rawAuth.replace(/^Bearer\s+/i, '').trim() : '';
+        // Clerk OAuth tokens may be JWTs (eyJ...) or opaque machine tokens (oat_...);
+        // the resolve endpoint verifies both via authenticateRequest(acceptsToken:'oauth_token').
+        const isClerkJwt = !isSpt && (rawBearer.startsWith('eyJ') || rawBearer.startsWith('oat_'));
+        if (isClerkJwt) {
+            // Attempt Clerk JWT → Fodda API key resolution
+            try {
+                const resolveUrl = `${API_BASE_URL}/v1/auth/clerk-resolve`;
+                const resolveResp = await axios.post(resolveUrl, { clerk_jwt: rawBearer }, {
+                    headers: { 'X-Internal-Key': process.env.FODDA_INTERNAL_API_KEY || '' },
+                    timeout: 5000,
+                });
+                if (resolveResp.data?.api_key) {
+                    (req as any).__resolvedApiKey = resolveResp.data.api_key;
+                    (req as any).__resolvedUserId = resolveResp.data.user_id || 'oauth_user';
+                } else {
+                    return res.status(401).json({
+                        jsonrpc: '2.0',
+                        error: { code: -32000, message: 'OAuth token could not be resolved to a Fodda account. Visit https://app.fodda.ai to reconnect.' },
+                        id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                    });
+                }
+            } catch (clerkErr: any) {
+                const status = clerkErr.response?.status;
+                if (status === 404 || status === 501) {
+                    return res.status(501).json({
+                        jsonrpc: '2.0',
+                        error: { code: -32000, message: 'OAuth token resolution is not yet available on this server. Please use header API key auth (Authorization: Bearer sk_live_...) from https://app.fodda.ai.' },
+                        id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                    });
+                }
+                return res.status(401).json({
+                    jsonrpc: '2.0',
+                    error: { code: -32000, message: 'OAuth token validation failed. Please reconnect at https://app.fodda.ai.' },
+                    id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                });
+            }
+        }
+
         const token = req.params.token;
         let resolvedApiKey = '';
         let resolvedEmail = '';
