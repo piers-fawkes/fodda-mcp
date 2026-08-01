@@ -593,7 +593,24 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                const status = err.response?.status;
+                const errData = err.response?.data?.error || err.response?.data || {};
+                if (status === 402 || errData.code === 'CREDITS_EXHAUSTED' || errData.status === 'CREDITS_EXHAUSTED') {
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: JSON.stringify({
+                                status: 'CREDITS_EXHAUSTED',
+                                api_calls_remaining: 0,
+                                note: 'Your account has 0 API calls remaining for this billing cycle.',
+                                manage_url: 'https://app.fodda.ai/account',
+                                upgrade_url: 'https://app.fodda.ai/portal?action=upgrade',
+                                query_costs: getToolCostSummary(),
+                            }, null, 2)
+                        }]
+                    };
+                }
+                const msg = errData.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
         }
