@@ -853,25 +853,46 @@ interface TokenResolution {
 const tokenCache = new Map<string, TokenResolution>();
 const TOKEN_CACHE_TTL_MS = 60 * 1000; // 1 minute TTL
 
-async function resolveMcpToken(token: string, websiteBaseUrl: string): Promise<TokenResolution> {
+export async function resolveMcpToken(token: string, websiteBaseUrl: string): Promise<TokenResolution> {
     const cached = tokenCache.get(token);
     if (cached && (Date.now() - cached.fetchedAt < TOKEN_CACHE_TTL_MS)) {
         return cached;
     }
-    const response = await axios.get(`${websiteBaseUrl}/api/mcp-tokens/${token}`, { timeout: 5000 });
-    const data = response.data;
-    if (!data.apiKey || !data.email) {
-        throw new Error('Invalid token resolution payload');
+
+    const secret = process.env.FODDA_MCP_SECRET || process.env.ONBOARD_SECRET || '';
+    if (!secret) {
+        console.warn('[token-resolver] Neither FODDA_MCP_SECRET nor ONBOARD_SECRET is set in environment; sending token resolution request without X-Fodda-Mcp-Secret header.');
     }
-    const val = {
-        apiKey: data.apiKey,
-        email: data.email,
-        name: data.name || '',
-        analystId: data.analystId || '',
-        fetchedAt: Date.now()
-    };
-    tokenCache.set(token, val);
-    return val;
+
+    const headers: Record<string, string> = {};
+    if (secret) {
+        headers['X-Fodda-Mcp-Secret'] = secret;
+    }
+
+    try {
+        const response = await axios.get(`${websiteBaseUrl}/api/mcp-tokens/${token}`, {
+            headers,
+            timeout: 5000,
+        });
+        const data = response.data;
+        if (!data.apiKey || !data.email) {
+            throw new Error('Invalid token resolution payload');
+        }
+        const val = {
+            apiKey: data.apiKey,
+            email: data.email,
+            name: data.name || '',
+            analystId: data.analystId || '',
+            fetchedAt: Date.now()
+        };
+        tokenCache.set(token, val);
+        return val;
+    } catch (err: any) {
+        if (axios.isAxiosError(err) && err.response && (err.response.status === 401 || err.response.status === 403)) {
+            throw new Error(`Token resolution request unauthorized (HTTP ${err.response.status}). Check FODDA_MCP_SECRET / ONBOARD_SECRET configuration.`);
+        }
+        throw err;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -948,7 +969,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 resolvedEmail = resolved.email;
                 resolvedEntryId = resolved.analystId;
             } catch (err: any) {
-                console.error(`[token-resolver] Failed to resolve token ${token}:`, err.message);
+                console.error(`[token-resolver] Failed to resolve connection token:`, err.message);
                 return res.status(401).json({ error: 'Invalid or expired connection token' });
             }
         }

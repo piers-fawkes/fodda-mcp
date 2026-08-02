@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.35.5] - 2026-08-02
+
+### Added
+- **Outbound Header Authentication for Connection Token Resolution** (`src/index.ts`):
+  - Updated `resolveMcpToken` to attach `X-Fodda-Mcp-Secret` header using `process.env.FODDA_MCP_SECRET` (with fallback to `process.env.ONBOARD_SECRET`) when making outbound HTTP requests to `GET /api/mcp-tokens/:token`.
+  - Added debug warning log when neither secret is set in the environment to preserve backward compatibility for local dev setups.
+  - Added graceful error handling for HTTP 401/403 unauthorized responses with an informative error message.
+  - Prevented logging of raw token strings to stdout/stderr.
+
 ## [1.35.4] - 2026-07-30
 
 ### Fixed
