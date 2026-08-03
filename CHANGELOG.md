@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.36.1] - 2026-08-03
+
+### Fixed
+- **`read_url` returned a model refusal instead of page text** (`src/index.ts`, `src/toolHandlers.ts`):
+  - `waverunnerRequest` mapped **both** `google_search` and `url_context` to Gemini's `googleSearch` tool. `read_url` requests `url_context`, so the model was asked to extract a page's full text while holding only a web-search tool and no way to fetch the URL — it replied "I cannot directly extract the full text content from a given URL…", naming `google_search` as the only tool it had. `url_context` now maps to its own `{ urlContext: {} }` tool.
+  - The shared `googleSearchAdded` guard also allowed only one of the two tools per request; `googleSearch` and `urlContext` now track separately and can be sent together.
+  - Dropped the `as any` cast on `read_url`'s tool literal — `urlContext` is a typed tool in `@google/genai@1.50.1`, and the cast had hidden the mismatch at compile time.
+- **`read_url` billed 15 calls for failed extractions**: a refusal is non-empty text, so it passed the empty-response check, returned as success and still ran `chargeQuery`. `waverunnerRequest` now surfaces `urlContextMetadata`, and `read_url` fails with `isError` **before** billing when metadata shows no URL retrieved successfully. Conservative by design: it only fails on positive evidence, so an absent-metadata response still bills as before.
+
 ## [1.36.0] - 2026-08-03
+
+### Fixed
+- **Google Gemini API Key Rotation Sweep (`Secret Manager GEMINI_API_KEY`)**:
+  - Rotated `GEMINI_API_KEY` in Google Secret Manager for project `fodda-mcp` to version 3 (`Gemini API Key Aug 1 2026`, sha `4d1d0fe3`), replacing the deleted key (`sha ed7a50c3`).
+  - Redeployed Cloud Run service `fodda-mcp` to load the updated secret version across all instances.
 
 ### Changed
 - **`/mcp` Now Requires Authentication — Directory Connector Policy** (`src/index.ts`):

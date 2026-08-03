@@ -534,8 +534,18 @@ async function waverunnerRequest(
     if (Array.isArray(waverunnerPayload.tools) && waverunnerPayload.tools.length > 0) {
         const toolsMapped: any[] = [];
         let googleSearchAdded = false;
+        let urlContextAdded = false;
         for (const t of waverunnerPayload.tools) {
-            if (t.type === 'google_search' || t.type === 'url_context') {
+            if (t.type === 'url_context') {
+                // urlContext retrieves the page itself. It must NOT collapse into
+                // googleSearch — search cannot fetch a specific URL, which left
+                // read_url asking the model to extract a page it had no way to
+                // read, so it answered with a refusal instead of content.
+                if (!urlContextAdded) {
+                    toolsMapped.push({ urlContext: {} });
+                    urlContextAdded = true;
+                }
+            } else if (t.type === 'google_search') {
                 if (!googleSearchAdded) {
                     toolsMapped.push({ googleSearch: {} });
                     googleSearchAdded = true;
@@ -574,6 +584,9 @@ async function waverunnerRequest(
 
     const reportText = response.text || '';
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    // Surfaced so URL-reading callers can distinguish "page fetched" from a
+    // model refusal — a refusal is non-empty text and otherwise looks like success.
+    const urlContextMetadata = response.candidates?.[0]?.urlContextMetadata || null;
 
     // ── Post-decrement (paid accounts) ──
     foddaRequest('POST', '/v1/research/meter', userApiKey, userId, {
@@ -583,7 +596,8 @@ async function waverunnerRequest(
 
     return {
         outputs: [{ type: 'text', text: reportText }],
-        groundingMetadata: { groundingChunks }
+        groundingMetadata: { groundingChunks },
+        urlContextMetadata
     };
 }
 

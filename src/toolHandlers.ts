@@ -1184,7 +1184,7 @@ function addCoverageAnnotation(
                     if (allRows.length === 0 && creditRejection) {
                         const trialResult = await handleTrialCreditExhaustion(creditRejection, apiKey, userId);
                         if (trialResult) return trialResult;
-                        return await handleAccessError(creditRejection, 'search_graph');
+                        return await handleAccessError(creditRejection, 'search_graph', userId, apiKey);
                     }
                     data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs };
                 } else {
@@ -1510,7 +1510,7 @@ function addCoverageAnnotation(
                 // returned as structured fields, not baked into a raw message string.)
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'search_graph');
+                return await handleAccessError(err, 'search_graph', userId, apiKey);
             }
         }
     );
@@ -2328,7 +2328,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2403,7 +2403,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2446,7 +2446,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2489,7 +2489,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2536,7 +2536,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2579,7 +2579,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2634,7 +2634,7 @@ function addCoverageAnnotation(
                 };
                 const trialResult = await handleTrialCreditExhaustion(err.causeErr, apiKey, userId);
                 if (trialResult) return { ...trialResult, content: [refusal, ...trialResult.content] };
-                const accessResult = await handleAccessError(err.causeErr, toolName);
+                const accessResult = await handleAccessError(err.causeErr, toolName, userId, apiKey);
                 return { ...accessResult, content: [refusal, ...accessResult.content] };
             }
             const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -2731,7 +2731,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2780,7 +2780,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2878,7 +2878,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -2917,7 +2917,7 @@ function addCoverageAnnotation(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental');
+                return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
         }
     );
@@ -3549,7 +3549,7 @@ function addCoverageAnnotation(
                         input: [
                             { type: 'text', text: `Extract and return the full text content from this URL. Return ONLY the extracted text, preserving headings and structure. Do not add commentary or analysis. URL: ${url}` }
                         ],
-                        tools: [{ type: 'url_context' as any }]
+                        tools: [{ type: 'url_context' }]
                     }
                 );
 
@@ -3557,7 +3557,15 @@ function addCoverageAnnotation(
                 const textParts = outputs.filter((o: any) => o.type === 'text').map((o: any) => o.text);
                 const extractedText = textParts.join('\n');
 
-                if (!extractedText) {
+                // A model that cannot fetch the page replies with a refusal — non-empty
+                // text that would otherwise pass as success and bill 15 calls for no
+                // content. Only treat retrieval as failed on positive evidence: metadata
+                // present and no URL reporting success.
+                const urlMetadata = result.urlContextMetadata?.urlMetadata || [];
+                const retrievalFailed = urlMetadata.length > 0
+                    && !urlMetadata.some((m: any) => m.urlRetrievalStatus === 'URL_RETRIEVAL_STATUS_SUCCESS');
+
+                if (!extractedText || retrievalFailed) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Could not extract content from this URL. It may be behind a login or paywall.' }) }] };
                 }
 
