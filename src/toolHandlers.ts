@@ -768,9 +768,9 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Lists available synthetic analyst personas (e.g. brand-cmo, brand-ceo, brand-cfo). To query a company-specific synthetic expert (e.g., "Nike CMO", "Apple CMO", "Adidas CEO"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: "Nike").',
+        'Lists available human agents and synthetic analysts (e.g. brand-cmo, brand-ceo, brand-cfo, human experts like Anu Lingala). To query a company-specific synthetic expert (e.g., "Nike CMO", "Apple CMO", "Adidas CEO"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: "Nike").',
         { userId: z.string().optional().describe('Optional user identifier.') },
-        { title: 'List Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'List Human Agents & Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             try {
                 const data = await foddaRequest('GET', '/v1/analysts', apiKey, resolveUserId(userId, uid));
@@ -3766,15 +3766,15 @@ function addCoverageAnnotation(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
+        'Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda\'s graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
         {
-            analyst_id: z.string().describe("The analyst ID (e.g., 'ben-dietz-sic', 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
+            analyst_id: z.string().describe("The expert ID of the Human Agent or Synthetic Analyst (e.g., 'anu-lingala-macro', 'ben-dietz-sic', 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Consult Human Agent or Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, userId: uid }) => {
             try {
                 // Resolve potential alias IDs (e.g., "Nike CMO" -> analyst_id: "brand-cmo", company: "Nike")

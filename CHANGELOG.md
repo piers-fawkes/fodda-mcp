@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.36.1] - 2026-08-03
 
+### Changed
+- **Conversational Framing & Status Messaging for Human Agents & Synthetic Analysts** (`src/systemPrompt.ts`, `tools-manifest.json`, `src/toolHandlers.ts`):
+  - Added explicit `CONVERSATIONAL FRAMING & STATUS MESSAGING` rules in `STATIC_BEHAVIORAL_RULES` so host LLMs (Claude, ChatGPT, Cursor, etc.) frame experts intuitively as "Human Agents" or "Synthetic Analysts" rather than using technical developer jargon (e.g., "loading the tool", "analyst list", "correct ID").
+  - Updated tool descriptions, tool titles, and parameter descriptions for `consult_analyst` and `list_analysts` to reflect "Human Agents & Synthetic Analysts".
+
 ### Fixed
 - **Discovery Card Endpoints & Tool Count Sync (`public/.well-known/mcp-server.json`, `src/index.ts`, `deploy_cloud_run.sh`)**:
   - Updated discovery card endpoints in `src/index.ts` and `public/.well-known/mcp-server.json` to advertise canonical production URLs (`https://mcp.fodda.ai/mcp`, `https://mcp.fodda.ai/sse`, `https://mcp.fodda.ai/telemetry`, `https://mcp.fodda.ai/v1/feedback`) instead of revision-hashed Cloud Run URLs.

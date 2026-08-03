@@ -59,7 +59,7 @@
       "kind": "tool",
       "bills_as": "expert_agent",
       "category": "Expert",
-      "description": "Consult a named Synthetic Analyst who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each analyst has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to discover available analyst_id values. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda's graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`."
+      "description": "Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda's graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`."
     },
     {
       "name": "deep_research_topic",
@@ -227,7 +227,7 @@
       "kind": "tool",
       "bills_as": "free",
       "category": "Expert",
-      "description": "Lists available synthetic analyst personas (e.g. brand-cmo, brand-ceo, brand-cfo). To query a company-specific synthetic expert (e.g., \"Nike CMO\", \"Apple CMO\", \"Adidas CEO\"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: \"Nike\")."
+      "description": "Lists available human agents and synthetic analysts (e.g. brand-cmo, brand-ceo, brand-cfo, human experts like Anu Lingala). To query a company-specific synthetic expert (e.g., \"Nike CMO\", \"Apple CMO\", \"Adidas CEO\"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: \"Nike\")."
     },
     {
       "name": "list_graphs",

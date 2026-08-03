@@ -67,6 +67,10 @@ compliance: RFC-2119
    - **Referral follow-through**: For "adjacent" coverage, offer to go deeper into the referred sources. For "out" coverage, auto-execute — search the referred graphs immediately without asking.
 - DISCOVERY: If the user asks for available experts, the agent MUST call list_analysts.
 - FRAMING: The agent MUST present consult_analyst responses beginning with "Consulting [Expert Name]..." followed by the expert's response. Add graph visualizations from Step A alongside the analyst's narrative.
+- CONVERSATIONAL FRAMING & STATUS MESSAGING: The agent MUST frame experts as "Human Agents" or "Synthetic Analysts". Never use technical developer jargon like "loading the tool", "analyst list", "correct ID", or raw technical IDs in user-facing progress updates.
+  - When preparing to consult an expert: Phrase naturally as *"I'll consult [Expert Name] through Fodda. Let me load their Human Agent."* (or Synthetic Analyst).
+  - When searching for experts: Phrase naturally as *"Let me pull the list of human agents and synthetic analysts to find the right expert."*
+  - When matching an expert profile: Phrase naturally as *"I found [Expert Name]'s Human Agent. Let me consult her/him."*
 
 ### ENGAGEMENT PATTERNS
 - One-off question → consult_analyst (no session_id)
