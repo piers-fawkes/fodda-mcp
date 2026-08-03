@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.36.1] - 2026-08-03
 
 ### Fixed
+- **Discovery Card Endpoints & Tool Count Sync (`public/.well-known/mcp-server.json`, `src/index.ts`, `deploy_cloud_run.sh`)**:
+  - Updated discovery card endpoints in `src/index.ts` and `public/.well-known/mcp-server.json` to advertise canonical production URLs (`https://mcp.fodda.ai/mcp`, `https://mcp.fodda.ai/sse`, `https://mcp.fodda.ai/telemetry`, `https://mcp.fodda.ai/v1/feedback`) instead of revision-hashed Cloud Run URLs.
+  - Set `FODDA_SERVICE_URL=https://mcp.fodda.ai` in `deploy_cloud_run.sh` and added fallback in `getServiceUrl()` so production environments always resolve `https://mcp.fodda.ai`.
+  - Updated hardcoded tool count description from "31 tools" to "46 tools" across `src/index.ts`, `server.json`, `fodda_mcp_server.json`, and `scripts/sync-discovery.mjs`.
 - **`read_url` returned a model refusal instead of page text** (`src/index.ts`, `src/toolHandlers.ts`):
   - `waverunnerRequest` mapped **both** `google_search` and `url_context` to Gemini's `googleSearch` tool. `read_url` requests `url_context`, so the model was asked to extract a page's full text while holding only a web-search tool and no way to fetch the URL — it replied "I cannot directly extract the full text content from a given URL…", naming `google_search` as the only tool it had. `url_context` now maps to its own `{ urlContext: {} }` tool.
   - The shared `googleSearchAdded` guard also allowed only one of the two tools per request; `googleSearch` and `urlContext` now track separately and can be sent together.

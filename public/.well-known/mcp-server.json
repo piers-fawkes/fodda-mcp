@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "ai.fodda/mcp-server",
+  "title": "Fodda Knowledge Graphs",
+  "description": "Expert-curated knowledge, brand, research & earnings intelligence — 46 tools, 220+ graphs.",
+  "websiteUrl": "https://www.fodda.ai",
+  "version": "1.36.1",
+  "capabilities": {
+    "tools": {
+      "listChanged": false
+    },
+    "resources": {
+      "listChanged": false,
+      "subscribe": false
+    },
+    "prompts": {
+      "listChanged": false
+    }
+  },
+  "pricingTier": {
+    "structure": "free",
+    "substance": "metered",
+    "tokenModel": "Canonical token costs defined in API metering.ts ($0.50 via SPT / API credits)"
+  },
+  "resourceSchemes": [
+    "fodda://expert/{slug}/insight/{id}",
+    "fodda://graph/{vertical}/trend/{slug}"
+  ],
+  "endpoints": {
+    "mcpStreamableHttp": "https://mcp.fodda.ai/mcp",
+    "mcpSse": "https://mcp.fodda.ai/sse",
+    "telemetry": "https://mcp.fodda.ai/telemetry",
+    "feedback": "https://mcp.fodda.ai/v1/feedback"
+  }
+}

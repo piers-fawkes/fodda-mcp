@@ -29,14 +29,14 @@ const ROOT = path.resolve(path.dirname(__filename), '..');
 
 const CANONICAL_DESCRIPTION =
   "Expert-curated knowledge, brand, research, and earnings intelligence for AI agents. " +
-  "31 tools across 220+ named-expert graphs: consult agentic Human Agents (real experts' digital twins), " +
+  "46 tools across 220+ named-expert graphs: consult agentic Human Agents (real experts' digital twins), " +
   "track brands, run deep research, and query earnings-call intelligence. " +
   "Pay per task via Stripe SPT — no account required.";
 
 // MCP Registry enforces ≤100 chars on body.description.
 // This is the truncated version derived from the canonical.
 const REGISTRY_DESCRIPTION =
-  "Expert-curated knowledge, brand, research & earnings intelligence — 31 tools, 220+ graphs.";
+  "Expert-curated knowledge, brand, research & earnings intelligence — 46 tools, 220+ graphs.";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // § Helpers

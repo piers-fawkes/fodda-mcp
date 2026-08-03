@@ -235,7 +235,7 @@ app.get([
         $schema: 'https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json',
         name: 'ai.fodda/mcp-server',
         title: 'Fodda Knowledge Graphs',
-        description: 'Expert-curated knowledge, brand, research & earnings intelligence — 31 tools, 220+ graphs.',
+        description: 'Expert-curated knowledge, brand, research & earnings intelligence — 46 tools, 220+ graphs.',
         websiteUrl: 'https://www.fodda.ai',
         version: MCP_SERVER_VERSION,
         capabilities: {
@@ -355,13 +355,8 @@ setInterval(() => {
 // was removed — if it was being used, the URL was silently wrong.
 function getServiceUrl(): string {
     if (process.env.FODDA_SERVICE_URL) return process.env.FODDA_SERVICE_URL;
-    if (process.env.K_SERVICE) {
-        // Derive from K_SERVICE + K_REVISION if FODDA_SERVICE_URL not set.
-        // Requires CLOUD_RUN_REGION env var (e.g. 'uk') to be set.
-        const region = process.env.CLOUD_RUN_REGION || 'uk';
-        const revHash = process.env.K_REVISION?.split('-').pop();
-        if (!revHash) console.error('[getServiceUrl] WARNING: K_REVISION not set — widget URLs may be wrong');
-        return `https://${process.env.K_SERVICE}-${revHash || 'unknown'}-${region}.a.run.app`;
+    if (process.env.NODE_ENV === 'production' || process.env.K_SERVICE) {
+        return 'https://mcp.fodda.ai';
     }
     return `http://localhost:${process.env.PORT || 8080}`;
 }
