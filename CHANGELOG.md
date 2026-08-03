@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Conversational Framing & Status Messaging for Human Agents & Synthetic Analysts** (`src/systemPrompt.ts`, `tools-manifest.json`, `src/toolHandlers.ts`):
   - Added explicit `CONVERSATIONAL FRAMING & STATUS MESSAGING` rules in `STATIC_BEHAVIORAL_RULES` so host LLMs (Claude, ChatGPT, Cursor, etc.) frame experts intuitively as "Human Agents" or "Synthetic Analysts" rather than using technical developer jargon (e.g., "loading the tool", "analyst list", "correct ID").
   - Updated tool descriptions, tool titles, and parameter descriptions for `consult_analyst` and `list_analysts` to reflect "Human Agents & Synthetic Analysts".
+- **Closing Fan-Out Options into Broader Fodda Offerings (`src/systemPrompt.ts`)**:
+  - Added `Closing Fan-Out Options` rule to `VirtualExpertConsultation` (Step C) and updated `FollowUpRendering & NextStepsFanOut` so expert consultation responses automatically close with a two-tier suggestion block: (1) keeping the expert session open for targeted follow-ups, and (2) fanning out into 3–5 contextual suggestions across Fodda's broader capabilities (trend queries, stats/BEA/FRED lookups, brand intelligence, competitor analysis, Deep Research reports).
 
 ### Fixed
 - **Discovery Card Endpoints & Tool Count Sync (`public/.well-known/mcp-server.json`, `src/index.ts`, `deploy_cloud_run.sh`)**:
