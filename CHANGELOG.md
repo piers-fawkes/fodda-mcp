@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.36.0] - 2026-08-03
+
+### Changed
+- **`/mcp` Now Requires Authentication — Directory Connector Policy** (`src/index.ts`):
+  - An anonymous `initialize` on `/mcp` now returns **401** with a `WWW-Authenticate: Bearer resource_metadata="…/.well-known/oauth-protected-resource/mcp"` header (RFC 9728), so MCP clients (Claude) auto-discover Clerk and start the OAuth flow instead of silently connecting as an anonymous trial session. This closes the gap where the listed directory connector was documented as "OAuth + account credits only" but the anonymous lane was still open.
+  - Auth is satisfied by any of: resolved Clerk OAuth bearer, `X-API-Key` / `Authorization: Bearer sk_live_…`, a `/c/<token>` connection URL, or `?api_key=`. `/c/<token>` and offering-scoped endpoints are unchanged.
+  - Escape hatch: set `MCP_ALLOW_ANONYMOUS=true` to re-open the anonymous trial lane.
+  - Version aligned: `package.json` bumped 1.33.0 → 1.36.0 to match this changelog's numbering.
+
+## [1.35.6] - 2026-08-02
+
+### Fixed
+- **Unauthenticated Session Error Classification & Re-Authentication Instructions** (`src/errorHandling.ts`, `src/toolHandlers.ts`):
+  - Passed `userId` and `apiKey` to `handleAccessError` across all tool handlers in `toolHandlers.ts`.
+  - Updated `handleAccessError` in `errorHandling.ts` to detect unauthenticated sessions (`!apiKey` and `userId === 'anonymous'`) and return an explicit `AUTHENTICATION_REQUIRED` status with clear re-authentication instructions rather than misclassifying the session as `CREDITS_EXHAUSTED`.
+  - Provided structured `reauth_url` and `manage_url` fields and step-by-step guidance for Clerk OAuth reconnect, personal connection tokens (`/c/<token>`), and header authentication.
+  - Authored cross-repo brief for API Agent ([`Brief - FIX Clerk OAuth Email Linking for Existing Accounts (API Agent).md`](file:///Users/piersfawkes/Documents/Fodda%20MCP/briefs/Brief%20-%20FIX%20Clerk%20OAuth%20Email%20Linking%20for%20Existing%20Accounts%20%28API%20Agent%29.md)) to add email-fallback linking to `v1/auth/clerk-resolve` in `fodda-api`.
+  - Authored cross-repo secret alignment brief ([`Brief - FODDA_INTERNAL_API_KEY Secret Alignment (API Agent + MCP Agent).md`](file:///Users/piersfawkes/Documents/Fodda%20MCP/briefs/Brief%20-%20FODDA_INTERNAL_API_KEY%20Secret%20Alignment%20%28API%20Agent%20+%20MCP%20Agent%29.md)) to synchronize Secret Manager keys between `fodda-mcp` and `fodda-api`.
+  - Expanded `isClerkJwt` token format guard in `src/index.ts` to match all non-`sk_` Bearer tokens (`eyJ`, `oat_`, `sess_`, `clerk_`, or custom OAuth formats).
+  - Executed end-to-end live verification of Clerk OAuth resolution against production (`https://mcp.fodda.ai/mcp` -> `https://api.fodda.ai/v1/auth/clerk-resolve`), confirming header secret parity and clean token validation.
+
 ## [1.35.5] - 2026-08-02
 
 ### Added

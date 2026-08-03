@@ -919,9 +919,9 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         const isSpt = !!spt;
 
         const rawBearer = !isSpt ? rawAuth.replace(/^Bearer\s+/i, '').trim() : '';
-        // Clerk OAuth tokens may be JWTs (eyJ...) or opaque machine tokens (oat_...);
-        // the resolve endpoint verifies both via authenticateRequest(acceptsToken:'oauth_token').
-        const isClerkJwt = !isSpt && (rawBearer.startsWith('eyJ') || rawBearer.startsWith('oat_'));
+        // Clerk OAuth tokens may be JWTs (eyJ...), opaque tokens (oat_...), session tokens (sess_...), or custom OAuth tokens.
+        // If it's not a standard sk_live_ / sk_trial_ key, send it to clerk-resolve.
+        const isClerkJwt = !isSpt && rawBearer.length > 0 && !rawBearer.startsWith('sk_live_') && !rawBearer.startsWith('sk_trial_');
         if (isClerkJwt) {
             // Attempt Clerk JWT → Fodda API key resolution
             try {
@@ -1002,6 +1002,18 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         } else if (!sessionId && req.method === 'POST') {
             const body = req.body;
             if (body?.method === 'initialize') {
+                // Directory connector policy: /mcp requires authentication — Clerk OAuth,
+                // an API key, or a /c/<token> connection URL. An anonymous handshake gets
+                // 401 + WWW-Authenticate (RFC 9728) so MCP clients auto-start the OAuth
+                // flow. Set MCP_ALLOW_ANONYMOUS=true to re-open the anonymous trial lane.
+                if (offeringSlug === 'mcp' && !isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
+                    res.setHeader('WWW-Authenticate', 'Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp"');
+                    return res.status(401).json({
+                        jsonrpc: '2.0',
+                        error: { code: -32000, message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.' },
+                        id: body?.id ?? null,
+                    });
+                }
                 // For an SPT (anonymous) session: validate the token ONCE now (no charge)
                 // so we can refuse a task the SPT can't cover before running it. Reject the
                 // connection if the token is bad/unfunded.
