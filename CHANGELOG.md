@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `deep_research_topic`: `$55 via SPT (light mode)` / `$100 via SPT (heavy mode)`
     - `consult_analyst`: `$15.00 via SPT per turn`
   - Re-generated `tools-manifest.json` via `scripts/generate-tools-manifest.mjs`.
+- **Build-Time Airtable Description Sync Script (`scripts/sync-descriptions-from-airtable.mjs`, `package.json`)**:
+  - Implemented `scripts/sync-descriptions-from-airtable.mjs` to fetch published tool descriptions directly from Airtable table `tbl93DJ627r81zKVP` (base `appXUeeWN1uD9NdCW`) and sync `src/toolHandlers.ts`.
+  - Updated `package.json` `"build"` script to execute `node scripts/sync-descriptions-from-airtable.mjs && node scripts/generate-tools-manifest.mjs && tsc`.
+  - Configured graceful fallback when `AIRTABLE_API_KEY` is omitted so offline builds continue without failing.
 
 ## [1.37.0] - 2026-08-05
 
