@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.37.0] - 2026-08-05
+
+### Added
+- **AgentFacts (NANDA) identity document** (`src/agentFacts.ts`, `src/index.ts`, `scripts/sync-discovery.mjs`):
+  - New `/.well-known/agent-facts.json` endpoint (alias `/.well-known/agentfacts.json`) serving a [NANDA AgentFacts](https://github.com/projnanda/agentfacts-format)-format identity document — validated against the draft-07 schema.
+  - Third projection of the same canonical metadata as the MCP discovery card and A2A Agent Card: identity/skills derive from `AGENT_CARD` (now exported from `a2aHandler.ts`), version from `MCP_SERVER_VERSION`, endpoints from `getServiceUrl()`, live error-rate from telemetry. `stripe-spt` is advertised as an auth method only when `ENABLE_SPT=true`.
+  - `sync-discovery.mjs` gained a §5e live-diff for the AgentFacts surface (version + id) so staleness is caught at deploy time.
+  - Prepares NANDA Index registration: an index record's next-hop can point at this document or the existing A2A card.
+
 ## [1.36.1] - 2026-08-03
 
 ### Fixed

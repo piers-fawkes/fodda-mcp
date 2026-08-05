@@ -19,6 +19,7 @@ import { createServer } from './toolHandlers.js';
 // reactively via errorHandling.ts (TRIAL_EXHAUSTED). Only the type is still used.
 import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
+import { registerAgentFactsRoute } from './agentFacts.js';
 import { getTelemetryStats, recordFeedbackEntry } from './telemetry.js';
 import * as dotenv from 'dotenv';
 
@@ -1172,6 +1173,9 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', version: MCP_SERVER_V
 // ---------------------------------------------------------------------------
 
 registerA2ARoute(app, foddaRequest, waverunnerRequest);
+
+// AgentFacts (NANDA) identity document — projection of the A2A card + version
+registerAgentFactsRoute(app, getServiceUrl);
 
 const PORT = parseInt(process.env.PORT || '8080');
 
