@@ -105,7 +105,7 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
  * GRAPH_DISABLED → mention it so the user knows they opted out
  * CREDITS → trial-aware handling (auto-upgrade or prompt for email)
  */
-export async function handleAccessError(err: any, toolName: string): Promise<{ isError: boolean; content: { type: 'text'; text: string }[] }> {
+export async function handleAccessError(err: any, toolName: string, userId?: string, apiKey?: string): Promise<{ isError: boolean; content: { type: 'text'; text: string }[] }> {
     const accessType = classifyAccessError(err);
     if (accessType === 'forbidden') {
         // Silent skip — return empty result, NOT an error, so the LLM moves on
@@ -121,6 +121,24 @@ export async function handleAccessError(err: any, toolName: string): Promise<{ i
         return { isError: false, content: [{ type: 'text' as const, text: JSON.stringify({ status: 'LEGACY_TRIAL_RETIRED', message: errorMsg, signupUrl }) }] };
     }
     if (accessType === 'credits') {
+        const isUnauthenticated = (!apiKey || apiKey === '') && (!userId || userId === 'anonymous' || userId === 'spt_agent');
+        if (isUnauthenticated) {
+            return {
+                isError: true,
+                content: [{
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                        status: 'AUTHENTICATION_REQUIRED',
+                        error_code: 'unauthenticated',
+                        message: 'No Fodda account credentials or OAuth token detected for this session. Re-authentication required.',
+                        instructions: 'To authenticate with Claude: (1) Re-authenticate or click "Connect" via Clerk OAuth in your connector settings, (2) Or use your personal connection token from https://app.fodda.ai/settings (e.g. https://mcp.fodda.ai/c/<token>), or (3) Add an Authorization header (Bearer sk_live_...).',
+                        reauth_url: 'https://app.fodda.ai/connect',
+                        manage_url: 'https://app.fodda.ai/settings'
+                    }, null, 2)
+                }]
+            };
+        }
+
         // Payment details are returned as STRUCTURED FIELDS, never baked into the
         // human-readable message. This keeps live Stripe URLs / prices out of the
         // string that gets fed to the model, and lets the client decide how/whether
