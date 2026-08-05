@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.0] - 2026-08-05
+
+### Added
+- **Open-Source `@fodda/agent-swarm-test` CLI Benchmarking Tool (`packages/agent-swarm-test/`)**:
+  - Published zero-dependency CLI tool package under `@fodda/agent-swarm-test` allowing multi-agent framework developers (LangChain, AutoGen, CrewAI, Claude Code) to test parallel concurrent agent swarms against `api.fodda.ai`.
+  - Implemented command-line interface flags (`--agents`, `--queries`, `--domain`, `--mode`, `--endpoint`, `--help`).
+  - Added support for zero-onboarding Machine Payments Protocol (MPP) HTTP 402 challenge testing & Stripe SPT token cost verification ($0.50 per query / 1 token unit).
+  - Added real-time terminal progress status line and comprehensive summary output reporting P50/P95 latency, throughput, and HTTP status code breakdown.
+
 ## [1.37.1] - 2026-08-05
 
 ### Changed

@@ -1,0 +1,37 @@
+{
+  "name": "@fodda/agent-swarm-test",
+  "version": "1.0.0",
+  "description": "Zero-dependency CLI tool for benchmarking parallel AI agent swarms against Fodda API & Stripe SPT token settlement",
+  "bin": {
+    "agent-swarm-test": "./dist/cli.js",
+    "fodda-swarm-test": "./dist/cli.js"
+  },
+  "main": "./dist/swarm.js",
+  "types": "./dist/swarm.d.ts",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/piers-fawkes/fodda-mcp.git"
+  },
+  "keywords": [
+    "fodda",
+    "ai",
+    "agent",
+    "swarm",
+    "benchmark",
+    "mpp",
+    "spt",
+    "stripe-spt",
+    "http-402"
+  ],
+  "author": "Fodda",
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "typescript": "^5.9.3"
+  }
+}
