@@ -27,7 +27,7 @@ import { chargeQuery } from './pricingCache.js';
 // Skills reflect what the /a2a endpoint can actually fulfil (the classifier's
 // routes), so we never advertise a capability we can't deliver.
 // ---------------------------------------------------------------------------
-const AGENT_CARD = {
+export const AGENT_CARD = {
     protocolVersion: '0.3.0',
     name: 'Fodda Research Agent',
     description:
