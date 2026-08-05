@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.37.1] - 2026-08-05
+
+### Changed
+- **Sync MCP Tool Descriptions with Updated 2026-08-05 Offerings Prices (`src/toolHandlers.ts`, `tools-manifest.json`, `scripts/generate-tools-manifest.mjs`)**:
+  - Updated tool description price strings across `fodda-mcp` tools to match canonical API and Airtable `Offerings` pricing:
+    - `search_graph`: `$20.00 via SPT (topic research)` / `$40.00 via SPT (upload & compare)`
+    - `discover_adjacent_trends`: `$15.00 via SPT`
+    - `brand_tracker`: `$30.00 via SPT`
+    - `get_supplemental_context`: `$0.50 via SPT (standalone lookup)` / `$45.00 via SPT (full 9-source context)`
+    - `get_earnings_intelligence`: `$30.00 via SPT`
+    - `get_earnings_divergence`: `$20.00 via SPT`
+    - `read_url`: `$0.50 via SPT`
+    - `deep_research_topic`: `$55 via SPT (light mode)` / `$100 via SPT (heavy mode)`
+    - `consult_analyst`: `$15.00 via SPT per turn`
+  - Re-generated `tools-manifest.json` via `scripts/generate-tools-manifest.mjs`.
+
+## [1.37.0] - 2026-08-04
+
+### Added
+- **Automated Quarterly J-Lens Concept Workspace Review & Alerts (`src/jobs/jlens_quarterly_sweep.ts`, `src/services/notifications.ts`)**:
+  - Implemented quarterly scheduled pipeline (`isQuarterlySweepDue`) running on the first day of every quarter (Jan 1, Apr 1, Jul 1, Oct 1).
+  - Configured 6-condition prompt matrix sweep (`Homepage`, `OKF doc`, `MCP tool description`, `Search-results style`, `Control`, `Anti-pattern probe`) across standard open-weights target models (`Llama-3-8B-Instruct`, `Qwen-2.5-7B-Instruct`, `Gemma-2-9B-IT`).
+  - Added metric evaluation for token splits (`Fodda`, `PSFK`, `Service Buddy`), top-10 concept rank readout, layer persistence span (>=3 consecutive layers), and safety co-lighting signals (`injection`, `fake`, `override`).
+  - Built multi-channel dispatch via Email (`Resend` API to `nathan@searchshop.ai` and `piers.fawkes@psfk.com`) and Slack card posting (`#fodda-internal` webhook / API).
+
 ## [1.36.1] - 2026-08-03
 
 ### Changed

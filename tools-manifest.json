@@ -1,7 +1,7 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "rate_usd_per_call": 0.5,
-  "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $10/$15.",
+  "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $55/$100.",
   "count": 46,
   "billable": 20,
   "tools": [
@@ -24,7 +24,7 @@
       "kind": "tool",
       "bills_as": "brand_intelligence",
       "category": "Brand",
-      "description": "Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — \"What is Nike doing?\", \"Patagonia's innovation strategy\", \"How is Apple positioned?\". This aggregates intelligence that would require dozens of separate web searches to assemble."
+      "description": "Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — \"What is Nike doing?\", \"Patagonia's innovation strategy\", \"How is Apple positioned?\". This aggregates intelligence that would require dozens of separate web searches to assemble. Uses $30.00 via SPT."
     },
     {
       "name": "check_deliverable_status",
@@ -59,21 +59,21 @@
       "kind": "tool",
       "bills_as": "expert_agent",
       "category": "Expert",
-      "description": "Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. The analyst researches on your behalf: they can search Fodda's graphs, earnings intelligence, and supplemental data mid-consultation, and may refer or consult other analysts. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`."
+      "description": "Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. Uses $15.00 via SPT per turn. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`."
     },
     {
       "name": "deep_research_topic",
       "kind": "tool",
       "bills_as": "deep_research_light/heavy",
       "category": "Research",
-      "description": "Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: \"light\" (25–30 API calls, faster tiered search) or \"heavy\" (40–50 API calls, comprehensive tiered search with sub-theme expansion). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after."
+      "description": "Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: \"light\" ($55 via SPT, faster tiered search) or \"heavy\" ($100 via SPT, comprehensive tiered search with sub-theme expansion). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after."
     },
     {
       "name": "discover_adjacent_trends",
       "kind": "tool",
       "bills_as": "adjacent_trends",
       "category": "Ideation",
-      "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs."
+      "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs. Uses $15.00 via SPT."
     },
     {
       "name": "draft_linkedin_article",
@@ -136,14 +136,14 @@
       "kind": "tool",
       "bills_as": "earnings_intelligence",
       "category": "Financial",
-      "description": "Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for \"where are executives deflecting?\" or \"divergence in [sector] earnings.\" For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Uses 5 tokens ($2.50 via SPT)."
+      "description": "Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for \"where are executives deflecting?\" or \"divergence in [sector] earnings.\" For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Uses $20.00 via SPT."
     },
     {
       "name": "get_earnings_intelligence",
       "kind": "tool",
       "bills_as": "earnings_intelligence",
       "category": "Financial",
-      "description": "Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include \"knowledge_graph\" or \"web_supplemental\" provenance. Uses 5 tokens ($2.50 via SPT)."
+      "description": "Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include \"knowledge_graph\" or \"web_supplemental\" provenance. Uses $30.00 via SPT."
     },
     {
       "name": "get_evidence",
@@ -213,7 +213,7 @@
       "kind": "tool",
       "bills_as": "standalone_supplemental",
       "category": "Supplemental",
-      "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses 5 tokens ($2.50 via SPT) per standalone use."
+      "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses $0.50 via SPT (standalone lookup) / $45.00 via SPT (full 9-source context)."
     },
     {
       "name": "get_validated_trends",
@@ -248,7 +248,7 @@
       "kind": "tool",
       "bills_as": "url_as_prompt",
       "category": "Web",
-      "description": "Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Uses 15 tokens ($7.50 via SPT)."
+      "description": "Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Uses $0.50 via SPT."
     },
     {
       "name": "request_deliverable",
@@ -269,7 +269,7 @@
       "kind": "tool",
       "bills_as": "topic_research",
       "category": "Search",
-      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search."
+      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search. Uses $20.00 via SPT (topic research) or $40.00 via SPT (upload & compare)."
     },
     {
       "name": "search_insights",

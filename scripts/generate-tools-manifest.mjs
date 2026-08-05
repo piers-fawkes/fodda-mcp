@@ -76,7 +76,7 @@ tools.sort((a, b) => a.name.localeCompare(b.name));
 const out = {
   generated_from: 'Fodda MCP src/toolHandlers.ts',
   rate_usd_per_call: 0.5,
-  note: 'Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as="free" → $0. deep_research_light/heavy = $10/$15.',
+  note: 'Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as="free" → $0. deep_research_light/heavy = $55/$100.',
   count: tools.length,
   billable: tools.filter((t) => t.bills_as !== 'free').length,
   tools,
