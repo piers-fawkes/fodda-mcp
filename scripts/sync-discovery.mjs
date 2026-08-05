@@ -205,7 +205,16 @@ if (wwwCard._error) {
   diff('www A2A card', 'version', VERSION, wwwCard.version);
 }
 
-// 5e. PulseMCP (check for "free"/"open" misclassification)
+// 5e. AgentFacts (NANDA identity document, mcp.fodda.ai)
+const agentFacts = await fetchJSON('https://mcp.fodda.ai/.well-known/agent-facts.json');
+if (agentFacts._error) {
+  console.log(yellow(`  ⚠ AgentFacts: ${agentFacts._error}`));
+} else {
+  diff('AgentFacts', 'version', VERSION, agentFacts.version);
+  diff('AgentFacts', 'id', 'ai.fodda/mcp-server', agentFacts.id);
+}
+
+// 5f. PulseMCP (check for "free"/"open" misclassification)
 const pulseMCP = await fetchJSON('https://api.pulsemcp.com/v0beta1/servers?search=fodda');
 if (pulseMCP._error) {
   console.log(yellow(`  ⚠ PulseMCP: ${pulseMCP._error}`));

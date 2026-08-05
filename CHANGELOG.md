@@ -23,9 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `consult_analyst`: `$15.00 via SPT per turn`
   - Re-generated `tools-manifest.json` via `scripts/generate-tools-manifest.mjs`.
 
-## [1.37.0] - 2026-08-04
+## [1.37.0] - 2026-08-05
 
 ### Added
+- **AgentFacts (NANDA) identity document** (`src/agentFacts.ts`, `src/index.ts`, `scripts/sync-discovery.mjs`):
+  - New `/.well-known/agent-facts.json` endpoint (alias `/.well-known/agentfacts.json`) serving a [NANDA AgentFacts](https://github.com/projnanda/agentfacts-format)-format identity document — validated against the draft-07 schema.
+  - Third projection of the same canonical metadata as the MCP discovery card and A2A Agent Card: identity/skills derive from `AGENT_CARD` (now exported from `a2aHandler.ts`), version from `MCP_SERVER_VERSION`, endpoints from `getServiceUrl()`, live error-rate from telemetry. `stripe-spt` is advertised as an auth method only when `ENABLE_SPT=true`.
+  - `sync-discovery.mjs` gained a §5e live-diff for the AgentFacts surface (version + id) so staleness is caught at deploy time.
+  - Prepares NANDA Index registration: an index record's next-hop can point at this document or the existing A2A card.
 - **Automated Quarterly J-Lens Concept Workspace Review & Alerts (`src/jobs/jlens_quarterly_sweep.ts`, `src/services/notifications.ts`)**:
   - Implemented quarterly scheduled pipeline (`isQuarterlySweepDue`) running on the first day of every quarter (Jan 1, Apr 1, Jul 1, Oct 1).
   - Configured 6-condition prompt matrix sweep (`Homepage`, `OKF doc`, `MCP tool description`, `Search-results style`, `Control`, `Anti-pattern probe`) across standard open-weights target models (`Llama-3-8B-Instruct`, `Qwen-2.5-7B-Instruct`, `Gemma-2-9B-IT`).
