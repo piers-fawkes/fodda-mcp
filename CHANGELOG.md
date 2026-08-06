@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.4] - 2026-08-05
+
+### Improved
+- **Brand Intelligence Earnings Context & Explanatory Labels (`src/brandTemplate.ts`)**:
+  - Reframed main section header to **`Quarterly Earnings & Wall Street Intelligence`** with clear provenance notes (`SEC Filings & Executive Earnings Call Transcripts`).
+  - Upgraded inner block labels to be highly explanatory:
+    - `What Analysts Are Pressing On` $\rightarrow$ **`Wall Street Analyst Concerns & Q&A Focus`**
+    - `Analyst Sentiment` $\rightarrow$ **`Institutional Analyst Consensus & Sentiment`**
+    - `Strategic Activity` $\rightarrow$ **`Management Focus & Strategic Investment Areas`**
+    - `Executive Sentiment` $\rightarrow$ **`C-Suite Executive Outlook & Forward Guidance`**
+    - `Validated Consumer Trends` $\rightarrow$ **`Market Trends Confirmed by Executives`**
+
 ## [1.38.3] - 2026-08-05
 
 ### Fixed

@@ -285,31 +285,31 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
 
         if (truthLayer.headline) {
             parts.push(`<div class="ec">
-  <div class="et" style="font-size:13px;font-weight:600;">${esc(truthLayer.company || '')} — ${esc(truthLayer.period || '')}</div>
+  <div class="et" style="font-size:13px;font-weight:600;">${esc(truthLayer.company || '')} — ${esc(truthLayer.period || '')} Earnings Call Analysis</div>
   <div class="ex" style="font-weight:500;margin-top:4px;">${esc(truthLayer.headline)}</div>
 </div>`);
         }
 
         if (truthLayer.analyst_concerns) {
             parts.push(`<div class="ec">
-  <div class="et" style="font-size:11px;font-weight:500;color:var(--color-text-warning);">What Analysts Are Pressing On</div>
+  <div class="et" style="font-size:11px;font-weight:600;color:var(--color-text-warning);">Wall Street Analyst Concerns & Q&A Focus</div>
   <div class="ex">${esc(truthLayer.analyst_concerns)}</div>
 </div>`);
         }
 
         if (truthLayer.analyst_sentiment) {
             parts.push(`<div class="ec">
-  <div class="et" style="font-size:11px;font-weight:500;">Analyst Sentiment</div>
+  <div class="et" style="font-size:11px;font-weight:600;">Institutional Analyst Consensus & Sentiment</div>
   <div class="ex">${esc(truthLayer.analyst_sentiment)}</div>
 </div>`);
         }
 
         // Activity fields — show if present
         const activities = [
-            { key: 'marketing_activity', label: 'Marketing' },
-            { key: 'retail_activity', label: 'Retail' },
-            { key: 'technology_activity', label: 'Technology' },
-            { key: 'sustainability_activity', label: 'Sustainability' },
+            { key: 'marketing_activity', label: 'Marketing & Brand Building' },
+            { key: 'retail_activity', label: 'Retail & Channel Expansion' },
+            { key: 'technology_activity', label: 'Technology & AI Infrastructure' },
+            { key: 'sustainability_activity', label: 'ESG & Sustainability' },
         ];
         const activityPills = activities
             .filter(a => truthLayer[a.key])
@@ -317,14 +317,14 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
             .join('');
         if (activityPills) {
             parts.push(`<div class="ec">
-  <div class="et" style="font-size:11px;font-weight:500;">Strategic Activity</div>
+  <div class="et" style="font-size:11px;font-weight:600;">Management Focus & Strategic Investment Areas</div>
   <div class="rq" style="margin-top:4px;">${activityPills}</div>
 </div>`);
         }
 
         if (truthLayer.exec_sentiment) {
             parts.push(`<div class="ec">
-  <div class="et" style="font-size:11px;font-weight:500;">Executive Sentiment</div>
+  <div class="et" style="font-size:11px;font-weight:600;">C-Suite Executive Outlook & Forward Guidance</div>
   <div class="ex">${esc(truthLayer.exec_sentiment)}${truthLayer.quote_from_ceo ? ` — "${esc(truthLayer.quote_from_ceo)}"` : ''}</div>
 </div>`);
         }
@@ -335,7 +335,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
                 .map((t: any) => `<span class="rqp">${esc(t.trend_name)}</span>`)
                 .join('');
             parts.push(`<div class="ec">
-  <div class="et" style="font-size:11px;font-weight:500;color:var(--color-text-success);">Validated Consumer Trends</div>
+  <div class="et" style="font-size:11px;font-weight:600;color:var(--color-text-success);">Market Trends Confirmed by Executives</div>
   <div class="rq" style="margin-top:4px;">${trendPills}</div>
 </div>`);
         }
@@ -638,9 +638,9 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         'BEA_STAT_2_SUB': beaChangeSub,
         'GEO_SECTION_HTML': geoBarsHtml ? `<div class="sl2">Geographic spread</div>
     ${geoBarsHtml}` : '',
-        'EARNINGS_SECTION_HTML': earningsHtml ? `<div class="sl2">Earnings intelligence</div>
+        'EARNINGS_SECTION_HTML': earningsHtml ? `<div class="sl2">Quarterly Earnings & Wall Street Intelligence</div>
     ${earningsHtml}
-    <p class="note">Source: Fodda Earnings Intelligence.</p>` : '',
+    <p class="note">Source: Fodda Institutional Earnings Intelligence (SEC Filings & Executive Earnings Call Transcripts).</p>` : '',
         'SOURCE_PILLS_HTML': sourcePills,
         'EXPORT_1_LABEL': exportLabels[0]!.label,
         'EXPORT_1_DESC': exportLabels[0]!.desc,
