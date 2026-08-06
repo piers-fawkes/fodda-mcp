@@ -98,8 +98,14 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
         if (mappedRole) item.role = mappedRole;
 
         const url = item.sourceUrl?.trim();
-        const pubName = item.publication?.trim() || item.sourceName?.trim() || (url ? extractCleanDomain(url) : 'Source');
-        item.short_citation = url ? `[${pubName}](${url})` : pubName;
+        const rawPubName = item.publication?.trim() || item.sourceName?.trim() || (url ? extractCleanDomain(url) : 'Source');
+        // Clean RSS feed labels (e.g. "Fast Casual | Latest Media" -> "Fast Casual")
+        let cleanPub = rawPubName.split('|')[0].trim().split(' - ')[0].trim();
+        if (cleanPub.endsWith(' RSS') || cleanPub.endsWith(' Feed')) {
+            cleanPub = cleanPub.replace(/\s+(RSS|Feed)$/i, '').trim();
+        }
+        const finalPubLabel = cleanPub.startsWith('via ') ? cleanPub : `via ${cleanPub}`;
+        item.short_citation = url ? `[${finalPubLabel}](${url})` : finalPubLabel;
 
         if (item.formatted_citation) return item; // already enriched
 

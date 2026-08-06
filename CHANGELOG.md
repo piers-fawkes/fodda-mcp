@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.39.1] - 2026-08-05
+
+### Fixed & Improved
+- **Render Spec Version Alignment & Cache Key Busting (`src/toolHandlers.ts`, `src/tools.ts`, `src/enrichment.ts`)**:
+  - Updated `RENDER_SPEC_VERSION` to `'1.1'` in `src/toolHandlers.ts` so `_render_spec_version` correctly outputs `"1.1"`.
+  - Updated `MCP_SERVER_VERSION` in `src/tools.ts` to `1.39.1`, ensuring query cache keys (`MCP_SERVER_VERSION:method:path:body`) invalidate stale pre-deploy responses upon deployment.
+  - Standardized `short_citation` labels with a consistent `via ` prefix and stripped RSS feed titles/pipes (e.g. `Fast Casual | Latest Media` $\rightarrow$ `[via Fast Casual](url)`).
+
 ## [1.39.0] - 2026-08-05
 
 ### Added

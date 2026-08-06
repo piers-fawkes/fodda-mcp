@@ -36,7 +36,7 @@ import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingT
 // Render instructions — embedded in tool responses for LLM clients that
 // don't receive MCP server-level `instructions` (e.g. Claude.ai).
 // ---------------------------------------------------------------------------
-const RENDER_SPEC_VERSION = '1.0';
+const RENDER_SPEC_VERSION = '1.1';
 
 export function resolveAnalystAlias(analystIdInput: string, companyInput?: string): { analyst_id: string; company?: string | undefined } {
     if (!analystIdInput) return { analyst_id: analystIdInput, company: companyInput };
