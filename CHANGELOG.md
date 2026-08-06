@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.5] - 2026-08-05
+
+### Fixed
+- **Brand Intelligence Widget `onclick` Escaping & Verdict Alignment (`src/brandTemplate.ts`)**:
+  - Fixed single-quote escaping bug in `SUGGESTED_NEXT_HTML` button `onclick` handlers (`sendPrompt`) that caused JavaScript syntax errors on apostrophes (e.g. `Nike's`).
+  - Aligned headline velocity verdict calculation to check trend lifecycle distribution, preventing brands with predominantly fading trends from being mislabeled as `"rising ↑"`.
+
 ## [1.38.4] - 2026-08-05
 
 ### Improved

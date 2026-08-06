@@ -264,7 +264,14 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const competitors = profile.competitive_context?.co_occurring_brands || [];
     const crossGraph = profile.cross_graph_presence || [];
     const supplemental = profile.supplemental_signals || {};
-    const velocity = velocityClass(profile.summary?.evidence_velocity?.trend || 'stable');
+    const lcDist = profile.summary?.lifecycle_distribution || {};
+    const buildingCount = (lcDist.building || 0) + (lcDist.emerging || 0);
+    const fadingCount = (lcDist.fading || 0) + (lcDist.mature || 0);
+    let rawVelocityTrend = profile.summary?.evidence_velocity?.trend || 'stable';
+    if (fadingCount > buildingCount && rawVelocityTrend === 'accelerating') {
+        rawVelocityTrend = 'decelerating';
+    }
+    const velocity = velocityClass(rawVelocityTrend);
     const timeline = profile.activity_timeline || [];
 
     // Build set of graphIds the target brand is present in (for sector-aware competitor labels)
@@ -367,7 +374,6 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     });
 
     // ── Lifecycle bar ──
-    const lcDist = profile.summary?.lifecycle_distribution || {};
     const lcTotal = Object.values(lcDist).reduce((a: number, b: any) => a + (b as number), 0) as number;
     const lcColors: Record<string, string> = { building: 'var(--color-text-info)', emerging: 'var(--color-text-success)', mature: 'var(--color-text-secondary)', fading: 'var(--color-text-warning)' };
     const lifecycleBar = Object.entries(lcDist)
@@ -678,10 +684,12 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     fills['GT_CAPTION'] = supplemental?.google_trends ? `12-month search interest for "${brand}". Peak: ${supplemental.google_trends.peak_interest || '—'}, current: ${supplemental.google_trends.latest_value || '—'}. Source: Google Trends.` : `Search interest data for "${brand}". Source: Google Trends.`;
     fills['RELATED_QUERIES_NOTE'] = supplemental?.google_trends?.related_queries?.length ? `Top related searches when people look for ${brand}.` : '';
     fills['WIKI_NOTE'] = wikiData.length > 0 ? `Daily Wikipedia pageviews for ${brand}-related articles. Higher = more cultural attention.` : '';
+    const safeBrandName = esc(brand).replace(/'/g, "\\'");
+    const safeCompName = competitors[0]?.brand ? esc(competitors[0].brand).replace(/'/g, "\\'") : 'top rival';
     fills['SUGGESTED_NEXT_HTML'] = `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-        <button class="btn-out" onclick="sendPrompt('What are ${brand.replace(/'/g, "\\'")}'s competitors doing differently?')">Competitive landscape</button>
-        <button class="btn-out" onclick="sendPrompt('Show me the evidence behind ${brand.replace(/'/g, "\\'")}'s strongest trend')">Deep dive</button>
-        <button class="btn-out" onclick="sendPrompt('How does ${brand.replace(/'/g, "\\'")}' compare to ${competitors[0]?.brand.replace(/'/g, "\\'") || 'its top competitor'}?')">Head-to-head</button>
+        <button class="btn-out" onclick="sendPrompt('What are competitors of ${safeBrandName} doing differently?')">Competitive landscape</button>
+        <button class="btn-out" onclick="sendPrompt('Show me the evidence behind the strongest trend for ${safeBrandName}')">Deep dive</button>
+        <button class="btn-out" onclick="sendPrompt('Compare ${safeBrandName} vs ${safeCompName}')">Head-to-head</button>
     </div>`;
 
     html = replaceSlots(html, fills);
