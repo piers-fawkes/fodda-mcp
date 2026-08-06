@@ -120,3 +120,51 @@ For each: confirm the current requirement and note anything changed since the so
 | New OpenAPI 2.0 spec for `/mcp` | **New** — only if research requires it |
 | `CHANGELOG.md` | Document changes + verification |
 | `Fodda API/briefs/…` (API Agent brief) | **New** — hand-off for auth-middleware/OAuth/API-source work |
+
+---
+
+# CORRECTION NOTE (added 2026-07-25, after reviewing your implementation plan)
+
+Good work on the transport finding and on handling the cross-repo boundary correctly (producing an
+API Agent brief instead of editing the API repo — that is exactly right). Four corrections.
+
+### 1. OAuth 2.0 assessment is MISSING — and it is not greenfield
+Part 2 item 3 asked for an **effort assessment with an explicit recommend-or-defer call.** Your plan
+researched what Copilot Studio *supports* but never assessed the Fodda side, and never made the call.
+
+Important context you missed: **`src/index.ts` already contains partial OAuth scaffolding.** It
+advertises `.well-known/oauth-protected-resource/mcp` and returns a `WWW-Authenticate: Bearer
+resource_metadata=...` challenge, but token resolution is explicitly **not** implemented (there is a
+hardcoded error telling callers to use header API-key auth instead). That materially changes the
+effort estimate. Redo the assessment against what already exists, then **recommend or defer, explicitly.**
+
+### 2. Tool-discovery hygiene was dropped entirely
+Part 2 item 5 is absent from your plan. Copilot Studio shows **every** discovered tool's name,
+description and input schema to the maker — all 30+ of ours. Required:
+- Review that exposed tool names/descriptions read cleanly to a **non-Fodda** maker.
+- Decide on a **curated subset for this channel** (as we already filter tools for the OpenAI
+  integration) to cut latency and clutter, and record the decision either way.
+
+If you intend to defer a brief requirement, **say so explicitly** — do not drop it silently.
+
+### 3. Findings need citations + dates
+The brief said to confirm against **live** docs and note anything changed since the source date. Your
+findings carry no sources or dates, which makes them unreviewable. Add a source link + date checked
+per finding. **Specifically verify this claim before we rely on it:** *"BYO MCP Server registration in
+the M365 Admin Center using the Agent 365 CLI and Agent 365 Tooling Gateway."* It is unusually
+specific and could not be corroborated — if it is not real, remove it.
+
+### 4. Header auth already works — document the key-prefix dependency
+Confirmed in `src/index.ts`: the auth chain already resolves **`X-API-Key` header → `Authorization:
+Bearer <key>` → `?api_key=` fallback**, and CORS already allows `X-API-Key`. So Part 2 item 2 is
+verification, not new code — as you framed it. **But:** an API key is distinguished from a Clerk JWT
+purely by the **`sk_live_` / `sk_trial_` prefix**. A maker pasting any other token shape will get
+confusing failures. Document this explicitly for makers and pass it to the Website Agent for the
+setup copy.
+
+### Nits
+- `source=copilot` **query param** is beyond the brief (which asked only for an `X-Fodda-Source`
+  value). Either way it is client-declared — treat that analytics as self-reported, not trusted.
+- A hand-written `docs/openapi-mcp.yaml` will drift. Fodda API already has
+  `scripts/generate_openapi.ts` and `scripts/verify_openapi_parity.ts` — prefer generating the spec
+  and bringing it under that parity check.
