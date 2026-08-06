@@ -348,3 +348,37 @@ These source descriptions violate the new house rule and will propagate if copie
 
 Flag these to Piers for correction at source. Do **not** silently rewrite Airtable content — and do
 not copy the "tokens" phrasing into the Copilot-facing descriptions.
+
+---
+
+# CORRECTION NOTE 5 (2026-08-06) — pricing APPROVED; one string left
+
+**The pricing sweep is correct and verified against source.** Confirmed in `src/toolHandlers.ts`:
+`via SPT` is now 0 occurrences; `read_url` reads `Price: $20 per URL lookup.` (was
+*"Uses 15 tokens ($7.50 via SPT)"*); `deep_research_topic` shows both modes
+(`$55 (light mode) or $100 (heavy mode)`); all 16 price strings match Airtable; `bills_as` correctly
+left untouched. The remaining `token` hits are code internals (`sptCtx.token`, `overage_tokens`, a
+local `nameTokens`) and are fine. Good work — this one is done properly.
+
+### One fix: internal skill names still visible to Microsoft makers
+
+`src/toolHandlers.ts:999` — the `skip_skills` parameter of **`search_graph`**, which IS in the
+`/copilot` 17, so Copilot Studio renders it:
+
+```
+skip_skills: z.boolean().optional().describe('If true, skip applying any enabled skills
+  (Paralogy, Igloo, etc.) for this query only. …')
+```
+
+**Piers's instruction: no Paralogy/Igloo in the Microsoft-facing code.** Rewrite this `.describe()`
+so it names no internal skills — describe the behaviour generically (e.g. "skip applying any enabled
+skills for this query only"). Do not remove the parameter or change its behaviour; this is wording
+only.
+
+**In scope: line 999 only.** `toggle_graph_preference` (line 2978) also names Paralogy/Igloo, but it
+is **not** in the `/copilot` 17, so it is never shown to a Microsoft maker — leave it alone.
+Line 443 is a code comment — also out of scope.
+
+### Nit
+`consult_analyst` is priced correctly at $15 but described as "per query"; it bills **per turn**.
+Match your own walkthrough wording: `Price: $15 per turn.`
