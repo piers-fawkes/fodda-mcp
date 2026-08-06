@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.6] - 2026-08-05
+
+### Added
+- **Coverage Honesty System Prompt Alignment (`src/systemPrompt.ts`)**:
+  - Added `RULE: CoverageHonestyAndDegradation` to instruct calling LLMs to transparently state low/thin coverage when tools flag `low_coverage: true`.
+  - Updated `RULE: GraphFirstRule` to require honest boundary statements and suggest report-tier graphs or supplemental market data fallbacks instead of dressing up weak adjacent matches as authoritative.
+
 ## [1.38.5] - 2026-08-05
 
 ### Fixed
