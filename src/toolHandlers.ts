@@ -2227,7 +2227,7 @@ function addCoverageAnnotation(
 
         const widget = await renderBrandWidget(profile);
         const EDITORIAL_INSTRUCTION = widget.open_slots.length === 0
-            ? `── BRAND WIDGET: READY ──\nThe widget is fully populated. Call show_widget with the widget_html as-is. Do NOT modify the HTML.`
+            ? null
             : `── BRAND WIDGET: EDITORIAL SLOTS ──\nThe widget_html is mostly complete. Fill these remaining slot(s): ${widget.open_slots.join(', ')}\n\n${widget.open_slots.includes('ANALYSIS_HTML') ? '{{ANALYSIS_HTML}} — Write 3-5 paragraphs of strategic analysis using <p> tags. Cover: strongest signal and why, gaps or emerging opportunities, competitive positioning, and what to watch next. Use <strong> for key terms.' : ''}\n\nEDITORIAL CONTEXT:\n${JSON.stringify(widget.editorial_context, null, 2)}\n\nCRITICAL: ALL output must go INSIDE the widget slots. Do NOT redesign, restyle, or add new elements.\nAfter filling slots, pass the complete HTML to show_widget.\n`;
 
         storeWidget(widget.widget_html);
@@ -2261,10 +2261,13 @@ function addCoverageAnnotation(
                 const withheld = await settleOrWithhold({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name }, 'brand_tracker');
                 if (withheld) return withheld;
 
-                return { content: [
-                    { type: 'text' as const, text: '── WIDGET HTML ──\nIf your client supports HTML visualization (show_widget, visualize:show_widget, or artifacts), pass this HTML verbatim. Do not rewrite or restyle.\n\n' + widget.widget_html },
-                    { type: 'text' as const, text: EDITORIAL_INSTRUCTION },
-                ] };
+                const content: Array<{ type: 'text'; text: string }> = [
+                    { type: 'text' as const, text: widget.widget_html },
+                ];
+                if (EDITORIAL_INSTRUCTION) {
+                    content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
+                }
+                return { content };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;

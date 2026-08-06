@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.3] - 2026-08-05
+
+### Fixed
+- **Brand Tracker Output Text Cleanup (`src/toolHandlers.ts`)**:
+  - Removed meta-wrapper headers (`── WIDGET HTML ──`, `── BRAND WIDGET: READY ──`) and internal debug strings from `brand_tracker` output when visual widgets are fully populated.
+  - Ensured HTML visual widget cards render cleanly without leaking prompt-engineering scaffolding text into chat transcripts.
+
 ## [1.38.2] - 2026-08-05
 
 ### Improved
