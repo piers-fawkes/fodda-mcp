@@ -217,3 +217,37 @@ are out of scope; anything a maker can see is in scope.
 ### Standing rule (applies to every future walkthrough)
 Do not write a verification claim in the past tense unless the check actually ran and you can show
 its output. If a check was partial, say which part. "Audited" and "verified" are claims we act on.
+
+---
+
+# CORRECTION NOTE 3 (added 2026-08-06) — STOP: customer-facing prices are wrong
+
+The E2E auth work and the connect-time 401 enforcement are **good** — that is exactly right, and the
+hygiene sweep across all 17 tools is the right scope. **But the pricing rewrite in that sweep is wrong
+and must be fixed before this ships.**
+
+You replaced legacy price strings with numbers you described as "canonical pricing" — but you did not
+read them from the source of truth. The rewritten values (`brand_tracker` → 1 token, `consult_analyst`
+→ 1 token/turn, `deep_research_topic` → 50/100 tokens, `search_graph` → 1 token/query) match neither
+the legacy strings nor the token costs in `metering.ts`. They appear to have been reconstructed from
+memory. These strings render to Microsoft makers inside Copilot Studio.
+
+**Do not take corrected figures from this note.** No dollar values are quoted here on purpose — get
+them from the source below.
+
+### Required fix
+1. **AIRTABLE is the source of truth for pricing** (confirmed by Piers, 2026-08-06). Read each price
+   from Airtable and quote it exactly.
+2. **Offering pricing is a different rate** from the SPT per-token rate in `metering.ts` — the two are
+   NOT interchangeable, and `SPT_RATE_CENTS` must not be used to compute an offering price. Confirm
+   which rate applies to each tool in Airtable before writing any number.
+3. **Do not invent, round, or "correct" a price from memory.** If a price looks legacy or wrong,
+   **stop and ask Piers.**
+4. For every price you write, **state where you read it** so it can be checked.
+5. `search_graph` is **weight-based**, not a flat per-query cost. Describe it accurately or omit the
+   number rather than guess.
+
+### Root cause worth noting
+The failure was confidence without a source — "canonical" was asserted, not read. (The reviewer made
+the same mistake while checking this: computing offering prices from the SPT rate produced equally
+wrong figures. Which is the point: **if the number wasn't read from Airtable, it isn't a price.**)
