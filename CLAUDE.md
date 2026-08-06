@@ -50,6 +50,8 @@ Project-specific agents/workflows/rules live in that repo's `.agents/`.
   a price from `TOKEN_COSTS` × `SPT_RATE_CENTS`. Never invent, round, or "correct" a price from
   memory; if one looks wrong, STOP and ask Piers.
 - Supplemental clients never throw — always return `{ error, message, source }`; 10s timeout.
+- **NEVER use "tokens" in user-visible text** — express cost as **API calls** + the published USD
+  price from Airtable.
 - Prefer one MCP tool with a `view` param over many tools (context budget).
 - **Test sends go ONLY to `nathan@searchshop.ai` and `piers.fawkes@psfk.com`** — never a real
   user/prospect. Hard rule.

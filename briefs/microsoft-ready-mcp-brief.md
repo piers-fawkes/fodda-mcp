@@ -251,3 +251,49 @@ them from the source below.
 The failure was confidence without a source — "canonical" was asserted, not read. (The reviewer made
 the same mistake while checking this: computing offering prices from the SPT rate produced equally
 wrong figures. Which is the point: **if the number wasn't read from Airtable, it isn't a price.**)
+
+---
+
+## AUTHORITATIVE PRICING — read from Airtable `Offerings` + `Query Pricing`, 2026-08-06
+
+Base `appXUeeWN1uD9NdCW` · `Offerings` (tbl93DJ627r81zKVP) · `Query Pricing` (tblHsMfyoW39LqCv8).
+**Copy these. Do not derive, round, or recompute anything.**
+
+> **NEVER SAY "TOKENS."** House rule: express cost as **API calls** and the published USD price.
+> Delete every "N tokens" / "via SPT" phrasing you find in maker-visible text.
+
+| Tool (`/copilot` subset) | Published price | Typical calls | API calls charged |
+|---|---|---|---|
+| `get_my_account` | Free | 1 | free |
+| `list_graphs` | Free | 1 | free |
+| `list_analysts` | Free | 1 | free |
+| `check_supplemental_status` | Free | 1 | free |
+| `check_research_status` | Free | 1 | free |
+| `get_evidence` | **$0.50** | 1 | 5 (`standalone_evidence`) |
+| `search_statistics` | **$0.50** | 1 | 5 (`standalone_statistics`) |
+| `search_insights` | **$0.50** | 1 | 5 (`standalone_insights`) |
+| `brand_tracker` | **$10** | 6 | 20 (`brand_intelligence`) ⚠️ see note |
+| `consult_analyst` | **$15** | 3 | 5 (`expert_agent`) ⚠️ see note |
+| `search_graph` | **$20** | 4 | 15 (`topic_research`) |
+| `get_company_earnings` | **$20** | 4 | (`earnings_company`) |
+| `read_url` | **$20** | 4 | 15 (`url_as_prompt`) |
+| `get_supplemental_context` | **$45** | 9 | 5 (`standalone_supplemental`) |
+| `deep_research_topic` — light | **$55** | 11 | 20 (`deep_research_light`) |
+| `deep_research_topic` — heavy | **$100** | 19 | 30 (`deep_research_heavy`) |
+| `get_capabilities` | **NOT IN AIRTABLE** — do not state a price | — | — |
+| `get_validated_trends` | **NOT IN AIRTABLE** — do not state a price | — | — |
+
+**Every price you wrote was wrong**, including `read_url` (you wrote $0.50; Airtable says $20).
+
+⚠️ **Two rows disagree between the tool record and the offering record — ASK PIERS, do not pick:**
+- `brand_tracker` tool row = **$10**, but `brand_intelligence` offering row = **$30**.
+- `consult_analyst` tool row = **$15**, but `expert_agent` offering row = **$2.50**.
+
+### Also: "tokens" language exists in the Airtable descriptions themselves
+These source descriptions violate the new house rule and will propagate if copied verbatim:
+- `read_url`: *"Uses 15 tokens ($7.50 via SPT)"* — also contradicts its own $20 published price.
+- `get_company_earnings`: *"Uses 0–15 tokens depending on view…"*
+- `get_earnings_intelligence`: *"Uses 5 tokens ($2.50 via SPT)"*
+
+Flag these to Piers for correction at source. Do **not** silently rewrite Airtable content — and do
+not copy the "tokens" phrasing into the Copilot-facing descriptions.
