@@ -382,3 +382,27 @@ Line 443 is a code comment — also out of scope.
 ### Nit
 `consult_analyst` is priced correctly at $15 but described as "per query"; it bills **per turn**.
 Match your own walkthrough wording: `Price: $15 per turn.`
+
+---
+
+# ✅ SIGNED OFF (2026-08-06) — MCP side complete
+
+All correction notes resolved. Verified against `src/toolHandlers.ts`, not taken on report:
+
+- **Pricing:** all maker-visible prices match Airtable `published_price_usd`; `via SPT` = 0
+  occurrences; `read_url` $20; `deep_research_topic` shows both modes ($55 light / $100 heavy);
+  `consult_analyst` $15 per turn.
+- **Jargon:** `search_graph.skip_skills` no longer names internal skills. Remaining Paralogy
+  references are a code comment (line 443) and `toggle_graph_preference` (line 2978) — the latter is
+  not in the `/copilot` 17, so it is never shown to a Microsoft maker. Both intentionally out of scope.
+- **Auth:** connect-time 401 with RFC 9728 challenge, positive `tools/call` with a real key returning
+  live data, and two negative tests (missing credentials, non-prefixed token).
+- **`bills_as`:** correctly left untouched (the `light/heavy` slash form is parsed by
+  `seed_offerings.ts:508`; deleting it would break billing).
+
+Cosmetic only, not worth another round: the walkthrough table is headed "/copilot 17" but lists 18 —
+`get_earnings_intelligence` is priced correctly ($30) but is not in the curated subset.
+
+**Next:** the website work (`Fodda Website/briefs/microsoft-ready-website-brief.md`) — document
+`https://mcp.fodda.ai/copilot`, add it to `llms.txt`, and use these same Airtable prices. Auth copy
+should state the `sk_live_` / `sk_trial_` key-prefix requirement; OAuth remains deferred.
