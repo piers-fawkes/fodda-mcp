@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.1] - 2026-08-05
+
+### Improved
+- **Supplemental Routing Hints & Keyword Coverage (`src/toolHandlers.ts`, `src/catalogCache.ts`, `tools-manifest.json`)**:
+  - Added explicit `geo` parameter support (`country code or geography hint`) to `get_supplemental_context` in `src/toolHandlers.ts` to allow passing country ISO codes (e.g. `TH`, `US`, `GB`) to country-filtered supplemental endpoints.
+  - Reframed `domain` parameter description to explicitly instruct calling LLMs against misclassifying macro economic and consumer sentiment queries under `"culture"` or `"technology"` domains.
+  - Expanded `macro` category keywords in `src/catalogCache.ts` to include `'consumer sentiment'`, `'michigan sentiment'`, and `'umcsent'`.
+  - Expanded `demographics` category keywords in `src/catalogCache.ts` to include `'republican'`, `'democrat'`, `'bipartisan'`, `'party affiliation'`, `'pew'`, and `'npors'`.
+  - Re-generated `tools-manifest.json` via `scripts/generate-tools-manifest.mjs`.
+
 ## [1.38.0] - 2026-08-05
 
 ### Added

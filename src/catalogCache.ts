@@ -1113,8 +1113,8 @@ const EARNINGS_SECTORS = ['retail', 'technology', 'travel', 'hospitality', 'luxu
 // (economic indicators/FRED, demographic surveys/Census, trade data, food
 // economics + agricultural production, commodity pricing).
 const SUPPLEMENTAL_CATEGORY_KEYWORDS: Record<string, string[]> = {
-    macro: ['macro', 'economy', 'economic', 'inflation', 'gdp', 'interest rate', 'consumer confidence', 'consumer spending', 'recession', 'fred', 'cost of living', 'purchasing power', 'unemployment'],
-    demographics: ['demographic', 'demographics', 'population', 'census', 'household income', 'age distribution', 'migration'],
+    macro: ['macro', 'economy', 'economic', 'inflation', 'gdp', 'interest rate', 'consumer confidence', 'consumer sentiment', 'michigan sentiment', 'umcsent', 'consumer spending', 'recession', 'fred', 'cost of living', 'purchasing power', 'unemployment'],
+    demographics: ['demographic', 'demographics', 'population', 'census', 'household income', 'age distribution', 'migration', 'republican', 'democrat', 'bipartisan', 'party affiliation', 'pew', 'npors'],
     trade: ['imports', 'exports', 'trade data', 'trade flows', 'tariff', 'tariffs', 'supply chain'],
     food_economics: ['food prices', 'food costs', 'crop', 'agriculture', 'agricultural', 'nutrition', 'nutritional'],
     commodities: ['commodity', 'commodities', 'raw materials', 'wholesale prices'],

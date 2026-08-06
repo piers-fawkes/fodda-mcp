@@ -2283,20 +2283,22 @@ function addCoverageAnnotation(
         'get_supplemental_context',
         'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses $0.50 via SPT (standalone lookup) / $45.00 via SPT (full 9-source context).',
         {
-            query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty')"),
-            domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design'. If omitted, inferred from query."),
+            query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty'). Include country names if searching non-US markets (e.g. 'Thailand consumer sentiment')."),
+            domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design', 'macro'. Do NOT pass 'culture' or 'technology' for macro economic or consumer sentiment queries — leave omitted or set to 'macro'."),
+            geo: z.string().optional().describe("Country code or geography hint (e.g., 'TH', 'US', 'GB') for country-filtered queries."),
             brands: z.array(z.string()).optional().describe("Brand names to include in demand/product lookups (e.g., ['Nike', 'Adidas']). Triggers Google Trends comparison and Amazon product search."),
             graph_ids: z.array(z.string()).optional().describe("Graph IDs from prior search results — helps refine domain inference."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
         { title: 'Get Market Context Data', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ query, domain, brands, graph_ids, userId: uid }) => {
+        async ({ query, domain, geo, brands, graph_ids, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'supplemental_context');
 
                 const body: Record<string, any> = { query };
                 if (domain) body.domain = domain;
+                if (geo) body.geo = geo;
                 if (brands?.length) body.brands = brands;
                 if (graph_ids?.length) body.graph_ids = graph_ids;
 
