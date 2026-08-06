@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.39.2] - 2026-08-05
+
+### Improved
+- **Canonical Publication Mapping & Extended RSS Separator Stripping (`src/enrichment.ts`, `src/tools.ts`)**:
+  - Extended RSS feed title stripper to handle `>`, `-`, and `:` separators (`NYT > Top Stories` $\rightarrow$ `via The New York Times`).
+  - Added canonical publication name mapping for tier-1 sources (`NYT` $\rightarrow$ `The New York Times`, `WSJ` $\rightarrow$ `The Wall Street Journal`, `FT` $\rightarrow$ `Financial Times`, `BoF` $\rightarrow$ `The Business of Fashion`).
+  - Bumped `MCP_SERVER_VERSION` to `1.39.2` to bust response caches.
+
 ## [1.39.1] - 2026-08-05
 
 ### Fixed & Improved

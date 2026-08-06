@@ -5,7 +5,7 @@
  * This file provides version strings used by index.ts and toolHandlers.ts.
  */
 
-export const MCP_SERVER_VERSION = "1.39.1";
+export const MCP_SERVER_VERSION = "1.39.2";
 
 export const TOOL_VERSIONS = {
     list_graphs: "1.4.0",

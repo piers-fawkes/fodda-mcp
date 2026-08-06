@@ -99,11 +99,22 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
 
         const url = item.sourceUrl?.trim();
         const rawPubName = item.publication?.trim() || item.sourceName?.trim() || (url ? extractCleanDomain(url) : 'Source');
-        // Clean RSS feed labels (e.g. "Fast Casual | Latest Media" -> "Fast Casual")
-        let cleanPub = rawPubName.split('|')[0].trim().split(' - ')[0].trim();
+        // Clean RSS feed labels (e.g. "Fast Casual | Latest Media" -> "Fast Casual", "NYT > Top Stories" -> "NYT")
+        let cleanPub = rawPubName.split('|')[0].trim().split('>')[0].trim().split(' - ')[0].trim().split(':')[0].trim();
         if (cleanPub.endsWith(' RSS') || cleanPub.endsWith(' Feed')) {
             cleanPub = cleanPub.replace(/\s+(RSS|Feed)$/i, '').trim();
         }
+        // Canonical name normalization
+        if (cleanPub.toUpperCase() === 'NYT' || cleanPub.toUpperCase().startsWith('NYT ') || cleanPub === 'New York Times') {
+            cleanPub = 'The New York Times';
+        } else if (cleanPub.toUpperCase() === 'WSJ' || cleanPub.toUpperCase().startsWith('WSJ ')) {
+            cleanPub = 'The Wall Street Journal';
+        } else if (cleanPub.toUpperCase() === 'FT' || cleanPub.toUpperCase().startsWith('FT ')) {
+            cleanPub = 'Financial Times';
+        } else if (cleanPub.toUpperCase() === 'BOF' || cleanPub === 'Business of Fashion') {
+            cleanPub = 'The Business of Fashion';
+        }
+
         const finalPubLabel = cleanPub.startsWith('via ') ? cleanPub : `via ${cleanPub}`;
         item.short_citation = url ? `[${finalPubLabel}](${url})` : finalPubLabel;
 
