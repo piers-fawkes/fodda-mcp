@@ -95,25 +95,24 @@ function buildRenderInstructions(opts: {
 }): Record<string, any> {
     const rules: string[] = [
         'Attribute findings to their source graph by name using graphName. Never say "the Fodda graph." Fodda is the platform — the graphs are created by named experts.',
+        'LEAD: Open with one sentence — the sharpest editorial claim the results support. Never open with methodology ("I searched...", "The graphs returned...") or result counts.',
+        'ONE TREND, ONE PARAGRAPH: Each trend gets exactly one paragraph of at most 3 sentences (~60 words). Open the paragraph with the trend name in bold followed by its lifecycle stage in italics, e.g. **Human-centric luxury** *(building)*. Insert a blank line between trends — never run two trends into one paragraph.',
+        'MAX 3 TRENDS by default, ranked by relevance, even when the payload contains more. Mention in the closing line that further trends are available on request. Exception: the user explicitly asked for an exhaustive list.',
+        'CITATIONS — SHORT ANCHORS: Every claim still requires its source link. Prefer short_citation (e.g. "[via Jing Daily](url)") or short source labels ("via Jing Daily", "BoF-McKinsey survey"), never the full evidence headline. Place links at the end of a sentence or in a trailing parenthetical — never mid-clause. Maximum 2 links per trend paragraph; if a trend has more evidence, cite the strongest 2 and note more exists.',
+        'CLOSE: One line. Then at most 2 drill-down suggestions from suggested_drill_down, each on its own line prefixed with "→". Do not append a drill-down after every trend.',
+        'NO FILLER STRUCTURE: No section headers for responses of 3 trends or fewer. No bullet-lists of evidence items. No restating evidence counts, graph counts, or relevance scores in prose.',
+        'DEPTH ON REQUEST: When the user asks about ONE specific trend, the density caps lift — expand to full evidence, longer paragraphs, and complete citations. The caps govern first-pass survey responses, not drill-downs.',
+        'COVERAGE HONESTY: If the payload\'s coverage status is thin, low, or empty, say so in the lead sentence and offer the suggested_action — never pad weak matches into a confident-looking answer.',
     ];
-    if (opts.hasEvidence) {
-        rules.push('Use formatted_citation from evidence items as inline markdown links. Never present a claim without its source link.');
-    }
-    if (opts.hasPrompts) {
-        rules.push('Surface suggested_next_prompts to the user as numbered follow-up suggestions.');
-    }
-    rules.push('Each trend result has a suggested_drill_down field containing a ready-to-use follow-up prompt. After presenting each trend, show its drill-down as a clickable suggestion (e.g. "→ Tell me more about X"). This lets the user explore individual trends without typing.');
     if (opts.hasWidget) {
         rules.push('A separate content block starting with "── WIDGET HTML ──" may follow this JSON payload. It contains a pre-rendered Fodda visualization. If your client supports HTML rendering (show_widget, visualize:show_widget, artifacts), pass that HTML verbatim. Do not rewrite or restyle.');
     }
-    rules.push('Keep responses clean and structured. Lead with a sharp editorial claim, not a summary of data methodology.');
 
     const instructions: Record<string, any> = {
         _render_spec_version: RENDER_SPEC_VERSION,
         rules,
     };
 
-    // Graph-level link templates (populated when catalog has webpage_url)
     if (opts.graphWebpageUrls && Object.keys(opts.graphWebpageUrls).length > 0) {
         instructions._source_links = opts.graphWebpageUrls;
     }

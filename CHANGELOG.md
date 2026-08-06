@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.39.0] - 2026-08-05
+
+### Added
+- **Render Spec v1.1 & Short Citation Support (`src/toolHandlers.ts`, `src/enrichment.ts`)**:
+  - Implemented **Render Spec v1.1** rules in `buildRenderInstructions()` (`_render_spec_version: "1.1"`) to eliminate dense "wall of words" chat output:
+    - **One trend, one paragraph**: Max 3 sentences (~60 words) per trend, bold trend title with italicized lifecycle stage, blank line between trends.
+    - **Citations with short anchors**: Requires short publication/source anchors (e.g. `via Jing Daily`, `BoF-McKinsey survey`) placed at sentence ends or trailing parentheticals, capping inline links at 2 per trend.
+    - **Max 3 trends by default** with a single closing line and up to 2 drill-down suggestions (`→`).
+  - Added server-side `short_citation` (e.g. `[via Jing Daily](url)`) on all enriched evidence items in `enrichEvidenceItems()` so LLMs do not need to construct anchors from long evidence titles.
+
 ## [1.38.6] - 2026-08-05
 
 ### Added

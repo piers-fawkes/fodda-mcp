@@ -97,10 +97,13 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
         const mappedRole = EVIDENCE_ROLES[ct];
         if (mappedRole) item.role = mappedRole;
 
+        const url = item.sourceUrl?.trim();
+        const pubName = item.publication?.trim() || item.sourceName?.trim() || (url ? extractCleanDomain(url) : 'Source');
+        item.short_citation = url ? `[${pubName}](${url})` : pubName;
+
         if (item.formatted_citation) return item; // already enriched
 
         const title = item.title?.trim();
-        const url = item.sourceUrl?.trim();
 
         // Enhanced citation for quotes with speaker attribution
         if (item.role === 'voice' && item.speakerName) {
@@ -121,6 +124,25 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
         }
         return item;
     });
+}
+
+function extractCleanDomain(urlStr: string): string {
+    try {
+        const u = new URL(urlStr);
+        const host = u.hostname.replace(/^www\./, '');
+        if (host.includes('jingdaily')) return 'via Jing Daily';
+        if (host.includes('businessoffashion') || host.includes('bof')) return 'via BoF';
+        if (host.includes('mckinsey')) return 'via McKinsey';
+        if (host.includes('365retail')) return 'via 365 Retail';
+        if (host.includes('futuremarketinsights')) return 'via Future Market Insights';
+        if (host.includes('insightaceanalytic')) return 'via InsightAce Analytic';
+        if (host.includes('nytimes')) return 'via NYT';
+        if (host.includes('wallpaper')) return 'via Wallpaper*';
+        if (host.includes('digiday')) return 'via Digiday';
+        return `via ${host}`;
+    } catch {
+        return 'Source';
+    }
 }
 
 // ---------------------------------------------------------------------------
