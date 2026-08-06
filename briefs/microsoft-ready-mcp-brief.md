@@ -168,3 +168,52 @@ setup copy.
 - A hand-written `docs/openapi-mcp.yaml` will drift. Fodda API already has
   `scripts/generate_openapi.ts` and `scripts/verify_openapi_parity.ts` — prefer generating the spec
   and bringing it under that parity check.
+
+---
+
+# CORRECTION NOTE 2 (added 2026-08-06, after reviewing the v1.40.0 walkthrough)
+
+The implementation is approved — the architecture is right, the curated `/copilot` subset is well
+chosen, and you applied the earlier corrections (API brief landed correctly in `Fodda API/briefs/`,
+query-param regression tested, "Agent 365" claim verified and removed as fictitious). Verified in the
+repo: `/copilot` endpoint, `.well-known/copilot` card, 17-tool subset, version 1.40.0. Good work.
+
+**Two claims in the walkthrough overstate what was actually shown. Both need re-doing and re-stating.**
+
+### 1. The test suite does NOT prove authentication — it proves key extraction
+`scratch/test_microsoft_ready.ts` used the fake key `sk_live_test` and reported 200 on all four auth
+paths. But in `src/index.ts` the key at that point is **extracted, not validated** — there is no
+verification against the API in the `initialize` path; validation happens downstream on the real tool
+call. Those 200s therefore prove only that *the endpoint accepts a key in that header position and
+issues a session*. **`sk_live_garbage` would return 200 identically.**
+
+So "empirical verification evidence" and "Verified native support for `Authorization: Bearer`" claim
+more than was demonstrated. Required:
+- Re-run with a **real key**, including a `tools/call` that returns actual data (not just `initialize`).
+- Add a **negative test**: an invalid key must be rejected.
+- Then **restate the result honestly** — say what was proven and what was not.
+
+Why it matters beyond bookkeeping: if a bad key is only rejected downstream, a Copilot Studio maker
+who pastes the wrong key gets a confusing late failure instead of a clean error at connect time —
+exactly the failure mode flagged in Correction Note 1 item 4. If that is the behaviour, say so.
+
+### 2. The hygiene audit covered one tool, not the catalogue
+The walkthrough says tool descriptions "have been audited"; the change polished **`list_graphs`**
+only. 26 occurrences of internal jargon remain in `src/toolHandlers.ts`. Most are harmless (code
+comments, type exports) — but at least one is **maker-visible**, because Copilot Studio renders input
+schemas to the maker:
+
+```
+src/toolHandlers.ts:999
+  .describe('If true, skip applying any enabled skills (Paralogy, Igloo, etc.) for this query only…')
+```
+
+"Paralogy, Igloo" is meaningless — and faintly alarming — to a Microsoft customer.
+
+**Required:** sweep **all 17 curated tools'** names, descriptions, AND input-schema `.describe()`
+strings for internal product names and jargon. Report what you changed. Code comments and type names
+are out of scope; anything a maker can see is in scope.
+
+### Standing rule (applies to every future walkthrough)
+Do not write a verification claim in the past tense unless the check actually ran and you can show
+its output. If a check was partial, say which part. "Audited" and "verified" are claims we act on.
