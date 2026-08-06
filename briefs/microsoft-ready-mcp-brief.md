@@ -280,8 +280,11 @@ Base `appXUeeWN1uD9NdCW` · `Offerings` (tbl93DJ627r81zKVP) · `Query Pricing` (
 | `get_supplemental_context` | **$45** | 9 | 5 (`standalone_supplemental`) |
 | `deep_research_topic` — light | **$55** | 11 | 20 (`deep_research_light`) |
 | `deep_research_topic` — heavy | **$100** | 19 | 30 (`deep_research_heavy`) |
-| `get_capabilities` | **NOT IN AIRTABLE** — do not state a price | — | — |
-| `get_validated_trends` | **NOT IN AIRTABLE** — do not state a price | — | — |
+| `get_capabilities` | **Free** (row added 2026-08-06) | 1 | free |
+| `get_validated_trends` | **$25** (`earnings_validated_trends`) | 5 | — |
+
+Also correct these two, which are NOT in the `/copilot` 17 but were wrongly repriced in the same sweep:
+`get_earnings_intelligence` = **$30** · `get_earnings_divergence` = **$20**.
 
 **Every price you wrote was wrong**, including `read_url` (you wrote $0.50; Airtable says $20).
 
@@ -295,10 +298,47 @@ Its Airtable row now reads $100 (heavy) and its `bills_as` is the literal string
 `"deep_research_light/heavy"`, which is **not a key** — any lookup resolves to nothing. Show both
 modes in the description ($55 light / $100 heavy). Do not collapse it to one number.
 
-### Two Airtable pointer bugs — report, do not silently fix
-- `get_earnings_divergence` is correctly **$20**, but its `bills_as` still points at
-  `earnings_intelligence` ($30) instead of the dedicated `earnings_divergence` offering ($20).
-- `deep_research_topic.bills_as` is the invalid string above.
+### `bills_as` — DO NOT "fix" or delete it (reviewer correction)
+An earlier version of this note called `deep_research_topic.bills_as = "deep_research_light/heavy"`
+a broken reference. **That was wrong.** `scripts/seed_offerings.ts:508` does
+`tool.bills_as.split('/')[0]` — the slash form is **by design** and resolves to `deep_research_light`.
+Deleting the field is unsafe: `functions/v1/analysts.ts:1605` falls back to `offering.key`, and
+`deep_research_topic` is **not** a valid `InteractionType` in `metering.ts`, so billing lookup would
+break. Leave it alone.
+
+One genuine pointer oddity remains, for Piers not the agent: `get_earnings_divergence.bills_as`
+points at `earnings_intelligence` ($30) rather than the dedicated `earnings_divergence` offering
+($20), though its own price is correctly $20.
+
+---
+
+# CORRECTION NOTE 4 (2026-08-06) — the pricing sweep still has not happened
+
+The walkthrough re-issued after Correction Note 3 contains **the same wrong prices**, plus two new
+ones. The auth work (connect-time 401, RFC 9728 challenge, positive `tools/call`, two negative
+tests) is **approved** — this note is only about pricing and phrasing.
+
+Wrong in the current walkthrough:
+
+| Written | Correct (Airtable) |
+|---|---|
+| `search_graph` "1 token ($0.50 via SPT) per query" | **$20** |
+| `brand_tracker` "1 token ($0.50 via SPT) per report" | **$30** |
+| `consult_analyst` "1 token ($0.50 via SPT) per turn" | **$15** |
+| `deep_research_topic` "light 50 tokens/$25 · heavy 100 tokens/$50" | **$55 / $100** |
+| `get_earnings_intelligence` "1 token ($0.50) per query" *(newly broken)* | **$30** |
+| `get_earnings_divergence` "1 token ($0.50) per query" *(newly broken)* | **$20** |
+
+Two further points:
+1. **Every one of those still says "tokens" / "via SPT" — and that phrasing must never appear.**
+   **SPT pricing is machine-only** (agent-to-agent billing plumbing). A Copilot Studio maker reads
+   these descriptions on screen, so they are a **human-visible surface** and must show the
+   **published USD price from Airtable** — nothing else. Do not show SPT rates, token counts, or any
+   figure derived from `TOKEN_COSTS × SPT_RATE_CENTS`. Example: `brand_tracker` is **$30** (Airtable
+   published). It is *not* $10 (its SPT rate) and *not* $0.50 (what you wrote).
+2. **"Audited and confirmed clean" is false** for at least `read_url` (*"Uses 15 tokens ($7.50 via
+   SPT)"* — banned phrasing AND wrong price; actual **$20**) and `get_company_earnings` (*"Uses 0–15
+   tokens depending on view"*). Both were listed as clean. Re-check every tool you marked clean.
 
 ### Also: "tokens" language exists in the Airtable descriptions themselves
 These source descriptions violate the new house rule and will propagate if copied verbatim:
