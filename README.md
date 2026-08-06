@@ -3,6 +3,8 @@
   
   # Fodda MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/ai.fodda%2Fmcp-server.svg)](https://mcptoplist.com/server/ai.fodda%2Fmcp-server)
+
   **Expert-curated knowledge graphs for AI agents** — PSFK Retail, Beauty, Sports and partner datasets via the Model Context Protocol.
 
   [![MCP Registry](https://img.shields.io/badge/MCP_Registry-ai.fodda%2Fmcp--server-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server)
