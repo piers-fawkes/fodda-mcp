@@ -272,11 +272,11 @@ Base `appXUeeWN1uD9NdCW` · `Offerings` (tbl93DJ627r81zKVP) · `Query Pricing` (
 | `get_evidence` | **$0.50** | 1 | 5 (`standalone_evidence`) |
 | `search_statistics` | **$0.50** | 1 | 5 (`standalone_statistics`) |
 | `search_insights` | **$0.50** | 1 | 5 (`standalone_insights`) |
-| `brand_tracker` | **$10** | 6 | 20 (`brand_intelligence`) ⚠️ see note |
-| `consult_analyst` | **$15** | 3 | 5 (`expert_agent`) ⚠️ see note |
+| `consult_analyst` | **$15** | 3 | 5 (`expert_agent`) |
 | `search_graph` | **$20** | 4 | 15 (`topic_research`) |
 | `get_company_earnings` | **$20** | 4 | (`earnings_company`) |
 | `read_url` | **$20** | 4 | 15 (`url_as_prompt`) |
+| `brand_tracker` | **$30** | 6 | 20 (`brand_intelligence`) |
 | `get_supplemental_context` | **$45** | 9 | 5 (`standalone_supplemental`) |
 | `deep_research_topic` — light | **$55** | 11 | 20 (`deep_research_light`) |
 | `deep_research_topic` — heavy | **$100** | 19 | 30 (`deep_research_heavy`) |
@@ -285,9 +285,20 @@ Base `appXUeeWN1uD9NdCW` · `Offerings` (tbl93DJ627r81zKVP) · `Query Pricing` (
 
 **Every price you wrote was wrong**, including `read_url` (you wrote $0.50; Airtable says $20).
 
-⚠️ **Two rows disagree between the tool record and the offering record — ASK PIERS, do not pick:**
-- `brand_tracker` tool row = **$10**, but `brand_intelligence` offering row = **$30**.
-- `consult_analyst` tool row = **$15**, but `expert_agent` offering row = **$2.50**.
+> **Table re-verified against live Airtable 2026-08-06 17:44**, after Piers corrected the data.
+> Earlier drafts of this note showed `brand_tracker` at $10 and flagged unresolved tool/offering
+> disagreements — those are **resolved**; the values above are current. Still: **re-read Airtable at
+> edit time** rather than trusting this table, per the rule that started this whole correction.
+
+### `deep_research_topic` needs BOTH modes
+Its Airtable row now reads $100 (heavy) and its `bills_as` is the literal string
+`"deep_research_light/heavy"`, which is **not a key** — any lookup resolves to nothing. Show both
+modes in the description ($55 light / $100 heavy). Do not collapse it to one number.
+
+### Two Airtable pointer bugs — report, do not silently fix
+- `get_earnings_divergence` is correctly **$20**, but its `bills_as` still points at
+  `earnings_intelligence` ($30) instead of the dedicated `earnings_divergence` offering ($20).
+- `deep_research_topic.bills_as` is the invalid string above.
 
 ### Also: "tokens" language exists in the Airtable descriptions themselves
 These source descriptions violate the new house rule and will propagate if copied verbatim:
