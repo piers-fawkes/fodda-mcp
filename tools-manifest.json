@@ -129,7 +129,7 @@
       "kind": "tool",
       "bills_as": "domain_intelligence",
       "category": "Intelligence",
-      "description": "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked."
+      "description": "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context."
     },
     {
       "name": "get_earnings_divergence",

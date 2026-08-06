@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.38.2] - 2026-08-05
+
+### Improved
+- **Tool Description Location Claim Audit (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Updated `search_graph` query parameter description and `get_domain_intelligence` tool description in `src/toolHandlers.ts` to clarify that knowledge graph trends represent country-level and global scope.
+  - Removed inaccurate claims of sub-national/city-level location auto-detection and explicitly directed callers to `get_supplemental_context` for sub-national/city-level queries (e.g., `"US coastal cities"`).
+  - Re-generated `tools-manifest.json` via `scripts/generate-tools-manifest.mjs`.
+
 ## [1.38.1] - 2026-08-05
 
 ### Improved

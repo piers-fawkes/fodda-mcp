@@ -992,7 +992,7 @@ function addCoverageAnnotation(
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research ($20.00 via SPT), "compare" for upload & compare intelligence ($40.00 via SPT). Defaults to "research".'),
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
-            query: z.string().describe('The search query. Location terms are auto-detected and used to filter results geographically.'),
+            query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
             use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
@@ -2371,7 +2371,7 @@ function addCoverageAnnotation(
     // Searches ALL PSFK curated domain graphs in parallel. Returns trends + bundled evidence.
     server.tool(
         'get_domain_intelligence',
-        "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked.",
+        "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context.",
         {
             query: z.string().describe("Natural language search query (e.g., 'sustainable packaging trends', 'Gen Z beauty habits')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
