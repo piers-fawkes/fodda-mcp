@@ -618,7 +618,7 @@ export async function createServer(
     // --- list_graphs ---
     server.tool(
         'list_graphs',
-        'List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/tech/food/travel/fashion/beauty/sports instead).',
+        'List all expert knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts, and topic coverage (e.g. retail, tech, food, travel, fashion, beauty, sports). Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools.',
         { userId: z.string().optional().describe('Optional user identifier. Authenticated users are identified automatically via API key. For trial users, this helps track usage.') },
         { title: 'List Knowledge Graphs', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
@@ -987,16 +987,16 @@ function addCoverageAnnotation(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search. Uses $20.00 via SPT (topic research) or $40.00 via SPT (upload & compare).',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search. Price: $20 per query.',
         {
-            mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research ($20.00 via SPT), "compare" for upload & compare intelligence ($40.00 via SPT). Defaults to "research".'),
+            mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
             use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
             include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
-            skip_skills: z.boolean().optional().describe('If true, skip applying any enabled skills (Paralogy, Igloo, etc.) for this query only. Use when the user says "without skills", "skip Paralogy", or "just the raw results". Default: false.')
+            skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ mode, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
@@ -1553,7 +1553,7 @@ function addCoverageAnnotation(
     // --- get_evidence ---
     server.tool(
         'get_evidence',
-        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool.',
+        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool. Price: $0.50 per lookup.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -1640,7 +1640,7 @@ function addCoverageAnnotation(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs. Uses $15.00 via SPT.',
+        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs. Price: $15 per query.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -2236,7 +2236,7 @@ function addCoverageAnnotation(
 
     server.tool(
         'brand_tracker',
-        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble. Uses $30.00 via SPT.',
+        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble. Price: $30 per report.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -2283,7 +2283,7 @@ function addCoverageAnnotation(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Uses $0.50 via SPT (standalone lookup) / $45.00 via SPT (full 9-source context).',
+        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Price: $45 per query.',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty'). Include country names if searching non-US markets (e.g. 'Thailand consumer sentiment')."),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design', 'macro'. Do NOT pass 'culture' or 'technology' for macro economic or consumer sentiment queries — leave omitted or set to 'macro'."),
@@ -2502,9 +2502,9 @@ function addCoverageAnnotation(
     // --- search_statistics ---
     server.tool(
         'search_statistics',
-        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage.",
+        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage. Price: $0.50 per search.",
         {
-            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
+            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold, 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ only for precise data lookups.'),
@@ -2548,9 +2548,9 @@ function addCoverageAnnotation(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide.",
+        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide. Price: $0.50 per search.",
         {
-            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — PSFK curated ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
+            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
             types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
@@ -2693,7 +2693,7 @@ function addCoverageAnnotation(
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
     server.tool(
         'get_earnings_intelligence',
-        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance. Uses $30.00 via SPT.',
+        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance. Price: $30 per query.',
         {
             ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
             brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
@@ -2746,7 +2746,7 @@ function addCoverageAnnotation(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Uses $20.00 via SPT.',
+        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Price: $20 per query.',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
             industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
@@ -2794,10 +2794,10 @@ function addCoverageAnnotation(
     // One tool with a `view` parameter — not 5 separate tools (context budget).
     server.tool(
         'get_company_earnings',
-        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Uses 0–15 API calls depending on mode/view (coverage is free, snapshot/history = 10, qa = 5, compare = 15). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
+        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Price: $20 per query (coverage view is free). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
         {
-            mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot (10 API calls), history (10 API calls), qa (5 API calls), compare (15 API calls), guidance (10 API calls), coverage (free).'),
-            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends (10 API calls). history: narrative timeline across quarters (10 API calls). qa: per-analyst Q&A entries with thematic tagging and response directness (5 API calls). compare: side-by-side comparison of 2-5 tickers (15 API calls). coverage: list all covered tickers (free).'),
+            mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot, history, qa, compare, guidance, coverage (free). Defaults to snapshot.'),
+            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends. history: narrative timeline across quarters. qa: per-analyst Q&A entries with thematic tagging and response directness. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free).'),
             ticker: z.string().optional().describe("Company ticker symbol (e.g. NKE, LULU, ONON). Required for snapshot, history, and qa views."),
             tickers: z.string().optional().describe("Comma-separated ticker symbols for compare view (2-5 tickers). Only used when view=compare."),
             period: z.string().optional().describe("Quarter filter (e.g. Q1-2026). Defaults to latest quarter."),
@@ -2890,7 +2890,7 @@ function addCoverageAnnotation(
     // --- get_validated_trends ---
     server.tool(
         'get_validated_trends',
-        'Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda\'s analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals.',
+        'Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda\'s analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals. Price: $25 per query.',
         {
             ticker: z.string().optional().describe("Filter by company ticker symbol (e.g. 'NKE', 'LULU')."),
             sector: z.string().optional().describe("Filter by sector (e.g. 'retail', 'sportswear', 'beauty')."),
@@ -3460,7 +3460,7 @@ function addCoverageAnnotation(
     // --- manage_scheduled_reports ---
     server.tool(
         'manage_scheduled_reports',
-        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Costs 20 API calls per run. Supports topic research or brand intelligence report types.',
+        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Price: $20 per run. Supports topic research or brand intelligence report types.',
         {
             action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']),
             query: z.string().optional().describe('For "create": the research query to run'),
@@ -3535,7 +3535,7 @@ function addCoverageAnnotation(
     // --- read_url ---
     server.tool(
         'read_url',
-        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Uses $0.50 via SPT.',
+        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Price: $20 per URL lookup.',
         {
             url: z.string().describe('The URL to read and extract content from'),
             userId: z.string().optional().describe('Optional user identifier for usage tracking.')
@@ -3605,13 +3605,13 @@ function addCoverageAnnotation(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Depth: "light" ($55 via SPT, faster tiered search) or "heavy" ($100 via SPT, comprehensive tiered search with sub-theme expansion). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
+        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Price: $55 (light mode) or $100 (heavy mode). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
         {
             query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
             sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
             graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
-            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster tiered search ($55 via SPT), "heavy" for comprehensive tiered search ($100 via SPT). Defaults to "light".'),
-            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster tiered search ($55 via SPT), "heavy" for comprehensive tiered search ($100 via SPT). Defaults to "light".'),
+            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster research ($55), "heavy" for comprehensive deep dive ($100). Defaults to "light".'),
+            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster research ($55), "heavy" for comprehensive deep dive ($100). Defaults to "light".'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Deep Research Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -3770,7 +3770,7 @@ function addCoverageAnnotation(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. Uses $15.00 via SPT per turn. Their research reads bill to you at standard rates ($0.50/call) and are itemized in `sources_used`.',
+        'Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. Price: $15 per turn.',
         {
             analyst_id: z.string().describe("The expert ID of the Human Agent or Synthetic Analyst (e.g., 'anu-lingala-macro', 'ben-dietz-sic', 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
             query: z.string().describe("The question or topic to discuss with the analyst"),

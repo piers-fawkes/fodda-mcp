@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.40.0] - 2026-08-06
+
+### Added & Improved
+- **Microsoft Copilot Studio Compatibility & Curated Copilot Offering (`src/index.ts`, `src/toolHandlers.ts`)**:
+  - Added dedicated `/copilot` endpoint and `.well-known/copilot` metadata card (`ai.fodda/copilot`) serving a curated 17-tool subset (`OFFERING_SCOPED_TOOLS['copilot']`) for Copilot Studio agents.
+  - Enforced connect-time authentication validation during `initialize` on `/copilot` (`401 Unauthorized` with RFC 9728 `WWW-Authenticate: Bearer ...` header) so Copilot Studio onboarding fails cleanly at connect time rather than downstream during tool execution.
+  - Completed published USD pricing sweep across human-visible tool descriptions in `src/toolHandlers.ts` using Airtable `published_price_usd` (e.g. `search_graph` = $20, `brand_tracker` = $30, `consult_analyst` = $15, `deep_research_topic` = $55/$100, `get_company_earnings` = $20, `read_url` = $20, `get_validated_trends` = $25, `get_supplemental_context` = $45, `get_evidence`/`search_statistics`/`search_insights` = $0.50). Completely stripped machine-only token and SPT rates from human-visible text.
+  - Cleaned `search_graph.skip_skills` parameter description in `src/toolHandlers.ts` to describe search enhancement skill bypassing generically without internal skill names (`Paralogy`, `Igloo`).
+  - Added recognition for `X-Fodda-Source: copilot` request header to tag Microsoft-origin traffic in fan-out requests to Fodda API.
+  - Verified positive `tools/call` execution and connect-time negative auth rejections via empirical test suite `scratch/verify_auth_e2e.ts`.
+  - Created API Agent handoff brief at `Fodda API/briefs/Brief - Microsoft-Ready API Support (API Agent).md`.
+
 ## [1.39.2] - 2026-08-05
 
 ### Improved

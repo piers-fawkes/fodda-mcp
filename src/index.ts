@@ -161,6 +161,25 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'get_my_account',
         'generate_visual',
     ],
+    'copilot': [
+        'get_capabilities',
+        'search_graph',
+        'search_statistics',
+        'search_insights',
+        'get_validated_trends',
+        'brand_tracker',
+        'get_company_earnings',
+        'deep_research_topic',
+        'check_research_status',
+        'consult_analyst',
+        'list_analysts',
+        'get_evidence',
+        'list_graphs',
+        'get_my_account',
+        'read_url',
+        'get_supplemental_context',
+        'check_supplemental_status',
+    ],
 };
 
 const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; description: string }> = {
@@ -189,6 +208,11 @@ const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; desc
         title: 'Fodda Synthetic Expert Consult',
         description: 'Consult synthetic industry experts grounded in PSFK trend graphs with citable analyst perspectives.',
     },
+    'copilot': {
+        name: 'ai.fodda/copilot',
+        title: 'Fodda Copilot Market Intelligence',
+        description: 'Curated market intelligence, trend insights & expert evidence for Microsoft Copilot Studio agents.',
+    },
 };
 
 app.get([
@@ -198,6 +222,7 @@ app.get([
     '/.well-known/deep-research', '/.well-known/deep-research.json',
     '/.well-known/earnings-intelligence', '/.well-known/earnings-intelligence.json',
     '/.well-known/expert-consult', '/.well-known/expert-consult.json',
+    '/.well-known/copilot', '/.well-known/copilot.json',
 ], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const matchedOffering = Object.keys(OFFERING_CARD_METADATA).find(slug => req.path.includes(slug));
@@ -601,7 +626,7 @@ async function waverunnerRequest(
 // Browser Landing Page — catch humans who paste the MCP URL into a browser
 // ---------------------------------------------------------------------------
 
-app.get(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult'], (req, res, next) => {
+app.get(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot'], (req, res, next) => {
     // Only intercept browser requests (Accept: text/html).
     // MCP SDK clients send application/json or text/event-stream, so they
     // fall through to the app.all('/mcp') transport handler below.
@@ -909,7 +934,7 @@ export async function resolveMcpToken(token: string, websiteBaseUrl: string): Pr
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/c/:token'], async (req, res) => {
+app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
@@ -985,7 +1010,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         }
 
         // Extract API key, userId, and entry ID from URL or headers.
-        // Priority: resolved OAuth key → X-API-Key header → Authorization Bearer (if non-Clerk) → resolved token key → query string (fallback).
+        // Priority: resolved OAuth key → X-API-Key header → Authorization Bearer (if non-Clerk sk_live_/sk_trial_) → resolved token key → query string (fallback).
         const resolvedOAuthKey = (req as any).__resolvedApiKey || '';
         const resolvedOAuthUser = (req as any).__resolvedUserId || '';
 
@@ -1005,7 +1030,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             || (req.headers['x-user-id'] as string)
             || (isEmailId ? entryId : 'anonymous'));
         const defaultSource = (offeringSlug !== 'mcp' && allowedTools !== undefined) ? offeringSlug : (isSpt ? 'spt' : '');
-        const source = (req.query.source as string) || defaultSource;
+        const source = (req.headers['x-fodda-source'] as string) || (req.query.source as string) || defaultSource;
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;
@@ -1016,7 +1041,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // an API key, or a /c/<token> connection URL. An anonymous handshake gets
                 // 401 + WWW-Authenticate (RFC 9728) so MCP clients auto-start the OAuth
                 // flow. Set MCP_ALLOW_ANONYMOUS=true to re-open the anonymous trial lane.
-                if (offeringSlug === 'mcp' && !isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
+                if ((offeringSlug === 'mcp' || offeringSlug === 'copilot') && !isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
                     res.setHeader('WWW-Authenticate', 'Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp"');
                     return res.status(401).json({
                         jsonrpc: '2.0',
