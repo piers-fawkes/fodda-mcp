@@ -1,0 +1,122 @@
+# Brief: MCP Agent — Make Fodda Microsoft-Ready (research + MCP/API code)
+
+**To:** MCP Agent (Fodda MCP) — lead. Hand off API-auth changes to the API Agent; Website work is a
+separate brief (`Fodda Website/briefs/microsoft-ready-website-brief.md`).
+**From:** Piers (via Claude Code, from `Fodda_Microsoft_Ready_Coder_Brief.md`)
+**Execution:** `/build-from-brief briefs/microsoft-ready-mcp-brief.md`
+**Type:** Research-gated implementation. **Do Part 1 and report findings before any code change.**
+
+---
+
+## Context
+
+Goal: let a Microsoft customer add Fodda to a **Copilot Studio** or **Microsoft 365 Copilot** agent as
+an external **MCP tool, by URL, with clean auth**. Fodda is already an MCP server, so this is mostly
+**verification + small adaptation, not new architecture.**
+
+Mental model: the customer's agent connects Fodda as one MCP tool for *external market context*, and
+connects their own **Fabric IQ** data agent as a *separate* MCP tool for internal data. **Fodda never
+touches their internal data.** Fabric IQ is a peer, not a layer above/below Fodda.
+
+The pointer URLs below are **leads, not gospel** — these Microsoft surfaces move between preview and GA,
+so confirm current state against live docs before building.
+
+### Fodda invariants you already have
+- MCP endpoint: `https://mcp.fodda.ai/mcp`
+- Current URL pattern passes the key as a query param: `https://mcp.fodda.ai/mcp?api_key=[key]&user_id=[email]`
+- Auth chain: Clerk JWT (OIDC) → API Key → SPT Bearer → SPT Header → 402 challenge. Middleware
+  distinguishes OIDC from SPT by the `spt_` prefix on the Bearer token.
+- Source header: `X-Fodda-Source`, current values `mcp`, `app`, `web`, `api`.
+- The OpenAI Responses API already consumes Fodda over MCP via **streamable HTTP** and auto-discovers
+  30+ tools — strong signal the transport is already correct; confirm it meets Copilot Studio's specifics.
+
+---
+
+## Part 1 — Research first, report before coding
+
+For each: confirm the current requirement and note anything changed since the source date.
+
+1. **Copilot Studio MCP requirements.** Supported transport + auth for connecting an external MCP server today.
+   - Start: https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent
+   - Confirm: transport must be **Streamable HTTP** and **SSE is no longer supported**. Confirm the
+     OAuth 2.0 options — whether **Dynamic Client Registration (DCR)** with dynamic discovery is the
+     simplest onboarding path, and whether an **API key can be supplied as a header**.
+   - Confirm the OpenAPI 2.0 (Swagger) markers for the custom-connector route, in particular the
+     `x-ms-agentic-protocol: mcp-streamable-1.0` operation marker. Determine whether the add-by-URL
+     wizard removes the need for a hand-written spec, or whether we should still ship one.
+2. **M365 Copilot path.** Confirm how an external MCP server reaches M365 Copilot end users (expected:
+   via a Copilot Studio agent / declarative agent published to Teams, SharePoint, or the M365 Copilot
+   app). Confirm any requirement beyond the Copilot Studio connection.
+   - Start: https://learn.microsoft.com/en-us/power-pages/configure/mcp-connect-clients
+3. **Connector marketplace / certification.** Current process + requirements to list Fodda in the
+   Copilot Studio connector marketplace. Later distribution move — capture requirements now, don't act.
+4. **Fabric data agent as MCP server (forward-looking only).** Confirm a Fabric data agent can be
+   published as an MCP server consumable over streamable HTTP with a Fabric bearer token. **Do NOT
+   build.** Confirm feasibility + note the auth model only.
+   - Start: https://learn.microsoft.com/en-us/fabric/data-science/data-agent-mcp-server
+
+**Gate:** deliver a short findings summary to Piers before touching code. Part 2 scope is conditional on findings.
+
+---
+
+## Part 2 — MCP / API code changes (conditional on Part 1)
+
+1. **Transport.** Verify `/mcp` serves streamable HTTP in the exact shape Copilot Studio expects. If
+   OpenAI already consumes it this way, document the confirmation. Fix any gap.
+2. **Header-based API key auth.** Add/confirm passing the API key as an **HTTP header** on the MCP
+   endpoint (not only URL query param). The chain already has an API-key mode and an SPT header mode —
+   check whether header support is already partly there before adding code. **Keep the existing
+   query-param path working.**
+3. **OAuth 2.0 evaluation.** Assess effort to support OAuth 2.0, ideally with DCR (smoothest Copilot
+   Studio onboarding). If it's a large lift, **header-key auth is an acceptable first release** and
+   OAuth is a fast follow. **Recommend, do not assume.**
+4. **OpenAPI 2.0 spec (if needed).** If research shows the custom-connector route still needs a Swagger
+   spec, produce one for `/mcp` with the required MCP streamable markers.
+5. **Tool discovery hygiene.** Copilot Studio shows tool names/descriptions/input-schemas to the maker.
+   Review that exposed names/descriptions read cleanly to a non-Fodda user. Consider a **curated tool
+   subset** for this channel (as we already filter tools for the OpenAI integration) to cut latency/clutter.
+6. **Source header.** Add a `X-Fodda-Source` value for Microsoft-origin traffic (e.g. `copilot`),
+   consistent with `mcp` / `app` / `web` / `api`.
+
+---
+
+## Where to register / boundaries
+
+- **Cross-repo hand-off:** any change to the auth **middleware or metering that lives in the Fodda API
+  repo is NOT yours to edit.** Produce an **API Agent brief** for those (header-key mode in middleware,
+  OAuth/DCR server work, the `copilot` source value wherever the API reads it) and hand off — do not
+  reach into the API repo, and do not spin up subagents to do its work.
+- Website work (Part 3 of the source) is a **separate Website Agent brief** — not in scope here.
+- Curated-tool-subset + tool schemas + transport + OpenAPI spec live in this repo.
+
+## Definition of Done
+
+- [ ] Part 1 findings summary delivered to Piers **before** any code change (what's required today, what changed).
+- [ ] Transport confirmation documented (with the OpenAI-consumption evidence) or gap fixed.
+- [ ] Header-based API-key auth working on `/mcp`, query-param path still works — verified with a real request.
+- [ ] OAuth 2.0/DCR effort assessed with a clear recommend/defer call.
+- [ ] OpenAPI 2.0 spec produced **only if** research says it's needed.
+- [ ] Tool-discovery review done; curated Microsoft subset decision recorded.
+- [ ] `copilot` (or agreed value) added to `X-Fodda-Source` for MCP-origin Microsoft traffic; API-side
+      pieces handed to the API Agent via brief.
+- [ ] Any API-repo work captured as a routed API Agent brief.
+- [ ] `CHANGELOG.md` updated; each item states a real verification result.
+
+## Do Not
+
+- Do NOT build OneLake shortcut sync, Fabric IQ integration, or route any customer internal data through Fodda.
+- Do NOT make Fodda an orchestrator over a customer's internal data.
+- Do NOT build the Fabric-agent-as-MCP-client path (research task 4 is feasibility only).
+- Do NOT start Part 2 before the Part 1 findings gate.
+- Do NOT edit Fodda API or Fodda Website code directly — hand those off as briefs.
+
+## Files Expected to Change
+
+| File | Change |
+|---|---|
+| MCP transport / server entry for `/mcp` | Confirm/adjust streamable HTTP; header-key auth |
+| MCP tool exposure / manifest | Curated Microsoft subset + description hygiene |
+| `X-Fodda-Source` handling (MCP side) | Add `copilot` value |
+| New OpenAPI 2.0 spec for `/mcp` | **New** — only if research requires it |
+| `CHANGELOG.md` | Document changes + verification |
+| `Fodda API/briefs/…` (API Agent brief) | **New** — hand-off for auth-middleware/OAuth/API-source work |
