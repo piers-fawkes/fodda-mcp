@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.42.0] - 2026-08-07
+
+### Added
+- **Data-Gap Alerts to #fodda-research (`src/sessionTracker.ts`, `src/toolHandlers.ts`)**:
+  - When any coverage-annotated search tool (`search_graph`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `search_statistics`, `search_insights`) returns coverage `thin` or `empty`, a structured alert is posted to `#fodda-research` (channel confirmed live in the PSFK workspace; override via `SLACK_RESEARCH_CHANNEL`): user, tool, query, on-topic share (e.g. "thin — 2 of 10 results on-topic"), and layers searched — a running feed of topics users asked for that the graphs don't cover.
+  - Deduped per normalized query per session; fire-and-forget (never blocks the response path); reuses the existing `SLACK_BOT_TOKEN` pipe. `postToSlack` gained an optional `channel` param — frustration alerts still go to `#fodda-sales` unchanged.
+  - Bumped `MCP_SERVER_VERSION` to `1.42.0`.
+
+### Changed
+- **`get_supplemental_context` published price: $45 → $10 per query**, matching the updated Airtable Offerings price (changed by Piers 2026-08-07). Description string updated to the Airtable value; the next keyed `npm run build` re-syncs it from source of truth. Metering follows Airtable via the API and needed no code change.
+  - **Verification**: `npx tsc --noEmit` clean (only pre-existing `jobs/jlens_quarterly_sweep.ts` errors) and `npx tsx src/test_gap_alert.ts` — 14/14 checks pass (message composition incl. on-topic share and layers; fires on thin and empty; no-ops on ok/missing coverage; query-normalized dedupe within a session incl. cross-tool; fresh session fires again). Skip-log lines confirm the Slack poster was invoked exactly on the expected fires (no token locally, so no live posts were sent).
+
+## [1.41.0] - 2026-08-07
+
+### Added & Improved
+- **Relevance-Aware Coverage Thinness (`src/coverageRelevance.ts` — new, `src/toolHandlers.ts`)**:
+  - Coverage status previously judged thinness only by raw result count (<3) and per-row evidence count, so a cross-graph fan-out could pad a narrow query to 10 rows of mostly off-topic matches and still report `"ok"` — suppressing the `get_supplemental_context` nudge. QA repro: "Chinese automotive trends EV brands China car market" → 10 rows, ~3 on-topic (rest women's health / GLP-1 aesthetics / TikTok minimalism), status `"ok"`.
+  - Coverage now also counts **on-topic rows**: a row is on-topic when its text (title/summary/brands/places + source-graph name/domain/topics) contains a specific query token (generic research vocabulary like "trends"/"market"/"brands" stopworded out), or its relevance score clears 75% of its graph tier's scale. Score scales are per-tier normalized (domain composite ~2.0, expert ~1.0, report ~0.8; `max(nominal, best observed in tier)`) since raw scores are not comparable across tiers.
+  - When fewer than 3 rows are on-topic (and at least one row was judged off-topic), status flips to `"thin"` and `coverage.suggested_action` (`get_supplemental_context`) is emitted with a reason naming the on-topic share. `coverage.results_on_topic` is now always exposed when relevance was judgeable.
+  - Conservative by design: rows with no relevance score are never marked off-topic (statistics/insights payloads can't regress), and queries with no specific tokens ("top emerging trends") keep legacy count-only behavior.
+  - Moved `addCoverageAnnotation` + `isDemandShaped` out of `createServer` into the new `src/coverageRelevance.ts` module (behavior-preserving) so the annotation path is unit-testable.
+- **Recover-First Coverage Contract — thin/empty is never announced to the user (`src/coverageRelevance.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Thin/empty coverage is now **machine-only routing data** (`coverage.presentation: "internal"`). The client LLM is instructed to silently run `coverage.suggested_action` (`get_supplemental_context`) in the same turn and blend the results — never to say "thin/low/empty" to the user.
+  - Only when recovery also comes back dry does the client say "This is what we have on this right now" and offer `coverage.escalation` options, now emitted alongside `suggested_action` on thin/empty: a Deep Dive report (`deep_research_topic` with the query pre-filled) or the client's own web/LLM research pass with non-Fodda findings clearly attributed.
+  - Rewrote the `COVERAGE HONESTY` render rule (which told clients to announce thinness "in the lead sentence") → `COVERAGE RECOVERY`; rewrote `RULE: CoverageHonestyAndDegradation` → `CoverageRecoveryAndDegradation` in the system prompt (was "Transparently acknowledge the coverage boundary to the user"); aligned `GraphFirstRule` and the `research_gaps.note` text to the same recover → degrade-honestly → escalate ladder.
+  - Bumped `MCP_SERVER_VERSION` to `1.41.0` to bust query caches.
+  - **Verification**: `npx tsc --noEmit` clean (only pre-existing `jobs/jlens_quarterly_sweep.ts` errors, present on the untouched tree) and `npx tsx src/test_coverage_relevance.ts` — 23/23 checks pass, including the QA replica (10 rows / 2 on-topic → `thin` + `suggested_action` + `presentation: "internal"` + escalation ladder with `deep_research_topic` and `web_llm_research`), an empty-set case carrying the same ladder, a healthy 6-on-topic case staying `"ok"` with no escalation, generic-query and score-less-row no-regression cases, and the `limit<3` exception. Grep confirms no stale `CoverageHonesty` / `COVERAGE HONESTY` references remain.
+
 ## [1.40.2] - 2026-08-06
 
 ### Fixed

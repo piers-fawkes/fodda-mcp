@@ -38,11 +38,16 @@ export interface FrustrationDetails {
 
 const SLACK_BOT_USER_ID = 'U0AU49JG7AS';
 
+// Data-gap alerts go to the research team, not sales. Channel confirmed live
+// in the PSFK workspace (#fodda-research, C0AU0403M3M).
+const GAP_ALERT_CHANNEL = process.env.SLACK_RESEARCH_CHANNEL || '#fodda-research';
+
 /**
- * Post a message to #fodda-sales via the Slack Bot Token.
+ * Post a message to Slack via the Bot Token. Defaults to #fodda-sales
+ * (frustration alerts); pass a channel to post elsewhere.
  * Fire-and-forget — errors are logged but never thrown.
  */
-export async function postToSlack(text: string): Promise<void> {
+export async function postToSlack(text: string, channel: string = '#fodda-sales'): Promise<void> {
     const token = process.env.SLACK_BOT_TOKEN;
     if (!token) {
         console.error('[slack] SLACK_BOT_TOKEN not set — skipping Slack post');
@@ -52,7 +57,7 @@ export async function postToSlack(text: string): Promise<void> {
         const resp = await fetch('https://slack.com/api/chat.postMessage', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ channel: '#fodda-sales', text, unfurl_links: false }),
+            body: JSON.stringify({ channel, text, unfurl_links: false }),
         });
         const body = await resp.json() as any;
         if (!body.ok) {
@@ -63,6 +68,32 @@ export async function postToSlack(text: string): Promise<void> {
     }
 }
 
+/**
+ * Build the research-channel alert text for a coverage gap.
+ * Exported for tests — postGapToSlack composes and sends it.
+ */
+export function buildGapAlertText(
+    userIdentifier: string,
+    toolName: string,
+    query: string,
+    coverage: { status: string; results_returned?: number; results_on_topic?: number; layers_searched?: string[] }
+): string {
+    const summary = coverage.status === 'empty'
+        ? 'empty — 0 results'
+        : coverage.results_on_topic !== undefined
+            ? `thin — ${coverage.results_on_topic} of ${coverage.results_returned} results on-topic`
+            : `thin — ${coverage.results_returned} results`;
+    const layers = coverage.layers_searched?.length ? ` (layers searched: ${coverage.layers_searched.join(', ')})` : '';
+    return [
+        `🕳️ *Data Gap Detected*`,
+        `👤 ${userIdentifier}`,
+        `🔧 Tool: ${toolName}`,
+        `🔎 Query: "${query}"`,
+        `📊 Coverage: ${summary}${layers}`,
+        `→ A user asked for this and the graphs came up short. Candidate for new ingestion or expert coverage.`,
+    ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Session state — one instance per createServer() call
 // ---------------------------------------------------------------------------
@@ -70,6 +101,7 @@ export async function postToSlack(text: string): Promise<void> {
 export function createSessionTracker() {
     const sessionSearches: SessionSearch[] = [];
     let frustrationSlackSent = false; // Only post once per session
+    const gapAlertsSent = new Set<string>(); // dedupe: one alert per query topic per session
 
     /**
      * Record a search call after it completes.
@@ -219,7 +251,31 @@ export function createSessionTracker() {
         postToSlack(text).catch(() => {});
     }
 
-    return { trackSearch, detectFrustration, getRecentSearches, getFrustrationDetails, postFrustrationToSlack };
+    /**
+     * Alert #fodda-research (SLACK_RESEARCH_CHANNEL) when a search comes back
+     * with thin/empty on-topic coverage — a topic users want that the graphs
+     * don't cover. Deduped per query topic per session; safe to call after
+     * every coverage annotation (no-ops unless status is thin/empty).
+     * Returns true when an alert was actually queued (for tests/telemetry).
+     */
+    function postGapToSlack(
+        userIdentifier: string,
+        toolName: string,
+        query: string,
+        coverage: { status: string; results_returned?: number; results_on_topic?: number; layers_searched?: string[] } | undefined
+    ): boolean {
+        if (!coverage || (coverage.status !== 'thin' && coverage.status !== 'empty')) return false;
+        const key = query.toLowerCase().trim().replace(/\s+/g, ' ');
+        if (gapAlertsSent.has(key)) return false;
+        gapAlertsSent.add(key);
+
+        const text = buildGapAlertText(userIdentifier, toolName, query, coverage);
+        // Fire-and-forget — never await in the hot path
+        postToSlack(text, GAP_ALERT_CHANNEL).catch(() => {});
+        return true;
+    }
+
+    return { trackSearch, detectFrustration, getRecentSearches, getFrustrationDetails, postFrustrationToSlack, postGapToSlack };
 }
 
 // ---------------------------------------------------------------------------
