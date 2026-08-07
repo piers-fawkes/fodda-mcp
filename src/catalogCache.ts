@@ -1118,6 +1118,7 @@ const SUPPLEMENTAL_CATEGORY_KEYWORDS: Record<string, string[]> = {
     trade: ['imports', 'exports', 'trade data', 'trade flows', 'tariff', 'tariffs', 'supply chain'],
     food_economics: ['food prices', 'food costs', 'crop', 'agriculture', 'agricultural', 'nutrition', 'nutritional'],
     commodities: ['commodity', 'commodities', 'raw materials', 'wholesale prices'],
+    science: ['science', 'scientific', 'clinical', 'pubmed', 'openalex', 'clinical trials', 'dermatology', 'peer-reviewed', 'academic', 'study', 'studies', 'journal', 'biomedical'],
 };
 
 /**

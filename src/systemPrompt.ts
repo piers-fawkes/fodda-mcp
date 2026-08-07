@@ -220,7 +220,7 @@ compliance: RFC-2119
 - Brand strategy, competitive positioning -> brand_tracker
 - Quantitative data points, market sizes -> search_statistics
 - Expert quotes, strategic frameworks -> search_insights
-- Macro economic context, institutional data (standalone only — research tools include it automatically) -> get_supplemental_context
+- Scientific research, clinical studies, peer-reviewed literature -> get_pubmed_research_trends, get_openalex_research_trends, get_clinical_trials (fire in parallel with search_graph when query asks for scientific/clinical evidence)
 - Complex research -> deep_research_topic
 - Brand-adjacent trends -> discover_adjacent_trends
 - Brainstorming -> brainstorm_topic

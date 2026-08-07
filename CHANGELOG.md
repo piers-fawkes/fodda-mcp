@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.40.1] - 2026-08-06
+
+### Added & Fixed
+- **Scientific Research & Academic Literature Routing (`src/catalogCache.ts`, `src/systemPrompt.ts`)**:
+  - Added `science` category to `SUPPLEMENTAL_CATEGORY_KEYWORDS` in `catalogCache.ts` (`science`, `scientific`, `clinical`, `pubmed`, `openalex`, `clinical trials`, `dermatology`, `peer-reviewed`, `academic`, `study`, `studies`, `journal`, `biomedical`).
+  - Added explicit routing instructions to `RULE: ToolRoutingPreference` in `systemPrompt.ts` directing LLM clients to fire `get_pubmed_research_trends`, `get_openalex_research_trends`, and `get_clinical_trials` in parallel with `search_graph` when queries request scientific or clinical evidence.
+  - Bumped `MCP_SERVER_VERSION` to `1.40.1` to invalidate response caches.
+
 ## [1.40.0] - 2026-08-06
 
 ### Added & Improved
