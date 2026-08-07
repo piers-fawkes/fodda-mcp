@@ -20,10 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Verified
 - **Verification**: `npm run build` compiled clean; `node dist/test_gap_alert.js` passed all 14 checks.
-- **Airtable Live Write & Readback (`src/test_demand_signal_logging.ts`)**: Run against Airtable Questions table (`appXUeeWN1uD9NdCW`/`tblvHx1DzwuTq3TJE`) via `dist/test_demand_signal_logging.js`:
-  - Entry record created: `rec5BQWHmBNGnVhUG` (`question`: `"agent commerce verification 1786127785125"`)
-  - Aggregate quality enrich patched: `resultCount: 2`, `resultQuality: "WEAK"`, `userContext: "searched_graphs: retail, beauty, tech"`
-  - Live readback verified exact match for `resultCount`, `resultQuality`, `userContext`, and `interaction_type`.
+- **Deployed Cloud Run Server Live Joint Integration Test (`src/test_live_deployed_mcp_search.ts`)**: Executed a real multi-graph `search_graph` tool call through the live deployed MCP server (`https://mcp.fodda.ai/mcp`, revision `fodda-mcp-00439-pkt`):
+  - Query: `"agent commerce multi graph live test 1786129001085"`
+  - Verified in Airtable Questions table (`tblvHx1DzwuTq3TJE`): Exactly **1** row was created and enriched (`recGvuoinyayXAUeP`).
+  - Verified fields: `resultQuality = "STRONG"`, `resultCount = 10`, `userContext = "searched_graphs: retail, mckinsey-medtech-software-delivery-outlook, sic, kpmg-retail, dhl-retail, postpals-expert-graph, alex-mercer-retail-graph, restaurant-dining-trends, mckinsey-ai, edelman-marketing, wef-sport, pinterest-home, mintel-retail, deloitte-health, tiktok-marketing"`, `interaction_type = "search"`.
+  - Synthetic harness test row (`rec5BQWHmBNGnVhUG`) and live integration test row (`recGvuoinyayXAUeP`) cleaned up after verification.
 
 ## [1.42.0] - 2026-08-07
 
