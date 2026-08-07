@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.40.2] - 2026-08-06
+
+### Fixed
+- **Internal URL Suppression in Short Citations (`src/enrichment.ts`, `src/tools.ts`)**:
+  - Suppressed internal `fodda.ai` fallback URLs from being hyperlinked in `short_citation` (e.g. `via LaserLeap` text renders cleanly without linking to `https://www.fodda.ai/graphs/...`).
+  - Bumped `MCP_SERVER_VERSION` to `1.40.2` to bust query caches.
+
 ## [1.40.1] - 2026-08-06
 
 ### Added & Fixed

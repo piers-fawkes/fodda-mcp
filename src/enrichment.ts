@@ -115,8 +115,9 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
             cleanPub = 'The Business of Fashion';
         }
 
+        const isInternalFoddaUrl = url ? /fodda\.ai/i.test(url) : true;
         const finalPubLabel = cleanPub.startsWith('via ') ? cleanPub : `via ${cleanPub}`;
-        item.short_citation = url ? `[${finalPubLabel}](${url})` : finalPubLabel;
+        item.short_citation = (url && !isInternalFoddaUrl) ? `[${finalPubLabel}](${url})` : finalPubLabel;
 
         if (item.formatted_citation) return item; // already enriched
 
