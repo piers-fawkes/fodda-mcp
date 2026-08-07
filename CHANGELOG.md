@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.43.0] - 2026-08-07
+
+### Added
+- **Demand Signal Ownership at MCP Layer (`src/toolHandlers.ts`)**:
+  - MCP now logs an authoritative post-search demand signal quality call (`logQueryResult`) after search resolution across all 6 search-family tools (`search_graph`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `search_statistics`, `search_insights`).
+  - Derives `resultQuality` (`STRONG` / `WEAK` / `MISS`) from aggregate `coverage.results_on_topic` (or `results_returned` fallback) using on-topic thresholds (0 = `MISS`, 1–4 = `WEAK`, ≥5 = `STRONG`).
+  - Includes graph attribution via `userContext` (`searched_graphs: <comma-separated list>`).
+  - Executes `POST /v1/log/question` asynchronously to enrich the entry-logged Questions record in Airtable via the API's 2-minute dedup cache, capturing aggregate quality and searched graph context without creating duplicate rows.
+  - Persists `MISS`/`WEAK` gap events to Airtable alongside Slack alerts for historical topic aggregation.
+  - Bumped `MCP_SERVER_VERSION` to `1.43.0`.
+
+### Verified
+- **Verification**: `npm run build` compiled clean; `node dist/test_gap_alert.js` passed all 14 checks.
+- **Airtable Live Write & Readback (`src/test_demand_signal_logging.ts`)**: Run against Airtable Questions table (`appXUeeWN1uD9NdCW`/`tblvHx1DzwuTq3TJE`) via `dist/test_demand_signal_logging.js`:
+  - Entry record created: `rec5BQWHmBNGnVhUG` (`question`: `"agent commerce verification 1786127785125"`)
+  - Aggregate quality enrich patched: `resultCount: 2`, `resultQuality: "WEAK"`, `userContext: "searched_graphs: retail, beauty, tech"`
+  - Live readback verified exact match for `resultCount`, `resultQuality`, `userContext`, and `interaction_type`.
+
 ## [1.42.0] - 2026-08-07
 
 ### Added

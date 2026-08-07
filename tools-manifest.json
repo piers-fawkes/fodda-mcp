@@ -213,7 +213,7 @@
       "kind": "tool",
       "bills_as": "standalone_supplemental",
       "category": "Supplemental",
-      "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Price: $45 per query."
+      "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Price: $10 per query."
     },
     {
       "name": "get_validated_trends",

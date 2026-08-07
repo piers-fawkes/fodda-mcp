@@ -371,6 +371,40 @@ export async function createServer(
         }).catch(() => {}); // Never block on logging failures
     }
 
+    // Fire-and-forget: log post-search aggregate quality and graph attribution to the Questions table.
+    // Called after search resolution so aggregate coverage is captured and enriches the entry log.
+    function logQueryResult(
+        query: string,
+        interactionType: string,
+        coverage: any,
+        searchedGraphs: any[]
+    ) {
+        if (!coverage || coverage.status === 'error') return;
+
+        const count = coverage.results_on_topic !== undefined
+            ? coverage.results_on_topic
+            : (coverage.results_returned ?? 0);
+
+        const resultQuality: 'STRONG' | 'WEAK' | 'MISS' =
+            (coverage.status === 'empty' || count === 0)
+                ? 'MISS'
+                : count >= 5
+                    ? 'STRONG'
+                    : 'WEAK';
+
+        const graphIds = [...new Set((searchedGraphs || []).map((g: any) => typeof g === 'string' ? g : (g.graph_id || g.id || g.name)).filter(Boolean))];
+        const userContext = graphIds.length > 0 ? `searched_graphs: ${graphIds.join(', ')}` : undefined;
+
+        foddaRequest('POST', '/v1/log/question', apiKey, userId, {
+            question: query.trim(),
+            interactionType,
+            source: 'mcp',
+            resultCount: count,
+            resultQuality,
+            userContext,
+        }).catch(() => {}); // Never block on logging failures
+    }
+
     // Build skill metadata for system prompt — includes both output-phase and interactive skills.
     // Mirrors the router-only collapse below: when a skill has a router tool,
     // the prompt advertises ONLY the router (advertising unregistered tools
@@ -1198,6 +1232,7 @@ export async function createServer(
 
                 data = addCoverageAnnotation(data, query, searchedGraphs, limit);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_graph', query, data?.coverage);
+                logQueryResult(query, 'search', data?.coverage, searchedGraphs);
                 if (data?.coverage?.status === 'error' || data?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
                 }
@@ -2244,6 +2279,7 @@ export async function createServer(
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'domain');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_domain_intelligence', query, annotatedData?.coverage);
+                logQueryResult(query, 'domain_intelligence', annotatedData?.coverage, searchedGraphs);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2288,6 +2324,7 @@ export async function createServer(
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_expert_intelligence', query, annotatedData?.coverage);
+                logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2332,6 +2369,7 @@ export async function createServer(
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'industry report');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_report_intelligence', query, annotatedData?.coverage);
+                logQueryResult(query, 'report_intelligence', annotatedData?.coverage, searchedGraphs);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2380,6 +2418,7 @@ export async function createServer(
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_statistics', query, annotatedData?.coverage);
+                logQueryResult(query, 'search_statistics', annotatedData?.coverage, searchedGraphs);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2424,6 +2463,7 @@ export async function createServer(
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_insights', query, annotatedData?.coverage);
+                logQueryResult(query, 'search_insights', annotatedData?.coverage, searchedGraphs);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
