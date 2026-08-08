@@ -149,6 +149,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
     'expert-consult': [
         'get_capabilities',
         'consult_analyst',
+        'consult_human_agent',
         'list_analysts',
         'request_deliverable',
         'check_deliverable_status',
@@ -172,6 +173,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'deep_research_topic',
         'check_research_status',
         'consult_analyst',
+        'consult_human_agent',
         'list_analysts',
         'get_evidence',
         'list_graphs',
@@ -438,9 +440,9 @@ async function foddaRequest(
     const baseUrl = path.startsWith('/api/') ? WEBSITE_BASE_URL : API_BASE_URL;
     const url = `${baseUrl}${path}`;
     // Base timeout: 30s aligns with MCP client expectations.
-    // Extended to 60s for analyst consult, and 35s for supplemental.
-    const AXIOS_TIMEOUT_MS = /\/analysts\/consult/.test(path)
-        ? 60000
+    // Extended to 90s for analyst and human agent consults, and 35s for supplemental.
+    const AXIOS_TIMEOUT_MS = /(\/analysts\/consult|\/human-agents\/consult)/.test(path)
+        ? 90000
         : /\/supplemental\//.test(path)
         ? 35000
         : 30000;

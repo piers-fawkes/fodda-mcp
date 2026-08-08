@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.45.0] - 2026-08-08
+
+### Changed & Enhanced
+- **`send_feedback` Email Recipient (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Updated Resend email `to` recipient to `piers.fawkes@psfk.com` and added `cc: ['team@fodda.ai']`.
+  - Updated support email reference in `src/systemPrompt.ts` to `piers.fawkes@psfk.com`.
+- **`send_feedback` Schema & Context (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Added optional `recent_prompt` parameter to capture the user's prompt or question context when reporting feedback or unsatisfactory answers.
+  - Included `❓ *Prompt Context:* {recent_prompt}` in Slack alerts and `Prompt Context: {recent_prompt || 'N/A'}` in Resend feedback email body.
+  - Regenerated `tools-manifest.json` with updated tool description and schema details.
+
+## [1.44.0] - 2026-08-07
+
+### Added
+- **New `consult_human_agent` Tool (`src/toolHandlers.ts`, `src/index.ts`, `src/tools.ts`)**:
+  - Proxies `POST /v1/human-agents/consult` (repointed API route for Digital Twin consultations).
+  - Accepts `analyst_id`, `query`, optional `company`, `session_id`, and `userId`.
+  - Settles billing under `queryTypeCode: 'human_agent_consult'` (flat 1 call per turn server-side during launch promo).
+  - Surfaces full structured envelope fields (`timing_ms`, `coverage`, `sources_used`, `referrals`, `speaker_note`, `session_id`).
+- **Catalog Enrichment in `list_analysts` (`src/toolHandlers.ts`, `src/catalogCache.ts`)**:
+  - `list_analysts` remains a single catalog tool. Each entry is enriched with `type` (`human_agent` | `synthetic_analyst`), `consult_tool` (`consult_human_agent` | `consult_analyst`), and verbatim published Airtable `price`.
+- **Synthetic-Only `consult_analyst` & Referral Routing (`src/toolHandlers.ts`)**:
+  - Scoped `consult_analyst` strictly to Synthetic Analysts.
+  - Passes Digital Twin IDs to a direct referral response naming the analyst and pointing callers to `consult_human_agent` (without auto-forwarding).
+
+### Changed & Fixed
+- **Deliverable Tools Repointed (`src/toolHandlers.ts`)**:
+  - Repointed `request_deliverable` to `POST /v1/human-agents/:id/deliver`.
+  - Repointed `check_deliverable_status` to `GET /v1/human-agents/deliverables/:job_id`.
+- **Price Display & Copy Remediation (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Removed hardcoded `$15 per turn` and `$15 per query` strings in `consult_analyst` and `discover_adjacent_trends` tool descriptions.
+  - Enforced strict Airtable published price display rules and clean copy guidelines (zero "token" / "SPT" mentions in human-visible text).
+- **Manifest & System Prompt Alignment (`scripts/generate-tools-manifest.mjs`, `src/systemPrompt.ts`)**:
+  - Added `consult_human_agent` mapping to `generate-tools-manifest.mjs` (`BILLS_AS.consult_human_agent = 'human_agent_consult'`) and regenerated `tools-manifest.json` (47 tools total).
+  - Updated `src/systemPrompt.ts` virtual expert consultation sequences and engagement patterns.
+
+### Verified
+- **Automated Verification**: `npm run build` compiled clean; `node dist/test_nike_cmo_alias.js` passed 13/13 alias checks; `node dist/test_consult_split.js` passed all pricingCache, manifest, and description assertions.
+
 ## [1.43.0] - 2026-08-07
 
 ### Added

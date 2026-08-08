@@ -822,11 +822,18 @@ export async function createServer(
                     for (const a of analystsList) {
                         const key = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
                         if (!key) continue;
+                        const isHumanAgent = a.type === 'human_agent' || a.type === 'human_twin' || a.agent_type === 'human_twin' || a.agent_type === 'human_agent' || a.kind === 'human_agent' || a.kind === 'human_twin' || a.is_digital_twin === true || a.is_human_agent === true;
+                        const type = isHumanAgent ? 'human_agent' : (a.type || 'synthetic_analyst');
+                        const consult_tool = isHumanAgent ? 'consult_human_agent' : 'consult_analyst';
+                        const price = a.price || a.promoPriceUsd || a.publishedPriceUsd || a.price_usd || undefined;
                         const hasOfferings = Array.isArray(a.offerings) && a.offerings.length > 0;
                         const enriched = {
                             ...a,
+                            type,
+                            consult_tool,
+                            ...(price ? { price } : {}),
                             commissionable: hasOfferings,
-                            ...(!hasOfferings ? { note: 'Analyst profile available for consultation (consult_analyst); deliverables not yet commissionable.' } : {})
+                            ...(!hasOfferings ? { note: `Analyst profile available for consultation (${consult_tool}); deliverables not yet commissionable.` } : {})
                         };
                         if (!seen.has(key)) {
                             seen.set(key, enriched);
@@ -1518,7 +1525,7 @@ export async function createServer(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs. Price: $15 per query.',
+        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -2914,14 +2921,15 @@ export async function createServer(
 
     server.tool(
         'send_feedback',
-        'Forward user feedback, feature requests, complaints, or exit reasons to the Fodda team via email and Slack. Call this whenever a user shares feedback — including when they want to leave, report a problem, or suggest an improvement.',
+        'Forward user feedback, feature requests, complaints, or prompt/answer quality issues to the Fodda team via email and Slack. Call this whenever a user shares feedback or expresses dissatisfaction — optionally include recent_prompt to capture the context.',
         {
             feedback: z.string().describe('The user\'s feedback, complaint, suggestion, or exit reason'),
             user_email: z.string().optional().describe('User\'s email if known (for follow-up)'),
             category: z.string().optional().describe("Category: 'feedback', 'bug', 'feature_request', 'exit_reason', 'complaint'"),
+            recent_prompt: z.string().optional().describe('The prompt or question that generated the answer being commented on'),
         },
         { title: 'Send Feedback', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ feedback, user_email, category }) => {
+        async ({ feedback, user_email, category, recent_prompt }) => {
             try {
                 const userLabel = user_email || (userId !== 'anonymous' ? userId : 'anonymous trial user');
                 const entryLabel = entryId ? ` (entry: ${entryId})` : '';
@@ -2932,20 +2940,23 @@ export async function createServer(
                 recordFeedbackEntry(catLabel, feedback, userLabel);
 
                 // ── Slack alert (fire-and-forget) ──
-                const slackText = [
+                const slackLines = [
                     `<@U0AU49JG7AS> ${emoji} *User Feedback*`,
                     `👤 ${userLabel}`,
                     `📁 Category: ${catLabel}`,
                     `📝 ${feedback}`,
-                    `→ Check if this needs a response or product action.`,
-                ].join('\n');
-                postToSlack(slackText).catch(() => {});
+                ];
+                if (recent_prompt) {
+                    slackLines.push(`❓ *Prompt Context:* ${recent_prompt}`);
+                }
+                slackLines.push(`→ Check if this needs a response or product action.`);
+                postToSlack(slackLines.join('\n')).catch(() => {});
 
                 // ── Resend email ──
                 const resendKey = process.env.RESEND_API_KEY;
                 if (!resendKey) {
                     console.error('[send_feedback] RESEND_API_KEY not set — logging feedback locally');
-                    console.error(`[FEEDBACK] category=${catLabel} email=${userLabel} feedback=${feedback}`);
+                    console.error(`[FEEDBACK] category=${catLabel} email=${userLabel} feedback=${feedback}${recent_prompt ? ` prompt=${recent_prompt}` : ''}`);
                     return {
                         content: [{
                             type: 'text' as const,
@@ -2961,11 +2972,13 @@ export async function createServer(
 
                 await resend.emails.send({
                     from: 'Fodda MCP <feedback@fodda.ai>',
-                    to: ['piers@fodda.ai'],
+                    to: ['piers.fawkes@psfk.com'],
+                    cc: ['team@fodda.ai'],
                     subject,
                     text: [
                         `Category: ${catLabel}`,
                         `User: ${userLabel}${entryLabel}`,
+                        `Prompt Context: ${recent_prompt || 'N/A'}`,
                         `API Key: ${apiKey.substring(0, 15)}...`,
                         `Date: ${new Date().toISOString()}`,
                         '',
@@ -3658,19 +3671,46 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. Price: $15 per turn.',
+        'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
         {
-            analyst_id: z.string().describe("The expert ID of the Human Agent or Synthetic Analyst (e.g., 'anu-lingala-macro', 'ben-dietz-sic', 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
-            query: z.string().describe("The question or topic to discuss with the analyst"),
+            analyst_id: z.string().describe("The expert ID of the Synthetic Analyst (e.g., 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
+            query: z.string().describe("The question or topic to discuss with the synthetic analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Human Agent or Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, userId: uid }) => {
             try {
                 // Resolve potential alias IDs (e.g., "Nike CMO" -> analyst_id: "brand-cmo", company: "Nike")
                 const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+
+                // Proactive check: if analyst is known to be a Human Agent (Digital Twin), return referral
+                const match = getAnalysts().find((a: any) => {
+                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                    const nameKey = (a.name || '').toLowerCase().trim();
+                    const queryKey = resolvedAnalystId.toLowerCase().trim();
+                    return idKey === queryKey || nameKey === queryKey;
+                });
+                const isTwinMatch = match && (
+                    match.type === 'human_agent' ||
+                    match.type === 'human_twin' ||
+                    match.agent_type === 'human_twin' ||
+                    match.agent_type === 'human_agent' ||
+                    match.kind === 'human_agent' ||
+                    match.kind === 'human_twin' ||
+                    match.is_digital_twin === true ||
+                    match.is_human_agent === true
+                );
+                if (isTwinMatch) {
+                    const analystName = match.name || resolvedAnalystId;
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please use the consult_human_agent tool (analyst_id: "${resolvedAnalystId}").`
+                        }]
+                    };
+                }
 
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'consult_analyst');
@@ -3682,6 +3722,26 @@ export async function createServer(
                     session_id
                 });
                 
+                // If API indicates target is a Human Agent, return referral
+                const isTwinResult = result?.is_human_agent ||
+                    result?.type === 'human_agent' ||
+                    result?.type === 'human_twin' ||
+                    result?.agent_type === 'human_twin' ||
+                    result?.agent_type === 'human_agent' ||
+                    result?.analyst?.agent_type === 'human_twin' ||
+                    result?.analyst?.type === 'human_agent' ||
+                    result?.analyst?.type === 'human_twin';
+
+                if (isTwinResult) {
+                    const analystName = result.analyst_name || result.analyst?.name || result.name || resolvedAnalystId;
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please use the consult_human_agent tool (analyst_id: "${resolvedAnalystId}").`
+                        }]
+                    };
+                }
+
                 // Extract the expert's answer text (legacy-compatible)
                 const reportText = typeof result.result === 'string'
                     ? result.result
@@ -3699,9 +3759,11 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const sourceLines = result.sources_used.map((s: any) =>
-                        s.url ? `- ${s.label || s.name || 'Source'}: ${s.url}` : `- ${s.label || s.name || 'Source'}`
-                    );
+                    const sourceLines = result.sources_used.map((s: any) => {
+                        if (typeof s === 'string') return `- ${s}`;
+                        const name = s.label || s.name || s.id || s.slug || 'Source';
+                        return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
+                    });
                     parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
@@ -3715,8 +3777,9 @@ export async function createServer(
                 }
 
                 // --- Engagement continuation (Agentic Analysts Phase B) ---
-                // Surface the session id so the calling model can thread follow-ups.
-                // The API sends session_note on turn 1 only — pass it through verbatim.
+                if (result.partial_credit_warning || result.credit_note) {
+                    parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
+                }
                 if (result.session_id) {
                     parts.push(`--- SESSION: ${result.session_id}${result.session_note ? ` — ${result.session_note}` : ''} ---`);
                 }
@@ -3727,10 +3790,107 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
+                const errData = err.response?.data;
+                const isTwinError = errData?.is_human_agent ||
+                    errData?.error?.is_human_agent ||
+                    errData?.agent_type === 'human_twin' ||
+                    errData?.type === 'human_twin' ||
+                    errData?.type === 'human_agent' ||
+                    errData?.error?.agent_type === 'human_twin';
+                if (isTwinError) {
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: `${analyst_id} is a Human Agent (Digital Twin). To consult this expert, please use the consult_human_agent tool (analyst_id: "${analyst_id}").`
+                        }]
+                    };
+                }
                 // Surface timeout explicitly so clients get actionable guidance
                 if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
-                        error: `Analyst consultation timed out (60s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
+                        error: `Analyst consultation timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
+                        analyst_id,
+                        timeout: true
+                    }) }] };
+                }
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- consult_human_agent ---
+    server.tool(
+        'consult_human_agent',
+        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
+        {
+            analyst_id: z.string().describe("The expert ID of the Human Agent (e.g., 'anu-lingala-macro', 'ben-dietz-sic'). See list_analysts."),
+            query: z.string().describe("The question or topic to discuss with the human agent"),
+            company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
+            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context and follow-ups cost less. Omit for a one-off question."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Consult Human Agent (Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ analyst_id, query, company, session_id, userId: uid }) => {
+            try {
+                const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+
+                logUserQuery(query, 'consult_human_agent');
+
+                const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), {
+                    analyst_id: resolvedAnalystId,
+                    query,
+                    company: resolvedCompany,
+                    session_id
+                });
+                
+                const reportText = typeof result.result === 'string'
+                    ? result.result
+                    : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
+
+                const parts: string[] = [reportText];
+
+                if (result.timing_ms != null) {
+                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+                }
+
+                if (result.coverage) {
+                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
+                }
+                if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
+                    const sourceLines = result.sources_used.map((s: any) => {
+                        if (typeof s === 'string') return `- ${s}`;
+                        const name = s.label || s.name || s.id || s.slug || 'Source';
+                        return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
+                    });
+                    parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
+                }
+                if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
+                    const refLines = result.referrals.map((r: any, i: number) =>
+                        `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
+                    );
+                    parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                }
+                if (result.speaker_note) {
+                    parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
+                }
+
+                if (result.partial_credit_warning || result.credit_note) {
+                    parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
+                }
+                if (result.session_id) {
+                    parts.push(`--- SESSION: ${result.session_id}${result.session_note ? ` — ${result.session_note}` : ''} ---`);
+                }
+
+                const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
+                if (consultWithheld) return consultWithheld;
+                return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
+                        error: `Human Agent consultation timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
                         analyst_id,
                         timeout: true
                     }) }] };
@@ -3763,7 +3923,7 @@ export async function createServer(
                 // here, so there's no double-charge.
                 const result = await foddaRequest(
                     'POST',
-                    `/v1/analysts/${encodeURIComponent(analyst_id)}/deliver`,
+                    `/v1/human-agents/${encodeURIComponent(analyst_id)}/deliver`,
                     apiKey,
                     resolveUserId(userId, uid),
                     { offering_key, brief, attachments },
@@ -3799,7 +3959,7 @@ export async function createServer(
             try {
                 const result = await foddaRequest(
                     'GET',
-                    `/v1/analysts/deliverables/${encodeURIComponent(job_id)}`,
+                    `/v1/human-agents/deliverables/${encodeURIComponent(job_id)}`,
                     apiKey,
                     resolveUserId(userId, uid),
                 );

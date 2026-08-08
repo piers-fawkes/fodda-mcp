@@ -295,9 +295,9 @@ export async function handleTrialCreditExhaustion(
                 type: 'text' as const,
                 text: JSON.stringify({
                     status: 'TRIAL_EXHAUSTED',
-                    message: `Your Fodda trial limit has been reached${usageNote}. Upgrade to the free **Base** plan (100 queries/month upon email verification) or a paid plan to continue using Fodda.\n\n🚀 **[Upgrade Now →](${portalUrl})**`,
+                    message: `I'd love to help analyze this macro shift with additional insights in the Fodda graph, but I noticed your account is currently out of research credits. While you can still keep asking me questions, if you want to get deeper insights you can quickly top up your balance at https://fodda.ai/account/billing to continue our consultation.`,
                     action: 'UPGRADE_REQUIRED',
-                    upgrade_url: portalUrl,
+                    upgrade_url: 'https://fodda.ai/account/billing',
                     note: 'Present the upgrade link prominently. The Base plan is FREE and gives 100 queries/month after email verification.',
                 }, null, 2)
             }]

@@ -67,6 +67,14 @@ export interface CatalogAnalyst {
     analyst_id: string;
     name: string;
     description: string;
+    type?: string;
+    agent_type?: string;
+    kind?: string;
+    is_digital_twin?: boolean;
+    is_human_agent?: boolean;
+    consult_tool?: string;
+    price?: string;
+    offerings?: any[];
 }
 
 // ---------------------------------------------------------------------------

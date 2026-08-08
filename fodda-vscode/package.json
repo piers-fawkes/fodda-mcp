@@ -1,8 +1,8 @@
 {
   "name": "fodda",
   "displayName": "Fodda",
-  "description": "Connect your AI agent to Fodda knowledge graphs via MCP — one click in Cursor, Windsurf, and VS Code.",
-  "version": "0.1.7",
+  "description": "Fodda is the research layer for AI agents, connecting PSFK's 20-year trend archive and 80+ institutional data sources directly to LLMs.",
+  "version": "0.1.8",
   "publisher": "fodda",
   "license": "SEE LICENSE IN LICENSE",
   "icon": "icon.png",
@@ -27,7 +27,10 @@
     "windsurf",
     "research",
     "agents",
-    "trends"
+    "trends",
+    "psfk",
+    "llm",
+    "claude"
   ],
   "activationEvents": [
     "onStartupFinished"

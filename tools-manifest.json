@@ -2,8 +2,8 @@
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "rate_usd_per_call": 0.5,
   "note": "Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as=\"free\" → $0. deep_research_light/heavy = $55/$100.",
-  "count": 46,
-  "billable": 20,
+  "count": 47,
+  "billable": 21,
   "tools": [
     {
       "name": "begin_expert_onboarding",
@@ -59,7 +59,14 @@
       "kind": "tool",
       "bills_as": "expert_agent",
       "category": "Expert",
-      "description": "Consult a named Human Agent or Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent or synthetic analyst expert has a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph. Price: $15 per turn."
+      "description": "Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. \"Nike CMO\", \"Apple CEO\", \"Target CFO\"), you can pass analyst_id: \"brand-cmo\" with company: \"Nike\", or pass analyst_id: \"Nike CMO\" directly (auto-resolves to analyst_id: \"brand-cmo\" and company: \"Nike\"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph."
+    },
+    {
+      "name": "consult_human_agent",
+      "kind": "tool",
+      "bills_as": "human_agent_consult",
+      "category": "Expert",
+      "description": "Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert's consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert's voice) with an offer to query the referred graph."
     },
     {
       "name": "deep_research_topic",
@@ -73,7 +80,7 @@
       "kind": "tool",
       "bills_as": "adjacent_trends",
       "category": "Ideation",
-      "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs. Price: $15 per query."
+      "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs."
     },
     {
       "name": "draft_linkedin_article",
@@ -290,7 +297,7 @@
       "kind": "tool",
       "bills_as": "free",
       "category": "Account",
-      "description": "Forward user feedback, feature requests, complaints, or exit reasons to the Fodda team via email and Slack. Call this whenever a user shares feedback — including when they want to leave, report a problem, or suggest an improvement."
+      "description": "Forward user feedback, feature requests, complaints, or prompt/answer quality issues to the Fodda team via email and Slack. Call this whenever a user shares feedback or expresses dissatisfaction — optionally include recent_prompt to capture the context."
     },
     {
       "name": "sign_up_free_account",
