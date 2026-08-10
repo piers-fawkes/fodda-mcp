@@ -18,6 +18,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Verbatim Platform-Voice Thin-Response Line**: When coverage resolves to `PARTIAL` with zero graph-tier sources, the MCP server surfaces Piers's platform-voice sentence verbatim: *"This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database."* followed by any active roster peer referrals in third-person platform voice.
   - **System Prompt Updates (`src/systemPrompt.ts`)**: Updated `THREE-TIER RESEARCH ATTRIBUTION & VOICE POLICY` and `GROUNDED COVERAGE & GRAPH RETRIEVAL FRAMING` to mandate 1st-person expert voice for own graph, 1st-person cross-research voice for other curator graphs, and explicit "I found this on the web" framing for web material.
   - **Zero Surface Change**: Preserved all 47 `server.tool(...)` registrations (`tools-manifest.json` count: 47).
+  - **Production Verification (`mcp.fodda.ai` revision `fodda-mcp-00459-x8w`)**:
+    - **Probe 1 (`tools/list`)**: Returned 48 tools (47 native + 1 skill router). Zero surface change.
+    - **Probe 2 (In-lane consult `piers-fawkes-ai-builder-knowledge-graph`)**:
+      - JSON `coverage`: `"FULL"`
+      - Envelope text footer:
+        ```
+        --- COVERAGE: FULL ---
+        --- SOURCES USED ---
+
+        [Graph Sources]
+        - Agentic Commerce
+        - Agentic Commerce: AI Completing the Purchase Journey
+        - Al in E-Commerce: What Comes After Early Adoption?
+        - Five Major Brands Will Unify Agentic Commerce Experiences.
+        - Design Sporting Infrastructure for Community Well-Being and Environmental Resilience
+        - AI-Powered Commerce Orchestration
+        - AI Graduates From Tool to Strategic Partner
+        - Companies Are Productizing Their Internal Tools
+        - AI-Powered Commerce Operators
+        - Breakthrough-designation imaging that makes staging and perfusion visible during procedures
+        - Compliance‑first crypto infrastructure stacks
+        - The Snackification of Entertainment and Commerce
+        ```
+    - **Probe 3 (Synthetic zero-graph web-only probe)**:
+      - Evaluated `coverage`: `"PARTIAL"`.
+      - Surfaced platform note: *"This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database."*
+      - Grouped web links under `[Web Sources]`.
 
 ## [1.46.14] - 2026-08-10
 
