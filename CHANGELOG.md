@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.3] - 2026-08-09
+
+### Improved
+- **Expert Privacy Sign-off Reassurance (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Added instructions to `begin_expert_onboarding`, `submit_basic_info`, and `expert_onboarding_research` tool handlers requiring LLMs/Claude to explicitly reassure experts: *"And remember, nothing gets sent to the Fodda servers without your sign off."* when starting stage 3 indexing/data analysis.
+
 ## [1.46.2] - 2026-08-09
 
 ### Fixed & Improved
