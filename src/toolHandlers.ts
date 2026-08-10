@@ -3758,19 +3758,53 @@ export async function createServer(
                 if (result.coverage) {
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
+                // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
+                if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
+                    const expertObj = result.expert || result.analyst || match || {};
+                    const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
+                    const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
+                    const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
+                    const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
+
+                    result.sources_used = [
+                        {
+                            title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                            url: `https://www.fodda.ai/experts/${expertSlug}`
+                        }
+                    ];
+                }
+
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
                     const sourceLines = result.sources_used.map((s: any) => {
                         if (typeof s === 'string') return `- ${s}`;
-                        const name = s.label || s.name || s.id || s.slug || 'Source';
+                        const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
                         return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
                     });
                     parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
-                    const refLines = result.referrals.map((r: any, i: number) =>
-                        `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
-                    );
-                    parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                    const activeAnalysts = getAnalysts();
+                    const activeReferrals = result.referrals.filter((r: any) => {
+                        const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
+                        const found = activeAnalysts.find((a: any) => {
+                            const aId = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+                            return aId === refId || (a.name && a.name.toLowerCase().trim() === refId);
+                        });
+                        if (found) {
+                            const st = (found.status || (found as any).Status || '').toLowerCase().trim();
+                            if (st && st !== 'active') return false;
+                        }
+                        const rStatus = (r.status || r.Status || '').toLowerCase().trim();
+                        if (rStatus && rStatus !== 'active') return false;
+                        return true;
+                    });
+
+                    if (activeReferrals.length > 0) {
+                        const refLines = activeReferrals.map((r: any, i: number) =>
+                            `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
+                        );
+                        parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                    }
                 }
                 if (result.speaker_note) {
                     parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
@@ -3835,6 +3869,13 @@ export async function createServer(
             try {
                 const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
+                const match = getAnalysts().find((a: any) => {
+                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                    const nameKey = (a.name || '').toLowerCase().trim();
+                    const queryKey = resolvedAnalystId.toLowerCase().trim();
+                    return idKey === queryKey || nameKey === queryKey;
+                });
+
                 logUserQuery(query, 'consult_human_agent');
 
                 const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), {
@@ -3857,19 +3898,53 @@ export async function createServer(
                 if (result.coverage) {
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
+                // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
+                if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
+                    const expertObj = result.expert || result.analyst || match || {};
+                    const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
+                    const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
+                    const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
+                    const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
+
+                    result.sources_used = [
+                        {
+                            title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                            url: `https://www.fodda.ai/experts/${expertSlug}`
+                        }
+                    ];
+                }
+
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
                     const sourceLines = result.sources_used.map((s: any) => {
                         if (typeof s === 'string') return `- ${s}`;
-                        const name = s.label || s.name || s.id || s.slug || 'Source';
+                        const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
                         return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
                     });
                     parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
-                    const refLines = result.referrals.map((r: any, i: number) =>
-                        `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
-                    );
-                    parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                    const activeAnalysts = getAnalysts();
+                    const activeReferrals = result.referrals.filter((r: any) => {
+                        const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
+                        const found = activeAnalysts.find((a: any) => {
+                            const aId = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+                            return aId === refId || (a.name && a.name.toLowerCase().trim() === refId);
+                        });
+                        if (found) {
+                            const st = (found.status || (found as any).Status || '').toLowerCase().trim();
+                            if (st && st !== 'active') return false;
+                        }
+                        const rStatus = (r.status || r.Status || '').toLowerCase().trim();
+                        if (rStatus && rStatus !== 'active') return false;
+                        return true;
+                    });
+
+                    if (activeReferrals.length > 0) {
+                        const refLines = activeReferrals.map((r: any, i: number) =>
+                            `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
+                        );
+                        parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                    }
                 }
                 if (result.speaker_note) {
                     parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);

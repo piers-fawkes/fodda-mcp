@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.10] - 2026-08-10
+
+### Improved
+- **Updated Fallback Provenance Title Wording (`src/toolHandlers.ts`)**:
+  - Updated fallback `sources_used` title format in `consult_analyst` and `consult_human_agent` to `"[CleanName] Human Agent — Official and Verified Digital Twin"` (stripping `^[HA]` suffixes) when zero graph evidence cards are returned.
+
+## [1.46.9] - 2026-08-10
+
+### Fixed & Added
+- **Strict Anti-Hallucination Guardrails (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Enforced active-only expert referrals (`Status === 'Active'`) and third-person platform voice contract (`Out-of-lane note: For inquiries on [Topic], refer to [Expert Name]^[HA] (Analyst ID: [id]).`). Filtered inactive/unclaimed experts (e.g., Alex Mercer) from referral responses.
+  - Implemented default fallback `sources_used` official profile URL (`https://www.fodda.ai/experts/${expertSlug}`) in `consult_analyst` and `consult_human_agent` when zero graph evidence cards are returned.
+  - Added strict grounded evidence rule in `src/systemPrompt.ts` prohibiting ungrounded hard statistics, percentages, or invented third-party analyst reports unless explicitly present in retrieved sources/graph nodes.
+
 ## [1.46.8] - 2026-08-09
 
 ### Fixed

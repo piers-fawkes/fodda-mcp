@@ -75,6 +75,8 @@ export interface CatalogAnalyst {
     consult_tool?: string;
     price?: string;
     offerings?: any[];
+    status?: string;
+    Status?: string;
 }
 
 // ---------------------------------------------------------------------------
