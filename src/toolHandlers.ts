@@ -3796,7 +3796,12 @@ export async function createServer(
                     ];
                 }
 
-                result.coverage = (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) ? "FULL" : "PARTIAL";
+                const hasExternalEvidenceNodes = (result.sources_used || []).some((s: any) => {
+                    const url = typeof s === 'string' ? s : s?.url;
+                    if (!url) return false;
+                    return !url.includes('/experts/');
+                });
+                result.coverage = hasExternalEvidenceNodes ? "FULL" : "PARTIAL";
 
                 const parts: string[] = [reportText];
 
@@ -3978,7 +3983,12 @@ export async function createServer(
                     ];
                 }
 
-                result.coverage = (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) ? "FULL" : "PARTIAL";
+                const hasExternalEvidenceNodes = (result.sources_used || []).some((s: any) => {
+                    const url = typeof s === 'string' ? s : s?.url;
+                    if (!url) return false;
+                    return !url.includes('/experts/');
+                });
+                result.coverage = hasExternalEvidenceNodes ? "FULL" : "PARTIAL";
 
                 const parts: string[] = [reportText];
 

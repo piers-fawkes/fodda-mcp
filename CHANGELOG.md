@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.14] - 2026-08-10
+
+### Fixed & Added
+- **Differentiate FULL vs PARTIAL Coverage & Suppress Graph Retrieval Framing (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Configured `coverage` evaluation in `consult_analyst` and `consult_human_agent` to set `coverage: "FULL"` ONLY when `sources_used` contains 1 or more external evidence nodes/URLs (excluding fallback `/experts/` profile URLs). Assigns `coverage: "PARTIAL"` when only the fallback profile URL is present.
+  - Added `GROUNDED COVERAGE & GRAPH RETRIEVAL FRAMING` rules in `src/systemPrompt.ts` prohibiting claims like *"I searched Fodda graphs and found strong support"* when no external evidence nodes/URLs were retrieved from the graph.
+
 ## [1.46.13] - 2026-08-10
 
 ### Fixed
