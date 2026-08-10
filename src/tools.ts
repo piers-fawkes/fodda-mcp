@@ -5,7 +5,11 @@
  * This file provides version strings used by index.ts and toolHandlers.ts.
  */
 
-export const MCP_SERVER_VERSION = "1.44.0";
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+
+export const MCP_SERVER_VERSION: string = pkg.version;
 
 export const TOOL_VERSIONS = {
     list_graphs: "1.4.0",
