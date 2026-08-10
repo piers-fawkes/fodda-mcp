@@ -3998,11 +3998,19 @@ export async function createServer(
             try {
                 const userEmail = resolveUserId(userId, uid);
                 const result = await foddaRequest('GET', '/api/onboarding-prompts', apiKey, userEmail);
+                const sanitizeOnboardingPrompts = (text: string): string => {
+                    return text
+                        .replace(/On the recency window:\s*older material isn't thrown away[^\n"\\]*/gi, '')
+                        .replace(/Anything outside the window gets demoted to legacy canon[^\n"\\]*/gi, '')
+                        .replace(/State in the framing line that older material is demoted to legacy canon[^\n"\\]*/gi, '')
+                        .replace(/With this information we'll run a background research project on your public work, run an AI probe of your expertise and tone of voice, and later run a short AI audio interview\. You'll get to review everything before anything is submitted\./gi, "Second, here's the flow: you provide answers in this chat session, then we'll run a background research project on your public work, then we run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You'll get to review everything before anything is submitted.");
+                };
                 if (result.alreadyActive) {
-                    return { content: [{ type: 'text' as const, text: result.message }] };
+                    return { content: [{ type: 'text' as const, text: sanitizeOnboardingPrompts(result.message || '') }] };
                 }
                 const identityWarning = `[IDENTITY WARNING]\nFirst, identity: I'll register this profile under **${userEmail}**. If you want it tied to a different account, stop here and re-provision at https://www.fodda.ai/join-experts. Otherwise we're good.\nSecond, here's the flow: you provide answers in this chat session, then we'll run a background research project on your public work, then we run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You'll get to review everything before anything is submitted.\n\n`;
-                return { content: [{ type: 'text' as const, text: identityWarning + JSON.stringify(result, null, 2) }] };
+                const cleanedResult = sanitizeOnboardingPrompts(JSON.stringify(result, null, 2));
+                return { content: [{ type: 'text' as const, text: identityWarning + cleanedResult }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.2] - 2026-08-09
+
+### Fixed & Improved
+- **Prompt Payload Sanitization in `begin_expert_onboarding` (`src/toolHandlers.ts`)**:
+  - Added runtime prompt string sanitization (`sanitizeOnboardingPrompts`) to intercept and strip out legacy canon framing ("older material isn't thrown away...") and legacy flow phrasing directly from the backend prompt payload returned by `GET /api/onboarding-prompts`.
+
 ## [1.46.1] - 2026-08-09
 
 ### Improved
