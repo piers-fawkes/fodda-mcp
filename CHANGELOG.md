@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.11] - 2026-08-10
+
+### Added
+- **Hourly Consultation Fee Question to In-Chat Onboarding (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Added consultation rate prompt (`"If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, $250/hr, $500/hr, $750/hr, $1,000/hr, $2,000/hr)"`) to `begin_expert_onboarding` description and system prompt onboarding interview instructions.
+  - Added `callPrice` parameter to `submit_basic_info` schema and payload sent to `/api/prepare-voice-interview`.
+
 ## [1.46.10] - 2026-08-10
 
 ### Improved
