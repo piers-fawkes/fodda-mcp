@@ -3856,7 +3856,11 @@ export async function createServer(
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
                 if (consultWithheld) return consultWithheld;
-                return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
+                return {
+                    coverage: result.coverage,
+                    sources_used: result.sources_used,
+                    content: [{ type: 'text' as const, text: parts.join('\n') }]
+                };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -4031,7 +4035,11 @@ export async function createServer(
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
                 if (consultWithheld) return consultWithheld;
-                return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
+                return {
+                    coverage: result.coverage,
+                    sources_used: result.sources_used,
+                    content: [{ type: 'text' as const, text: parts.join('\n') }]
+                };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;

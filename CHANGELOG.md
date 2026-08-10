@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.13] - 2026-08-10
+
+### Fixed
+- **Align JSON Response Object `sources_used` and `coverage` with Text Footer (`src/toolHandlers.ts`)**:
+  - Ensured top-level response objects for `consult_analyst` and `consult_human_agent` include `coverage: result.coverage` and `sources_used: result.sources_used` alongside content blocks, bringing machine-readable JSON fields into 100% alignment with human-facing text footers.
+
 ## [1.46.12] - 2026-08-10
 
 ### Fixed & Added
