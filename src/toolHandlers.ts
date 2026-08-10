@@ -3747,17 +3747,39 @@ export async function createServer(
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
 
-                const parts: string[] = [reportText];
+                // Extract markdown links [Title](https://url) from response text
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string }> = [];
+                const seenUrls = new Set<string>();
 
-                // Surface server-side timing for observability
-                if (result.timing_ms != null) {
-                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+                if (result.sources_used && Array.isArray(result.sources_used)) {
+                    for (const s of result.sources_used) {
+                        if (typeof s === 'object' && s?.url) {
+                            seenUrls.add(s.url.trim());
+                        } else if (typeof s === 'string') {
+                            seenUrls.add(s.trim());
+                        }
+                    }
                 }
 
-                // --- Structured envelope fields (Phase 2 Digital Twin) ---
-                if (result.coverage) {
-                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
+                let mMatch: RegExpExecArray | null;
+                while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
+                    const rawTitle = mMatch[1];
+                    const rawUrl = mMatch[2];
+                    if (rawTitle && rawUrl) {
+                        const title = rawTitle.trim();
+                        const url = rawUrl.trim();
+                        if (url && !seenUrls.has(url)) {
+                            seenUrls.add(url);
+                            extractedSources.push({ title, url });
+                        }
+                    }
                 }
+
+                if (extractedSources.length > 0) {
+                    result.sources_used = [...(result.sources_used || []), ...extractedSources];
+                }
+
                 // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
                 if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
                     const expertObj = result.expert || result.analyst || match || {};
@@ -3772,6 +3794,20 @@ export async function createServer(
                             url: `https://www.fodda.ai/experts/${expertSlug}`
                         }
                     ];
+                }
+
+                result.coverage = (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) ? "FULL" : "PARTIAL";
+
+                const parts: string[] = [reportText];
+
+                // Surface server-side timing for observability
+                if (result.timing_ms != null) {
+                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+                }
+
+                // --- Structured envelope fields (Phase 2 Digital Twin) ---
+                if (result.coverage) {
+                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
@@ -3889,15 +3925,39 @@ export async function createServer(
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
 
-                const parts: string[] = [reportText];
+                // Extract markdown links [Title](https://url) from response text
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string }> = [];
+                const seenUrls = new Set<string>();
 
-                if (result.timing_ms != null) {
-                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+                if (result.sources_used && Array.isArray(result.sources_used)) {
+                    for (const s of result.sources_used) {
+                        if (typeof s === 'object' && s?.url) {
+                            seenUrls.add(s.url.trim());
+                        } else if (typeof s === 'string') {
+                            seenUrls.add(s.trim());
+                        }
+                    }
                 }
 
-                if (result.coverage) {
-                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
+                let mMatch: RegExpExecArray | null;
+                while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
+                    const rawTitle = mMatch[1];
+                    const rawUrl = mMatch[2];
+                    if (rawTitle && rawUrl) {
+                        const title = rawTitle.trim();
+                        const url = rawUrl.trim();
+                        if (url && !seenUrls.has(url)) {
+                            seenUrls.add(url);
+                            extractedSources.push({ title, url });
+                        }
+                    }
                 }
+
+                if (extractedSources.length > 0) {
+                    result.sources_used = [...(result.sources_used || []), ...extractedSources];
+                }
+
                 // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
                 if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
                     const expertObj = result.expert || result.analyst || match || {};
@@ -3912,6 +3972,18 @@ export async function createServer(
                             url: `https://www.fodda.ai/experts/${expertSlug}`
                         }
                     ];
+                }
+
+                result.coverage = (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) ? "FULL" : "PARTIAL";
+
+                const parts: string[] = [reportText];
+
+                if (result.timing_ms != null) {
+                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+                }
+
+                if (result.coverage) {
+                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {

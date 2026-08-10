@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.12] - 2026-08-10
+
+### Fixed & Added
+- **Extract Markdown Link Citations into `sources_used` & Set Coverage (`src/toolHandlers.ts`)**:
+  - Automatically extract markdown links (`[Title](https://url)`) from consult response prose text into `sources_used` array in `consult_analyst` and `consult_human_agent`.
+  - Dynamically evaluate and set `result.coverage` to `"FULL"` when `sources_used` contains structured or extracted links.
+
 ## [1.46.11] - 2026-08-10
 
 ### Added
