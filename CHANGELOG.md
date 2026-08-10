@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.15] - 2026-08-10
+
+### Fixed & Added
+- **Source-Tier Attribution & Honest Coverage (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `package.json`, `server.json`)**:
+  - **Graph Node Type-Based Coverage**: Updated `coverage` evaluation in `consult_analyst` and `consult_human_agent` to judge graph-tier sources by node `type` (`own_graph` / `library_graph` / graph evidence node) rather than URL presence, fixing the bug where graph-node sources without URLs caused JSON `FULL` vs footer `PARTIAL` mismatches.
+  - **Source Classification**: Categorized `sources_used` into three distinct tiers: `[Graph Sources]` (`own_graph` / `library_graph` / upstream graph evidence nodes), `[Supplemental Data]` (`supplemental` / financial / SEC data), and `[Web Sources]` (`web` / prose-extracted links with `origin: "prose"` / fallback profile link with `origin: "profile"`).
+  - **Honest Coverage Semantics**: `coverage: "FULL"` strictly requires 1 or more `[Graph Sources]`. Web-only or prose-extracted-only source sets map strictly to `coverage: "PARTIAL"`.
+  - **Tiered Footer Rendering**: Formatted `--- SOURCES USED ---` in consult responses to group sources into `[Graph Sources]`, `[Supplemental Data]`, and `[Web Sources]`.
+  - **Verbatim Platform-Voice Thin-Response Line**: When coverage resolves to `PARTIAL` with zero graph-tier sources, the MCP server surfaces Piers's platform-voice sentence verbatim: *"This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database."* followed by any active roster peer referrals in third-person platform voice.
+  - **System Prompt Updates (`src/systemPrompt.ts`)**: Updated `THREE-TIER RESEARCH ATTRIBUTION & VOICE POLICY` and `GROUNDED COVERAGE & GRAPH RETRIEVAL FRAMING` to mandate 1st-person expert voice for own graph, 1st-person cross-research voice for other curator graphs, and explicit "I found this on the web" framing for web material.
+  - **Zero Surface Change**: Preserved all 47 `server.tool(...)` registrations (`tools-manifest.json` count: 47).
+
 ## [1.46.14] - 2026-08-10
 
 ### Fixed & Added

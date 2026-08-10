@@ -3747,21 +3747,21 @@ export async function createServer(
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
 
-                // Extract markdown links [Title](https://url) from response text
-                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-                const extractedSources: Array<{ title: string; url: string }> = [];
+                // 1. Capture initial raw sources returned by upstream API
+                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
                 const seenUrls = new Set<string>();
 
-                if (result.sources_used && Array.isArray(result.sources_used)) {
-                    for (const s of result.sources_used) {
-                        if (typeof s === 'object' && s?.url) {
-                            seenUrls.add(s.url.trim());
-                        } else if (typeof s === 'string') {
-                            seenUrls.add(s.trim());
-                        }
+                for (const s of rawSources) {
+                    if (typeof s === 'object' && s?.url) {
+                        seenUrls.add(s.url.trim());
+                    } else if (typeof s === 'string') {
+                        seenUrls.add(s.trim());
                     }
                 }
 
+                // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
                 let mMatch: RegExpExecArray | null;
                 while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
                     const rawTitle = mMatch[1];
@@ -3771,37 +3771,59 @@ export async function createServer(
                         const url = rawUrl.trim();
                         if (url && !seenUrls.has(url)) {
                             seenUrls.add(url);
-                            extractedSources.push({ title, url });
+                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
                         }
                     }
                 }
 
-                if (extractedSources.length > 0) {
-                    result.sources_used = [...(result.sources_used || []), ...extractedSources];
-                }
+                const mergedSources = [...rawSources, ...extractedSources];
 
-                // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
-                if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
+                // 3. Fallback profile source if 0 sources exist
+                if (mergedSources.length === 0) {
                     const expertObj = result.expert || result.analyst || match || {};
                     const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
                     const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
                     const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
                     const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
 
-                    result.sources_used = [
-                        {
-                            title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
-                            url: `https://www.fodda.ai/experts/${expertSlug}`
-                        }
-                    ];
+                    mergedSources.push({
+                        title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                        url: `https://www.fodda.ai/experts/${expertSlug}`,
+                        origin: 'profile',
+                        type: 'web'
+                    });
                 }
 
-                const hasExternalEvidenceNodes = (result.sources_used || []).some((s: any) => {
-                    const url = typeof s === 'string' ? s : s?.url;
-                    if (!url) return false;
-                    return !url.includes('/experts/');
-                });
-                result.coverage = hasExternalEvidenceNodes ? "FULL" : "PARTIAL";
+                result.sources_used = mergedSources;
+
+                // 4. Source Tiering & Honest Coverage Calculation
+                // FULL requires at least 1 graph-tier source (own_graph, library_graph, or graph evidence node from upstream, judged by type, not URL)
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
+                    if (typeof s === 'string') {
+                        if (s.includes('/experts/')) return 'web';
+                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                        return rawSources.includes(s) ? 'graph' : 'web';
+                    }
+                    const origin = (s.origin || '').toLowerCase();
+                    const type = (s.type || s.kind || '').toLowerCase();
+                    const url = (s.url || '').toLowerCase();
+
+                    if (origin === 'prose' || origin === 'profile') return 'web';
+                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                    if (url) return 'web';
+                    return 'graph';
+                };
+
+                const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
+                const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
+                const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
+
+                const hasGraphTierSources = graphSources.length > 0;
+                result.coverage = hasGraphTierSources ? "FULL" : "PARTIAL";
 
                 const parts: string[] = [reportText];
 
@@ -3815,13 +3837,28 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
+                if (!hasGraphTierSources) {
+                    parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
+                }
+
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const sourceLines = result.sources_used.map((s: any) => {
+                    const formatLine = (s: any) => {
                         if (typeof s === 'string') return `- ${s}`;
                         const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
                         return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
-                    });
-                    parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
+                    };
+
+                    const sourceSections: string[] = ['--- SOURCES USED ---'];
+                    if (graphSources.length > 0) {
+                        sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                    }
+                    if (suppSources.length > 0) {
+                        sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
+                    }
+                    if (webSources.length > 0) {
+                        sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
+                    }
+                    parts.push(sourceSections.join('\n\n'));
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
                     const activeAnalysts = getAnalysts();
@@ -3934,21 +3971,21 @@ export async function createServer(
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
 
-                // Extract markdown links [Title](https://url) from response text
-                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-                const extractedSources: Array<{ title: string; url: string }> = [];
+                // 1. Capture initial raw sources returned by upstream API
+                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
                 const seenUrls = new Set<string>();
 
-                if (result.sources_used && Array.isArray(result.sources_used)) {
-                    for (const s of result.sources_used) {
-                        if (typeof s === 'object' && s?.url) {
-                            seenUrls.add(s.url.trim());
-                        } else if (typeof s === 'string') {
-                            seenUrls.add(s.trim());
-                        }
+                for (const s of rawSources) {
+                    if (typeof s === 'object' && s?.url) {
+                        seenUrls.add(s.url.trim());
+                    } else if (typeof s === 'string') {
+                        seenUrls.add(s.trim());
                     }
                 }
 
+                // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
                 let mMatch: RegExpExecArray | null;
                 while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
                     const rawTitle = mMatch[1];
@@ -3958,37 +3995,59 @@ export async function createServer(
                         const url = rawUrl.trim();
                         if (url && !seenUrls.has(url)) {
                             seenUrls.add(url);
-                            extractedSources.push({ title, url });
+                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
                         }
                     }
                 }
 
-                if (extractedSources.length > 0) {
-                    result.sources_used = [...(result.sources_used || []), ...extractedSources];
-                }
+                const mergedSources = [...rawSources, ...extractedSources];
 
-                // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
-                if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
+                // 3. Fallback profile source if 0 sources exist
+                if (mergedSources.length === 0) {
                     const expertObj = result.expert || result.analyst || match || {};
                     const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
                     const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
                     const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
                     const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
 
-                    result.sources_used = [
-                        {
-                            title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
-                            url: `https://www.fodda.ai/experts/${expertSlug}`
-                        }
-                    ];
+                    mergedSources.push({
+                        title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                        url: `https://www.fodda.ai/experts/${expertSlug}`,
+                        origin: 'profile',
+                        type: 'web'
+                    });
                 }
 
-                const hasExternalEvidenceNodes = (result.sources_used || []).some((s: any) => {
-                    const url = typeof s === 'string' ? s : s?.url;
-                    if (!url) return false;
-                    return !url.includes('/experts/');
-                });
-                result.coverage = hasExternalEvidenceNodes ? "FULL" : "PARTIAL";
+                result.sources_used = mergedSources;
+
+                // 4. Source Tiering & Honest Coverage Calculation
+                // FULL requires at least 1 graph-tier source (own_graph, library_graph, or graph evidence node from upstream, judged by type, not URL)
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
+                    if (typeof s === 'string') {
+                        if (s.includes('/experts/')) return 'web';
+                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                        return rawSources.includes(s) ? 'graph' : 'web';
+                    }
+                    const origin = (s.origin || '').toLowerCase();
+                    const type = (s.type || s.kind || '').toLowerCase();
+                    const url = (s.url || '').toLowerCase();
+
+                    if (origin === 'prose' || origin === 'profile') return 'web';
+                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                    if (url) return 'web';
+                    return 'graph';
+                };
+
+                const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
+                const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
+                const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
+
+                const hasGraphTierSources = graphSources.length > 0;
+                result.coverage = hasGraphTierSources ? "FULL" : "PARTIAL";
 
                 const parts: string[] = [reportText];
 
@@ -4000,13 +4059,28 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
+                if (!hasGraphTierSources) {
+                    parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
+                }
+
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const sourceLines = result.sources_used.map((s: any) => {
+                    const formatLine = (s: any) => {
                         if (typeof s === 'string') return `- ${s}`;
                         const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
                         return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
-                    });
-                    parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
+                    };
+
+                    const sourceSections: string[] = ['--- SOURCES USED ---'];
+                    if (graphSources.length > 0) {
+                        sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                    }
+                    if (suppSources.length > 0) {
+                        sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
+                    }
+                    if (webSources.length > 0) {
+                        sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
+                    }
+                    parts.push(sourceSections.join('\n\n'));
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
                     const activeAnalysts = getAnalysts();
