@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.4] - 2026-08-09
+
+### Improved
+- **Expertise Review Framing Update (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Replaced legacy `"Iteration Feedback Invitation"` title and intro in `begin_expert_onboarding` tool description and runtime prompt sanitizer (`sanitizeOnboardingPrompts`) with `"Expertise Review - Step 1"` and human-friendly JSON explanation text (*"This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker..."*).
+
 ## [1.46.3] - 2026-08-09
 
 ### Improved
