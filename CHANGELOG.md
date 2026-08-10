@@ -7,9 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.0] - 2026-08-09
+
+### Improved
+- **Graceful Unauthenticated Onboarding Kickoff & Tool Handling (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Updated `begin_expert_onboarding` and all downstream expert onboarding tools (`submit_basic_info`, `expert_onboarding_research`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `get_onboarding_status`, `schedule_interview`) when `!apiKey` to return `isError: false` with friendly markdown guidance and sign-in link (`https://www.fodda.ai/join-experts`), avoiding Claude UI's raw generic `Authentication required to use this tool` banner.
+  - Enhanced tool metadata title for `begin_expert_onboarding` to `'Kick off your Fodda Human Agent onboarding'`.
+  - Updated `begin_expert_onboarding` description to state that it checks for connected Fodda credentials and provides the direct sign-in link if unlinked.
+
 ## [1.45.0] - 2026-08-08
 
 ### Changed & Enhanced
+- **Absolute Zero-Slug & Zero-Graph-ID Rule (`src/systemPrompt.ts`, `src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Removed legacy system prompt exception in `src/systemPrompt.ts` line 191 that permitted outputting slugs/Graph IDs if the user was identified as Piers Fawkes or the platform coder.
+  - Enforced an absolute **ZERO EXCEPTIONS** rule prohibiting agents from surfacing, printing, or highlighting raw technical IDs or slugs (`peter-abraham-bicycles-cycling`, `anu-lingala-macro`, `ben-dietz-sic`, `brand-cmo`, etc.) to any user, developer, or maker.
+  - Updated tool parameter descriptions (`analyst_id` across `consult_analyst`, `consult_human_agent`, `request_deliverable`) to clarify that `analyst_id` is an internal machine reference and must never be displayed to users.
+  - Refined referral text responses in `consult_analyst` to append internal guidance reminding LLMs to refer to experts exclusively by their full human display name.
+  - Rebuilt `tools-manifest.json` with updated tool parameter descriptions.
+
 - **`send_feedback` Email Recipient (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
   - Updated Resend email `to` recipient to `piers.fawkes@psfk.com` and added `cc: ['team@fodda.ai']`.
   - Updated support email reference in `src/systemPrompt.ts` to `piers.fawkes@psfk.com`.

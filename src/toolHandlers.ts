@@ -3673,7 +3673,7 @@ export async function createServer(
         'consult_analyst',
         'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
         {
-            analyst_id: z.string().describe("The expert ID of the Synthetic Analyst (e.g., 'brand-cmo'). Also accepts company-specific alias queries like 'Nike CMO', 'Apple CEO', or 'Starbucks CFO'."),
+            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
             query: z.string().describe("The question or topic to discuss with the synthetic analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
@@ -3707,7 +3707,7 @@ export async function createServer(
                     return {
                         content: [{
                             type: 'text' as const,
-                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please use the consult_human_agent tool (analyst_id: "${resolvedAnalystId}").`
+                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please call consult_human_agent with analyst_id "${resolvedAnalystId}". (Internal guidance: analyst_id is an internal tool parameter — refer to the expert strictly as "${analystName}" in any user-facing output; do NOT output or highlight raw technical IDs/slugs).`
                         }]
                     };
                 }
@@ -3737,7 +3737,7 @@ export async function createServer(
                     return {
                         content: [{
                             type: 'text' as const,
-                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please use the consult_human_agent tool (analyst_id: "${resolvedAnalystId}").`
+                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please call consult_human_agent with analyst_id "${resolvedAnalystId}". (Internal guidance: analyst_id is an internal tool parameter — refer to the expert strictly as "${analystName}" in any user-facing output; do NOT output or highlight raw technical IDs/slugs).`
                         }]
                     };
                 }
@@ -3801,7 +3801,7 @@ export async function createServer(
                     return {
                         content: [{
                             type: 'text' as const,
-                            text: `${analyst_id} is a Human Agent (Digital Twin). To consult this expert, please use the consult_human_agent tool (analyst_id: "${analyst_id}").`
+                            text: `${analyst_id} is a Human Agent (Digital Twin). To consult this expert, please call consult_human_agent with analyst_id "${analyst_id}". (Internal guidance: analyst_id is an internal tool parameter — refer to the expert by display name in any user-facing output; do NOT output or highlight raw technical IDs/slugs).`
                         }]
                     };
                 }
@@ -3824,7 +3824,7 @@ export async function createServer(
         'consult_human_agent',
         'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
         {
-            analyst_id: z.string().describe("The expert ID of the Human Agent (e.g., 'anu-lingala-macro', 'ben-dietz-sic'). See list_analysts."),
+            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context and follow-ups cost less. Omit for a one-off question."),
@@ -3906,7 +3906,7 @@ export async function createServer(
         'request_deliverable',
         'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon."',
         {
-            analyst_id: z.string().describe("The analyst ID producing the deliverable (e.g., 'ben-dietz-sic'). See list_analysts."),
+            analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
             brief: z.string().describe("2–5 sentences: audience, goal, constraints. Agents imitate the example in the tool description — be concrete."),
             attachments: z.array(z.object({ content: z.string() })).optional().describe("Optional supporting text files mounted into the analyst's workspace (max 5)."),
@@ -3981,14 +3981,19 @@ export async function createServer(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "With this information we\'ll run a background research project on your public work, run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You\'ll get to review everything before anything is submitted." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". State in the framing line that older material is demoted to legacy canon, not discarded.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label MUST stay legible on any page background (this often renders on a dark/black page): give the label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. A soft #f5f0ff halo may sit behind the active stage dot itself.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Audio interview -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
+        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "With this information we\'ll run a background research project on your public work, run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You\'ll get to review everything before anything is submitted." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". State in the framing line that older material is demoted to legacy canon, not discarded.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label MUST stay legible on any page background (this often renders on a dark/black page): give the label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. A soft #f5f0ff halo may sit behind the active stage dot itself.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Audio interview -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'the onboarding kickoff step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your digital twin directly inside Claude, your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
+                    }]
+                };
             }
             try {
                 const userEmail = resolveUserId(userId, uid);
@@ -4016,7 +4021,7 @@ export async function createServer(
         { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ name, role, knowledgeArea, userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { action: 'basic_info', name, role, knowledgeArea });
@@ -4036,7 +4041,7 @@ export async function createServer(
         { title: 'the background research step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
@@ -4062,7 +4067,7 @@ export async function createServer(
                 return { isError: true, content: [{ type: 'text' as const, text: 'You must explicitly accept the Fodda Terms of Service and Privacy Policy to proceed.' }] };
             }
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { 
@@ -4087,7 +4092,7 @@ export async function createServer(
         { title: 'the detected expertise themes list', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
@@ -4111,7 +4116,7 @@ export async function createServer(
         { title: 'the theme confirmation step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ themes, userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
@@ -4146,7 +4151,7 @@ export async function createServer(
         { title: 'the onboarding progress status check', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ analystId, userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const userEmail = resolveUserId(userId, uid);
@@ -4174,7 +4179,7 @@ export async function createServer(
         { title: 'the interview scheduling step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ datetime, localTimeStr, now, userId: uid }) => {
             if (!apiKey) {
-                return { isError: true, content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
             try {
                 const userEmail = resolveUserId(userId, uid);
