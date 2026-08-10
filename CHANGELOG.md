@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.5] - 2026-08-09
+
+### Fixed
+- **Flow Stepper Visualization Enforcement (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Reinforced explicit `[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]` instructions across `get_detected_themes`, `confirm_themes`, and `submit_expertise_analysis` tool handlers so LLMs/Claude render the visual horizontal stepper diagram for stage 5 ("Choose your themes") rather than falling back to plain text.
+
 ## [1.46.4] - 2026-08-09
 
 ### Improved
