@@ -101,6 +101,12 @@ export const TOOL_VERSIONS = {
     get_capabilities: "1.0.0",
     expert_onboarding_research: "1.0.0",
     // v1.33.0 — LinkedIn content tools (evidence engine heads)
-    draft_linkedin_post: "1.0.0",
-    draft_linkedin_article: "1.0.0",
+    // v1.47.0 — Consolidated Surface
+    fodda_search: "1.0.0",
+    fodda_consult: "1.0.0",
+    fodda_research: "1.0.0",
+    fodda_content: "1.0.0",
+    fodda_deliverables: "1.0.0",
+    fodda_account: "1.0.0",
+    fodda_onboarding: "1.0.0",
 };

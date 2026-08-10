@@ -558,12 +558,8 @@ export async function createServer(
     }
 
     // --- get_my_account ---
-    server.tool(
-        'get_my_account',
-        'Check the current user\'s account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks "how many API calls do I have?", "what plan am I on?", "what graphs can I access?", or similar account questions. Returns live data — not cached from session start.',
-        {},
-        { title: 'Check Account Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async () => {
+    // --- get_my_account ---
+    const handle_get_my_account = async (args: any = {}) => {
             try {
                 // Fetch fresh account data from /v1/graphs (which returns _account)
                 const data = await foddaRequest('GET', '/v1/graphs', apiKey, userId);
@@ -647,16 +643,11 @@ export async function createServer(
                 const msg = errData.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- list_graphs ---
-    server.tool(
-        'list_graphs',
-        'List all expert knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts, and topic coverage (e.g. retail, tech, food, travel, fashion, beauty, sports). Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools.',
-        { userId: z.string().optional().describe('Optional user identifier. Authenticated users are identified automatically via API key. For trial users, this helps track usage.') },
-        { title: 'List Knowledge Graphs', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
+    const handle_list_graphs = async (args: any = {}) => {
+        let { userId: uid } = args;
             try {
                 const data = await foddaRequest('GET', '/v1/graphs', apiKey, resolveUserId(userId, uid));
 
@@ -691,16 +682,10 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- get_capabilities ---
-    server.tool(
-        'get_capabilities',
-        'Returns Fodda\'s main capabilities / features / offerings / products / services / tools and what they cost. Call this for any question about what Fodda can do or what\'s available.',
-        { userId: z.string().optional().describe('Optional user identifier.') },
-        { title: 'Get Fodda Capabilities & Pricing', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async () => {
+    const handle_get_capabilities = async (args: any = {}) => {
             const toolCosts = getToolCostSummary();
             const getCostStr = (toolName: string, fallback: string) => {
                 const matches = toolCosts.filter(c => c.tool === toolName);
@@ -796,16 +781,11 @@ export async function createServer(
                     }, null, 2)
                 }]
             };
-        }
-    );
+        };
 
     // --- list_analysts ---
-    server.tool(
-        'list_analysts',
-        'Lists available human agents and synthetic analysts (e.g. brand-cmo, brand-ceo, brand-cfo, human experts like Anu Lingala). To query a company-specific synthetic expert (e.g., "Nike CMO", "Apple CMO", "Adidas CEO"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: "Nike").',
-        { userId: z.string().optional().describe('Optional user identifier.') },
-        { title: 'List Human Agents & Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
+    const handle_list_analysts = async (args: any = {}) => {
+        let { userId: uid } = args;
             try {
                 const data = await foddaRequest('GET', '/v1/analysts', apiKey, resolveUserId(userId, uid));
                 let analystsList: any[] = [];
@@ -844,7 +824,25 @@ export async function createServer(
                             }
                         }
                     }
-                    const deduplicated = Array.from(seen.values());
+                    let deduplicated = Array.from(seen.values());
+                    const pageLimit = args.limit !== undefined ? Number(args.limit) : 20;
+                    const pageOffset = args.offset !== undefined ? Number(args.offset) : 0;
+                    const isSummary = args.summary !== false;
+                    
+                    if (isSummary) {
+                      deduplicated = deduplicated.map((a: any) => ({
+                        id: a.analyst_id || a.id || a.slug || a.name,
+                        name: a.name || a.display_name || a.title,
+                        title: a.title || a.role || a.job_title,
+                        vertical: a.vertical || a.domain || a.category,
+                        type: a.type,
+                        consult_tool: a.consult_tool,
+                        commissionable: a.commissionable,
+                        coverage_summary: a.coverage_summary || a.focus || (typeof a.description === 'string' ? a.description.slice(0, 150) : undefined)
+                      }));
+                    }
+                    const total_analysts = deduplicated.length;
+                    deduplicated = deduplicated.slice(pageOffset, pageOffset + pageLimit);
                     const result = {
                         company_query_guide,
                         analysts: deduplicated,
@@ -863,26 +861,12 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
 
     // --- search_graph ---
-    server.tool(
-        'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search. Price: $20 per query.',
-        {
-            mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
-            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
-            query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
-            use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
-            include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
-            skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
-        },
-        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ mode, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
+    const handle_search_graph = async (args: any = {}) => {
+        let { mode, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search', graphId);
@@ -1396,24 +1380,11 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'search_graph', userId, apiKey);
             }
-        }
-    );
+        };
 
     // --- get_neighbors ---
-    server.tool(
-        'get_neighbors',
-        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links that search alone wouldn\'t surface. Returns curated editorial connections between trends that web search cannot provide. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result.',
-        {
-            graphId: z.string().describe(GRAPH_ID_DESC),
-            seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            relationship_types: z.array(z.string()).optional().describe("Filter by relationship types: 'EVIDENCED_BY', 'RELATED_TO', 'SEMANTICALLY_SIMILAR', 'ASSOCIATED_BRAND', 'MENTIONS_BRAND', 'IN_LOCATION'"),
-            direction: z.enum(['in', 'out']).optional().describe("Traversal direction: 'out' (default) follows outgoing edges, 'in' follows incoming edges"),
-            depth: z.number().optional().describe('Traversal depth (default 1, max 2)'),
-            limit: z.number().optional().describe('Maximum results (default 50)')
-        },
-        { title: 'Explore Graph Neighbors', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, seed_node_ids, userId: uid, relationship_types, direction, depth, limit }: any) => {
+    const handle_get_neighbors = async (args: any = {}) => {
+        let { graphId, seed_node_ids, userId: uid, relationship_types, direction, depth, limit }: any = args;
             try {
                 const body: Record<string, any> = {
                     seed_node_ids,
@@ -1432,21 +1403,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- get_evidence ---
-    server.tool(
-        'get_evidence',
-        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool. Price: $0.50 per lookup.',
-        {
-            graphId: z.string().describe(GRAPH_ID_DESC),
-            for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            top_k: z.number().optional().describe('Number of evidence items to return (default 5)')
-        },
-        { title: 'Get Supporting Evidence', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, for_node_id, userId: uid, top_k }) => {
+    const handle_get_evidence = async (args: any = {}) => {
+        let { graphId, for_node_id, userId: uid, top_k } = args;
             try {
                 if (graphId === 'psfk') graphId = 'retail';
                 const body = { for_node_id, top_k: Math.min(top_k || 5, 10) };
@@ -1464,20 +1425,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- get_node ---
-    server.tool(
-        'get_node',
-        'Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result.',
-        {
-            graphId: z.string().describe(GRAPH_ID_DESC),
-            nodeId: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
-        },
-        { title: 'Get Node Details', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, nodeId, userId: uid }) => {
+    const handle_get_node = async (args: any = {}) => {
+        let { graphId, nodeId, userId: uid } = args;
             try {
                 if (graphId === 'psfk') graphId = 'retail';
                 const data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/nodes/${nodeId}`, apiKey, resolveUserId(userId, uid));
@@ -1493,21 +1445,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- get_label_values ---
-    server.tool(
-        'get_label_values',
-        'List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To get a complete list of every trend in a graph, call with label="Trend" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results.',
-        {
-            graphId: z.string().describe(GRAPH_ID_DESC),
-            label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            property: z.string().optional().describe('Optional property to return values for. Defaults vary by label.')
-        },
-        { title: 'Get Category Values', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, label, userId: uid, property }) => {
+    const handle_get_label_values = async (args: any = {}) => {
+        let { graphId, label, userId: uid, property } = args;
             try {
                 if (graphId === 'psfk') graphId = 'retail';
                 const propParam = property ? `?property=${encodeURIComponent(property)}` : '';
@@ -1519,23 +1461,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- discover_adjacent_trends ---
-    server.tool(
-        'discover_adjacent_trends',
-        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs.',
-        {
-            graphId: z.string().describe(GRAPH_ID_DESC),
-            trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            min_score: z.number().optional().describe('Minimum similarity score threshold (0-1). Default: 0.80'),
-            limit: z.number().optional().describe('Maximum number of adjacent trends to return. Default: 10'),
-            include_editorial: z.boolean().optional().describe('If true, also include editorially linked trends. Default: false')
-        },
-        { title: 'Discover Adjacent Trends', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, trend_id, userId: uid, min_score, limit, include_editorial }) => {
+    const handle_discover_adjacent_trends = async (args: any = {}) => {
+        let { graphId, trend_id, userId: uid, min_score, limit, include_editorial } = args;
             try {
                 if (graphId === 'psfk') graphId = 'retail';
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -1557,10 +1487,8 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
-    // --- brand_tracker ---
     const executeBrandTracker = async (brand_name: string, uid: string | undefined, graph_ids?: string[], include_evidence?: boolean, max_evidence?: number) => {
         const brandName = brand_name.trim();
         const includeEvidence = include_evidence !== false;
@@ -2119,18 +2047,9 @@ export async function createServer(
         return { profile, widget, EDITORIAL_INSTRUCTION };
     };
 
-    server.tool(
-        'brand_tracker',
-        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble. Price: $30 per report.',
-        {
-            brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            graph_ids: z.array(z.string()).optional().describe('Optional: specific graph IDs to search. If omitted, searches ALL accessible graphs.'),
-            include_evidence: z.boolean().optional().describe('If true (default), include individual evidence items. Set to false for summary-only.'),
-            max_evidence: z.number().optional().describe('Maximum evidence items per graph. Default: 10. Max: 25.'),
-        },
-        { title: 'Brand Intelligence Profile', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ brand_name, userId: uid, graph_ids, include_evidence, max_evidence }) => {
+    // --- brand_tracker ---
+    const handle_brand_tracker = async (args: any = {}) => {
+        let { brand_name, userId: uid, graph_ids, include_evidence, max_evidence } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(brand_name, 'brand_tracker');
@@ -2158,27 +2077,15 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
 
-    // --- get_supplemental_context (Unified Supplemental Endpoint) ---
     // Replaces 21 individual supplemental tools with a single call.
     // The API routes to 6-10 relevant sources based on query + domain,
     // queries them in parallel, and returns a consolidated response.
-    server.tool(
-        'get_supplemental_context',
-        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Price: $10 per query.',
-        {
-            query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty'). Include country names if searching non-US markets (e.g. 'Thailand consumer sentiment')."),
-            domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design', 'macro'. Do NOT pass 'culture' or 'technology' for macro economic or consumer sentiment queries — leave omitted or set to 'macro'."),
-            geo: z.string().optional().describe("Country code or geography hint (e.g., 'TH', 'US', 'GB') for country-filtered queries."),
-            brands: z.array(z.string()).optional().describe("Brand names to include in demand/product lookups (e.g., ['Nike', 'Adidas']). Triggers Google Trends comparison and Amazon product search."),
-            graph_ids: z.array(z.string()).optional().describe("Graph IDs from prior search results — helps refine domain inference."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Get Market Context Data', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ query, domain, geo, brands, graph_ids, userId: uid }) => {
+    // --- get_supplemental_context ---
+    const handle_get_supplemental_context = async (args: any = {}) => {
+        let { query, domain, geo, brands, graph_ids, userId: uid } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'supplemental_context');
@@ -2219,18 +2126,11 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
     // --- check_supplemental_status ---
-    server.tool(
-        'check_supplemental_status',
-        'Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED.',
-        {
-            job_id: z.string().describe('The Job ID returned by get_supplemental_context'),
-        },
-        { title: 'Check Supplemental Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ job_id }) => {
+    const handle_check_supplemental_status = async (args: any = {}) => {
+        let { job_id } = args;
             const job = activeSupplementalJobs.get(job_id);
             if (!job) {
                 return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
@@ -2251,24 +2151,12 @@ export async function createServer(
             }
 
             return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };
-        }
-    );
+        };
 
-    // --- get_domain_intelligence ---
     // Searches ALL PSFK curated domain graphs in parallel. Returns trends + bundled evidence.
-    server.tool(
-        'get_domain_intelligence',
-        "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context.",
-        {
-            query: z.string().describe("Natural language search query (e.g., 'sustainable packaging trends', 'Gen Z beauty habits')"),
-            limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
-            include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
-            max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
-            min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Search Domain Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
+    // --- get_domain_intelligence ---
+    const handle_get_domain_intelligence = async (args: any = {}) => {
+        let { query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid } = args;
             try {
                 const body: Record<string, any> = { query };
                 if (limit !== undefined) body.limit = limit;
@@ -2296,24 +2184,12 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
-    // --- get_expert_intelligence ---
     // Searches ALL expert specialist graphs in parallel.
-    server.tool(
-        'get_expert_intelligence',
-        "Search specialist knowledge graphs built by named strategists and industry leaders — contains proprietary analysis, expert interviews, and high-density statistics not available via web search. No graph ID needed — searches all expert graphs in parallel. Use when the query requires specialist depth, named-expert perspectives, or strategic frameworks beyond mainstream coverage. Expert graphs cover domains like macro strategy, wayfinding, design innovation, SXSW insights, and sector-specific research reports.",
-        {
-            query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'future of work')"),
-            limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
-            include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
-            max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
-            min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Search Expert Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
+    // --- get_expert_intelligence ---
+    const handle_get_expert_intelligence = async (args: any = {}) => {
+        let { query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid } = args;
             try {
                 const body: Record<string, any> = { query };
                 if (limit !== undefined) body.limit = limit;
@@ -2341,24 +2217,12 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
-    // --- get_report_intelligence ---
     // Searches ALL industry report graphs in parallel.
-    server.tool(
-        'get_report_intelligence',
-        "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Delta, and specialist research firms. Returns structured findings with bundled evidence — not raw PDFs or summaries, but editorially extracted trend data with source attribution. No graph ID needed. Use for market sizing, competitive landscape analysis, and data-heavy research where published report intelligence is more authoritative than web search results.",
-        {
-            query: z.string().describe("Natural language search query (e.g., 'luxury resale market size', 'electric vehicle adoption rates')"),
-            limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
-            include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
-            max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
-            min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Search Report Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
+    // --- get_report_intelligence ---
+    const handle_get_report_intelligence = async (args: any = {}) => {
+        let { query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid } = args;
             try {
                 const body: Record<string, any> = { query };
                 if (limit !== undefined) body.limit = limit;
@@ -2386,24 +2250,12 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
 
     // --- search_statistics ---
-    server.tool(
-        'search_statistics',
-        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage. Price: $0.50 per search.",
-        {
-            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
-            query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
-            limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
-            min_score: z.number().optional().describe('Minimum relevance threshold, 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ only for precise data lookups.'),
-            include_signals: z.boolean().optional().describe('Also include Signal nodes (case studies, brand examples). Default: false'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
-        },
-        { title: 'Search Statistics & Data Points', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ graph_id, query, limit, min_score, include_signals, userId: uid }) => {
+    const handle_search_statistics = async (args: any = {}) => {
+        let { graph_id, query, limit, min_score, include_signals, userId: uid } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search_statistics', graph_id);
@@ -2435,23 +2287,11 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
     // --- search_insights ---
-    server.tool(
-        'search_insights',
-        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide. Price: $0.50 per search.",
-        {
-            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
-            query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
-            types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
-            limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
-            min_score: z.number().optional().describe('Minimum relevance threshold 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ for precise lookups.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
-        },
-        { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ graph_id, query, types, limit, min_score, userId: uid }) => {
+    const handle_search_insights = async (args: any = {}) => {
+        let { graph_id, query, types, limit, min_score, userId: uid } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search_insights', graph_id);
@@ -2480,15 +2320,12 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
 
-    // ------------------------------------------------------------------
     // LinkedIn content tools — thin heads on the shared evidence engine
     // (src/linkedinEngine.ts). Server curates, client composes. The pack +
     // composition contract is the product; NO finished text is generated here.
-    // ------------------------------------------------------------------
 
     /** Shared handler body for both LinkedIn tool heads. */
     const runLinkedInHead = async (
@@ -2544,64 +2381,27 @@ export async function createServer(
     };
 
     // --- draft_linkedin_post ---
-    server.tool(
-        'draft_linkedin_post',
-        'Draft a LinkedIn post about any topic, grounded in Fodda\'s expert knowledge graphs. Use when the user says "draft a LinkedIn post about…", "write a post on…", "turn this into a LinkedIn post", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free.',
-        {
-            topic: z.string().describe("The topic to post about (e.g., 'agentic commerce', 'retail media networks')"),
-            angle: z.string().optional().describe('Optional thesis, or a post being responded to'),
-            voice: z.enum(['fodda_first_party', 'practitioner']).optional().describe("Bridge-line voice: 'fodda_first_party' (\"We found these using Fodda…\", default) or 'practitioner' (\"I pulled these from Fodda…\") for users posting about their own industry."),
-            sub_themes: z.array(z.string()).optional().describe("2–4 SPECIFIC sub-themes decomposing the topic (e.g. for 'agentic commerce': ['AI shopping agents checkout', 'retailer agent APIs', 'agent-to-agent payments']). Specific grounded queries consistently beat one broad query — supply these for best results."),
-            brand: z.string().optional().describe("Set ONLY when the topic IS a named brand/company (e.g. 'Nike'). Unlocks the earnings truth layer: analyst concerns, CEO quotes, and market-validated trends as verbal-attribution evidence."),
-            userId: z.string().optional().describe('Optional user identifier for usage tracking.'),
-        },
-        { title: 'Draft LinkedIn Post (Evidence Pack)', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ topic, angle, voice, sub_themes, brand, userId: uid }) =>
+    const handle_draft_linkedin_post = async (args: any = {}) => {
+        let { topic, angle, voice, sub_themes, brand, userId: uid } = args;
             runLinkedInHead('draft_linkedin_post', 'linkedin_post', {
                 mode: 'post', topic, angle, voice, brand, subThemes: sub_themes,
             }, uid)
-    );
+    };
 
     // --- draft_linkedin_article ---
-    server.tool(
-        'draft_linkedin_article',
-        'Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda\'s expert knowledge graphs. Use when the user says "turn this research into an article…", "write a LinkedIn article about…", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the "How we found this" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free.',
-        {
-            topic: z.string().describe("The article topic (e.g., 'the rise of agentic commerce')"),
-            thesis: z.string().optional().describe('The argument the article should make — gets pressure-tested by a Fodda analyst before drafting'),
-            voice: z.enum(['fodda_first_party', 'practitioner']).optional().describe("Bridge-line voice: 'fodda_first_party' (default) or 'practitioner'."),
-            target_length: z.number().optional().describe('Target word count (default ~1,000; contract allows ±20%)'),
-            sub_themes: z.array(z.string()).optional().describe('3–5 SPECIFIC sub-themes decomposing the topic. Specific grounded queries consistently beat one broad query — supply these for best results.'),
-            brand: z.string().optional().describe("Set ONLY when the topic IS a named brand/company. Unlocks the earnings truth layer (analyst concerns, CEO quotes, market-validated trends)."),
-            userId: z.string().optional().describe('Optional user identifier for usage tracking.'),
-        },
-        { title: 'Draft LinkedIn Article (Evidence Pack)', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ topic, thesis, voice, target_length, sub_themes, brand, userId: uid }) =>
+    const handle_draft_linkedin_article = async (args: any = {}) => {
+        let { topic, thesis, voice, target_length, sub_themes, brand, userId: uid } = args;
             runLinkedInHead('draft_linkedin_article', 'linkedin_article', {
                 mode: 'article', topic, angle: thesis, voice, brand, subThemes: sub_themes, targetLengthWords: target_length,
             }, uid)
-    );
+    };
 
-    // --- get_earnings_intelligence ---
     // Cross-company and industry-level earnings call intelligence.
     // For single-brand earnings, brand_tracker already includes earningsIntelligence.
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
-    server.tool(
-        'get_earnings_intelligence',
-        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance. Price: $30 per query.',
-        {
-            ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
-            brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
-            industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'consumer electronics')"),
-            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
-            search: z.string().optional().describe("Free text search in earnings summaries (e.g., 'labor costs', 'tariff guidance', 'AI investment')"),
-            dateFrom: z.string().optional().describe("ISO date range start (e.g., '2025-01-01')"),
-            dateTo: z.string().optional().describe("ISO date range end (e.g., '2026-06-01')"),
-            limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Query Earnings Call Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ ticker, brand, industry, sector, search, dateFrom, dateTo, limit, userId: uid }) => {
+    // --- get_earnings_intelligence ---
+    const handle_get_earnings_intelligence = async (args: any = {}) => {
+        let { ticker, brand, industry, sector, search, dateFrom, dateTo, limit, userId: uid } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(search || brand || ticker || industry || sector || 'earnings snapshot', 'earnings_intelligence');
@@ -2632,27 +2432,14 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
 
-    // --- get_earnings_divergence ---
     // Gaps between what analysts are concerned about and how management responds.
     // This is premium intelligence — surfaces deflection and narrative mismatches.
-    server.tool(
-        'get_earnings_divergence',
-        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Price: $20 per query.',
-        {
-            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
-            industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
-            search: z.string().optional().describe("Free text search (e.g., 'tariffs', 'AI capex', 'margin erosion')"),
-            dateFrom: z.string().optional().describe("ISO date range start"),
-            dateTo: z.string().optional().describe("ISO date range end"),
-            limit: z.number().int().optional().describe('Max results to return (default 10, max 25)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Detect Earnings Call Divergence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ sector, industry, search, dateFrom, dateTo, limit, userId: uid }) => {
+    // --- get_earnings_divergence ---
+    const handle_get_earnings_divergence = async (args: any = {}) => {
+        let { sector, industry, search, dateFrom, dateTo, limit, userId: uid } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(search || sector || industry || 'earnings divergence', 'earnings_divergence');
@@ -2681,28 +2468,13 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
-    // --- get_company_earnings ---
     // Per-ticker earnings intelligence: SWOT scores, sentiment, guidance, Q&A, competitive analysis.
     // One tool with a `view` parameter — not 5 separate tools (context budget).
-    server.tool(
-        'get_company_earnings',
-        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Price: $20 per query (coverage view is free). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
-        {
-            mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot, history, qa, compare, guidance, coverage (free). Defaults to snapshot.'),
-            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends. history: narrative timeline across quarters. qa: per-analyst Q&A entries with thematic tagging and response directness. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free).'),
-            ticker: z.string().optional().describe("Company ticker symbol (e.g. NKE, LULU, ONON). Required for snapshot, history, and qa views."),
-            tickers: z.string().optional().describe("Comma-separated ticker symbols for compare view (2-5 tickers). Only used when view=compare."),
-            period: z.string().optional().describe("Quarter filter (e.g. Q1-2026). Defaults to latest quarter."),
-            metrics: z.string().optional().describe("Comma-separated metric names for history view (e.g. swot_total,ceo_sentiment). Defaults to all."),
-            analyst: z.string().optional().describe("Analyst name filter for qa view."),
-            sector: z.string().optional().describe("Sector filter for guidance view."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ mode, view, ticker, tickers, period, metrics, analyst, sector, userId: uid }) => {
+    // --- get_company_earnings ---
+    const handle_get_company_earnings = async (args: any = {}) => {
+        let { mode, view, ticker, tickers, period, metrics, analyst, sector, userId: uid } = args;
             const effectiveView = mode || view || 'snapshot';
             try {
                 logUserQuery(ticker || tickers || sector || view || 'company earnings', 'earnings_company');
@@ -2779,22 +2551,11 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
     // --- get_validated_trends ---
-    server.tool(
-        'get_validated_trends',
-        'Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda\'s analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals. Price: $25 per query.',
-        {
-            ticker: z.string().optional().describe("Filter by company ticker symbol (e.g. 'NKE', 'LULU')."),
-            sector: z.string().optional().describe("Filter by sector (e.g. 'retail', 'sportswear', 'beauty')."),
-            search: z.string().optional().describe("Free text search in validated trends (e.g. 'resale', 'inventory', 'pricing')."),
-            limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Get Validated Consumer Trends from Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ ticker, sector, search, limit, userId: uid }) => {
+    const handle_get_validated_trends = async (args: any = {}) => {
+        let { ticker, sector, search, limit, userId: uid } = args;
             try {
                 logUserQuery(search || ticker || sector || 'validated trends', 'get_validated_trends');
                 const params = new URLSearchParams();
@@ -2818,19 +2579,11 @@ export async function createServer(
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey);
             }
-        }
-    );
+        };
 
     // --- update_user_profile ---
-    server.tool(
-        'update_user_profile',
-        'Save the user\'s research profile to improve the relevance of future responses. Call this after you understand the user\'s role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field.',
-        {
-            userContext: z.string().describe('Behavioral framing instructions for this person. Format: one sentence of identity, then numbered FRAMING INSTRUCTIONS. Example: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists." Max 2000 chars.'),
-            accountContext: z.string().optional().describe('Description of their company: industry, size, key markets, competitive position, mission. Shared across all users on this account. Max 2000 chars.'),
-        },
-        { title: 'Update Research Profile', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-        async ({ userContext, accountContext }) => {
+    const handle_update_user_profile = async (args: any = {}) => {
+        let { userContext, accountContext } = args;
             try {
                 const body: Record<string, string> = {};
                 if (userContext) body.userContext = String(userContext).slice(0, 2000);
@@ -2864,20 +2617,11 @@ export async function createServer(
                     }]
                 };
             }
-        }
-    );
+        };
 
     // --- toggle_graph_preference ---
-    server.tool(
-        'toggle_graph_preference',
-        'Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says "Turn off Paralogy", "Enable igloo", "Disable the economics data", or similar. The change is permanent until toggled again.',
-        {
-            target_id: z.string().describe('The ID of the graph, skill, or data source to toggle (e.g., "paralogy", "igloo", "retail", "get_bea_spending_snapshot"). Use the exact ID from list_graphs.'),
-            enabled: z.boolean().describe('true to enable (turn on), false to disable (turn off).'),
-            user_email: z.string().optional().describe('Optional. Use ONLY when operating as an Admin on behalf of another user to specify their email.')
-        },
-        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
-        async ({ target_id, enabled, user_email }) => {
+    const handle_toggle_graph_preference = async (args: any = {}) => {
+        let { target_id, enabled, user_email } = args;
             try {
                 const body: any = { target_id, enabled };
                 if (user_email) body.user_email = user_email;
@@ -2907,10 +2651,8 @@ export async function createServer(
                     }]
                 };
             }
-        }
-    );
+        };
 
-    // --- send_feedback ---
     const FEEDBACK_CATEGORY_EMOJI: Record<string, string> = {
         feedback: '💬',
         bug: '🐛',
@@ -2919,17 +2661,9 @@ export async function createServer(
         complaint: '😤',
     };
 
-    server.tool(
-        'send_feedback',
-        'Forward user feedback, feature requests, complaints, or prompt/answer quality issues to the Fodda team via email and Slack. Call this whenever a user shares feedback or expresses dissatisfaction — optionally include recent_prompt to capture the context.',
-        {
-            feedback: z.string().describe('The user\'s feedback, complaint, suggestion, or exit reason'),
-            user_email: z.string().optional().describe('User\'s email if known (for follow-up)'),
-            category: z.string().optional().describe("Category: 'feedback', 'bug', 'feature_request', 'exit_reason', 'complaint'"),
-            recent_prompt: z.string().optional().describe('The prompt or question that generated the answer being commented on'),
-        },
-        { title: 'Send Feedback', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ feedback, user_email, category, recent_prompt }) => {
+    // --- send_feedback ---
+    const handle_send_feedback = async (args: any = {}) => {
+        let { feedback, user_email, category, recent_prompt } = args;
             try {
                 const userLabel = user_email || (userId !== 'anonymous' ? userId : 'anonymous trial user');
                 const entryLabel = entryId ? ` (entry: ${entryId})` : '';
@@ -3004,23 +2738,12 @@ export async function createServer(
                     }]
                 };
             }
-        }
-    );
+        };
 
-    // --- sign_up_free_account ---
     const APP_BASE_URL = process.env.FODDA_APP_URL || 'https://app.fodda.ai';
-    server.tool(
-        'sign_up_free_account',
-        'Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company).',
-        {
-            email: z.string().describe('User\'s email address (required)'),
-            user_confirmed: z.literal(true).describe('Must be true — the user must have explicitly asked to create an account before this tool is called. Never set this to true speculatively or on behalf of the user.'),
-            name: z.string().optional().describe('User\'s full name (optional — collect conversationally after signup)'),
-            job_title: z.string().optional().describe('User\'s job title (optional)'),
-            company: z.string().optional().describe('User\'s company name (optional)'),
-        },
-        { title: 'Create Base Account', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ email, user_confirmed, name, job_title, company }) => {
+    // --- sign_up_free_account ---
+    const handle_sign_up_free_account = async (args: any = {}) => {
+        let { email, user_confirmed, name, job_title, company } = args;
             if (!user_confirmed) {
                 return {
                     isError: true,
@@ -3031,7 +2754,7 @@ export async function createServer(
                 // Derive firstName from name or email prefix
                 const firstName: string = name
                     ? (name.split(' ')[0] || name)
-                    : (email.split('@')[0] || 'User').replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    : (email.split('@')[0] || 'User').replace(/[._-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
 
                 const convertBody: Record<string, string> = {
                     email,
@@ -3095,23 +2818,14 @@ export async function createServer(
                     }]
                 };
             }
-        }
-    );
+        };
 
-    // --- brainstorm_topic ---
     // Fourth MCP orchestration flow: Graph-native ideation via neighbor traversal.
     // Uses get_neighbors as the core mechanism to discover unexpected connections,
     // adjacent territories, and cross-domain links that text search wouldn't surface.
-    server.tool(
-        'brainstorm_topic',
-        'Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, and geographic hotspots. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore.',
-        {
-            query: z.string().describe("The topic or theme to brainstorm around (e.g., 'tequila', 'sustainable packaging', 'Gen Z beauty')"),
-            depth: z.number().optional().describe('Traversal depth: 1 (immediate connections) or 2 (connections of connections). Default: 2. Use 1 for focused brainstorms, 2 for wider exploration.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-        },
-        { title: 'Brainstorm & Explore Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ query, depth, userId: uid }) => {
+    // --- brainstorm_topic ---
+    const handle_brainstorm_topic = async (args: any = {}) => {
+        let { query, depth, userId: uid } = args;
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'brainstorm_topic');
@@ -3302,19 +3016,11 @@ export async function createServer(
                 console.error('[brainstorm_topic] Error:', msg);
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- generate_visual ---
-    server.tool(
-        'generate_visual',
-        'Create a presentation-ready data visualization from research findings. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat.',
-        {
-            chart_type: z.enum(['cultural_shifts', 'competitive_compass', 'trend_constellation', 'implication_ladder', 'innovation_pathway', 'opportunity_map']).describe('The type of visualization to generate'),
-            data: z.string().describe('JSON string containing the chart data. Structure depends on chart_type. cultural_shifts: {shifts:[{from,to}]}. competitive_compass: {brands:[{name,x,y}], axes:{left,right,top,bottom}}. trend_constellation: {trends:[{name,x,y}], connections:[{from,to,strength}]}. implication_ladder: {signal,trend,so_what,do_what}. innovation_pathway: {now,near_term,future}. opportunity_map: {items:[{name,consumer_desire,market_activity}]}'),
-        },
-        { title: 'Generate Visual', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ chart_type, data }) => {
+    const handle_generate_visual = async (args: any = {}) => {
+        let { chart_type, data } = args;
             try {
                 const { renderCulturalShifts, renderCompetitiveCompass, renderTrendConstellation, renderImplicationLadder, renderInnovationPathway, renderWhiteSpaceMap } = await import('./svgVisuals.js');
                 const parsed = JSON.parse(data);
@@ -3355,31 +3061,11 @@ export async function createServer(
                 console.error('[generate_visual] Error:', err.message);
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }] };
             }
-        }
-    );
+        };
 
     // --- manage_scheduled_reports ---
-    server.tool(
-        'manage_scheduled_reports',
-        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Price: $20 per run. Supports topic research or brand intelligence report types.',
-        {
-            action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']),
-            query: z.string().optional().describe('For "create": the research query to run'),
-            email: z.string().optional().describe('Email address to deliver reports to'),
-            slack_webhook: z.string().optional().describe('Optional Slack webhook URL for delivery'),
-            graphs: z.array(z.string()).optional().describe('Specific graph IDs to search. Default: all accessible'),
-            schedule_id: z.string().optional().describe('For cancel/update/pause/resume: the schedule ID'),
-            cadence: z.enum(['weekly', 'daily']).optional()
-                .describe('weekly or daily (Mon-Fri). Default: weekly'),
-            timezone: z.enum(['london', 'new_york', 'san_francisco', 'sydney']).optional()
-                .describe('Delivery timezone for 9am delivery. Default: new_york'),
-            report_type: z.enum(['topic_research', 'brand_intelligence']).optional()
-                .describe('topic_research for sector trends, brand_intelligence for competitive tracking'),
-            brands: z.array(z.string()).optional()
-                .describe('For brand_intelligence: brand names to track (e.g., ["Nike", "Patagonia"])'),
-        },
-        { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-        async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
+    const handle_manage_scheduled_reports = async (args: any = {}) => {
+        let { action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands } = args;
             try {
                 if (action === 'create') {
                     if (!query) return { isError: true, content: [{ type: 'text' as const, text: 'A research query is required to create a schedule.' }] };
@@ -3430,19 +3116,11 @@ export async function createServer(
                 console.error('[manage_scheduled_reports] Error:', err.message);
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }] };
             }
-        }
-    );
+        };
 
     // --- read_url ---
-    server.tool(
-        'read_url',
-        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Price: $20 per URL lookup.',
-        {
-            url: z.string().describe('The URL to read and extract content from'),
-            userId: z.string().optional().describe('Optional user identifier for usage tracking.')
-        },
-        { title: 'Read URL Content', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-        async ({ url, userId: uid }) => {
+    const handle_read_url = async (args: any = {}) => {
+        let { url, userId: uid } = args;
             try {
                 const result = await waverunnerRequest(
                     'search', // Uses standard search pool
@@ -3497,26 +3175,14 @@ export async function createServer(
                 console.error('[read_url] Error:', msg);
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
-    // --- deep_research_topic (Skills-Based Agent via Waverunner) ---
     // Uses the fodda-researcher agent with 5 skill instruction files.
     // Flow: Pre-fetch graph data → Build skill-loaded system instruction → 
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
-    server.tool(
-        'deep_research_topic',
-        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Price: $55 (light mode) or $100 (heavy mode). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
-        {
-            query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
-            sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
-            graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
-            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster research ($55), "heavy" for comprehensive deep dive ($100). Defaults to "light".'),
-            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster research ($55), "heavy" for comprehensive deep dive ($100). Defaults to "light".'),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Deep Research Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ query, sub_themes, graphId, mode, depth, userId: uid }) => {
+    // --- deep_research_topic ---
+    const handle_deep_research_topic = async (args: any = {}) => {
+        let { query, sub_themes, graphId, mode, depth, userId: uid } = args;
             const resolvedUserId = resolveUserId(userId, uid);
             const effectiveDepth = mode || depth || 'light';
             const isHeavy = effectiveDepth === 'heavy';
@@ -3627,18 +3293,11 @@ export async function createServer(
                 const msg = err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- check_research_status ---
-    server.tool(
-        'check_research_status',
-        'Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED.',
-        {
-            job_id: z.string().describe('The Job ID returned by deep_research_topic'),
-        },
-        { title: 'Check Research Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ job_id }) => {
+    const handle_check_research_status = async (args: any = {}) => {
+        let { job_id } = args;
             const job = activeResearchJobs.get(job_id);
             if (!job) {
                 return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
@@ -3665,22 +3324,11 @@ export async function createServer(
             }
 
             return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };
-        }
-    );
+        };
 
     // --- consult_analyst ---
-    server.tool(
-        'consult_analyst',
-        'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
-        {
-            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
-            query: z.string().describe("The question or topic to discuss with the synthetic analyst"),
-            company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
-            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, query, company, session_id, userId: uid }) => {
+    const handle_consult_analyst = async (args: any = {}) => {
+        let { analyst_id, query, company, session_id, userId: uid } = args;
             try {
                 // Resolve potential alias IDs (e.g., "Nike CMO" -> analyst_id: "brand-cmo", company: "Nike")
                 const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
@@ -3747,21 +3395,21 @@ export async function createServer(
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
 
-                // Extract markdown links [Title](https://url) from response text
-                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-                const extractedSources: Array<{ title: string; url: string }> = [];
+                // 1. Capture initial raw sources returned by upstream API
+                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
                 const seenUrls = new Set<string>();
 
-                if (result.sources_used && Array.isArray(result.sources_used)) {
-                    for (const s of result.sources_used) {
-                        if (typeof s === 'object' && s?.url) {
-                            seenUrls.add(s.url.trim());
-                        } else if (typeof s === 'string') {
-                            seenUrls.add(s.trim());
-                        }
+                for (const s of rawSources) {
+                    if (typeof s === 'object' && s?.url) {
+                        seenUrls.add(s.url.trim());
+                    } else if (typeof s === 'string') {
+                        seenUrls.add(s.trim());
                     }
                 }
 
+                // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
                 let mMatch: RegExpExecArray | null;
                 while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
                     const rawTitle = mMatch[1];
@@ -3771,37 +3419,59 @@ export async function createServer(
                         const url = rawUrl.trim();
                         if (url && !seenUrls.has(url)) {
                             seenUrls.add(url);
-                            extractedSources.push({ title, url });
+                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
                         }
                     }
                 }
 
-                if (extractedSources.length > 0) {
-                    result.sources_used = [...(result.sources_used || []), ...extractedSources];
-                }
+                const mergedSources = [...rawSources, ...extractedSources];
 
-                // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
-                if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
+                // 3. Fallback profile source if 0 sources exist
+                if (mergedSources.length === 0) {
                     const expertObj = result.expert || result.analyst || match || {};
                     const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
                     const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
                     const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
                     const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
 
-                    result.sources_used = [
-                        {
-                            title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
-                            url: `https://www.fodda.ai/experts/${expertSlug}`
-                        }
-                    ];
+                    mergedSources.push({
+                        title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                        url: `https://www.fodda.ai/experts/${expertSlug}`,
+                        origin: 'profile',
+                        type: 'web'
+                    });
                 }
 
-                const hasExternalEvidenceNodes = (result.sources_used || []).some((s: any) => {
-                    const url = typeof s === 'string' ? s : s?.url;
-                    if (!url) return false;
-                    return !url.includes('/experts/');
-                });
-                result.coverage = hasExternalEvidenceNodes ? "FULL" : "PARTIAL";
+                result.sources_used = mergedSources;
+
+                // 4. Source Tiering & Honest Coverage Calculation
+                // FULL requires at least 1 graph-tier source (own_graph, library_graph, or graph evidence node from upstream)
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
+                    if (typeof s === 'string') {
+                        if (s.includes('/experts/')) return 'web';
+                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                        return rawSources.includes(s) ? 'graph' : 'web';
+                    }
+                    const origin = (s.origin || '').toLowerCase();
+                    const type = (s.type || s.kind || '').toLowerCase();
+                    const url = (s.url || '').toLowerCase();
+
+                    if (origin === 'prose' || origin === 'profile') return 'web';
+                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                    if (url) return 'web';
+                    return 'graph';
+                };
+
+                const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
+                const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
+                const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
+
+                const hasGraphTierSources = graphSources.length > 0;
+                result.coverage = hasGraphTierSources ? "FULL" : "PARTIAL";
 
                 const parts: string[] = [reportText];
 
@@ -3815,13 +3485,28 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
+                if (!hasGraphTierSources) {
+                    parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
+                }
+
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const sourceLines = result.sources_used.map((s: any) => {
+                    const formatLine = (s: any) => {
                         if (typeof s === 'string') return `- ${s}`;
                         const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
                         return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
-                    });
-                    parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
+                    };
+
+                    const sourceSections: string[] = ['--- SOURCES USED ---'];
+                    if (graphSources.length > 0) {
+                        sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                    }
+                    if (suppSources.length > 0) {
+                        sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
+                    }
+                    if (webSources.length > 0) {
+                        sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
+                    }
+                    parts.push(sourceSections.join('\n\n'));
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
                     const activeAnalysts = getAnalysts();
@@ -3895,22 +3580,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     // --- consult_human_agent ---
-    server.tool(
-        'consult_human_agent',
-        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
-        {
-            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
-            query: z.string().describe("The question or topic to discuss with the human agent"),
-            company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
-            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context and follow-ups cost less. Omit for a one-off question."),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Consult Human Agent (Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, query, company, session_id, userId: uid }) => {
+    const handle_consult_human_agent = async (args: any = {}) => {
+        let { analyst_id, query, company, session_id, userId: uid } = args;
             try {
                 const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
@@ -3934,21 +3608,21 @@ export async function createServer(
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
 
-                // Extract markdown links [Title](https://url) from response text
-                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-                const extractedSources: Array<{ title: string; url: string }> = [];
+                // 1. Capture initial raw sources returned by upstream API
+                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
                 const seenUrls = new Set<string>();
 
-                if (result.sources_used && Array.isArray(result.sources_used)) {
-                    for (const s of result.sources_used) {
-                        if (typeof s === 'object' && s?.url) {
-                            seenUrls.add(s.url.trim());
-                        } else if (typeof s === 'string') {
-                            seenUrls.add(s.trim());
-                        }
+                for (const s of rawSources) {
+                    if (typeof s === 'object' && s?.url) {
+                        seenUrls.add(s.url.trim());
+                    } else if (typeof s === 'string') {
+                        seenUrls.add(s.trim());
                     }
                 }
 
+                // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
                 let mMatch: RegExpExecArray | null;
                 while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
                     const rawTitle = mMatch[1];
@@ -3958,37 +3632,59 @@ export async function createServer(
                         const url = rawUrl.trim();
                         if (url && !seenUrls.has(url)) {
                             seenUrls.add(url);
-                            extractedSources.push({ title, url });
+                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
                         }
                     }
                 }
 
-                if (extractedSources.length > 0) {
-                    result.sources_used = [...(result.sources_used || []), ...extractedSources];
-                }
+                const mergedSources = [...rawSources, ...extractedSources];
 
-                // Fallback sources_used: when 0 graph evidence cards returned, cite official profile URL
-                if (!result.sources_used || !Array.isArray(result.sources_used) || result.sources_used.length === 0) {
+                // 3. Fallback profile source if 0 sources exist
+                if (mergedSources.length === 0) {
                     const expertObj = result.expert || result.analyst || match || {};
                     const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
                     const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
                     const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
                     const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
 
-                    result.sources_used = [
-                        {
-                            title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
-                            url: `https://www.fodda.ai/experts/${expertSlug}`
-                        }
-                    ];
+                    mergedSources.push({
+                        title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                        url: `https://www.fodda.ai/experts/${expertSlug}`,
+                        origin: 'profile',
+                        type: 'web'
+                    });
                 }
 
-                const hasExternalEvidenceNodes = (result.sources_used || []).some((s: any) => {
-                    const url = typeof s === 'string' ? s : s?.url;
-                    if (!url) return false;
-                    return !url.includes('/experts/');
-                });
-                result.coverage = hasExternalEvidenceNodes ? "FULL" : "PARTIAL";
+                result.sources_used = mergedSources;
+
+                // 4. Source Tiering & Honest Coverage Calculation
+                // FULL requires at least 1 graph-tier source (own_graph, library_graph, or graph evidence node from upstream)
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
+                    if (typeof s === 'string') {
+                        if (s.includes('/experts/')) return 'web';
+                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                        return rawSources.includes(s) ? 'graph' : 'web';
+                    }
+                    const origin = (s.origin || '').toLowerCase();
+                    const type = (s.type || s.kind || '').toLowerCase();
+                    const url = (s.url || '').toLowerCase();
+
+                    if (origin === 'prose' || origin === 'profile') return 'web';
+                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                    if (url) return 'web';
+                    return 'graph';
+                };
+
+                const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
+                const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
+                const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
+
+                const hasGraphTierSources = graphSources.length > 0;
+                result.coverage = hasGraphTierSources ? "FULL" : "PARTIAL";
 
                 const parts: string[] = [reportText];
 
@@ -4000,13 +3696,28 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
+                if (!hasGraphTierSources) {
+                    parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
+                }
+
                 if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const sourceLines = result.sources_used.map((s: any) => {
+                    const formatLine = (s: any) => {
                         if (typeof s === 'string') return `- ${s}`;
                         const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
                         return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
-                    });
-                    parts.push(`--- SOURCES USED ---\n${sourceLines.join('\n')}`);
+                    };
+
+                    const sourceSections: string[] = ['--- SOURCES USED ---'];
+                    if (graphSources.length > 0) {
+                        sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                    }
+                    if (suppSources.length > 0) {
+                        sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
+                    }
+                    if (webSources.length > 0) {
+                        sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
+                    }
+                    parts.push(sourceSections.join('\n\n'));
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
                     const activeAnalysts = getAnalysts();
@@ -4063,22 +3774,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
-    // --- request_deliverable (Agentic Analysts Phase C) ---
-    server.tool(
-        'request_deliverable',
-        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon."',
-        {
-            analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
-            offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
-            brief: z.string().describe("2–5 sentences: audience, goal, constraints. Agents imitate the example in the tool description — be concrete."),
-            attachments: z.array(z.object({ content: z.string() })).optional().describe("Optional supporting text files mounted into the analyst's workspace (max 5)."),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Request Analyst Deliverable', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, offering_key, brief, attachments, userId: uid }) => {
+    // --- request_deliverable ---
+    const handle_request_deliverable = async (args: any = {}) => {
+        let { analyst_id, offering_key, brief, attachments, userId: uid } = args;
             try {
                 logUserQuery(brief, 'skill_deliverable');
 
@@ -4108,19 +3808,11 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
-    // --- check_deliverable_status (Agentic Analysts Phase C) ---
-    server.tool(
-        'check_deliverable_status',
-        'Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status ("working" | "completed" | "failed") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s.',
-        {
-            job_id: z.string().describe("The job_id returned by request_deliverable."),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Check Deliverable Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ job_id, userId: uid }) => {
+    // --- check_deliverable_status ---
+    const handle_check_deliverable_status = async (args: any = {}) => {
+        let { job_id, userId: uid } = args;
             try {
                 const result = await foddaRequest(
                     'GET',
@@ -4135,23 +3827,16 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
-    // --- Expert Onboarding (Connector Flow) ---
     const parseWebsiteError = (err: any): string => {
         const d = err.response?.data;
         return (typeof d?.error === 'string' ? d.error : d?.error?.message) || d?.message || err.message;
     };
 
-    server.tool(
-        'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "Second, here\'s the flow: you provide answers in this chat session, then we\'ll run a background research project on your public work, then we run an AI probe of your expertise and tone of voice, and later run a short AI audio interview. You\'ll get to review everything before anything is submitted." When indexing or analyzing expert data, reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). When presenting the expertise map JSON to the expert, label it "Expertise Review - Step 1" and introduce it with: "This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker. The details reflect the themes above. If you are not happy about something I have included, just provide the feedback and I will run the exercise again to update the document." Never use the title "Iteration Feedback Invitation". Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". Do not state or output any framing about older material being demoted to legacy canon.\nQ3 - Preferred 1-hour consultation rate (single select): "If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, $250/hr, $500/hr, $750/hr, $1,000/hr, $2,000/hr)". Record this value under callPrice in submit_basic_info.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label MUST stay legible on any page background (this often renders on a dark/black page): give the label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. A soft #f5f0ff halo may sit behind the active stage dot itself.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Audio interview -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
-        {
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ userId: uid }) => {
+    // --- begin_expert_onboarding ---
+    const handle_begin_expert_onboarding = async (args: any = {}) => {
+        let { userId: uid } = args;
             if (!apiKey) {
                 return {
                     content: [{
@@ -4181,21 +3866,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'submit_basic_info',
-        'Submit basic information (name, role, knowledge area, call price) for the expert onboarding process. IMPORTANT: Never display analystId, internal schema fields, or developer meta-instructions to the expert. Inform the expert: "Background research on your public work is now running. It folds into the profile automatically, so we can keep moving." Reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off." Render the visual horizontal flow stepper for stage 2 ("Background research"). Next step: Run expert_onboarding_research tool.',
-        {
-            name: z.string().describe("The expert's full name"),
-            role: z.string().describe("The expert's current role or title"),
-            knowledgeArea: z.string().describe("The expert's primary knowledge area"),
-            callPrice: z.string().optional().describe("The expert's preferred 1-hour video/telephone consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Recorded under callPrice."),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ name, role, knowledgeArea, callPrice, userId: uid }) => {
+    // --- submit_basic_info ---
+    const handle_submit_basic_info = async (args: any = {}) => {
+        let { name, role, knowledgeArea, callPrice, userId: uid } = args;
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
@@ -4205,17 +3880,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'expert_onboarding_research',
-        'Kick off asynchronous background research on your public work for the expert onboarding. The identity is derived from your connector session. When beginning the analysis for stage 3 (indexing/reading back through conversations and meeting transcripts), explicitly reassure the expert: "And remember, nothing gets sent to the Fodda servers without your sign off." Render the visual horizontal flow stepper for stage 3 ("Expertise map and voice study"). Never expose developer instructions or raw JSON keys to the expert.',
-        {
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the background research step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ userId: uid }) => {
+    // --- expert_onboarding_research ---
+    const handle_expert_onboarding_research = async (args: any = {}) => {
+        let { userId: uid } = args;
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
@@ -4225,20 +3894,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'submit_expertise_analysis',
-        'Submit the analyzed voice study and expertise map JSON outputs from the LLM. Once submitted, render the visual horizontal flow stepper for stage 4/5 ("Terms and consent" -> "Choose your themes"), present the Expertise Review - Step 1, and call get_detected_themes. Never display analystId or developer meta-instructions to the expert.',
-        {
-            voiceStudy: z.string().describe("JSON string of the voice study"),
-            expertTopics: z.string().describe("JSON string of the expertise topics"),
-            termsAccepted: z.boolean().describe("Must be true. The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after you present the links to them."),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the expertise analysis submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ voiceStudy, expertTopics, termsAccepted, userId: uid }) => {
+    // --- submit_expertise_analysis ---
+    const handle_submit_expertise_analysis = async (args: any = {}) => {
+        let { voiceStudy, expertTopics, termsAccepted, userId: uid } = args;
             if (!termsAccepted) {
                 return { isError: true, content: [{ type: 'text' as const, text: 'You must explicitly accept the Fodda Terms of Service and Privacy Policy to proceed.' }] };
             }
@@ -4256,17 +3916,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'get_detected_themes',
-        'Fetch the detected themes derived from the expertise analysis and background research. Reframe the introduction using the ACTUAL count of themes returned (themes.length): "N expert topics were detected from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters." NEVER hardcode a count. Present all identified topics in one single numbered list, or state explicitly "recommending N of M". [FLOW VISUALIZATION - REQUIRED IF SUPPORTED]: You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 5 "Choose your themes" as "You are here", #663399 fill, #ffffff text). Never expose developer meta-text to the expert.',
-        {
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the detected expertise themes list', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
+    // --- get_detected_themes ---
+    const handle_get_detected_themes = async (args: any = {}) => {
+        let { userId: uid } = args;
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
@@ -4276,18 +3930,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'confirm_themes',
-        'Confirm the selected themes to generate the interview questionnaire. [FLOW VISUALIZATION - REQUIRED IF SUPPORTED]: You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 6 "Audio interview" as "You are here", #663399 fill, #ffffff text). Present the 8-question interview questionnaire arc and instruct the expert to schedule their voice interview using the schedule_interview tool. Never expose developer meta-text to the expert.',
-        {
-            themes: z.array(z.string()).describe("Array of confirmed theme names"),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the theme confirmation step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ themes, userId: uid }) => {
+    // --- confirm_themes ---
+    const handle_confirm_themes = async (args: any = {}) => {
+        let { themes, userId: uid } = args;
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
@@ -4311,18 +3958,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'get_onboarding_status',
-        'Check the status of the expert onboarding process. The identity is derived from your connector session. IMPORTANT: analystId is an internal reference — do not display it to the expert.',
-        {
-            analystId: z.string().optional().describe('Optional specific Analyst ID to check status for.'),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the onboarding progress status check', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ analystId, userId: uid }) => {
+    // --- get_onboarding_status ---
+    const handle_get_onboarding_status = async (args: any = {}) => {
+        let { analystId, userId: uid } = args;
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
@@ -4337,20 +3977,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'schedule_interview',
-        'Schedule your voice interview. You can specify a datetime (UTC ISO string) and localTimeStr (human-readable time, e.g. "Tuesday, July 14 at 3:00 PM EDT"), or request an instant interview now.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nWhen presenting booking confirmation and the Google Meet join link, you MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 6 "Audio interview (join now)" as "You are here", #663399 fill, #ffffff text). Never output plain code-formatted text ladders. Never output internal developer QA history, past trial runs, or technical meta-comments.\n\n[SCHEDULING BEHAVIOR]\nIf the expert chooses to schedule for later rather than start now: first check whether a calendar tool/connector is available in this session. If one is, look at their availability and proactively offer 2-3 specific open windows within the next 24 hours, in their local timezone, instead of asking them to name a time cold. If no calendar is connected, simply ask for a preferred day and time (assume the expert\'s local timezone; confirm it if unclear).\n\n[AFTER BOOKING]\nOnce a time is confirmed and this tool returns a Google Meet join link, add the interview to the expert\'s calendar automatically - create the event at the booked time, titled "Fodda Human Agent — audio interview with <the expert\'s full name>", with the join link inside it - rather than asking whether they want it added. Then confirm in one line that it is on their calendar, and include the calendar event link in that confirmation. Only skip the auto-add if no calendar tool is available in the session.',
-        {
-            datetime: z.string().optional().describe('ISO-8601 UTC datetime for the scheduled interview (e.g. "2026-07-14T19:00:00.000Z")'),
-            localTimeStr: z.string().optional().describe('Human-readable local time representation (e.g. "Tuesday, July 14 at 3:00 PM EDT")'),
-            now: z.boolean().optional().describe('Set to true to dispatch an instant interview bot immediately'),
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'the interview scheduling step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ datetime, localTimeStr, now, userId: uid }) => {
+    // --- schedule_interview ---
+    const handle_schedule_interview = async (args: any = {}) => {
+        let { datetime, localTimeStr, now, userId: uid } = args;
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts' }] };
             }
@@ -4365,17 +3996,11 @@ export async function createServer(
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
-        }
-    );
+        };
 
-    server.tool(
-        'get_my_earnings',
-        'Check the expert\'s Fodda earnings.',
-        {
-            userId: z.string().optional().describe('Optional user identifier.')
-        },
-        { title: 'Get My Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
+    // --- get_my_earnings ---
+    const handle_get_my_earnings = async (args: any = {}) => {
+        let { userId: uid } = args;
             try {
                 // Mapped to /v1/analysts/me/earnings as requested by Brief 402 + Agentic Access constraints
                 const result = await foddaRequest('GET', '/v1/analysts/me/earnings', apiKey, resolveUserId(userId, uid));
@@ -4384,8 +4009,7 @@ export async function createServer(
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
-        }
-    );
+        };
 
     if (allowedTools && (Array.isArray(allowedTools) ? allowedTools.length > 0 : allowedTools.size > 0)) {
         const allowedSet = allowedTools instanceof Set ? allowedTools : new Set(allowedTools);
@@ -4402,4 +4026,223 @@ export async function createServer(
     }
 
     return server;
+
+    // =========================================================================
+    // CONSOLIDATED TOOLS (7 INTENT-LEVEL TOOLS)
+    // =========================================================================
+
+    // 1. fodda_search
+    server.tool(
+        'fodda_search',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs (retail, beauty, tech, food, travel, sports, 30+ specialist domains), domain intelligence, published report research, brand footprints, company earnings transcripts, quantitative statistics, expert insights, source evidence, or list accessible graphs. Price: $20 per graph/earnings query, $30 per brand report, $35 for domain intelligence, $55 for report intelligence, $0.50 per evidence/insight/statistic lookup, free for graph listing.',
+        {
+            view: z.enum(['graph', 'domain', 'report', 'brand', 'earnings', 'statistics', 'insights', 'evidence', 'list_graphs']).optional().default('graph').describe('Search view mode.'),
+            query: z.string().optional().describe('Search query, topic, brand, or stock ticker.'),
+            graph_id: z.string().optional().describe('Optional specific graph ID (e.g. "psfk_retail").'),
+            company: z.string().optional().describe('Optional target company name or stock ticker.'),
+            limit: z.number().optional().default(30).describe('Pagination limit for list_graphs (default 30).'),
+            offset: z.number().optional().default(0).describe('Pagination offset for list_graphs (default 0).'),
+            max_evidence: z.number().optional().default(5).describe('Maximum evidence items per node (default 5).'),
+            node_id: z.string().optional().describe('Node ID for evidence or graph detail lookups.'),
+        },
+        { title: 'Search Knowledge Graphs & Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        async (args: any) => {
+            const view = args.view || 'graph';
+            if (view === 'list_graphs') {
+                return await handle_list_graphs(args);
+            } else if (view === 'domain') {
+                return await handle_get_domain_intelligence(args);
+            } else if (view === 'report') {
+                return await handle_get_report_intelligence(args);
+            } else if (view === 'brand') {
+                return await handle_brand_tracker({ brand: args.query || args.company, company: args.company || args.query, ...args });
+            } else if (view === 'earnings') {
+                if (args.company || (args.query && /^[A-Z0-9.\-]{1,6}$/i.test(args.query.trim()))) {
+                    return await handle_get_company_earnings({ ticker: args.company || args.query, company: args.company || args.query, ...args });
+                }
+                return await handle_get_earnings_intelligence(args);
+            } else if (view === 'statistics') {
+                return await handle_search_statistics(args);
+            } else if (view === 'insights') {
+                return await handle_search_insights(args);
+            } else if (view === 'evidence') {
+                return await handle_get_evidence(args);
+            } else {
+                return await handle_search_graph({ graphId: args.graph_id, ...args });
+            }
+        }
+    );
+
+    // 2. fodda_consult
+    server.tool(
+        'fodda_consult',
+        'Consult Synthetic Analyst personas, Human Agent digital twins, specialist strategist frameworks, or list available expert personas. Price: $15 per analyst/human consult, $45 per expert graph lookup, free for listing experts.',
+        {
+            type: z.enum(['synthetic', 'human', 'list']).optional().default('synthetic').describe('Consultation type. "synthetic": consult a synthetic expert persona ($15); "human": consult a human agent digital twin ($15); "list": list available analysts and digital twins (free).'),
+            analyst_id: z.string().optional().describe('ID of the analyst or expert to consult (e.g. "brand-cmo", "anu-lingala-macro"). Call type="list" first to discover IDs.'),
+            query: z.string().optional().describe('Question or prompt for the analyst.'),
+            company: z.string().optional().describe('Target company name when consulting role-based experts (e.g. company: "Nike" with analyst_id: "brand-cmo").'),
+            session_id: z.string().optional().describe('Session ID to maintain multi-turn context.'),
+            limit: z.number().optional().default(20).describe('Pagination limit for type="list" (default 20).'),
+            offset: z.number().optional().default(0).describe('Pagination offset for type="list" (default 0).'),
+            summary: z.boolean().optional().default(true).describe('Returns compact analyst profiles to save context when true (default).'),
+        },
+        { title: 'Consult Analysts & Human Agents', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async (args: any) => {
+            const type = args.type || 'synthetic';
+            if (type === 'list') {
+                return await handle_list_analysts({ limit: args.limit || 20, offset: args.offset || 0, summary: args.summary ?? true, ...args });
+            } else if (type === 'human') {
+                return await handle_consult_human_agent(args);
+            } else {
+                return await handle_consult_analyst(args);
+            }
+        }
+    );
+
+    // 3. fodda_research
+    server.tool(
+        'fodda_research',
+        'Launch autonomous deep research sessions, extract structured content from web URLs, brainstorm connected concepts, discover cross-domain trend adjacencies, or pull real-time institutional market data. Price: $55 (light mode) / $100 (heavy mode) for deep research, $20 per URL lookup, $35 for brainstorm, $15 for adjacent trends, $10 for market data, free for status polling.',
+        {
+            action: z.enum(['deep_research', 'read_url', 'brainstorm', 'discover_adjacencies', 'supplemental_context', 'check_status']).optional().default('deep_research').describe('Research action to take.'),
+            topic: z.string().optional().describe('Research topic, question, or concept.'),
+            url: z.string().optional().describe('Target web URL for read_url.'),
+            depth: z.enum(['light', 'heavy']).optional().default('light').describe('Research depth for deep_research: "light" ($55) or "heavy" ($100).'),
+            job_id: z.string().optional().describe('Job ID for check_status action.'),
+            trend_name: z.string().optional().describe('Trend name for discover_adjacencies.'),
+        },
+        { title: 'Autonomous Research & Web Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        async (args: any) => {
+            const action = args.action || 'deep_research';
+            if (action === 'read_url') {
+                return await handle_read_url(args);
+            } else if (action === 'brainstorm') {
+                return await handle_brainstorm_topic(args);
+            } else if (action === 'discover_adjacencies') {
+                return await handle_discover_adjacent_trends({ trendName: args.trend_name || args.topic, ...args });
+            } else if (action === 'supplemental_context') {
+                return await handle_get_supplemental_context({ query: args.topic, ...args });
+            } else if (action === 'check_status') {
+                if (args.job_id && args.job_id.startsWith('supp_')) {
+                    return await handle_check_supplemental_status(args);
+                }
+                return await handle_check_research_status(args);
+            } else {
+                return await handle_deep_research_topic(args);
+            }
+        }
+    );
+
+    // 4. fodda_content
+    server.tool(
+        'fodda_content',
+        'Turn knowledge graph research into structured LinkedIn content (posts or long-form articles) backed by verifiable evidence packs, or generate presentation-ready SVG chart visualizations. Price: $5 per LinkedIn post, $2.50 per LinkedIn article, free for SVG visual generation.',
+        {
+            type: z.enum(['linkedin_post', 'linkedin_article', 'svg_visual']).optional().default('linkedin_post').describe('Content type.'),
+            topic: z.string().optional().describe('Topic or thesis for content/visualization.'),
+            chart_type: z.enum(['cultural_shifts', 'competitive_compass', 'trend_constellation', 'implication_ladder', 'innovation_pathway', 'opportunity_map']).optional().describe('Chart type for svg_visual.'),
+            evidence_pack: z.record(z.string(), z.any()).optional().describe('Optional evidence pack object.'),
+        },
+        { title: 'Content Drafting & Visualizations', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async (args: any) => {
+            const type = args.type || 'linkedin_post';
+            if (type === 'linkedin_article') {
+                return await handle_draft_linkedin_article(args);
+            } else if (type === 'svg_visual') {
+                return (await handle_generate_visual({ chartType: args.chart_type, ...args })) as any;
+            } else {
+                return await handle_draft_linkedin_post(args);
+            }
+        }
+    );
+
+    // 5. fodda_deliverables
+    server.tool(
+        'fodda_deliverables',
+        'Commission finished strategy documents from expert analysts (e.g. marketing plans, deck reviews, trend briefings) or poll deliverable job status. Billed on deliverable acceptance; job status polling is free.',
+        {
+            action: z.enum(['commission', 'check_status']).optional().default('commission').describe('Deliverable action.'),
+            offering_key: z.string().optional().describe('Offering key (e.g. "marketing_plan", "deck_review", "trend_briefing").'),
+            analyst_id: z.string().optional().describe('Target analyst ID.'),
+            brief: z.string().optional().describe('Brief describing audience, goals, and constraints.'),
+            job_id: z.string().optional().describe('Job ID for check_status.'),
+        },
+        { title: 'Expert Deliverables & Document Generation', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async (args: any) => {
+            const action = args.action || 'commission';
+            if (action === 'check_status') {
+                return await handle_check_deliverable_status(args);
+            } else {
+                return await handle_request_deliverable({ offeringKey: args.offering_key, analystId: args.analyst_id, ...args });
+            }
+        }
+    );
+
+    // 6. fodda_account
+    server.tool(
+        'fodda_account',
+        'Manage user profile, check account balance and plan limits, query Fodda capabilities, toggle knowledge graph preferences, manage scheduled intelligence briefings, send feedback, or sign up for a free account. Free ($0).',
+        {
+            action: z.enum(['get_profile', 'update_profile', 'get_capabilities', 'toggle_graph', 'schedule_reports', 'send_feedback', 'sign_up']).optional().default('get_profile').describe('Account action.'),
+            graph_id: z.string().optional().describe('Target graph ID for toggle_graph.'),
+            enabled: z.boolean().optional().describe('Enable (true) or disable (false) for toggle_graph.'),
+            profile: z.record(z.string(), z.any()).optional().describe('Profile fields for update_profile.'),
+            feedback_text: z.string().optional().describe('Feedback text for send_feedback.'),
+            email: z.string().optional().describe('User email for sign_up.'),
+            report_config: z.record(z.string(), z.any()).optional().describe('Config for schedule_reports.'),
+        },
+        { title: 'Account Management & Preferences', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async (args: any) => {
+            const action = args.action || 'get_profile';
+            if (action === 'update_profile') {
+                return await handle_update_user_profile(args);
+            } else if (action === 'get_capabilities') {
+                return await handle_get_capabilities(args);
+            } else if (action === 'toggle_graph') {
+                return await handle_toggle_graph_preference({ graphId: args.graph_id, ...args });
+            } else if (action === 'schedule_reports') {
+                return await handle_manage_scheduled_reports(args);
+            } else if (action === 'send_feedback') {
+                return await handle_send_feedback({ feedback: args.feedback_text, ...args });
+            } else if (action === 'sign_up') {
+                return await handle_sign_up_free_account(args);
+            } else {
+                return await handle_get_my_account(args);
+            }
+        }
+    );
+
+    // 7. fodda_onboarding
+    server.tool(
+        'fodda_onboarding',
+        'Guide experts through the Fodda Human Agent onboarding pipeline: initialization, basic info submission, background research execution, voice study & expertise analysis submission, detected theme review, theme confirmation, onboarding status tracking, audio interview booking, and earnings check. Free ($0).',
+        {
+            action: z.enum(['begin', 'submit_info', 'submit_analysis', 'get_themes', 'confirm_themes', 'check_status', 'schedule_interview', 'my_earnings']).optional().default('begin').describe('Onboarding stage.'),
+            data: z.record(z.string(), z.any()).optional().describe('Payload data for the stage.'),
+        },
+        { title: 'Expert Onboarding Stepper Pipeline', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async (args: any) => {
+            const action = args.action || 'begin';
+            const payload = args.data || args;
+            if (action === 'submit_info') {
+                return await handle_submit_basic_info(payload);
+            } else if (action === 'submit_analysis') {
+                return await handle_submit_expertise_analysis(payload);
+            } else if (action === 'get_themes') {
+                return await handle_get_detected_themes(payload);
+            } else if (action === 'confirm_themes') {
+                return await handle_confirm_themes(payload);
+            } else if (action === 'check_status') {
+                return await handle_get_onboarding_status(payload);
+            } else if (action === 'schedule_interview') {
+                return await handle_schedule_interview(payload);
+            } else if (action === 'my_earnings') {
+                return await handle_get_my_earnings(payload);
+            } else {
+                return await handle_begin_expert_onboarding(payload);
+            }
+        }
+    );
+
 }

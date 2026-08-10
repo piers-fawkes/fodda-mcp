@@ -9,6 +9,13 @@ const src = fs.readFileSync(new URL('../src/toolHandlers.ts', import.meta.url), 
 
 // queryTypeCode each tool bills as (from its chargeQuery call). Omitted = free.
 const BILLS_AS = {
+  fodda_search: 'topic_research',
+  fodda_consult: 'expert_agent',
+  fodda_research: 'deep_research_light/heavy',
+  fodda_content: 'linkedin_post',
+  fodda_deliverables: 'skill_deliverable',
+  fodda_account: 'free',
+  fodda_onboarding: 'free',
   brand_tracker: 'brand_intelligence',
   deep_research_topic: 'deep_research_light/heavy',
   search_graph: 'topic_research',
@@ -33,6 +40,9 @@ const BILLS_AS = {
 };
 
 const CATEGORY = {
+  fodda_search: 'Search', fodda_consult: 'Expert', fodda_research: 'Research',
+  fodda_content: 'Content', fodda_deliverables: 'Deliverables', fodda_account: 'Account',
+  fodda_onboarding: 'Onboarding',
   brand_tracker: 'Brand', deep_research_topic: 'Research',
   search_graph: 'Search', search_insights: 'Search', search_statistics: 'Search',
   get_evidence: 'Graph', get_node: 'Graph', get_neighbors: 'Graph', get_label_values: 'Graph',

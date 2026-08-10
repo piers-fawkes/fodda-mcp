@@ -7,9 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.15] - 2026-08-10
+
+### Fixed & Added
+- **Source-Tier Attribution & Honest Coverage (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `package.json`, `server.json`)**:
+  - **Source Classification**: Categorized `sources_used` into three distinct tiers: `[Graph Sources]` (`own_graph` / `library_graph` / upstream graph evidence nodes), `[Supplemental Data]` (`supplemental` / financial / SEC data), and `[Web Sources]` (`web` / prose-extracted links with `origin: "prose"` / fallback profile link with `origin: "profile"`).
+  - **Honest Coverage Semantics**: Updated `coverage` evaluation in `handle_consult_analyst` and `handle_consult_human_agent` so `coverage: "FULL"` requires 1 or more `[Graph Sources]`. Web-only or prose-extracted-only source sets map strictly to `coverage: "PARTIAL"`.
+  - **Tiered Footer Rendering**: Formatted the `--- SOURCES USED ---` section in consult responses to group sources by tier (`[Graph Sources]`, `[Supplemental Data]`, `[Web Sources]`), giving client agents complete visibility into source provenance.
+  - **Verbatim Platform-Voice Thin-Response Line**: When coverage resolves to `PARTIAL` with zero graph-tier sources, the MCP server surfaces Piers's platform-voice sentence verbatim: *"This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database."* followed by any active roster peer referrals in third-person platform voice.
+  - **System Prompt Updates (`src/systemPrompt.ts`)**: Updated `THREE-TIER RESEARCH ATTRIBUTION & VOICE POLICY` and `GROUNDED COVERAGE & GRAPH RETRIEVAL FRAMING` to mandate 1st-person expert voice for own graph, 1st-person cross-research voice for other curator graphs, and explicit "I found this on the web" framing for web material (prohibiting "research via Fodda graphs" framing for web content).
+  - **Verification**: Verified compilation (`npm run build`), server health endpoint tests (`node dist/verify_tools_endpoint.js`), synthetic web-only test probe (`PARTIAL` with platform note and `[Web Sources]`), and live Core API probe (`FULL` with 12 graph sources for Piers Fawkes in-lane query).
+
 ## [1.46.14] - 2026-08-10
 
 ### Fixed & Added
+- **Tool Consolidation Implementation (`src/toolHandlers.ts`, `src/tools.ts`, `server.json`, `scripts/generate-tools-manifest.mjs`)**:
+  - Converted 47 legacy native tool handlers into clean, reusable internal helper functions (`handle_<name>`).
+  - Registered strictly 7 intent-level tools on `server.tool(...)`: `fodda_search`, `fodda_consult`, `fodda_research`, `fodda_content`, `fodda_deliverables`, `fodda_account`, `fodda_onboarding`.
+  - Folded `list_analysts` and `list_graphs` into discovery views on `fodda_consult` (`type: "list"`) and `fodda_search` (`view: "list_graphs"`), dropping flagship consultation journey from 2 prompts to 1.
+  - Implemented `limit`, `offset`, and `summary: true` pagination logic for `list_analysts` and `list_graphs`, reducing payload footprint from >160KB to <12KB.
+  - Updated tool versions in `src/tools.ts`, updated `server.json` description to reflect 7 tools, and updated `scripts/generate-tools-manifest.mjs` maps.
+  - Verified compilation (`tsc`), manifest generation (`tools-manifest.json` count: 7), and endpoint health tests (`dist/verify_tools_endpoint.js`).
+- **Tool Consolidation Architecture Specification & Design (`briefs/brief_tool_consolidation_design_OUTPUT.md`, `briefs/brief_tool_consolidation_build.md`)**:
+  - Conducted comprehensive inventory and Airtable Questions Log usage audit of all 47 registered MCP tools (2,244 queries analyzed).
+  - Authored tool consolidation architecture design document proposing 7 intent-level tools (`fodda_search`, `fodda_consult`, `fodda_research`, `fodda_content`, `fodda_deliverables`, `fodda_account`, `fodda_onboarding`) with permission prompt reductions of 66%–85% across top user flows.
+  - Specified response pagination and field truncation for high-volume endpoints (`list_analysts`, `list_graphs`).
+  - Authored follow-on coder brief (`briefs/brief_tool_consolidation_build.md`).
 - **Differentiate FULL vs PARTIAL Coverage & Suppress Graph Retrieval Framing (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
   - Configured `coverage` evaluation in `consult_analyst` and `consult_human_agent` to set `coverage: "FULL"` ONLY when `sources_used` contains 1 or more external evidence nodes/URLs (excluding fallback `/experts/` profile URLs). Assigns `coverage: "PARTIAL"` when only the fallback profile URL is present.
   - Added `GROUNDED COVERAGE & GRAPH RETRIEVAL FRAMING` rules in `src/systemPrompt.ts` prohibiting claims like *"I searched Fodda graphs and found strong support"* when no external evidence nodes/URLs were retrieved from the graph.
