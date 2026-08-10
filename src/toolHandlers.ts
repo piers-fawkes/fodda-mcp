@@ -4118,7 +4118,7 @@ export async function createServer(
 
     server.tool(
         'confirm_themes',
-        'Confirm the selected themes to generate the interview questionnaire. Instruct the agent/LLM that when themes/topics are confirmed/returned, it must reframe the introduction using the ACTUAL number of topics returned in the payload (themes.length), e.g. "N expert topics were detected from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters." NEVER state a hardcoded count; the number MUST equal the count of themes actually returned. The agent/LLM must present all identified topics in one single numbered list, or state explicitly "recommending N of the M". [FLOW VISUALIZATION - REQUIRED IF SUPPORTED] You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 5 "Choose your themes" as "You are here", #663399 fill, #ffffff text). Only output a plain text ladder if no rendering tool is available. The identity is derived from your connector session.',
+        'Confirm the selected themes to generate the interview questionnaire. Instruct the agent/LLM that when themes/topics are confirmed/returned, it must reframe the introduction using the ACTUAL number of topics returned in the payload (themes.length), e.g. "N expert topics were detected from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters." NEVER state a hardcoded count; the number MUST equal the count of themes actually returned. The agent/LLM must present all identified topics in one single numbered list, or state explicitly "recommending N of the M". [FLOW VISUALIZATION - REQUIRED IF SUPPORTED] You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 6 "Audio interview" as "You are here", #663399 fill, #ffffff text). Only output a plain text ladder if no rendering tool is available. The identity is derived from your connector session.',
         {
             themes: z.array(z.string()).describe("Array of confirmed theme names"),
             userId: z.string().optional().describe('Optional user identifier.')
@@ -4144,7 +4144,8 @@ export async function createServer(
                     next: 'schedule_interview',
                     message: 'The voice interview is your next step — please schedule it by calling the schedule_interview tool.'
                 };
-                return { content: [{ type: 'text' as const, text: JSON.stringify(extendedResult, null, 2) }] };
+                const instructions = "\n\nInstructions for Agent/LLM:\n1. [FLOW VISUALIZATION - REQUIRED IF SUPPORTED]: Before presenting the interview questionnaire or scheduling options, you MUST render the onboarding path as a visual horizontal stepper using your client's diagram, SVG, or HTML rendering tool, marking stage 6 \"Audio interview\" as \"You are here\" (using #663399 fill with #ffffff text). Only output a plain text ladder if no rendering tool is available in your client.\n2. Present the interview questionnaire arc and ask the expert to schedule their interview by calling schedule_interview.";
+                return { content: [{ type: 'text' as const, text: JSON.stringify(extendedResult, null, 2) + instructions }] };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }

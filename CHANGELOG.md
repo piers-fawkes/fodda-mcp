@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.6] - 2026-08-09
+
+### Fixed
+- **Stage 6 Audio Interview Flow Stepper Visualization (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Enforced `[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]` instructions in `confirm_themes` return payload and tool description for Stage 6 ("Audio interview" marked "You are here"), ensuring LLMs/Claude render the visual horizontal stepper diagram when confirming themes.
+
 ## [1.46.5] - 2026-08-09
 
 ### Fixed
