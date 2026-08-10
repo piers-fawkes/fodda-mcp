@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.8] - 2026-08-09
+
+### Fixed
+- **Schedule Interview Visual Stepper & Prohibit QA Leakage (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `tools-manifest.json`)**:
+  - Added explicit `[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]` instructions to `schedule_interview` tool description so booking confirmation and Google Meet join link display the visual horizontal stepper artifact instead of plain code block text (`1. Focus & window...`).
+  - Added strict rule in `src/systemPrompt.ts` prohibiting internal QA history (e.g., "July 15 run", internal recording software) from leaking into expert onboarding responses.
+
 ## [1.46.7] - 2026-08-09
 
 ### Fixed
