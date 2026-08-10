@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.1] - 2026-08-09
+
+### Improved
+- **Updated Expert Onboarding Identity & Flow Phrasing (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Updated `begin_expert_onboarding` identity warning preamble and tool description to use explicit multi-pass flow instructions ("First, identity...", "Second, here's the flow: you provide answers in this chat session...").
+  - Removed "legacy canon" framing on recency window.
+
 ## [1.46.0] - 2026-08-09
 
 ### Improved
