@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.7] - 2026-08-09
+
+### Fixed
+- **Clean Tool Output Payloads & Visual Stepper System Prompt Rule (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `tools-manifest.json`)**:
+  - Removed all raw developer meta-instructions (`\n\nInstructions for Agent/LLM:...`, `IMPORTANT: analystId...`, `[FLOW VISUALIZATION]`) from onboarding tool response strings, preventing internal developer text ("insider baseball") from leaking into user-facing chat responses.
+  - Added dedicated `ONBOARDING FLOW VISUALIZATION & CLEAN FRAMING` rule to `src/systemPrompt.ts` requiring visual horizontal stepper diagram rendering at every stage and strict cleanliness of chat outputs.
+
 ## [1.46.6] - 2026-08-09
 
 ### Fixed
