@@ -14,7 +14,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Render explicit `result.coverage` returned by upstream API (`fodda-api-new-00585-8l6` graded coverage: 0 graph sources → thin/PARTIAL; 1–2 → PARTIAL with honest framing + referral; 3+ → FULL) verbatim in the text footer — do not recompute locally.
   - Retained local type-based coverage computation strictly as a fallback when `result.coverage` is absent.
   - Updated platform-note trigger to surface Piers's verbatim sentence (*"This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database."*) ONLY when `coverage` is PARTIAL/thin/out AND `sources_used` contains zero graph-tier entries (`graphSources.length === 0`).
-  - Preserved all 47 live native tool registrations (`tools-manifest.json` count: 47).
+  - **Preserved Native Surface**: Preserved all 47 live native tool registrations (`tools-manifest.json` count: 47).
+  - **Production Verification (`mcp.fodda.ai` revision `fodda-mcp-00460-w4g`)**:
+    - **Probe 1 (`tools/list`)**: Returned 47 tools. Zero consolidation artifacts.
+    - **Probe 2 (Phrased cycling query `peter-abraham-bicycles-cycling`)**:
+      - JSON `coverage`: `"PARTIAL"`
+      - Envelope text footer:
+        ```
+        --- COVERAGE: PARTIAL ---
+        --- SOURCES USED ---
+
+        [Graph Sources]
+        - eventization of the weekly ride
+        ```
+      - **Result**: Footer matches JSON `"PARTIAL"`, 1 `[Graph Sources]` entry rendered, NO platform note added (response self-qualifies).
+    - **Probe 3 (Agentic commerce query `piers-fawkes-ai-builder-knowledge-graph`)**:
+      - JSON `coverage`: `"PARTIAL"`
+      - Envelope text footer: `--- COVERAGE: PARTIAL ---`
+      - **Result**: Footer matches JSON verbatim.
+    - **Probe 4 (Out-of-lane 0-graph-source query)**:
+      - JSON `coverage`: `"PARTIAL"`, `sources_used`: `[]`
+      - Envelope text footer:
+        ```
+        --- COVERAGE: PARTIAL ---
+        --- PLATFORM NOTE (Deliver in third-person platform voice) ---
+        This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.
+        --- SOURCES USED ---
+
+        [Web Sources]
+        - Piers Fawkes Human Agent — Official and Verified Digital Twin: https://www.fodda.ai/experts/piers-fawkes-ai-builder-knowledge-graph
+        ```
+      - **Result**: Footer matches JSON, platform note rendered verbatim.
 
 ## [1.46.15] - 2026-08-10
 
