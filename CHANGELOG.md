@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.16] - 2026-08-10
+
+### Fixed & Added
+- **Trust Upstream Graded Coverage Verbatim (`src/toolHandlers.ts`)**:
+  - Render explicit `result.coverage` returned by upstream API (`fodda-api-new-00585-8l6` graded coverage: 0 graph sources → thin/PARTIAL; 1–2 → PARTIAL with honest framing + referral; 3+ → FULL) verbatim in the text footer — do not recompute locally.
+  - Retained local type-based coverage computation strictly as a fallback when `result.coverage` is absent.
+  - Updated platform-note trigger to surface Piers's verbatim sentence (*"This Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database."*) ONLY when `coverage` is PARTIAL/thin/out AND `sources_used` contains zero graph-tier entries (`graphSources.length === 0`).
+  - Preserved all 47 live native tool registrations (`tools-manifest.json` count: 47).
+
 ## [1.46.15] - 2026-08-10
 
 ### Fixed & Added

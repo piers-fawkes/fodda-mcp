@@ -3742,6 +3742,8 @@ export async function createServer(
                     };
                 }
 
+                const upstreamCoverage = result?.coverage;
+
                 // Extract the expert's answer text (legacy-compatible)
                 const reportText = typeof result.result === 'string'
                     ? result.result
@@ -3796,8 +3798,7 @@ export async function createServer(
 
                 result.sources_used = mergedSources;
 
-                // 4. Source Tiering & Honest Coverage Calculation
-                // FULL requires at least 1 graph-tier source (own_graph, library_graph, or graph evidence node from upstream, judged by type, not URL)
+                // 4. Source Tiering & Verbatim Upstream Coverage
                 const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
                     if (typeof s === 'string') {
                         if (s.includes('/experts/')) return 'web';
@@ -3822,8 +3823,12 @@ export async function createServer(
                 const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
                 const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
 
-                const hasGraphTierSources = graphSources.length > 0;
-                result.coverage = hasGraphTierSources ? "FULL" : "PARTIAL";
+                // Render explicit upstream coverage verbatim if present; fall back to graphSources check only if absent
+                if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
+                    result.coverage = upstreamCoverage;
+                } else {
+                    result.coverage = graphSources.length > 0 ? "FULL" : "PARTIAL";
+                }
 
                 const parts: string[] = [reportText];
 
@@ -3837,7 +3842,8 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
-                if (!hasGraphTierSources) {
+                const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
+                if (isPartialOrThin && graphSources.length === 0) {
                     parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
                 }
 
@@ -3967,6 +3973,8 @@ export async function createServer(
                     session_id
                 });
                 
+                const upstreamCoverage = result?.coverage;
+
                 const reportText = typeof result.result === 'string'
                     ? result.result
                     : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
@@ -4020,8 +4028,7 @@ export async function createServer(
 
                 result.sources_used = mergedSources;
 
-                // 4. Source Tiering & Honest Coverage Calculation
-                // FULL requires at least 1 graph-tier source (own_graph, library_graph, or graph evidence node from upstream, judged by type, not URL)
+                // 4. Source Tiering & Verbatim Upstream Coverage
                 const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
                     if (typeof s === 'string') {
                         if (s.includes('/experts/')) return 'web';
@@ -4046,8 +4053,12 @@ export async function createServer(
                 const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
                 const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
 
-                const hasGraphTierSources = graphSources.length > 0;
-                result.coverage = hasGraphTierSources ? "FULL" : "PARTIAL";
+                // Render explicit upstream coverage verbatim if present; fall back to graphSources check only if absent
+                if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
+                    result.coverage = upstreamCoverage;
+                } else {
+                    result.coverage = graphSources.length > 0 ? "FULL" : "PARTIAL";
+                }
 
                 const parts: string[] = [reportText];
 
@@ -4059,7 +4070,8 @@ export async function createServer(
                     parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
                 }
 
-                if (!hasGraphTierSources) {
+                const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
+                if (isPartialOrThin && graphSources.length === 0) {
                     parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
                 }
 
