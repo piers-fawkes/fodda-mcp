@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.17] - 2026-08-16
+
+### Fixed & Added
+- **Clarify Audio Interview Substantive Framing (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - **`begin_expert_onboarding` Flow Intro & Identity Warning**: Updated the Claude onboarding flow text in both the tool description and `identityWarning` prompt to emphasize probing reasoning style and scheduling a 15–20 min audio interview (*"...then we run an AI probe of your expertise and reasoning style, and finally schedule a 15–20 minute audio interview to explore your forward-looking predictions, contrarian views, and practical problem-solving — filling the gaps that chat history alone cannot capture. You'll get to review everything before anything is submitted."*).
+  - **Stepper Stage 6 Renamed to "Expertise Deep-Dive (Audio)"**: Renamed Stage 6 across all visual flow diagrams and tool descriptions from `"Audio interview"` / `"Audio interview (join now)"` to `"Expertise Deep-Dive (Audio)"` (`begin_expert_onboarding`, `confirm_themes`, `schedule_interview`).
+  - **`confirm_themes` Description & Chaining**: Clarified tool description to note that confirming themes generates a questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for the live deep-dive interview, and updated next step message to refer to the Expertise Deep-Dive (Audio) interview.
+  - **`schedule_interview` Description & Booking**: Updated description to clarify that scheduling books the ~15–20 minute expertise deep-dive interview with the Fodda AI interviewer, and updated auto-calendar event title format to `"Fodda Human Agent — expertise deep-dive interview with <the expert's full name>"`.
+  - **Rebuilt tools manifest (`tools-manifest.json`)**: Updated descriptions for all 47 tools.
+
 ## [1.46.16] - 2026-08-10
 
 ### Fixed & Added

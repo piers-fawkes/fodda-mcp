@@ -4,8 +4,14 @@
 //   node scripts/generate-tools-manifest.mjs
 // Consumed by the API's Offerings-catalog seed so tool rows never drift from the MCP.
 import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const src = fs.readFileSync(new URL('../src/toolHandlers.ts', import.meta.url), 'utf8');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const toolHandlersPath = path.resolve(__dirname, '../src/toolHandlers.ts');
+
+const src = fs.readFileSync(toolHandlersPath, 'utf8');
 
 // queryTypeCode each tool bills as (from its chargeQuery call). Omitted = free.
 const BILLS_AS = {
@@ -82,5 +88,5 @@ const out = {
   billable: tools.filter((t) => t.bills_as !== 'free').length,
   tools,
 };
-fs.writeFileSync(new URL('../tools-manifest.json', import.meta.url), JSON.stringify(out, null, 2) + '\n');
+fs.writeFileSync(path.resolve(__dirname, '../tools-manifest.json'), JSON.stringify(out, null, 2) + '\n');
 console.log(`wrote tools-manifest.json — ${tools.length} tools (${out.billable} billable, ${tools.length - out.billable} free)`);
