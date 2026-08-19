@@ -3799,7 +3799,7 @@ export async function createServer(
                 result.sources_used = mergedSources;
 
                 // 4. Source Tiering & Verbatim Upstream Coverage
-                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
                     if (typeof s === 'string') {
                         if (s.includes('/experts/')) return 'web';
                         if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
@@ -3809,6 +3809,7 @@ export async function createServer(
                     const type = (s.type || s.kind || '').toLowerCase();
                     const url = (s.url || '').toLowerCase();
 
+                    if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
                     if (origin === 'prose' || origin === 'profile') return 'web';
                     if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
                     if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
@@ -3819,6 +3820,7 @@ export async function createServer(
                     return 'graph';
                 };
 
+                const execQuoteSources = result.sources_used.filter((s: any) => classifyTier(s) === 'exec_quote');
                 const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
                 const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
                 const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
@@ -3827,7 +3829,7 @@ export async function createServer(
                 if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
                     result.coverage = upstreamCoverage;
                 } else {
-                    result.coverage = graphSources.length > 0 ? "FULL" : "PARTIAL";
+                    result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
                 }
 
                 const parts: string[] = [reportText];
@@ -3843,7 +3845,7 @@ export async function createServer(
                 }
 
                 const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
-                if (isPartialOrThin && graphSources.length === 0) {
+                if (isPartialOrThin && graphSources.length === 0 && execQuoteSources.length === 0) {
                     parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
                 }
 
@@ -3855,6 +3857,9 @@ export async function createServer(
                     };
 
                     const sourceSections: string[] = ['--- SOURCES USED ---'];
+                    if (execQuoteSources.length > 0) {
+                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
+                    }
                     if (graphSources.length > 0) {
                         sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
                     }
@@ -4029,7 +4034,7 @@ export async function createServer(
                 result.sources_used = mergedSources;
 
                 // 4. Source Tiering & Verbatim Upstream Coverage
-                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' => {
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
                     if (typeof s === 'string') {
                         if (s.includes('/experts/')) return 'web';
                         if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
@@ -4039,6 +4044,7 @@ export async function createServer(
                     const type = (s.type || s.kind || '').toLowerCase();
                     const url = (s.url || '').toLowerCase();
 
+                    if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
                     if (origin === 'prose' || origin === 'profile') return 'web';
                     if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
                     if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
@@ -4049,6 +4055,7 @@ export async function createServer(
                     return 'graph';
                 };
 
+                const execQuoteSources = result.sources_used.filter((s: any) => classifyTier(s) === 'exec_quote');
                 const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
                 const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
                 const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
@@ -4057,7 +4064,7 @@ export async function createServer(
                 if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
                     result.coverage = upstreamCoverage;
                 } else {
-                    result.coverage = graphSources.length > 0 ? "FULL" : "PARTIAL";
+                    result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
                 }
 
                 const parts: string[] = [reportText];
@@ -4071,7 +4078,7 @@ export async function createServer(
                 }
 
                 const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
-                if (isPartialOrThin && graphSources.length === 0) {
+                if (isPartialOrThin && graphSources.length === 0 && execQuoteSources.length === 0) {
                     parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
                 }
 
@@ -4083,6 +4090,9 @@ export async function createServer(
                     };
 
                     const sourceSections: string[] = ['--- SOURCES USED ---'];
+                    if (execQuoteSources.length > 0) {
+                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
+                    }
                     if (graphSources.length > 0) {
                         sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
                     }
