@@ -3,9 +3,10 @@ import axios from 'axios';
 import { MCP_SERVER_VERSION } from './tools.js';
 
 async function runTest() {
-    console.log('Starting Fodda MCP server verification for /health endpoint...');
+    const testPort = process.env.TEST_PORT || '3099';
+    console.log(`Starting Fodda MCP server verification for /health endpoint on port ${testPort}...`);
     const mcp = spawn('node', ['dist/index.js'], {
-        env: { ...process.env, PORT: '3000' }
+        env: { ...process.env, PORT: testPort }
     });
 
     mcp.stdout.on('data', (data) => console.log(`[Server]: ${data}`));
@@ -15,7 +16,7 @@ async function runTest() {
     await new Promise(resolve => setTimeout(resolve, 3000));
 
     try {
-        const response = await axios.get('http://localhost:3000/health');
+        const response = await axios.get(`http://localhost:${testPort}/health`);
         console.log('✅ Response Code:', response.status);
         console.log('✅ Health Status:', response.data.status);
         console.log('✅ Server Version:', response.data.version);

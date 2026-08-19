@@ -3857,11 +3857,11 @@ export async function createServer(
                     };
 
                     const sourceSections: string[] = ['--- SOURCES USED ---'];
-                    if (execQuoteSources.length > 0) {
-                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
-                    }
                     if (graphSources.length > 0) {
                         sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                    }
+                    if (execQuoteSources.length > 0) {
+                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
                     }
                     if (suppSources.length > 0) {
                         sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
@@ -4090,11 +4090,11 @@ export async function createServer(
                     };
 
                     const sourceSections: string[] = ['--- SOURCES USED ---'];
-                    if (execQuoteSources.length > 0) {
-                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
-                    }
                     if (graphSources.length > 0) {
                         sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                    }
+                    if (execQuoteSources.length > 0) {
+                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
                     }
                     if (suppSources.length > 0) {
                         sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);

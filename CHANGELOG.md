@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.18] - 2026-08-18
+
+### Fixed & Added
+- **Render [Executive Quotes] in MCP Consult Outputs (`src/toolHandlers.ts`)**:
+  - Added support for `exec_quote` source type in `classifyTier(s)` across both `consult_analyst` and `consult_human_agent` handlers.
+  - Positioned `[Executive Quotes]` in the markdown output sources section directly following `[Graph Sources]` and before `[Supplemental Data]` and `[Web Sources]`.
+  - Added automated test suite `src/test_exec_quotes_render.ts` verifying tier classification and strictly ordered section layout.
+  - Configured `src/verify_tools_endpoint.ts` to use a non-colliding default test port (`3099`).
+
 ## [1.46.17] - 2026-08-16
 
 ### Fixed & Added
