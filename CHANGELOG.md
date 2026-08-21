@@ -5,7 +5,25 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
----
+## [1.46.21] - 2026-08-21
+
+### Fixed & Added
+- **Gemini DCR `openid` Scope Shim (`src/oauthRegisterShim.ts`, `src/index.ts`)**:
+  - Implemented Dynamic Client Registration (DCR) shim handler at `/oauth/register` (`handleOauthRegister`) that injects `"openid email profile offline_access"` into registration payloads before forwarding to Clerk (`https://clerk.fodda.ai/oauth/register`).
+  - Updated OAuth discovery metadata at `/.well-known/oauth-authorization-server` to set `issuer: "https://mcp.fodda.ai"` (`serviceUrl`) per RFC 8414 (matching the metadata host URL), set `registration_endpoint: "https://mcp.fodda.ai/oauth/register"`, and maintain `authorization_endpoint` / `token_endpoint` / `jwks_uri` on Clerk.
+  - Updated `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp` to list `authorization_servers: ["https://mcp.fodda.ai"]`.
+- **Legacy `?api_key=` / `?user_id=` Query Parameter URL Deprecation (`src/index.ts`, `README.md`)**:
+  - Added deprecation middleware blocking legacy query-string `api_key` and `user_id` parameters across `/sse`, `/mcp`, `/messages`, `/copilot`, and all offering endpoints with HTTP 401, stopping clients from re-sending raw keys in URLs:
+    - GET / SSE: plain text `Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Account → MCP Integration) and update your connector.`
+    - POST / JSON: JSON-RPC error `code: -32001`, `message` as above, `data.docs: "https://fodda.ai/platform-integration-anthropic-claude"`.
+  - Added app-level `req.url` sanitization in Express middleware.
+- **Verification**:
+  - `npx tsc` compiled cleanly.
+  - Executed automated integration test suite `node dist/test_dcr_and_legacy_deprecation.js`:
+    - `POST /sse?api_key=...` returned 401 JSON-RPC error `-32001` matching spec.
+    - `GET /sse?api_key=...` returned 401 `text/plain` message matching spec.
+    - `GET /.well-known/oauth-authorization-server` confirmed `issuer` matches service URL (`http://localhost:8989`) per RFC 8414.
+    - `POST /oauth/register` successfully injected `openid` scope and returned HTTP 201 with granted scopes `"email offline_access openid profile"`.
 
 ## [1.46.20] - 2026-08-20
 

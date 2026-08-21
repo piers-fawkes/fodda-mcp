@@ -22,7 +22,7 @@
 2. In Claude, go to **Settings → Connectors → Add custom connector**, paste the URL, and click **Add**
 3. Start chatting with your Fodda knowledge graphs
 
-> **Note:** legacy `?api_key=` URLs are no longer accepted (raw keys in URLs leak into logs and browser history). If your connector stops working, just grab a fresh MCP URL at [app.fodda.ai](https://app.fodda.ai). One-click OAuth connect arrives with Fodda's Anthropic Connectors Directory listing.
+> **Note:** legacy `?api_key=` or `?user_id=` query string URLs are deprecated and return HTTP 401 with explicit instructions (`Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai...`). Get your fresh MCP URL or connect via OAuth at [app.fodda.ai](https://app.fodda.ai).
 
 
 ### Claude Code (CLI — SSE)
@@ -90,16 +90,19 @@ Connect to the `/mcp` endpoint using HTTP `POST` (Streamable HTTP) with `Authori
 https://mcp.fodda.ai/mcp
 ```
 
-### Gemini CLI
+### Gemini / Antigravity
 
+Add to `~/.gemini/config/mcp_config.json`:
 ```json
 {
-  "tools": [{
-    "type": "mcp",
-    "name": "fodda",
-    "url": "https://mcp.fodda.ai/sse",
-    "headers": { "Authorization": "Bearer YOUR_API_KEY" }
-  }]
+  "mcpServers": {
+    "fodda": {
+      "serverUrl": "https://mcp.fodda.ai/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
 }
 ```
 

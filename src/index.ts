@@ -21,6 +21,7 @@ import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
 import { registerAgentFactsRoute } from './agentFacts.js';
 import { getTelemetryStats, recordFeedbackEntry } from './telemetry.js';
+import { handleOauthRegister } from './oauthRegisterShim.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -43,6 +44,14 @@ const WEBSITE_BASE_URL = process.env.WEBSITE_BASE_URL || 'https://www.fodda.ai';
 const app = express();
 app.use(express.json({ limit: '512kb' }));
 
+// Strip api_key from request logging globally before anything hits Cloud Run logs
+app.use((req, _res, next) => {
+    if (req.url && req.url.includes('api_key=')) {
+        req.url = req.url.replace(/api_key=[^&]+/g, 'api_key=REDACTED');
+    }
+    next();
+});
+
 // CORS — minimal, matching test server
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -53,30 +62,99 @@ app.use((req, res, next) => {
     next();
 });
 
+// Deprecation middleware for legacy URL parameters (?api_key=... / ?user_id=...)
+const LEGACY_DEPRECATION_PATHS = [
+    '/sse', '/mcp', '/messages', '/copilot',
+    '/brand-intelligence', '/topic-research', '/deep-research',
+    '/earnings-intelligence', '/expert-consult'
+];
+
+app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
+    if (req.query.api_key !== undefined || req.query.user_id !== undefined) {
+        const message = 'Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Account → MCP Integration) and update your connector.';
+        const accept = req.headers['accept'] || '';
+        const contentType = req.headers['content-type'] || '';
+        const isJson = accept.includes('application/json') || contentType.includes('application/json') || (req.method === 'POST' && req.body && typeof req.body === 'object');
+
+        if (isJson && req.method === 'POST') {
+            const bodyId = (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null;
+            return res.status(401).json({
+                jsonrpc: '2.0',
+                error: {
+                    code: -32001,
+                    message,
+                    data: { docs: 'https://fodda.ai/platform-integration-anthropic-claude' }
+                },
+                id: bodyId,
+            });
+        }
+
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        return res.status(401).send(`${message}\n`);
+    }
+    next();
+});
+
 // OAuth discovery endpoints — Clerk-backed OAuth for the MCP Connectors Directory.
-// The authorization server is Clerk (configured as CLERK_ISSUER_URL).
-// These endpoints follow RFC 8414 / draft-ietf-oauth-security-topics so MCP clients
-// can auto-discover the auth server and initiate PKCE flows.
+// Discovery advertises mcp.fodda.ai as authorization server metadata host and points
+// registration_endpoint to /oauth/register shim for DCR openid scope injection.
 const CLERK_ISSUER = process.env.CLERK_ISSUER_URL || 'https://clerk.fodda.ai';
+
 app.get('/.well-known/oauth-protected-resource', (_req, res) => {
     res.status(200).json({
-        resource: 'https://mcp.fodda.ai',
-        authorization_servers: [CLERK_ISSUER],
+        resource: getServiceUrl(),
+        authorization_servers: [getServiceUrl()],
     });
 });
 app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
     res.status(200).json({
-        resource: 'https://mcp.fodda.ai/mcp',
-        authorization_servers: [CLERK_ISSUER],
+        resource: `${getServiceUrl()}/mcp`,
+        authorization_servers: [getServiceUrl()],
     });
 });
-app.get('/.well-known/oauth-authorization-server', (_req, res) => {
-    res.redirect(302, `${CLERK_ISSUER}/.well-known/oauth-authorization-server`);
+
+let cachedClerkMetadata: any = null;
+let lastClerkFetch = 0;
+
+app.get('/.well-known/oauth-authorization-server', async (_req, res) => {
+    const now = Date.now();
+    if (!cachedClerkMetadata || now - lastClerkFetch > 5 * 60 * 1000) {
+        try {
+            const resp = await axios.get(`${CLERK_ISSUER}/.well-known/oauth-authorization-server`, { timeout: 5000 });
+            if (resp.status === 200 && resp.data) {
+                cachedClerkMetadata = resp.data;
+                lastClerkFetch = now;
+            }
+        } catch (err: any) {
+            console.error('[oauth-discovery] Unable to refresh Clerk OAuth metadata:', err.message);
+        }
+    }
+    const serviceUrl = getServiceUrl();
+    const metadata = {
+        authorization_endpoint: `${CLERK_ISSUER}/oauth/authorize`,
+        token_endpoint: `${CLERK_ISSUER}/oauth/token`,
+        revocation_endpoint: `${CLERK_ISSUER}/oauth/token/revoke`,
+        jwks_uri: `${CLERK_ISSUER}/.well-known/jwks.json`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'none', 'client_secret_post'],
+        scopes_supported: ['openid', 'profile', 'email', 'public_metadata', 'private_metadata', 'offline_access', 'user:org:read'],
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+        claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'email', 'name', 'org_id'],
+        service_documentation: 'https://clerk.com/docs/oauth/scoped-access',
+        ui_locales_supported: ['en'],
+        op_tos_uri: 'https://clerk.com/legal/standard-terms',
+        code_challenge_methods_supported: ['S256'],
+        authorization_response_iss_parameter_supported: true,
+        ...(cachedClerkMetadata || {}),
+        issuer: serviceUrl,
+        registration_endpoint: `${serviceUrl}/oauth/register`,
+    };
+    res.status(200).json(metadata);
 });
-app.post('/register', (_req, res) => {
-    // DCR not handled here — managed by Clerk dashboard
-    res.status(501).json({ error: 'Dynamic client registration is managed via the Clerk dashboard.' });
-});
+
+app.post(['/oauth/register', '/register'], handleOauthRegister);
 
 // ---------------------------------------------------------------------------
 // .well-known MCP Server Discovery Card & Pricing Metadata Tier
