@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
 import crypto from 'crypto';
-import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getRelevantSources, getEnabledSkillConfigs, getSkillGraphs, getAnalysts } from './catalogCache.js';
+import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getRelevantSources, getEnabledSkillConfigs, getSkillGraphs, getAnalysts, classifyGraphTier } from './catalogCache.js';
 import type { CatalogGraph, SourceCandidate } from './catalogCache.js';
 import { renderBrandWidget } from './brandTemplate.js';
 import { renderSearchWidget } from './searchTemplate.js';
@@ -873,6 +873,7 @@ export async function createServer(
         'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search. Price: $20 per query.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
+            graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -882,7 +883,7 @@ export async function createServer(
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ mode, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
+        async ({ mode, graphs, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search', graphId);
@@ -900,10 +901,51 @@ export async function createServer(
                 let data: any;
                 let searchedGraphs: any[] = [];
 
-                // If no graphId or deprecated 'psfk', use smart 2-step routing
-                if (!graphId || graphId === 'psfk') {
-                    // Step 1: Score query against graph metadata to find relevant graphs
-                    const relevantGraphs = getRelevantGraphs(query);
+                // ── Explicit graph scope (`graphs` array): strict, no fallback routing ──
+                const explicitScope = Array.isArray(graphs) && graphs.length > 0
+                    ? [...new Set(graphs.map(g => String(g).trim()).filter(Boolean))]
+                    : null;
+                let unavailableGraphs: Array<{ graph_id: string; reason: string }> = [];
+                let scopedGraphs: CatalogGraph[] | null = null;
+                if (explicitScope) {
+                    const catalog = getGraphs();
+                    const available: CatalogGraph[] = [];
+                    for (const gid of explicitScope) {
+                        const g = catalog.find(x => x.graph_id === gid);
+                        if (!g) {
+                            unavailableGraphs.push({ graph_id: gid, reason: 'unknown graph id (not in catalog)' });
+                        } else if (g.status !== 'live') {
+                            unavailableGraphs.push({ graph_id: gid, reason: `not live (status: ${g.status})` });
+                        } else if (!(g.trend_count > 0) && !g.last_synced) {
+                            unavailableGraphs.push({ graph_id: gid, reason: 'not synced (no embedded content yet)' });
+                        } else {
+                            available.push(g);
+                        }
+                    }
+                    if (available.length === 0) {
+                        // Never substitute other graphs under an explicit scope.
+                        return {
+                            content: [{
+                                type: 'text' as const, text: JSON.stringify({
+                                    rows: [],
+                                    total: 0,
+                                    dataStatus: 'SCOPE_UNAVAILABLE',
+                                    unavailable_graphs: unavailableGraphs,
+                                    message: 'None of the requested graphs are searchable. No other graphs were substituted. Call list_graphs for available graph ids.',
+                                }, null, 2)
+                            }]
+                        };
+                    }
+                    scopedGraphs = available;
+                }
+
+                // If explicit scope, or no graphId / deprecated 'psfk', use fan-out
+                if (scopedGraphs || !graphId || graphId === 'psfk') {
+                    // Step 1: explicit scope searches exactly those graphs; otherwise
+                    // score query against graph metadata to find relevant graphs
+                    const relevantGraphs = scopedGraphs
+                        ? scopedGraphs.map(g => ({ graph: g, score: 1.0, graphTier: classifyGraphTier(g), isDirectMatch: true }))
+                        : getRelevantGraphs(query);
                     const graphsToSearch = relevantGraphs.map(r => r.graph);
                     searchedGraphs = graphsToSearch;
 
@@ -1069,6 +1111,7 @@ export async function createServer(
                         return await handleAccessError(creditRejection, 'search_graph', userId, apiKey);
                     }
                     data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs };
+                    if (unavailableGraphs.length > 0) data.unavailable_graphs = unavailableGraphs;
                 } else {
                     const matchedGraph = getGraphs().find(g => g.graph_id === graphId);
                     if (matchedGraph) {
@@ -2328,7 +2371,7 @@ export async function createServer(
                 const expertWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_expert_intelligence');
                 if (expertWithheld) return expertWithheld;
 
-                const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report');
+                const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report' || g.graph_type === 'analyst');
                 const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_expert_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs);
@@ -4242,7 +4285,7 @@ export async function createServer(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "Second, here\'s the flow: you provide answers in this chat session, then we\'ll run a background research project on your public work, then we run an AI probe of your expertise and reasoning style, and finally schedule a 15–20 minute audio interview to explore your forward-looking predictions, contrarian views, and practical problem-solving — filling the gaps that chat history alone cannot capture. You\'ll get to review everything before anything is submitted." When indexing or analyzing expert data, reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). When presenting the expertise map JSON to the expert, label it "Expertise Review - Step 1" and introduce it with: "This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker. The details reflect the themes above. If you are not happy about something I have included, just provide the feedback and I will run the exercise again to update the document." Never use the title "Iteration Feedback Invitation". Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". Do not state or output any framing about older material being demoted to legacy canon.\nQ3 - Preferred 1-hour consultation rate (single select): "If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, $250/hr, $500/hr, $750/hr, $1,000/hr, $2,000/hr)". Record this value under callPrice in submit_basic_info.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label MUST stay legible on any page background (this often renders on a dark/black page): give the label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. A soft #f5f0ff halo may sit behind the active stage dot itself.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
+        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "Second, here\'s the flow: you provide answers in this chat session, then we\'ll run a background research project on your public work, then we run an AI probe of your expertise and reasoning style, and finally schedule a 15–20 minute audio interview to explore your forward-looking predictions, contrarian views, and practical problem-solving — filling the gaps that chat history alone cannot capture. You\'ll get to review everything before anything is submitted." When indexing or analyzing expert data, reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). When presenting the expertise map JSON to the expert, label it "Expertise Review - Step 1" and introduce it with: "This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker. The details reflect the themes above. If you are not happy about something I have included, just provide the feedback and I will run the exercise again to update the document." Never use the title "Iteration Feedback Invitation". Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". Do not state or output any framing about older material being demoted to legacy canon.\nQ3 - Preferred 1-hour consultation rate (single select): "If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, $250/hr, $500/hr, $750/hr, $1,000/hr, $2,000/hr)". Record this value under callPrice in submit_basic_info.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label and Stage 5 theme cards MUST stay legible on any page background (this often renders on a dark/black page): give the "You are here" label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. FOR THEME-SELECTION CARDS (STAGE 5): Never pair a hard-coded light fill (#f5f0ff) with theme-inherited foreground text (which flips to white/near-white in dark mode). Either (1) use native client surface and text tokens for card backgrounds and body text so light/dark mode auto-adjusts, reserving #663399 for borders, checkboxes, and active dots; or (2) if prescribing exact hexes, ALWAYS pin foreground and background together — a #f5f0ff fill MUST carry dark-purple text (#3C3489 or #26215C), never inherited or theme-default text.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -4358,7 +4401,7 @@ export async function createServer(
 
     server.tool(
         'get_detected_themes',
-        'Fetch the detected themes derived from the expertise analysis and background research. Reframe the introduction using the ACTUAL count of themes returned (themes.length): "N expert topics were detected from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters." NEVER hardcode a count. Present all identified topics in one single numbered list, or state explicitly "recommending N of M". [FLOW VISUALIZATION - REQUIRED IF SUPPORTED]: You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 5 "Choose your themes" as "You are here", #663399 fill, #ffffff text). Never expose developer meta-text to the expert.',
+        'Fetch the detected themes derived from the expertise analysis and background research. Reframe the introduction using the ACTUAL count of themes returned (themes.length): "N expert topics were detected from the material you shared. These become the foundation of your Human Agent\'s expertise and shape the questionnaire for your interview. This is your moment to decide what your Human Agent is expert in — the selection matters." NEVER hardcode a count. Present all identified topics in one single numbered list, or state explicitly "recommending N of M". [FLOW VISUALIZATION - REQUIRED IF SUPPORTED]: You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 5 "Choose your themes" as "You are here", #663399 fill, #ffffff text). FOR THEME SELECTION CARDS (STAGE 5): Never pair a hard-coded light fill (#f5f0ff) with theme-inherited foreground text (which flips to white in dark mode). Either (1) use native client surface and text tokens for card backgrounds and body text so light/dark mode auto-adjusts, reserving #663399 for borders, checkboxes, and active dots; or (2) if prescribing exact hexes, ALWAYS pin foreground and background together — a #f5f0ff fill MUST carry dark-purple text (#3C3489 or #26215C), never inherited or theme-default text. Never expose developer meta-text to the expert.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },

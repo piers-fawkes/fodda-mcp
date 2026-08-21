@@ -97,15 +97,37 @@ const c = addCoverageAnnotation({ rows: [...qaRows] }, 'top emerging trends', []
 check('C: status', c.coverage.status, 'ok');
 check('C: results_on_topic absent', c.coverage.results_on_topic === undefined, true);
 
-// ── Case D: score-less rows (statistics/insights shape) never regress ──
+// ── Case D: score-less rows need a token match to count on-topic ──
+// (2026-08-20 fix: a row with no score AND no lexical overlap is off-topic;
+// previously score-less rows were counted on-topic unconditionally, which let
+// fully off-topic result sets report status "ok".)
 const statsRows = qaRows.slice(2).map(r => ({ ...r, relevance_score: null }));
 const d = addCoverageAnnotation({ rows: statsRows }, QA_QUERY, [], 10, true, CATALOG);
-check('D: status', d.coverage.status, 'ok');
-check('D: score-less rows counted on-topic', d.coverage.results_on_topic, 8);
+check('D: status', d.coverage.status, 'thin');
+check('D: score-less off-topic rows not counted', d.coverage.results_on_topic, 0);
+// Score-less rows WITH a token match still count on-topic.
+const statsOnTopic = onTopicSix.slice(0, 2).map(r => ({ ...r, relevance_score: null }));
+const d2 = addCoverageAnnotation({ rows: [...statsOnTopic, ...statsRows] }, QA_QUERY, [], 10, true, CATALOG);
+check('D2: matching score-less rows counted', d2.coverage.results_on_topic, 2);
 
 // ── Case E: limit < 3 with all rows on-topic — no false thin ──
 const e = addCoverageAnnotation({ rows: onTopicSix.slice(0, 2) }, QA_QUERY, [], 2, false, CATALOG);
 check('E: status', e.coverage.status, 'ok');
+
+// ── Case G: Jeff Squires QA replica (2026-08-20) — deliberately off-topic
+// query against retail/skincare fan-out rows must NOT report ok with
+// results_on_topic == raw count ──
+const JEFF_QUERY = 'financial planning reinvention retirement Easter egg hunt';
+const jeffRows = [
+    row('retail', 'Retailer-Operated Value-Recovery Programs', 'Trade-in and resale programs run by retailers', 1.45),
+    row('retail', 'Ambient Commerce Storefronts', 'Sensor-based checkout-free formats', 1.4),
+    row('womens-health-expert', 'Hormonal Wellness Platforms', 'Femtech products for menopause support', 0.7),
+    row('beauty-expert', 'Clinical Skinimalism', 'Derm-approved minimal routines', 0.66),
+    row('social-report', 'Deinfluencing 2.0', 'Creators monetizing anti-haul content', 0.5),
+];
+const g = addCoverageAnnotation({ rows: jeffRows }, JEFF_QUERY, [], 10, false, CATALOG);
+check('G: status not ok for fully off-topic set', g.coverage.status, 'thin');
+check('G: results_on_topic is 0', g.coverage.results_on_topic, 0);
 
 // ── Direct unit check on the counter ──
 check('countOnTopicRows on QA replica', countOnTopicRows(qaRows, QA_QUERY, [], CATALOG), { onTopic: 2, evaluated: true });

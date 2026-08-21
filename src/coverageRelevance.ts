@@ -72,6 +72,7 @@ const GENERIC_QUERY_TOKENS = new Set([
 
 const TIER_ALIASES: Record<string, string> = {
     'industry report': 'report',
+    'analyst': 'expert',
 };
 
 /** Tokenize a query down to its topically-specific terms. */
@@ -157,20 +158,21 @@ export function countOnTopicRows(
         return { onTopic: rows.length, evaluated: false };
     }
 
-    // Best observed score per tier (for per-tier normalization)
-    const tierMax: Record<string, number> = {};
     const scored = rows.map(r => {
         const score = rowScore(r);
         const tier = resolveRowTier(r, searchedGraphs, catalog);
-        if (score > (tierMax[tier] || 0)) tierMax[tier] = score;
         return { r, score, tier };
     });
 
     let onTopic = 0;
     for (const { r, score, tier } of scored) {
         if (rowMatchesQueryTokens(r, tokens, catalog)) { onTopic++; continue; }
-        if (score <= 0) { onTopic++; continue; } // no score → no evidence it's off-topic
-        const scale = Math.max(TIER_NOMINAL_SCORE[tier] ?? 0.8, tierMax[tier] || 0);
+        // No token match and no score: nothing supports the row being on-topic.
+        if (score <= 0) continue;
+        // Rescue by score alone must be judged against the tier's NOMINAL scale,
+        // never the result set's own max — otherwise the top rows of any set
+        // (including a fully off-topic one) self-certify as on-topic.
+        const scale = TIER_NOMINAL_SCORE[tier] ?? 0.8;
         if (score >= scale * ON_TOPIC_RESCUE_RATIO) onTopic++;
     }
     return { onTopic, evaluated: true };

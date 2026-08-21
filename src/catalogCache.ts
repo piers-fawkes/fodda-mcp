@@ -884,11 +884,12 @@ export function classifyGraphTier(g: CatalogGraph): 'living' | 'static_expert' |
         !['One-Off', 'Coming Soon'].includes(g.update_frequency);
 
     // Domain graphs with recurring updates + experts with recurring updates = Living
-    if ((g.graph_type === 'domain' || g.graph_type === 'expert') && isRecurring) {
+    // ('analyst' = expert graphs typed 'analyst' in the registry, e.g. Digital Twins)
+    if ((g.graph_type === 'domain' || g.graph_type === 'expert' || g.graph_type === 'analyst') && isRecurring) {
         return 'living';
     }
 
-    if (g.graph_type === 'expert') return 'static_expert';
+    if (g.graph_type === 'expert' || g.graph_type === 'analyst') return 'static_expert';
     if (g.graph_type === 'industry report') return 'report';
 
     return 'report'; // fallback for any unclassified
@@ -921,10 +922,20 @@ export function getRelevantGraphs(
     threshold: number = 0.10,
 ): GraphRelevanceResult[] {
     const DEPRECATED_GRAPH_IDS = new Set(['waldo', 'psfk']);
-    const allGraphs = getLiveGraphs().filter(g =>
-        (g.graph_type === 'domain' || g.graph_type === 'expert' || g.graph_type === 'industry report')
-        && !DEPRECATED_GRAPH_IDS.has(g.graph_id)
+    // 'analyst' graphs (e.g. Digital Twin expert graphs typed 'analyst' in the
+    // registry) are searchable expert content — excluding them made registry-live
+    // graphs like jeff-longevity invisible to routing (QA 2026-08-20).
+    const ROUTABLE_TYPES = new Set(['domain', 'expert', 'industry report', 'analyst']);
+    const allLive = getLiveGraphs();
+    const allGraphs = allLive.filter(g =>
+        ROUTABLE_TYPES.has(g.graph_type) && !DEPRECATED_GRAPH_IDS.has(g.graph_id)
     );
+    // Registry-status visibility: surface live graphs excluded from routing by
+    // type, so an unroutable analyst/expert graph is detectable in logs.
+    const typeExcluded = allLive.filter(g => !ROUTABLE_TYPES.has(g.graph_type) && g.graph_type !== 'supplemental' && g.graph_type !== 'skill');
+    if (typeExcluded.length > 0) {
+        console.error(`[graphRouter] ${typeExcluded.length} live graph(s) excluded by graph_type: ${typeExcluded.map(g => `${g.graph_id}(${g.graph_type})`).join(', ')}`);
+    }
 
     if (allGraphs.length === 0) return [];
 
@@ -936,9 +947,10 @@ export function getRelevantGraphs(
         (g.trend_count > 0) || (g.last_synced !== null && g.last_synced !== undefined);
 
     const syncedGraphs = allGraphs.filter(hasContent);
-    const skippedShells = allGraphs.length - syncedGraphs.length;
+    const shellGraphs = allGraphs.filter(g => !hasContent(g));
+    const skippedShells = shellGraphs.length;
     if (skippedShells > 0) {
-        console.error(`[graphRouter] Skipped ${skippedShells} unsynced graph shell(s) (trend_count=0, last_synced=null)`);
+        console.error(`[graphRouter] Skipped ${skippedShells} unsynced graph shell(s) (trend_count=0, last_synced=null): ${shellGraphs.map(g => g.graph_id).join(', ')}`);
     }
 
     // ── Phase 0: Direct name matching ──

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.46.20] - 2026-08-20
+
+### Fixed & Added
+- **Honor Explicit Graph Scope in `search_graph` (`src/toolHandlers.ts`)** — from QA of the Jeff Squires graph (Brief: Search Router Graph Scope, Registry Status Gating & Coverage Reporter Fixes):
+  - New `graphs: string[]` parameter. Previously the tool schema had no such field, so a caller passing `graphs: ["jeff-longevity"]` had the scope silently stripped by zod and fell into smart routing across unrelated graphs.
+  - Explicit scope is now strict: search fans out over EXACTLY the requested graphs. Requested ids that are unknown, not live, or not synced are returned in an additive `unavailable_graphs: [{graph_id, reason}]` notice; if none are searchable the tool returns `dataStatus: "SCOPE_UNAVAILABLE"` with the notice — never substituting other graphs. Unscoped queries keep the existing smart routing unchanged.
+- **Include `analyst`-Typed Graphs in Routing (`src/catalogCache.ts`, `src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Registry rows for some expert graphs (e.g. Digital Twins `jeff-longevity`, `sledge-smith-business-development-strategy`) carry `graphType: "analyst"`; the router only admitted `domain|expert|industry report`, making 11 live analyst graphs invisible to `search_graph` and `get_expert_intelligence`. `getRelevantGraphs`, `classifyGraphTier`, the expert-intelligence coverage set, and coverage tier aliases now treat `analyst` as expert content.
+  - Registry-status visibility: the router now logs live graphs excluded by graph_type and lists the ids of unsynced shells, so a registry-live but unroutable graph is detectable from logs.
+- **Coverage Reporter On-Topic Judgment (`src/coverageRelevance.ts`, `src/test_coverage_relevance.ts`)**:
+  - Score-only rescue is now judged against the tier's NOMINAL scale instead of the result set's own max score — previously the top rows of ANY result set (including fully off-topic ones) self-certified as on-topic, producing `status: "ok", results_on_topic: 10` for zero-relevance sets.
+  - Score-less rows without any lexical overlap no longer count on-topic unconditionally.
+- **Verification**: `npx tsc --noEmit` clean; `src/test_coverage_relevance.ts` ALL CHECKS PASSED including new Case G replaying the failing QA query ("financial planning reinvention retirement Easter egg hunt" → `status: thin`, `results_on_topic: 0`) and updated Case D/D2; `src/test_gap_alert.ts` passed. Live-catalog harness confirmed router-eligible pool 91 → 104 graphs, both `jeff-longevity` and `sledge-smith-business-development-strategy` ELIGIBLE, and the Jeff query routing to `jeff-longevity`.
+
+## [1.46.19] - 2026-08-20
+
+### Fixed & Added
+- **Tighten Stage 5 Theme Card Dark-Mode Contrast Guidance (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `tools-manifest.json`)**:
+  - Added explicit dark-mode high-contrast rules to `begin_expert_onboarding`, `get_detected_themes`, and `systemPrompt.ts` for Stage 5 theme selection cards and prescribed UI surfaces.
+  - Instructs LLMs/clients never to pair a hard-coded pale fill (`#f5f0ff`) with theme-inherited text colors (which flip to white in dark mode, producing unreadable white-on-white text).
+  - Prescribes two acceptable patterns: (1) use native client surface and text tokens so light/dark mode auto-adjusts, reserving `#663399` as an accent for borders and checkboxes; or (2) if prescribing `#f5f0ff` cards, ALWAYS explicitly pin foreground text to dark high-contrast hexes (`#3C3489` or `#26215C`).
+
 ## [1.46.18] - 2026-08-18
 
 ### Fixed & Added
