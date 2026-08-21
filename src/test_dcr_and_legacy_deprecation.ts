@@ -70,7 +70,7 @@ async function runVerificationTest() {
 
     app.get('/.well-known/oauth-authorization-server', (_req, res) => {
         res.status(200).json({
-            issuer: 'http://localhost:8989',
+            issuer: 'http://localhost:8990',
             authorization_endpoint: 'http://localhost:8990/oauth/authorize',
             token_endpoint: 'http://localhost:8990/oauth/token',
             registration_endpoint: 'http://localhost:8989/oauth/register',
@@ -120,11 +120,11 @@ async function runVerificationTest() {
             }
         }
 
-        // Test 3: Metadata Issuer Check (RFC 8414)
+        // Test 3: Metadata Issuer Check (CLERK_ISSUER)
         console.log('[test] Test 3: GET /.well-known/oauth-authorization-server issuer check...');
         const metaResp = await axios.get('http://localhost:8989/.well-known/oauth-authorization-server');
-        if (metaResp.data?.issuer === 'http://localhost:8989') {
-            console.log('[test] PASS: Metadata issuer matches service URL exactly (RFC 8414 requirement).');
+        if (metaResp.data?.issuer === 'http://localhost:8990') {
+            console.log('[test] PASS: Metadata issuer matches CLERK_ISSUER.');
         } else {
             console.error('[test] FAIL: Issuer mismatch:', metaResp.data?.issuer);
         }

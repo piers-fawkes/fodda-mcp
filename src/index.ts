@@ -148,7 +148,7 @@ app.get('/.well-known/oauth-authorization-server', async (_req, res) => {
         code_challenge_methods_supported: ['S256'],
         authorization_response_iss_parameter_supported: true,
         ...(cachedClerkMetadata || {}),
-        issuer: serviceUrl,
+        issuer: CLERK_ISSUER,
         registration_endpoint: `${serviceUrl}/oauth/register`,
     };
     res.status(200).json(metadata);

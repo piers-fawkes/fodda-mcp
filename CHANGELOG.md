@@ -5,6 +5,12 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.22] - 2026-08-21
+
+### Fixed & Added
+- **OAuth Discovery Issuer Alignment (`src/index.ts`)**:
+  - Updated `/.well-known/oauth-authorization-server` to set `issuer: CLERK_ISSUER` (`https://clerk.fodda.ai`), ensuring the metadata issuer matches the JWT `iss` field issued by Clerk so OAuth 2.0 / OIDC client token validation succeeds across all connectors (Claude, Gemini, etc.).
+
 ## [1.46.21] - 2026-08-21
 
 ### Fixed & Added
