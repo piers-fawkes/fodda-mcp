@@ -241,7 +241,8 @@ function renderClosingBlock(nextMoves: NextMoves | undefined): { lines: string[]
     if (nextMoves.thread) {
         const t = nextMoves.thread;
         if (t.kind === 'more_in_graph' && t.remaining_count && t.remaining_count > 0) {
-            lines.push(`I can pull the remaining ${t.remaining_count} signals on ${t.theme || 'this theme'} from ${t.graph_display || 'the graph'}.`);
+            const countPhrase = t.remaining_count >= 10 ? 'many more trends' : 'several more trends';
+            lines.push(`There are ${countPhrase} in ${t.graph_display || 'the graph'} exploring ${t.theme || 'this topic'} — want me to pull those?`);
         } else if (t.kind === 'adjacent_room' && t.adjacent) {
             lines.push(`We also have related coverage in ${t.adjacent.graph_display} — want me to pull that?`);
         } else if (t.kind === 'honest_thin' && t.adjacent) {

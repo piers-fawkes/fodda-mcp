@@ -5,6 +5,16 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.24] - 2026-08-22
+
+### Changed
+- **Natural Phrasing in Next Moves Closing Block (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Updated prompt and render instructions (`RULE: NextMovesClosingBlock` and `buildRenderInstructions` rule 103) to mandate natural editorial phrasing instead of quoting exact raw numeric counts in line 1 ("Pull the thread"):
+    - Modest counts (2–8): *"several more trends/signals"* (e.g. *"There are several more trends in [Graph Display Name] exploring this topic..."*).
+    - Substantial counts (10+): *"many more trends/signals"* (e.g. *"There are many more trends in [Graph Display Name] exploring this topic..."*).
+    - Zero remaining: smoothly pivot to adjacent graph/room without numbers.
+  - Updated transcript verification simulation (`src/test_next_moves_transcripts.ts`).
+
 ## [1.46.23] - 2026-08-22
 
 ### Added & Changed
