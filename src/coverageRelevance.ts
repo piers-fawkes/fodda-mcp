@@ -451,6 +451,10 @@ export interface NextMovesOptions {
     knownBrand?: string | undefined;
     currentAnalystId?: string | undefined;
     analysts?: CatalogAnalyst[] | undefined;
+    isBrandTracker?: boolean | undefined;
+    competitiveLandscape?: string[] | undefined;
+    earningsTicker?: string | undefined;
+    earningsStatsSource?: string | undefined;
 }
 
 export interface ConsultNextMovesOptions {
@@ -523,6 +527,30 @@ export function generateNextMoves(
                 const graphMeta = catalog.find(g => g.graph_id === bestGraphId);
                 bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
             }
+        } else {
+            for (const [gid, gRows] of rowsByGraph.entries()) {
+                const onTopicRows = gRows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
+                const renderedCount = gRows.length;
+                const gTotal = gRows[0]?.on_topic_total ?? gRows[0]?.total_count ?? gRows[0]?.total;
+                let remainder = 0;
+                if (typeof gTotal === 'number' && gTotal > renderedCount) {
+                    remainder = gTotal - renderedCount;
+                }
+
+                if (remainder > maxRemainder) {
+                    maxRemainder = remainder;
+                    bestGraphId = gid;
+                    const themes: string[] = [];
+                    for (const r of onTopicRows) {
+                        if (Array.isArray(r.topics)) themes.push(...r.topics);
+                        if (Array.isArray(r.sectors)) themes.push(...r.sectors);
+                        if (r.title) themes.push(r.title);
+                    }
+                    const graphMeta = catalog.find(g => g.graph_id === gid);
+                    if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
+                    bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
+                }
+            }
         }
     } else {
         for (const [gid, gRows] of rowsByGraph.entries()) {
@@ -550,7 +578,57 @@ export function generateNextMoves(
         }
     }
 
-    if (maxRemainder > 0 && bestGraphId) {
+    if (options?.isBrandTracker) {
+        if (rows.length > 0) {
+            let maxCount = 0;
+            let topGraphId: string | undefined;
+            for (const [gid, gRows] of rowsByGraph.entries()) {
+                if (gRows.length > maxCount) {
+                    maxCount = gRows.length;
+                    topGraphId = gid;
+                }
+            }
+            if (topGraphId) {
+                const gRows = rowsByGraph.get(topGraphId) || [];
+                const themes: string[] = [];
+                for (const r of gRows) {
+                    if (Array.isArray(r.topics)) themes.push(...r.topics);
+                    if (Array.isArray(r.sectors)) themes.push(...r.sectors);
+                    if (r.trend_name) themes.push(r.trend_name);
+                    if (r.title) themes.push(r.title);
+                }
+                const gMeta = catalog.find(g => g.graph_id === topGraphId);
+                if (gMeta?.topics?.length) themes.push(...gMeta.topics);
+                const bestTheme = themes.slice(0, 2).join(' and ') || gMeta?.domain || 'emerging signals';
+                const display = gMeta ? buildDisplayName(gMeta) : (gRows[0]?.graphName || topGraphId);
+
+                nextMoves.thread = {
+                    kind: 'more_in_graph',
+                    graph_id: topGraphId,
+                    graph_display: display,
+                    remaining_count: maxCount,
+                    theme: bestTheme,
+                };
+            }
+        } else {
+            // Empty brand footprint: pick top domain graph from catalog without keyword-matching on bare brand name
+            const domainGraphs = catalog.filter(g => g.graph_type === 'domain' || !g.curator);
+            const topDomain = domainGraphs[0] || catalog[0];
+            if (topDomain) {
+                const topDisplay = buildDisplayName(topDomain);
+                nextMoves.thread = {
+                    kind: 'honest_thin',
+                    graph_id: topDomain.graph_id,
+                    graph_display: topDisplay,
+                    adjacent: {
+                        graph_id: topDomain.graph_id,
+                        graph_display: topDisplay,
+                        reason: topDomain.headline || topDomain.domain || topDomain.name,
+                    }
+                };
+            }
+        }
+    } else if (maxRemainder > 0 && bestGraphId) {
         const gMeta = catalog.find(g => g.graph_id === bestGraphId);
         const display = gMeta ? buildDisplayName(gMeta) : bestGraphId;
         nextMoves.thread = {
@@ -627,54 +705,76 @@ export function generateNextMoves(
     // ── 2. Specific (Go specific: brands, statistics_source, expert) ──
     const specific: NextMovesSpecific = {};
 
-    // Brands: extract top 2 brand entities present in the returned rows
-    const brandCounts = new Map<string, number>();
-    for (const r of rows) {
-        const brandList: string[] = [];
-        if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
-        if (Array.isArray(r.brands)) brandList.push(...r.brands);
-        if (typeof r.brand === 'string' && r.brand) brandList.push(r.brand);
-        if (typeof r.company === 'string' && r.company) brandList.push(r.company);
-        if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
+    // Brands: extract competitive landscape or top 2 brand entities present in returned rows
+    if (options?.competitiveLandscape && options.competitiveLandscape.length > 0) {
+        specific.brands = options.competitiveLandscape.slice(0, 2);
+    } else {
+        const brandCounts = new Map<string, number>();
+        for (const r of rows) {
+            const brandList: string[] = [];
+            if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
+            if (Array.isArray(r.brands)) brandList.push(...r.brands);
+            if (typeof r.brand === 'string' && r.brand) brandList.push(r.brand);
+            if (typeof r.company === 'string' && r.company) brandList.push(r.company);
+            if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
 
-        for (const b of brandList) {
-            if (typeof b === 'string' && b.trim().length > 1) {
-                const cleaned = b.trim();
-                brandCounts.set(cleaned, (brandCounts.get(cleaned) || 0) + 1);
+            for (const b of brandList) {
+                if (typeof b === 'string' && b.trim().length > 1) {
+                    const cleaned = b.trim();
+                    brandCounts.set(cleaned, (brandCounts.get(cleaned) || 0) + 1);
+                }
+            }
+        }
+
+        if (brandCounts.size > 0) {
+            const sortedBrands = [...brandCounts.entries()]
+                .filter(([b]) => {
+                    const bLow = b.toLowerCase();
+                    const qLow = query.toLowerCase();
+                    return bLow !== qLow && !qLow.includes(bLow) && !bLow.includes(qLow);
+                })
+                .sort((a, b) => b[1] - a[1])
+                .map(([brand]) => brand)
+                .slice(0, 2);
+            if (sortedBrands.length > 0) {
+                specific.brands = sortedBrands;
             }
         }
     }
 
-    if (brandCounts.size > 0) {
-        const sortedBrands = [...brandCounts.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .map(([brand]) => brand)
-            .slice(0, 2);
-        specific.brands = sortedBrands;
-    }
-
     // Statistics source: supplemental source or scored stat dataset
-    const qLower = query.toLowerCase();
-    const isStatOrMarketShaped =
-        suggestedAction !== undefined ||
-        isDemandShaped(query) ||
-        options?.knownBrand !== undefined ||
-        brandCounts.size > 0 ||
-        /(?:market|spend|sales|growth|size|volume|rate|adoption|share|stats?|numbers?|forecast|demographics?|economic|inflation|pricing|consumer|retail|cpg|beauty|fashion|auto|tech|work|travel|food|drink|beverage|culture|trends?|brand|performance|activity)/i.test(qLower);
+    if (options?.earningsStatsSource) {
+        specific.statistics_source = options.earningsStatsSource;
+    } else if (options?.earningsTicker) {
+        specific.statistics_source = `earnings and financial performance data for ${options.earningsTicker}`;
+    } else if (options?.isBrandTracker) {
+        // If no competitor brands were found, fall back to market demand signals so line 2 is never empty
+        if (!specific.brands || specific.brands.length === 0) {
+            specific.statistics_source = 'Google Trends and market demand signals';
+        }
+    } else {
+        const qLower = query.toLowerCase();
+        const isStatOrMarketShaped =
+            suggestedAction !== undefined ||
+            isDemandShaped(query) ||
+            options?.knownBrand !== undefined ||
+            (specific.brands && specific.brands.length > 0) ||
+            /(?:market|spend|sales|growth|size|volume|rate|adoption|share|stats?|numbers?|forecast|demographics?|economic|inflation|pricing|consumer|retail|cpg|beauty|fashion|auto|tech|work|travel|food|drink|beverage|culture|trends?|brand|performance|activity)/i.test(qLower);
 
-    if (isStatOrMarketShaped) {
-        if (/(?:retail|spend|sales|commerce|shopping|store|grocery|cpg|consumer)/i.test(qLower)) {
-            specific.statistics_source = 'Census retail trade and spending data';
-        } else if (/(?:search|demand|interest|popular|google|volume|buzz|social)/i.test(qLower)) {
-            specific.statistics_source = 'Google Trends search volume and breakout queries';
-        } else if (/(?:employment|labor|job|wage|worker|workplace|talent|hiring)/i.test(qLower)) {
-            specific.statistics_source = 'BLS labor and employment metrics';
-        } else if (/(?:economic|inflation|cpi|interest\s+rate|gdp|macro|fed|recession)/i.test(qLower)) {
-            specific.statistics_source = 'FRED macroeconomic series';
-        } else if (/(?:beauty|fashion|apparel|luxury|sport|wellness|food|beverage)/i.test(qLower)) {
-            specific.statistics_source = 'Census and Google Trends market demand data';
-        } else {
-            specific.statistics_source = 'Census and FRED market statistics';
+        if (isStatOrMarketShaped) {
+            if (/(?:retail|spend|sales|commerce|shopping|store|grocery|cpg|consumer)/i.test(qLower)) {
+                specific.statistics_source = 'Census retail trade and spending data';
+            } else if (/(?:search|demand|interest|popular|google|volume|buzz|social)/i.test(qLower)) {
+                specific.statistics_source = 'Google Trends search volume and breakout queries';
+            } else if (/(?:employment|labor|job|wage|worker|workplace|talent|hiring)/i.test(qLower)) {
+                specific.statistics_source = 'BLS labor and employment metrics';
+            } else if (/(?:economic|inflation|cpi|interest\s+rate|gdp|macro|fed|recession)/i.test(qLower)) {
+                specific.statistics_source = 'FRED macroeconomic series';
+            } else if (/(?:beauty|fashion|apparel|luxury|sport|wellness|food|beverage)/i.test(qLower)) {
+                specific.statistics_source = 'Census and Google Trends market demand data';
+            } else {
+                specific.statistics_source = 'Census and FRED market statistics';
+            }
         }
     }
 

@@ -6,8 +6,8 @@ async function runVerification() {
 
     // 1. Verify OFFERING_SCOPED_TOOLS map
     const brandTools = OFFERING_SCOPED_TOOLS['brand-intelligence'];
-    if (!brandTools || brandTools.length !== 12) {
-        throw new Error(`Expected 12 tools for brand-intelligence, got ${brandTools?.length}`);
+    if (!brandTools || brandTools.length !== 13) {
+        throw new Error(`Expected 13 tools for brand-intelligence, got ${brandTools?.length}`);
     }
     if (!brandTools.includes('brand_tracker') || !brandTools.includes('search_graph')) {
         throw new Error('Missing primary tools in brand-intelligence scope');

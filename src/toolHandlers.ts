@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, specificQueryTokens } from './coverageRelevance.js';
+import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -1625,7 +1625,19 @@ export async function createServer(
                 const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
                 if (adjacentWithheld) return adjacentWithheld;
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                const adjacentClosing = renderClosingBlock(data?.next_moves);
+                const closingInstruction = adjacentClosing.text
+                    ? `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):\n\n${adjacentClosing.lines.join('\n')}`
+                    : '';
+
+                const content: Array<{ type: 'text'; text: string }> = [
+                    { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(data, null, 2) },
+                ];
+                if (closingInstruction) {
+                    content.push({ type: 'text' as const, text: closingInstruction });
+                }
+
+                return { next_moves: data?.next_moves, content };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -1662,6 +1674,7 @@ export async function createServer(
         const competitorCounts: Record<string, number> = {};
         const competitorGraphs: Record<string, Set<string>> = {};  // track which graphs each competitor appears in
         let usedCypherEndpoint = false;
+        let marketData: any = null;
 
         // ── Strategy 1: Single Cypher endpoint (fast path) ──
         try {
@@ -1676,6 +1689,9 @@ export async function createServer(
 
             if (cypherData?.ok && cypherData.trend_footprint) {
                 usedCypherEndpoint = true;
+                if (cypherData.market_data) {
+                    marketData = cypherData.market_data;
+                }
 
                 // Map Cypher response → MCP profile shape
                 for (const t of cypherData.trend_footprint) {
@@ -2183,6 +2199,9 @@ export async function createServer(
         (profile as any).earningsTruthLayer = earningsRaw?.earningsTruthLayer || earningsSnapshot?.truth_layer || undefined;
         (profile as any).validatedTrends = earningsRaw?.validatedTrends || earningsSnapshot?.validated_trends || undefined;
         (profile as any).analystQA = earningsRaw?.analystQA || undefined;
+        if (marketData) {
+            (profile as any).market_data = marketData;
+        }
 
         const widget = await renderBrandWidget(profile);
         const EDITORIAL_INSTRUCTION = widget.open_slots.length === 0
@@ -2220,24 +2239,72 @@ export async function createServer(
                 const withheld = await settleOrWithhold({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name }, 'brand_tracker');
                 if (withheld) return withheld;
 
+                const brandLower = brand_name.toLowerCase();
+                const competitiveLandscape = (profile?.competitive_context?.co_occurring_brands || [])
+                    .map((c: any) => c.brand)
+                    .filter((b: string) => b && b.toLowerCase() !== brandLower && !brandLower.includes(b.toLowerCase()) && !b.toLowerCase().includes(brandLower))
+                    .slice(0, 2);
+
+                const pAny = profile as any;
+                const earningsTicker = pAny?.market_data?.ticker ||
+                    pAny?.earningsTruthLayer?.ticker ||
+                    pAny?.earningsIntelligence?.[0]?.ticker ||
+                    pAny?.earningsIntelligence?.[0]?.symbol;
+
+                const earningsStatsSource = earningsTicker
+                    ? `earnings and financial performance data for ${earningsTicker}`
+                    : (pAny?.earningsTruthLayer || (pAny?.earningsIntelligence && pAny.earningsIntelligence.length > 0))
+                        ? `earnings and financial performance data`
+                        : undefined;
+
+                const trendCount = profile?.trend_footprint?.length || 0;
+                const coverageStatus: 'ok' | 'thin' | 'empty' = trendCount === 0 ? 'empty' : trendCount < 3 ? 'thin' : 'ok';
                 const brandNextMoves = generateNextMoves(
                     profile?.trend_footprint || [],
                     brand_name,
                     graph_ids || [],
-                    'ok',
+                    coverageStatus,
                     undefined,
                     undefined,
                     getGraphs(),
                     getAnalysts(),
-                    { knownBrand: brand_name }
+                    {
+                        knownBrand: getKnownBrand(),
+                        isBrandTracker: true,
+                        competitiveLandscape,
+                        earningsTicker,
+                        earningsStatsSource,
+                    }
                 );
                 sessionTracker.recordNextMoves(brandNextMoves, brand_name);
+                (profile as any).next_moves = brandNextMoves;
 
-                const content: Array<{ type: 'text'; text: string }> = [
-                    { type: 'text' as const, text: widget.widget_html },
-                ];
+                const brandClosing = renderClosingBlock(brandNextMoves);
+                const closingBlockInstruction = brandClosing.text
+                    ? `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):\n\n${brandClosing.lines.join('\n')}`
+                    : '';
+
+                const rawDataBlock = {
+                    type: 'text' as const,
+                    text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
+                };
+                const widgetBlock = {
+                    type: 'text' as const,
+                    text: widget.widget_html,
+                };
+
+                const content: Array<{ type: 'text'; text: string }> = [rawDataBlock];
                 if (EDITORIAL_INSTRUCTION) {
-                    content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
+                    const finalEditorial = closingBlockInstruction
+                        ? `${EDITORIAL_INSTRUCTION}\n\n${closingBlockInstruction}\n`
+                        : EDITORIAL_INSTRUCTION;
+                    content.push({ type: 'text' as const, text: finalEditorial });
+                    content.push(widgetBlock);
+                } else {
+                    content.push(widgetBlock);
+                    if (closingBlockInstruction) {
+                        content.push({ type: 'text' as const, text: closingBlockInstruction });
+                    }
                 }
                 return { next_moves: brandNextMoves, content };
             } catch (err: any) {
@@ -3259,7 +3326,14 @@ export async function createServer(
                     try {
                         const body = { query, limit: 5, use_semantic: true, include_evidence: false };
                         const res = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(gid)}/search`, apiKey, resolvedUserId, body);
-                        return (res?.rows || []).map((r: any) => ({ ...r, _source_graph: gid }));
+                        return (res?.rows || []).map((r: any) => ({
+                            ...r,
+                            graphId: gid,
+                            _use_this_graphId: gid,
+                            _source_graph: gid,
+                            on_topic_total: res?.on_topic_total ?? res?.total ?? res?.total_count,
+                            total: res?.total ?? res?.total_count,
+                        }));
                     } catch { return []; }
                 });
 
@@ -3437,11 +3511,23 @@ export async function createServer(
                 sessionTracker.recordNextMoves(brainstormNextMoves, query);
                 (brainstormMap as any).next_moves = brainstormNextMoves;
 
+                const brainstormClosing = renderClosingBlock(brainstormNextMoves);
+                const closingInstruction = brainstormClosing.text
+                    ? `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):\n\n${brainstormClosing.lines.join('\n')}`
+                    : '';
+
                 // ── Query-level billing ──
                 chargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[brainstorm] chargeQuery failed:', e.message));
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(brainstormMap, null, 2) }] };
+                const content: Array<{ type: 'text'; text: string }> = [
+                    { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(brainstormMap, null, 2) },
+                ];
+                if (closingInstruction) {
+                    content.push({ type: 'text' as const, text: closingInstruction });
+                }
+
+                return { next_moves: brainstormNextMoves, content };
             } catch (err: any) {
                 const msg = err.message || 'Brainstorm execution failed.';
                 console.error('[brainstorm_topic] Error:', msg);

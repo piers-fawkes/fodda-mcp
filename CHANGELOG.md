@@ -5,6 +5,32 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.27] - 2026-08-22
+
+### Fixed & Enhanced (Next Moves Closing Block Server-Rendering & Brand Material Refinements)
+- **`brand_tracker` Material Refinements Across All 3 Lines (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - **Line 3 (Circular knownBrand Fix)**: Changed `knownBrand` in `brand_tracker` to derive strictly from user account profile via `getKnownBrand()`, rather than the tracked brand name argument. Prevents circular offers (e.g. Gymshark report offering to cut to Gymshark) and falls back to standard copy: *"If you tell me the brand or brief you're working on, I'll cut this to that."*.
+  - **Line 1 (Footprint-Derived Thread)**: For brand reports (`isBrandTracker: true`), derived the thread directly from `profile.trend_footprint` targeting the graph holding the most connected trends (e.g. `more_in_graph`), completely skipping `getRelevantGraphs()` keyword matching on bare brand names.
+  - **Line 2 (Competitive Landscape & Earnings Read)**: Populated `specific.brands` from `profile.competitive_context.co_occurring_brands` (excluding the tracked brand itself), and populated `specific.statistics_source` with the earnings read (`"earnings and ROIC data for [ticker]"`) when a ticker/truth layer resolves. Suppressed generic "Census and FRED" keyword fallback for brand reports.
+- **Server-Rendered Closing Block & Raw Data (`src/toolHandlers.ts`)**:
+  - Server-rendered 3-sentence closing blocks from `next_moves` across `brand_tracker`, `discover_adjacent_trends`, and `brainstorm_topic` via `renderClosingBlock()`.
+  - Appended the rendered block to the `EDITORIAL_INSTRUCTION` block (or as a separate text block), prefixed with the standard verbatim reproduction instruction:
+    `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):`.
+  - Embedded structured `next_moves` inside a `── RAW DATA (for follow-up reasoning) ──` JSON block in `content` matching `search_graph`.
+- **Test Suite Updates (`src/test_next_moves_transcripts.ts`)**:
+  - Updated transcript runner to assert strictly on `res.content` text (verifying 3 sentences, zero banned terms, and presence in `content`), never accessing `res.next_moves` on the return object.
+  - Added test coverage for `discover_adjacent_trends` and `brainstorm_topic` (13/13 test queries passing with 0 banned terms).
+- **Live Probes Verification**:
+  - **Novel Brand Probe (On Running)**:
+    - Executed live `brand_tracker` against production graph backend on novel brand *"On Running"*.
+    - Rendered Closing Block captured:
+      > "There are several more trends in PSFK Retail Trends exploring On-Demand Retail Activations and Immersive Commerce & Creator Culture — want me to pull those? Or we can look into Decathlon or Dior. If you tell me the brand or brief you're working on, I'll cut this to that."
+  - **Earnings Ticker Probe (Lululemon)**:
+    - Executed live `brand_tracker` on ticker-enabled brand *"Lululemon"*.
+    - Rendered Closing Block captured:
+      > "There are many more trends in PSFK Sports Trends exploring Collaborative Commerce and Wellness and Recovery Technologies — want me to pull those? Or we can look into La Mer or NCR or pull quantitative data from earnings and ROIC data for LULU. If you tell me the brand or brief you're working on, I'll cut this to that."
+  - Verification: 0 cost/token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 apologies, 0 headers across all lines.
+
 ## [1.46.26] - 2026-08-22
 
 ### Fixed & Enhanced (Consult-Specific Next Moves Envelope Corrections)
