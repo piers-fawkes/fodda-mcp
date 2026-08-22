@@ -358,7 +358,7 @@ Five tools, novel queries, piers.fawkes@psfk.com key. Closing blocks below are t
 **Defects found (open):**
 1. `brand_tracker`, `consult_analyst`, `consult_human_agent`: put `next_moves` inside the content JSON (as `search_graph` does), not on the return object. Unit tests read the return object and so passed falsely.
 2. Concurrent tool calls from one client: 5 parallel → 3 timeouts + the `brand_tracker` slot received the `get_domain_intelligence` payload; 2 parallel → 1 timeout; serial → fine. Reproduce server-side with request IDs before assuming harness.
-3. Render instruction says "avoid exact counts (several/many)"; the brief specified naming the count. Decision pending with Piers.
+3. Render instruction says "avoid exact counts (several/many)" — this is by Piers's instruction (exact counts read as ugly and over-commit us); it supersedes the brief. Do not revert.
 4. `specific.expert` matching is loose (Nathan Grotticelli offered for in-store AI) and `reason` is sliced mid-word ("Growth Marketi", "reads what thi"). Require graph overlap; cut on word boundary.
 5. `get_domain_intelligence` thread `graph_id` = first searched graph (psfk-travel-hospitality), not the graph that produced results (retail).
 

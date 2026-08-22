@@ -25,7 +25,7 @@ The expert-consult path already has a "Closing Fan-Out Options" rule in `src/sys
 
 Every tool that returns research content (`search_graph`, `search_insights`, `search_statistics`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `brand_tracker`, `get_supplemental_context`, `discover_adjacent_trends`, `brainstorm_topic`, `consult_analyst`, `consult_human_agent`, `deep_research_topic` completion) ends with exactly three lines, in this order:
 
-1. **Pull the thread** — one specific thing this answer surfaced but did not finish. Must name the graph and a count or a named adjacent room.
+1. **Pull the thread** — one specific thing this answer surfaced but did not finish. Must name the graph and either a named adjacent room or a sense of what remains — **never an exact count** (Piers, 08-22: numbers are ugly and over-commit us; say "several more" for 2–8, "many more" for 10+).
    *"There are 3 more GLP-1 signals in PSFK's Food & Beverage graph on snacking and protein I didn't include — pull them?"*
    *"Sports has the fan side of this — want that room?"*
    When coverage is `thin` or `empty`, this line becomes the honest version: *"That's what Fodda holds on this right now; the closest adjacent hit is [X] in [Graph] — want it?"*
