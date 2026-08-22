@@ -332,6 +332,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   > "We also have related coverage in Retail Strategy & Innovation — want me to pull that? Or we can look into Supreme or Aimé Leon Dore or pull quantitative data from Census retail trade and spending data. If you tell me the brand or brief you're working on, I'll cut this to that."
 - **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
 
+#### Live client verification — 2026-08-22 (Claude, real sessions against deployed 1.46.23 / API 00618)
+
+Five tools, novel queries, piers.fawkes@psfk.com key. Closing blocks below are the client's actual render from the returned `next_moves`.
+
+**search_graph · retail · "in-store AI shopping assistants and personalised recommendations at physical retail"** — coverage ok, on_topic_total 27, returned 3
+> There are many more trends in PSFK Retail Trends on bookable beauty services and AI shopping concierges — want me to pull those?
+> I can run the brand view on Dior or Target, or pull the Census retail trade and spending data behind this.
+> If you tell me the brand or brief you're working on, I'll cut this to that.
+
+**search_graph · sic · "lunar regolith 3D-printed habitats for commercial moon tourism"** — coverage thin, 0 of 1 on-topic
+> That's what Fodda holds on this right now; the closest adjacent hit is Rajiv Rajian's Amadeus AI Travel Personalization Outlook — want it?
+> I can pull Census and FRED market statistics, or bring in Anu Lingala on the cultural read.
+> If you tell me the brand or brief you're working on, I'll cut this to that.
+
+**get_domain_intelligence · "refillable fragrance formats and scent subscription services"** — ok, 4 of 4
+> There's an adjacent room worth opening: Jo Allen's Cosmetics Business Fragrance Industry Trends 2026 covers fragrance as identity and new formats — want that?
+> (line 2 dropped — `next_moves.specific` absent from payload)
+> If you tell me the brand or brief you're working on, I'll cut this to that.
+
+**brand_tracker · Lululemon** — NOT RENDERABLE. Content is widget HTML only; `next_moves` is on the handler's return object, which the MCP protocol strips. Client receives no material.
+
+**consult_human_agent · jeff-longevity · "How should a mid-size bank rethink its retirement products for people who expect to work into their seventies?"** — NOT RENDERABLE. Same cause: `next_moves` not inside `content`.
+
+**Defects found (open):**
+1. `brand_tracker`, `consult_analyst`, `consult_human_agent`: put `next_moves` inside the content JSON (as `search_graph` does), not on the return object. Unit tests read the return object and so passed falsely.
+2. Concurrent tool calls from one client: 5 parallel → 3 timeouts + the `brand_tracker` slot received the `get_domain_intelligence` payload; 2 parallel → 1 timeout; serial → fine. Reproduce server-side with request IDs before assuming harness.
+3. Render instruction says "avoid exact counts (several/many)"; the brief specified naming the count. Decision pending with Piers.
+4. `specific.expert` matching is loose (Nathan Grotticelli offered for in-store AI) and `reason` is sliced mid-word ("Growth Marketi", "reads what thi"). Require graph overlap; cut on word boundary.
+5. `get_domain_intelligence` thread `graph_id` = first searched graph (psfk-travel-hospitality), not the graph that produced results (retail).
+
 ## [1.46.22] - 2026-08-21
 
 ### Fixed & Added
