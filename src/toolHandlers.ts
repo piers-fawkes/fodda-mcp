@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope } from './coverageRelevance.js';
+import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, specificQueryTokens } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -100,7 +100,7 @@ function buildRenderInstructions(opts: {
         'ONE TREND, ONE PARAGRAPH: Each trend gets exactly one paragraph of at most 3 sentences (~60 words). Open the paragraph with the trend name in bold followed by its lifecycle stage in italics, e.g. **Human-centric luxury** *(building)*. Insert a blank line between trends — never run two trends into one paragraph.',
         'MAX 3 TRENDS by default, ranked by relevance, even when the payload contains more. Mention in the closing line that further trends are available on request. Exception: the user explicitly asked for an exhaustive list.',
         'CITATIONS — SHORT ANCHORS: Every claim still requires its source link. Prefer short_citation (e.g. "[via Jing Daily](url)") or short source labels ("via Jing Daily", "BoF-McKinsey survey"), never the full evidence headline. Place links at the end of a sentence or in a trailing parenthetical — never mid-clause. Maximum 2 links per trend paragraph; if a trend has more evidence, cite the strongest 2 and note more exists.',
-        'NEXT MOVES CLOSING BLOCK (Render Spec 1.3): Every research answer and expert consult must end with a deterministic three-sentence closing block (no heading, no "any questions?", no emoji, no apology) in this fixed order: (1) Pull the thread: One specific thing surfaced but not finished, generated from next_moves.thread. In general search, use natural editorial phrasing ("several more trends/signals" for 2–8, "many more trends/signals" for 10+, or honest thin version). In expert consults (consult_human_agent / consult_analyst), this is the expert\'s authentic 1st-person next move (using expert_thread.next_angle or uncited themes, or referral recommendation on out-of-lane decline). (2) Explore the shelf / Go specific: Merchandises <=2 relevant graphs from catalogCache (excluding expert\'s own graph) or offers brand/statistics options from next_moves.specific. (3) Scope the work: Fixed copy: "To turn this into an executive brief or project deliverable, ask me to scope a deliverable." (or "If you tell me the brand or brief you\'re working on, I\'ll cut this to that."). Never invent names, brands, or numbers — all material must come from next_moves or result rows.',
+        'NEXT MOVES CLOSING BLOCK (Render Spec 1.3): Every research answer and expert consult must end with a deterministic three-sentence closing block (no heading, no "any questions?", no emoji, no apology) in this fixed order: (1) Pull the thread: One specific thing surfaced but not finished, generated from next_moves.thread. In general search, use natural editorial phrasing ("several more trends/signals" for 2–8, "many more trends/signals" for 10+, or honest thin version). In expert consults (consult_human_agent / consult_analyst), this is the expert\'s authentic 1st-person next move (using expert_thread.next_angle or uncited themes, or referral recommendation on out-of-lane decline). (2) Explore the shelf / Go specific: Merchandises <=2 relevant graphs from catalogCache (excluding expert\'s own graph) or offers brand/statistics options from next_moves.specific. (3) Scope to the job: Fixed copy: "If you tell me the brand or brief you\'re working on, I\'ll cut this to that." (or "Want this cut to [brand] specifically?" if the user\'s research profile specifies a brand). Never invent names, brands, or numbers — all material must come from next_moves or result rows.',
         'NO FILLER STRUCTURE: No section headers for responses of 3 trends or fewer. No bullet-lists of evidence items. No restating evidence counts, graph counts, or relevance scores in prose.',
         'DEPTH ON REQUEST: When the user asks about ONE specific trend, the density caps lift — expand to full evidence, longer paragraphs, and complete citations. The caps govern first-pass survey responses, not drill-downs.',
         'COVERAGE RECOVERY: coverage.status is machine-readable routing data — NEVER tell the user coverage is "thin", "low", or "empty". When status is thin or empty, silently run coverage.suggested_action (get_supplemental_context) in the SAME turn and blend what it returns into the answer. If that also returns nothing usable, present what exists plainly — "this is what we have on this right now" — and offer the coverage.escalation options (a Deep Dive report via deep_research_topic, or your own web/LLM research with non-Fodda findings clearly attributed). Never pad weak matches into a confident-looking answer.',
@@ -4018,6 +4018,10 @@ export async function createServer(
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
                     const activeAnalysts = getAnalysts();
+                    const coverageLower = (result.coverage || 'ok').toLowerCase().trim();
+                    const isFullCoverage = coverageLower === 'in' || coverageLower === 'full';
+                    const qTokens = specificQueryTokens(query);
+
                     const activeReferrals = result.referrals.filter((r: any) => {
                         const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
                         const found = activeAnalysts.find((a: any) => {
@@ -4030,6 +4034,14 @@ export async function createServer(
                         }
                         const rStatus = (r.status || r.Status || '').toLowerCase().trim();
                         if (rStatus && rStatus !== 'active') return false;
+
+                        // Referral gating per §2.A.4: on FULL coverage, suppress unless reason shares content token with query
+                        if (isFullCoverage) {
+                            const reasonText = `${r.reason || ''} ${r.topics?.join(' ') || ''}`.toLowerCase();
+                            const sharesToken = qTokens.some(t => t.length >= 3 && reasonText.includes(t));
+                            if (!sharesToken) return false;
+                        }
+
                         return true;
                     });
 
@@ -4266,6 +4278,10 @@ export async function createServer(
                 }
                 if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
                     const activeAnalysts = getAnalysts();
+                    const coverageLower = (result.coverage || 'ok').toLowerCase().trim();
+                    const isFullCoverage = coverageLower === 'in' || coverageLower === 'full';
+                    const qTokens = specificQueryTokens(query);
+
                     const activeReferrals = result.referrals.filter((r: any) => {
                         const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
                         const found = activeAnalysts.find((a: any) => {
@@ -4278,6 +4294,14 @@ export async function createServer(
                         }
                         const rStatus = (r.status || r.Status || '').toLowerCase().trim();
                         if (rStatus && rStatus !== 'active') return false;
+
+                        // Referral gating per §2.A.4: on FULL coverage, suppress unless reason shares content token with query
+                        if (isFullCoverage) {
+                            const reasonText = `${r.reason || ''} ${r.topics?.join(' ') || ''}`.toLowerCase();
+                            const sharesToken = qTokens.some(t => t.length >= 3 && reasonText.includes(t));
+                            if (!sharesToken) return false;
+                        }
+
                         return true;
                     });
 

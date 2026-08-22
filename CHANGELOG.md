@@ -5,6 +5,34 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.26] - 2026-08-22
+
+### Fixed & Enhanced (Consult-Specific Next Moves Envelope Corrections)
+- **Scope Line Parity (`src/coverageRelevance.ts`, `src/toolHandlers.ts:103`, `src/systemPrompt.ts:71`)**:
+  - Reverted Line 3 across all tools strictly to the exact Render Spec 1.2 copy: *"If you tell me the brand or brief you're working on, I'll cut this to that."* (or *"Want this cut to [brand] specifically?"*).
+  - Completely removed the deliverable variant (*"ask me to scope a deliverable"*) from Line 3 across all code and render instructions to prevent model improvisations.
+- **Deliverable Mention in Shelf Line Only (`src/coverageRelevance.ts`)**:
+  - Deliverable scoping mentions are permitted strictly in Sentence 2 (Shelf) and only when the consulted expert has live catalog offerings (`getAnalysts()` offerings): `", and [Expert] takes scoped briefs on this if you need a deliverable."`.
+- **Telemetry `shelf` Single-Select Bucket (`src/sessionTracker.ts`)**:
+  - Added `'shelf'` to `NextMoveTaken` type (`'thread' | 'specific_brand' | 'specific_stat' | 'specific_expert' | 'scope' | 'none' | 'shelf'`).
+  - Updated `evaluateNextMoveMatch()` to return `'shelf'` (not `'specific_brand'`) when a user follows up on a shelf graph.
+- **Referral Gating on FULL Coverage (`src/toolHandlers.ts`)**:
+  - In `consult_analyst` and `consult_human_agent`, suppressed referrals on `coverage: FULL` / `'in'` unless the referral `reason` shares a content token ($\ge 3$ chars) with the query.
+  - On `PARTIAL` / `out`, rendered top active referral in 3rd-person platform voice.
+- **Field Hygiene & `next_angle` Grounding Token Check (`src/coverageRelevance.ts`)**:
+  - Read `next_angle` strictly from `expert_thread.next_angle`.
+  - Treated `next_angle` as advisory: verified that it shares at least one content token ($\ge 3$ chars) with `sources_used` titles or `uncited_themes`; cleanly falls back to uncited themes or graph remainder if ungrounded.
+- **Verification & Deployment**:
+  - All unit test suites passed (`test_next_moves.ts`, `test_session_next_moves_telemetry.ts`, `test_next_moves_transcripts.ts`).
+  - Deployed Cloud Run revision `fodda-mcp-00470-4zt` to `https://mcp.fodda.ai`.
+- **Live Probe Verification (James Colistra, "podcast guest tips")**:
+  - Executed live `consult_human_agent` against the live backend (`coverage: FULL`).
+  - Ungrounded peer referral (Sledge Smith) suppressed on FULL coverage per referral gating rule.
+  - Rendered ending captured:
+    > In my work, we can explore how to systematically evaluate mid-tier shows based on their transcript publishing practices to maximize AI search visibility.
+    > Fodda also holds related research across domain and industry report graphs if you want the wider picture.
+    > If you tell me the brand or brief you're working on, I'll cut this to that.
+
 ## [1.46.25] - 2026-08-22
 
 ### Added & Changed

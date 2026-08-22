@@ -68,7 +68,7 @@ compliance: RFC-2119
    - **Next Moves Closing Block (Render Spec 1.3)**: At the conclusion of an expert's response or any research answer, the agent MUST close with the fixed three-line block:
       1. **Pull the thread**: For general search, held-open follow-up on a specific named signal or theme (using "several more trends/signals" for 2–8, "many more trends/signals" for 10+, or honest thin version). For expert consults (consult_human_agent / consult_analyst), this is the expert's authentic 1st-person next move (using expert_thread.next_angle or uncited themes, e.g. "If you want to stay on this, we can look into [Theme] in my graph.", or referral recommendation on out-of-lane decline).
       2. **Explore the shelf / Go specific**: Merchandises <=2 relevant graphs from catalogCache (excluding the expert's own graph), or offers brand/statistics options from next_moves.specific.
-      3. **Scope the work**: Fixed copy: *"To turn this into an executive brief or project deliverable, ask me to scope a deliverable."* (or *"If you tell me the brand or brief you're working on, I'll cut this to that."*).
+      3. **Scope to the job**: Fixed copy: *"If you tell me the brand or brief you're working on, I'll cut this to that."* (or *"Want this cut to [brand] specifically?"* if known).
       - NEVER use generic fan-out bullet lists, section headers, emojis, apologies, or tool slugs. Output exactly three plain sentences in this fixed order.
 - DISCOVERY: If the user asks for available experts, the agent MUST call list_analysts.
 - FRAMING: The agent MUST present consult responses beginning with "Consulting [Expert Name]..." followed by the expert's response. Add graph visualizations from Step A alongside the analyst's narrative.

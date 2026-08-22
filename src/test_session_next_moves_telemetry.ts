@@ -123,8 +123,8 @@ const consultNextMoves: NextMoves = {
     },
     consult_envelope: {
         thread_line: 'We can explore creator-led retail formats next.',
-        shelf_line: 'You can also explore related research in Retail Strategy & Innovation and Fashion & Luxury Systems.',
-        scope_line: 'To turn this into an executive brief or project deliverable, ask me to scope a deliverable.'
+        shelf_line: 'Fodda also holds trend signals on this in Retail Strategy & Innovation and Fashion & Luxury Systems if you want the wider picture.',
+        scope_line: "If you tell me the brand or brief you're working on, I'll cut this to that."
     }
 };
 
@@ -142,16 +142,16 @@ assert.strictEqual(
     'Follow-up on uncited theme with same expert should match thread'
 );
 
-// 2. Shelf graph match: exploring shelf graphs recommended in sentence 2
+// 2. Shelf graph match: exploring shelf graphs recommended in sentence 2 -> must emit 'shelf' per §2.C
 assert.strictEqual(
     tracker.evaluateNextMoveMatch('Show me retail operations research', 'search_graph', { graphId: 'retail' }),
-    'specific_brand',
-    'Exploring shelf graph should match specific_brand per telemetry spec'
+    'shelf',
+    'Exploring shelf graph should match shelf per telemetry spec §2.C'
 );
 assert.strictEqual(
     tracker.evaluateNextMoveMatch('Explore Fashion & Luxury Systems', 'get_domain_intelligence', { query: 'fashion luxury systems' }),
-    'specific_brand',
-    'Exploring shelf graph by name should match specific_brand'
+    'shelf',
+    'Exploring shelf graph by name should match shelf'
 );
 
 // 3. Alternate expert referral match

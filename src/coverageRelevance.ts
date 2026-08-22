@@ -753,7 +753,8 @@ export function generateConsultNextMoves(
     const expertGraphId = matchedAnalyst?.analyst_id || analystId;
 
     const expertThread = result?.expert_thread || {};
-    const nextAngleRaw = result?.next_angle || expertThread?.next_angle;
+    // Read next_angle strictly from expert_thread.next_angle per §2.A.5
+    const nextAngleRaw = expertThread?.next_angle;
     const uncitedThemes = Array.isArray(expertThread?.uncited_themes) ? expertThread.uncited_themes : [];
     const coverage = (result?.coverage || 'ok').toLowerCase().trim();
     const isOutOfLane = coverage === 'out' || expertThread?.on_topic_total === 0;
@@ -793,50 +794,66 @@ export function generateConsultNextMoves(
                 text: threadSentence,
             };
         }
-    } else if (typeof nextAngleRaw === 'string' && nextAngleRaw.trim().length > 0) {
-        let cleanNextAngle = nextAngleRaw.trim();
-        if (!/[.!?]$/.test(cleanNextAngle)) {
-            cleanNextAngle += '.';
-        }
-        threadSentence = cleanNextAngle;
-        nextMoves.thread = {
-            kind: 'expert_thread',
-            graph_id: expertGraphId,
-            graph_display: expertDisplayName,
-            next_angle: cleanNextAngle,
-            text: threadSentence,
-        };
-    } else if (uncitedThemes.length > 0) {
-        const topTheme = uncitedThemes[0];
-        threadSentence = `If you want to stay on this, we can look into ${topTheme} in my graph.`;
-        nextMoves.thread = {
-            kind: 'expert_thread',
-            graph_id: expertGraphId,
-            graph_display: expertDisplayName,
-            theme: topTheme,
-            uncited_themes: uncitedThemes,
-            text: threadSentence,
-        };
     } else {
-        const onTopicTotal = typeof expertThread?.on_topic_total === 'number' ? expertThread.on_topic_total : undefined;
-        const citedCount = typeof expertThread?.cited_count === 'number' ? expertThread.cited_count : (Array.isArray(result?.sources_used) ? result.sources_used.length : 0);
-        let remainder = (onTopicTotal !== undefined && onTopicTotal > citedCount) ? (onTopicTotal - citedCount) : 0;
+        // Next angle token check per §2.A.5: must share >=1 content token (>=3 chars) with sources_used or uncited_themes
+        let nextAngleValid = false;
+        if (typeof nextAngleRaw === 'string' && nextAngleRaw.trim().length > 0) {
+            const angleTokens = specificQueryTokens(nextAngleRaw);
+            const sourceTitles = (result?.sources_used || []).map((s: any) => (s.title || s.name || '').toLowerCase());
+            const themeTexts = uncitedThemes.map((t: string) => t.toLowerCase());
+            const groundingCorpus = [...sourceTitles, ...themeTexts].join(' ');
 
-        if (remainder >= 10) {
-            threadSentence = `There are many more trends in my graph exploring this topic — want me to pull those?`;
-        } else if (remainder > 0) {
-            threadSentence = `There are several more trends in my graph exploring this topic — want me to pull those?`;
-        } else {
-            threadSentence = `If you want to stay on this, we can explore deeper signals in my graph.`;
+            const hasSharedToken = angleTokens.some(tok => tok.length >= 3 && groundingCorpus.includes(tok));
+            if (hasSharedToken || (sourceTitles.length === 0 && themeTexts.length === 0)) {
+                nextAngleValid = true;
+            }
         }
 
-        nextMoves.thread = {
-            kind: 'expert_thread',
-            graph_id: expertGraphId,
-            graph_display: expertDisplayName,
-            remaining_count: remainder > 0 ? remainder : undefined,
-            text: threadSentence,
-        };
+        if (nextAngleValid && typeof nextAngleRaw === 'string') {
+            let cleanNextAngle = nextAngleRaw.trim();
+            if (!/[.!?]$/.test(cleanNextAngle)) {
+                cleanNextAngle += '.';
+            }
+            threadSentence = cleanNextAngle;
+            nextMoves.thread = {
+                kind: 'expert_thread',
+                graph_id: expertGraphId,
+                graph_display: expertDisplayName,
+                next_angle: cleanNextAngle,
+                text: threadSentence,
+            };
+        } else if (uncitedThemes.length > 0) {
+            const topTheme = uncitedThemes[0];
+            threadSentence = `If you want to stay on this, we can look into ${topTheme} in my graph.`;
+            nextMoves.thread = {
+                kind: 'expert_thread',
+                graph_id: expertGraphId,
+                graph_display: expertDisplayName,
+                theme: topTheme,
+                uncited_themes: uncitedThemes,
+                text: threadSentence,
+            };
+        } else {
+            const onTopicTotal = typeof expertThread?.on_topic_total === 'number' ? expertThread.on_topic_total : undefined;
+            const citedCount = typeof expertThread?.cited_count === 'number' ? expertThread.cited_count : (Array.isArray(result?.sources_used) ? result.sources_used.length : 0);
+            let remainder = (onTopicTotal !== undefined && onTopicTotal > citedCount) ? (onTopicTotal - citedCount) : 0;
+
+            if (remainder >= 10) {
+                threadSentence = `There are many more trends in my graph exploring this topic — want me to pull those?`;
+            } else if (remainder > 0) {
+                threadSentence = `There are several more trends in my graph exploring this topic — want me to pull those?`;
+            } else {
+                threadSentence = `If you want to stay on this, we can explore deeper signals in my graph.`;
+            }
+
+            nextMoves.thread = {
+                kind: 'expert_thread',
+                graph_id: expertGraphId,
+                graph_display: expertDisplayName,
+                remaining_count: remainder > 0 ? remainder : undefined,
+                text: threadSentence,
+            };
+        }
     }
 
     // ── Sentence 2: Shelf (Platform Voice Merchandising) ──
@@ -888,11 +905,18 @@ export function generateConsultNextMoves(
 
     let shelfSentence = '';
     if (shelfGraphs.length >= 2 && shelfGraphs[0]?.graph_display && shelfGraphs[1]?.graph_display) {
-        shelfSentence = `You can also explore related research in ${shelfGraphs[0].graph_display} and ${shelfGraphs[1].graph_display}.`;
+        shelfSentence = `Fodda also holds trend signals on this in ${shelfGraphs[0].graph_display} and ${shelfGraphs[1].graph_display} if you want the wider picture`;
     } else if (shelfGraphs.length >= 1 && shelfGraphs[0]?.graph_display) {
-        shelfSentence = `You can also explore related research in ${shelfGraphs[0].graph_display}.`;
+        shelfSentence = `Fodda also holds trend signals on this in ${shelfGraphs[0].graph_display} if you want the wider picture`;
     } else {
-        shelfSentence = `You can also explore related research across Fodda's domain and industry report graphs.`;
+        shelfSentence = `Fodda also holds related research across domain and industry report graphs if you want the wider picture`;
+    }
+
+    const hasDeliverableOffering = Array.isArray(matchedAnalyst?.offerings) && matchedAnalyst.offerings.length > 0;
+    if (hasDeliverableOffering) {
+        shelfSentence += `, and ${expertDisplayName} takes scoped briefs on this if you need a deliverable.`;
+    } else {
+        shelfSentence += `.`;
     }
 
     nextMoves.shelf = shelfGraphs;
@@ -913,12 +937,12 @@ export function generateConsultNextMoves(
     }
     nextMoves.specific = specific;
 
-    // ── Sentence 3: Scope (Platform / Engagement Voice) ──
+    // ── Sentence 3: Scope (Platform Voice, Render Spec 1.2 Copy) ──
     let scopeSentence = '';
     if (options?.knownBrand) {
-        scopeSentence = `To turn this into an executive brief or project deliverable for ${options.knownBrand}, ask me to scope a deliverable.`;
+        scopeSentence = `Want this cut to ${options.knownBrand} specifically?`;
     } else {
-        scopeSentence = `To turn this into an executive brief or project deliverable, ask me to scope a deliverable.`;
+        scopeSentence = `If you tell me the brand or brief you're working on, I'll cut this to that.`;
     }
 
     nextMoves.consult_envelope = {

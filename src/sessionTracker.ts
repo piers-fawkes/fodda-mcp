@@ -18,7 +18,7 @@ import type { NextMoves } from './coverageRelevance.js';
 // Types
 // ---------------------------------------------------------------------------
 
-export type NextMoveTaken = 'thread' | 'specific_brand' | 'specific_stat' | 'specific_expert' | 'scope' | 'none';
+export type NextMoveTaken = 'thread' | 'specific_brand' | 'specific_stat' | 'specific_expert' | 'scope' | 'none' | 'shelf';
 
 export interface SessionSearch {
     query: string;
@@ -424,13 +424,13 @@ export function createSessionTracker() {
                 const reqGid = String(toolArgs?.graphId || toolArgs?.graph_id || '').toLowerCase();
                 const reqGraphs = Array.isArray(toolArgs?.graphs) ? toolArgs.graphs.map((x: any) => String(x).toLowerCase()) : [];
                 if ((sgId && (reqGid === sgId || reqGraphs.includes(sgId))) || (sgName && q.includes(sgName))) {
-                    return 'specific_brand';
+                    return 'shelf';
                 }
                 if (
                     (currentTool === 'search_graph' || currentTool === 'get_domain_intelligence' || currentTool === 'get_report_intelligence') &&
                     sgId && q.includes(sgId)
                 ) {
-                    return 'specific_brand';
+                    return 'shelf';
                 }
             }
         }

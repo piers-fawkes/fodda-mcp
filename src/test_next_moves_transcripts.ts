@@ -102,7 +102,7 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
                 coverage: 'in',
                 report: 'Cultural brands must anchor community-led commerce around authentic rituals and creator collaborations rather than standard discounts.',
                 sources_used: [
-                    { title: 'Community Rituals in Streetwear', graphId: 'ben-dietz-sic', brandNames: ['Supreme', 'Aimé Leon Dore'] }
+                    { title: 'Community Rituals and Creator Retail in Streetwear', graphId: 'ben-dietz-sic', brandNames: ['Supreme', 'Aimé Leon Dore'] }
                 ],
                 expert_thread: {
                     on_topic_total: 8,

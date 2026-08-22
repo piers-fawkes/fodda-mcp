@@ -192,13 +192,13 @@ const mockAnalysts: any[] = [
     const mockResult = {
         coverage: 'in',
         report: 'In my cultural strategy framework, community commerce requires authentic creator alignment.',
-        sources_used: [{ title: 'Creator Collectives', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
+        sources_used: [{ title: 'Creator Collectives and Community Commerce', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
         expert_thread: {
             on_topic_total: 8,
             cited_count: 1,
             uncited_themes: ['Zines & Subcultures', 'Discord Councils'],
             brands: ['Supreme', 'Aimé Leon Dore'],
-            next_angle: 'We can explore how creator-led retail formats differ across European luxury markets next.'
+            next_angle: 'We can explore how creator collectives differ across European luxury markets next.'
         }
     };
 
@@ -214,7 +214,7 @@ const mockAnalysts: any[] = [
     assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
     assert.strictEqual(
         nextMoves.consult_envelope.thread_line,
-        'We can explore how creator-led retail formats differ across European luxury markets next.'
+        'We can explore how creator collectives differ across European luxury markets next.'
     );
     // Shelf must exclude Ben Dietz's own graph
     assert.ok(
@@ -222,18 +222,17 @@ const mockAnalysts: any[] = [
         'Shelf must strictly exclude current expert'
     );
     assert.ok(
-        nextMoves.consult_envelope.shelf_line.includes('Retail Strategy & Innovation') ||
-        nextMoves.consult_envelope.shelf_line.includes('Beauty & Wellness'),
-        'Shelf must recommend other graphs from catalog'
+        nextMoves.consult_envelope.shelf_line.startsWith('Fodda also holds trend signals on this in'),
+        'Shelf must use standard platform phrasing'
     );
     assert.strictEqual(
         nextMoves.consult_envelope.scope_line,
-        'To turn this into an executive brief or project deliverable for Aimé Leon Dore, ask me to scope a deliverable.'
+        'Want this cut to Aimé Leon Dore specifically?'
     );
 
     const rendered = renderConsultClosingEnvelope(nextMoves);
     assert.strictEqual(rendered.lines.length, 3, 'Must render exactly 3 sentences');
-    console.log('✅ Test 6 Passed: Consult with explicit next_angle');
+    console.log('✅ Test 6 Passed: Consult with explicit next_angle and 1.2 scope copy');
 }
 
 // Test 7: Consult fallback to uncited_themes when next_angle is absent
@@ -267,9 +266,9 @@ const mockAnalysts: any[] = [
     );
     assert.strictEqual(
         nextMoves.consult_envelope.scope_line,
-        'To turn this into an executive brief or project deliverable, ask me to scope a deliverable.'
+        "If you tell me the brand or brief you're working on, I'll cut this to that."
     );
-    console.log('✅ Test 7 Passed: Consult fallback to uncited_themes');
+    console.log('✅ Test 7 Passed: Consult fallback to uncited_themes with 1.2 scope copy');
 }
 
 // Test 8: Consult fallback to graph remainder when next_angle and uncited_themes are absent
@@ -300,6 +299,10 @@ const mockAnalysts: any[] = [
     assert.strictEqual(
         nextMoves.consult_envelope.thread_line,
         'There are several more trends in my graph exploring this topic — want me to pull those?'
+    );
+    assert.strictEqual(
+        nextMoves.consult_envelope.scope_line,
+        "If you tell me the brand or brief you're working on, I'll cut this to that."
     );
     console.log('✅ Test 8 Passed: Consult fallback to graph remainder');
 }
@@ -337,6 +340,40 @@ const mockAnalysts: any[] = [
         "For inquiries on this topic, I'd recommend connecting with Retail Strategy Lead who covers omnichannel retail logistics directly."
     );
     console.log('✅ Test 9 Passed: Out-of-lane consult with peer referral');
+}
+
+// Test 10: next_angle token check failure triggers fallback per §2.A.5
+{
+    const mockResult = {
+        coverage: 'in',
+        report: 'Cultural brands analysis.',
+        sources_used: [{ title: 'Streetwear Dynamics', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
+        expert_thread: {
+            on_topic_total: 5,
+            cited_count: 1,
+            uncited_themes: ['Underground Music'],
+            brands: [],
+            // Hallucinated / completely unrelated angle sharing no tokens with sources or uncited themes:
+            next_angle: 'We should look into quantum computing aerospace satellites.'
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'streetwear dynamics',
+        'ben-dietz-sic',
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(
+        nextMoves.consult_envelope.thread_line,
+        'If you want to stay on this, we can look into Underground Music in my graph.',
+        'Ungrounded next_angle must fail token check and fall back to uncited_themes'
+    );
+    console.log('✅ Test 10 Passed: next_angle token check failure triggers clean fallback');
 }
 
 console.log('All Next Moves unit tests passed successfully!');
