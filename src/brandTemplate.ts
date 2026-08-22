@@ -255,6 +255,47 @@ function barRow(label: string, value: number, maxValue: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Financial data formatting helpers
+// ---------------------------------------------------------------------------
+function formatFinancialCurrency(val?: number | null): string {
+    if (val === undefined || val === null || isNaN(val)) return '—';
+    const abs = Math.abs(val);
+    const sign = val < 0 ? '-' : '';
+    if (abs >= 1e9) {
+        return `${sign}$${(abs / 1e9).toFixed(2)}B`;
+    }
+    if (abs >= 1e6) {
+        return `${sign}$${(abs / 1e6).toFixed(1)}M`;
+    }
+    if (abs >= 1e3) {
+        return `${sign}$${(abs / 1e3).toFixed(1)}K`;
+    }
+    return `${sign}$${abs.toLocaleString()}`;
+}
+
+function formatEps(eps?: number | null, dilutedEps?: number | null): string {
+    if ((eps === undefined || eps === null || isNaN(eps)) && (dilutedEps === undefined || dilutedEps === null || isNaN(dilutedEps))) {
+        return '—';
+    }
+    const fmt = (v: number) => `${v < 0 ? '-' : ''}$${Math.abs(v).toFixed(2)}`;
+    if (eps != null && !isNaN(eps) && dilutedEps != null && !isNaN(dilutedEps)) {
+        return `${fmt(eps)} (Diluted ${fmt(dilutedEps)})`;
+    }
+    if (eps != null && !isNaN(eps)) {
+        return fmt(eps);
+    }
+    return `${fmt(dilutedEps!)} (diluted)`;
+}
+
+function formatStockPrice(priceWindow?: { current_price?: number; as_of_date?: string } | null): string {
+    if (!priceWindow || priceWindow.current_price == null || isNaN(priceWindow.current_price)) return '';
+    const dateStr = priceWindow.as_of_date ? ` (as of ${esc(priceWindow.as_of_date)})` : '';
+    const p = priceWindow.current_price;
+    const priceFormatted = `${p < 0 ? '-' : ''}$${Math.abs(p).toFixed(2)}`;
+    return `${priceFormatted}${dateStr}`;
+}
+
+// ---------------------------------------------------------------------------
 // Main render function
 // ---------------------------------------------------------------------------
 export async function renderBrandWidget(profile: any): Promise<{ widget_html: string; editorial_context: any; open_slots: string[] }> {
@@ -364,6 +405,64 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
   <div class="rq" style="margin-top:6px;">${topicPills}</div>
 </div>`;
         }).join('\n');
+    }
+
+    // ── Institutional Financial Snapshot (Market Data) section ──
+    const marketData = profile.market_data;
+    let financialSnapshotHtml = '';
+    if (marketData && marketData.data_status !== 'no_signal') {
+        const symbol = marketData.primary_symbol || marketData.ticker || '';
+        const profileInfo = marketData.company_profile;
+        const companyName = profileInfo?.company_name || profile.brand || '';
+        const sector = profileInfo?.sector || '';
+        const industry = profileInfo?.industry || '';
+        const priceStr = formatStockPrice(marketData.price_window);
+        const quarters = (marketData.quarterly_financials || []).slice(0, 2);
+
+        const hasContent = Boolean(symbol || profileInfo || priceStr || quarters.length > 0);
+        if (hasContent) {
+            const headerTitle = companyName ? `${esc(companyName)}${symbol ? ` (${esc(symbol)})` : ''}` : esc(symbol);
+
+            const metaTokens: string[] = [];
+            if (sector) metaTokens.push(`Sector: ${esc(sector)}`);
+            if (industry) metaTokens.push(`Industry: ${esc(industry)}`);
+            const metaHtml = metaTokens.length > 0
+                ? `<div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px;margin-bottom:8px;">${metaTokens.join(' · ')}</div>`
+                : '';
+
+            const priceHtml = priceStr
+                ? `<div style="font-size:12px;color:var(--color-text-primary);margin-bottom:8px;font-weight:500;">Stock Price: <span style="font-family:var(--font-mono);font-weight:600;">${priceStr}</span></div>`
+                : '';
+
+            let quartersHtml = '';
+            if (quarters.length > 0) {
+                const qCards = quarters.map((q: any) => {
+                    const qPeriod = q.period || q.period_label || 'Quarterly Financials';
+                    const rev = formatFinancialCurrency(q.revenue);
+                    const opInc = formatFinancialCurrency(q.operating_income);
+                    const netInc = formatFinancialCurrency(q.net_income);
+                    const eps = formatEps(q.eps, q.diluted_eps);
+
+                    return `<div style="background:var(--color-background-secondary);border-radius:6px;padding:8px 10px;margin-top:6px;">
+  <div style="font-size:11px;font-weight:600;color:var(--color-text-primary);margin-bottom:4px;">${esc(qPeriod)}</div>
+  <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;font-size:11px;">
+    <div><span style="color:var(--color-text-secondary);">Revenue:</span> <strong style="font-family:var(--font-mono);">${rev}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">Op. Income:</span> <strong style="font-family:var(--font-mono);">${opInc}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">Net Income:</span> <strong style="font-family:var(--font-mono);">${netInc}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">EPS:</span> <strong style="font-family:var(--font-mono);">${eps}</strong></div>
+  </div>
+</div>`;
+                }).join('\n');
+                quartersHtml = `<div style="margin-top:6px;">${qCards}</div>`;
+            }
+
+            financialSnapshotHtml = `<div class="ec">
+  <div class="et" style="font-size:13px;font-weight:600;">${headerTitle}</div>
+  ${metaHtml}
+  ${priceHtml}
+  ${quartersHtml}
+</div>`;
+        }
     }
 
     // Enrich trends with lifecycle if missing
@@ -567,6 +666,8 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const graphNames = crossGraph.map((g: any) => g.graphName).filter(Boolean);
     const sourcePills = [
         ...graphNames.map((n: string) => `<span class="gp">${esc(n)}</span>`),
+        (earningsSource === 'truth_layer' || earnings.length > 0) ? '<span class="gp">Earnings Intelligence</span>' : '',
+        (marketData && marketData.data_status !== 'no_signal') ? '<span class="gp">Financial Snapshot</span>' : '',
         hasGoogleTrendsData ? '<span class="gp">Google Trends</span>' : '',
         supplemental?.wikipedia ? '<span class="gp">Wikipedia</span>' : '',
         supplemental?.amazon ? '<span class="gp">Amazon</span>' : '',
@@ -647,6 +748,9 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         'EARNINGS_SECTION_HTML': earningsHtml ? `<div class="sl2">Quarterly Earnings & Wall Street Intelligence</div>
     ${earningsHtml}
     <p class="note">Source: Fodda Institutional Earnings Intelligence (SEC Filings & Executive Earnings Call Transcripts).</p>` : '',
+        'FINANCIAL_SNAPSHOT_SECTION_HTML': financialSnapshotHtml ? `<div class="sl2">Institutional Financial Snapshot</div>
+    ${financialSnapshotHtml}
+    <p class="note">Source: Institutional SEC & Market Financial Filings.</p>` : '',
         'SOURCE_PILLS_HTML': sourcePills,
         'EXPORT_1_LABEL': exportLabels[0]!.label,
         'EXPORT_1_DESC': exportLabels[0]!.desc,
@@ -814,6 +918,7 @@ export const TEMPLATE = `
   {{EVIDENCE_HTML}}
 
   {{EARNINGS_SECTION_HTML}}
+  {{FINANCIAL_SNAPSHOT_SECTION_HTML}}
 
   <div class="sec">Relevant trends</div>
   {{TREND_FOOTPRINT_INTRO}}

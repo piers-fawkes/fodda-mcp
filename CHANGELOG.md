@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.28] - 2026-08-22
+
+### Added & Enhanced (Institutional Financial Snapshot Rendering in Brand Tracker)
+- **`brand_tracker` Financial Snapshot Slot & Rendering (`src/brandTemplate.ts`, `src/toolHandlers.ts`)**:
+  - Attached `market_data` from API response (`POST /v1/brand-intelligence/:brandName` or `GET/POST /v1/analysts/brand-tracker/:brandName`) to the MCP `profile` object and pass down to `renderBrandWidget`.
+  - Rendered a new **"Institutional Financial Snapshot"** card directly below the Earnings / Executive Commentary section in the Brand Intelligence widget template (`{{FINANCIAL_SNAPSHOT_SECTION_HTML}}`).
+  - Added clean human-readable formatting utilities for institutional figures:
+    - **Revenue, Operating Income, Net Income**: Formatted in millions/billions (`formatFinancialCurrency`, e.g. `$1.48B`, `$292.4M`, `-$1.20B`).
+    - **EPS / Diluted EPS**: Formatted as `$0.34 (Diluted $0.33)` (`formatEps`, handling negative values cleanly).
+    - **Stock Price**: Formatted as `$78.42 (as of 2026-08-21)` (`formatStockPrice`).
+  - Displayed up to 2 recent quarters (`quarterly_financials.slice(0, 2)`) with company profile (Name, Symbol, Sector, Industry) and latest stock price window.
+  - Added `"Financial Snapshot"` pill to the widget's sources footer when market data is present.
+- **Strict Privacy Invariant & Sanitization (`src/coverageRelevance.ts`, `src/toolHandlers.ts`, `src/brandTemplate.ts`)**:
+  - Guaranteed 0 mentions of private upstream vendor name in all user-facing output, template labels, and attributions.
+  - Attributed data strictly to `"Institutional SEC & Market Financial Filings"`.
+  - Sanitized legacy telemetry source strings in `coverageRelevance.ts` and `toolHandlers.ts` to `"earnings and financial performance data"`.
+- **Graceful Degradation**:
+  - Cleanly omitted the financial snapshot section when `market_data` is `null`, missing, or has `data_status: "no_signal"` (e.g. for private companies or non-ticker brands), leaving zero empty headers or broken template tags.
+- **Unit Test Suite (`src/test_financial_snapshot_render.ts`)**:
+  - Added comprehensive automated tests for public companies (Microchip Technology / `NASDAQ:MCHP`), private companies (Chobani), and formatting edge cases (Rivian / negative net income / scaling). All 3 test suites passing.
+
 ## [1.46.27] - 2026-08-22
 
 ### Fixed & Enhanced (Next Moves Closing Block Server-Rendering & Brand Material Refinements)
