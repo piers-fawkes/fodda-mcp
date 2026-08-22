@@ -8,9 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.46.32] - 2026-08-22
 
 ### Fixed & Enhanced (MCP Identity Gap & Internal Test Session Tagging — `briefs/brief_mcp_identity_gap.md`)
-- **Omit `'anonymous'` User ID Upstream (`src/index.ts`, `src/skillClient.ts`)**:
-  - In `foddaRequest()` and `executeSkillTool()`, `X-User-Id` is now only attached when `userId && userId !== 'anonymous'`.
-  - When an unauthenticated / anonymous MCP session makes upstream API calls, omitting `X-User-Id` allows the API's account-label fallback (`Billing Email` $\to$ `"<Account Name> (API)"`) to take effect instead of logging `Anonymous`.
+- **Omit Placeholder User IDs Upstream (`src/index.ts`, `src/skillClient.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `isPlaceholderUserId()` to catch all placeholder user ID variants (`''`, `'anonymous'`, `'Anonymous'`, `'oauth_user'`, `'OAuth_User'`, `'undefined'`, `'null'`).
+  - In `foddaRequest()`, `executeSkillTool()`, and `resolveUserId()`, `X-User-Id` is now only attached when `userId && !isPlaceholderUserId(userId)`.
+  - When an unauthenticated, anonymous, or clerk-resolve fallback (`oauth_user`) MCP session makes upstream API calls, omitting `X-User-Id` allows the API's account-label fallback (`Billing Email` $\to$ `"<Account Name> (API)"`) to take effect instead of polluting the Questions table with placeholders.
 - **Tag Internal Test Sessions (`src/index.ts`, `src/toolHandlers.ts`)**:
   - Extracted `session_kind` from `req.headers['x-fodda-session-kind']` and `req.query.session_kind` (default `'customer'`) across Streamable HTTP and SSE transports.
   - When `session_kind === 'internal-test'`, session source is set to `'mcp-internal-test'`.
@@ -19,9 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deployed Test Scripts Tagged with `session_kind=internal-test`**:
   - Updated `src/test_live_mcp.ts`, `src/test_live_deployed_split.ts`, `src/test_live_deployed_mcp_search.ts`, `src/test_live_endpoint_runner.ts`, `src/test_referral_live.ts`, `src/test_referral_piers.ts`, `src/test_sources_live.ts`, and `src/test_list_graphs_topics.ts` to connect with `session_kind=internal-test`.
 - **Identity Gap Automated Test Suite (`src/test_identity_gap.ts`)**:
-  - Verified `X-User-Id` omission for anonymous sessions and preservation for named sessions.
+  - Verified `X-User-Id` omission for all 7 placeholder variations and preservation for named sessions.
   - Verified default session logging (`source: 'mcp'`) vs internal-test session logging (`source: 'mcp-internal-test'`).
   - Verified `session_kind` header and query parameter resolution.
+- **Deployment & Live Verification**:
+  - Cloud Run revision `fodda-mcp-00478-nsz` deployed and serving 100% traffic.
+  - Live probe of `https://mcp.fodda.ai/health` verified `HTTP 200` with `version: "1.46.32"`.
 
 ## [1.46.31] - 2026-08-22
 
