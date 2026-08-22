@@ -12,9 +12,13 @@
  * Resets per MCP connection (stateless across sessions).
  */
 
+import type { NextMoves } from './coverageRelevance.js';
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+export type NextMoveTaken = 'thread' | 'specific_brand' | 'specific_stat' | 'specific_expert' | 'scope' | 'none';
 
 export interface SessionSearch {
     query: string;
@@ -275,7 +279,130 @@ export function createSessionTracker() {
         return true;
     }
 
-    return { trackSearch, detectFrustration, getRecentSearches, getFrustrationDetails, postFrustrationToSlack, postGapToSlack };
+    // ── Next Moves state & telemetry ──
+    let lastNextMoves: NextMoves | null = null;
+    let lastRecordedQuery: string = '';
+
+    function recordNextMoves(nextMoves: NextMoves | undefined, query: string): void {
+        if (nextMoves) {
+            lastNextMoves = nextMoves;
+            lastRecordedQuery = query;
+        }
+    }
+
+    function getLastNextMoves(): NextMoves | null {
+        return lastNextMoves;
+    }
+
+    /**
+     * Match an incoming tool call against the prior turn's next_moves recommendation.
+     * Returns undefined for the first call in a session, or one of the NextMoveTaken options.
+     */
+    function evaluateNextMoveMatch(currentQuery: string, currentTool: string, toolArgs?: any): NextMoveTaken | undefined {
+        if (!lastNextMoves) return undefined;
+
+        const q = (currentQuery || '').toLowerCase().trim();
+
+        // 1. Scope check (explicit scoping to brand or brief)
+        if (
+            /(?:cut\s+(?:this\s+)?to|brief\s+(?:is|for)|working\s+on|for\s+(?:our|the)\s+brand|scope\s+to|apply\s+to|specifically\s+for)/i.test(q) ||
+            (lastNextMoves.known_brand && q.includes(lastNextMoves.known_brand.toLowerCase()) && /(?:for|to|specifically|cut)/i.test(q))
+        ) {
+            return 'scope';
+        }
+
+        // 2. Specific brand check
+        if (lastNextMoves.specific?.brands?.length) {
+            if (currentTool === 'brand_tracker' && toolArgs?.brand_name) {
+                const bName = String(toolArgs.brand_name).toLowerCase();
+                if (lastNextMoves.specific.brands.some(b => b.toLowerCase() === bName || bName.includes(b.toLowerCase()))) {
+                    return 'specific_brand';
+                }
+            }
+            for (const b of lastNextMoves.specific.brands) {
+                const bLower = b.toLowerCase();
+                if (bLower.length > 1 && q.includes(bLower)) {
+                    return 'specific_brand';
+                }
+            }
+        }
+
+        // 3. Specific expert check
+        if (lastNextMoves.specific?.expert) {
+            const expId = (lastNextMoves.specific.expert.analyst_id || '').toLowerCase();
+            const expName = (lastNextMoves.specific.expert.display_name || '').toLowerCase();
+            if (
+                currentTool === 'consult_analyst' ||
+                currentTool === 'consult_human_agent'
+            ) {
+                const reqId = String(toolArgs?.analyst_id || '').toLowerCase();
+                if ((expId && reqId === expId) || (expName && reqId.includes(expName))) {
+                    return 'specific_expert';
+                }
+            }
+            if ((expName && q.includes(expName)) || (expId && q.includes(expId))) {
+                return 'specific_expert';
+            }
+        }
+
+        // 4. Specific stat check — ONLY if line 2 offered statistics_source
+        if (lastNextMoves.specific?.statistics_source) {
+            if (
+                currentTool === 'search_statistics' ||
+                currentTool === 'get_supplemental_context' ||
+                /(?:statistics|statistical|stats|data\s+series|census|fred|bls|google\s+trends)/i.test(q)
+            ) {
+                return 'specific_stat';
+            }
+            const statWords = lastNextMoves.specific.statistics_source.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+            if (statWords.some(w => q.includes(w))) {
+                return 'specific_stat';
+            }
+        }
+
+        // 5. Thread check
+        if (lastNextMoves.thread) {
+            const t = lastNextMoves.thread;
+            if (t.kind === 'more_in_graph') {
+                const gId = (t.graph_id || '').toLowerCase();
+                const reqGid = String(toolArgs?.graphId || '').toLowerCase();
+                const reqGraphs = Array.isArray(toolArgs?.graphs) ? toolArgs.graphs.map((x: any) => String(x).toLowerCase()) : [];
+                if ((gId && (reqGid === gId || reqGraphs.includes(gId))) || (gId && q.includes(gId))) {
+                    return 'thread';
+                }
+                if (/(?:pull\s+(?:them|more|signals)|more\s+signals|remaining)/i.test(q)) {
+                    return 'thread';
+                }
+                if (t.theme && q.includes(t.theme.toLowerCase())) {
+                    return 'thread';
+                }
+            } else if (t.kind === 'adjacent_room' || t.kind === 'honest_thin') {
+                const adjId = (t.adjacent?.graph_id || t.graph_id || '').toLowerCase();
+                const reqGid = String(toolArgs?.graphId || '').toLowerCase();
+                const reqGraphs = Array.isArray(toolArgs?.graphs) ? toolArgs.graphs.map((x: any) => String(x).toLowerCase()) : [];
+                if ((adjId && (reqGid === adjId || reqGraphs.includes(adjId))) || (adjId && q.includes(adjId))) {
+                    return 'thread';
+                }
+                if (/(?:adjacent|other\s+room|want\s+that\s+room|fan\s+side|closest\s+adjacent)/i.test(q)) {
+                    return 'thread';
+                }
+            }
+        }
+
+        return 'none';
+    }
+
+    return {
+        trackSearch,
+        detectFrustration,
+        getRecentSearches,
+        getFrustrationDetails,
+        postFrustrationToSlack,
+        postGapToSlack,
+        recordNextMoves,
+        getLastNextMoves,
+        evaluateNextMoveMatch,
+    };
 }
 
 // ---------------------------------------------------------------------------

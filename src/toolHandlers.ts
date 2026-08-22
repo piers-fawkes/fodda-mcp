@@ -31,13 +31,13 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation } from './coverageRelevance.js';
+import { addCoverageAnnotation, generateNextMoves } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
 // don't receive MCP server-level `instructions` (e.g. Claude.ai).
 // ---------------------------------------------------------------------------
-const RENDER_SPEC_VERSION = '1.1';
+const RENDER_SPEC_VERSION = '1.2';
 
 export function resolveAnalystAlias(analystIdInput: string, companyInput?: string): { analyst_id: string; company?: string | undefined } {
     if (!analystIdInput) return { analyst_id: analystIdInput, company: companyInput };
@@ -100,7 +100,7 @@ function buildRenderInstructions(opts: {
         'ONE TREND, ONE PARAGRAPH: Each trend gets exactly one paragraph of at most 3 sentences (~60 words). Open the paragraph with the trend name in bold followed by its lifecycle stage in italics, e.g. **Human-centric luxury** *(building)*. Insert a blank line between trends — never run two trends into one paragraph.',
         'MAX 3 TRENDS by default, ranked by relevance, even when the payload contains more. Mention in the closing line that further trends are available on request. Exception: the user explicitly asked for an exhaustive list.',
         'CITATIONS — SHORT ANCHORS: Every claim still requires its source link. Prefer short_citation (e.g. "[via Jing Daily](url)") or short source labels ("via Jing Daily", "BoF-McKinsey survey"), never the full evidence headline. Place links at the end of a sentence or in a trailing parenthetical — never mid-clause. Maximum 2 links per trend paragraph; if a trend has more evidence, cite the strongest 2 and note more exists.',
-        'CLOSE: One line. Then at most 2 drill-down suggestions from suggested_drill_down, each on its own line prefixed with "→". Do not append a drill-down after every trend.',
+        'NEXT MOVES CLOSING BLOCK: Every research answer must end with exactly three plain sentences (no heading, no "any questions?", no emoji, no apology) in this fixed order: (1) Pull the thread: One specific thing surfaced but not finished, generated from next_moves.thread (name the graph using its human display name and count, or name the adjacent room; if coverage is thin/empty, use the honest version: "That\'s what Fodda holds on this right now; the closest adjacent hit is [X] in [Graph] — want it?"). (2) Go specific: Offer at most two of: brand drill-down (from next_moves.specific.brands), statistics source (from next_moves.specific.statistics_source), or named expert (from next_moves.specific.expert). Only offer options with material present in next_moves.specific. (3) Scope to the job: Fixed copy: "If you tell me the brand or brief you\'re working on, I\'ll cut this to that." (If the user\'s research profile already specifies a brand/brief, use: "Want this cut to [brand] specifically?"). Never invent names, brands, or numbers — all material must come from next_moves or result rows.',
         'NO FILLER STRUCTURE: No section headers for responses of 3 trends or fewer. No bullet-lists of evidence items. No restating evidence counts, graph counts, or relevance scores in prose.',
         'DEPTH ON REQUEST: When the user asks about ONE specific trend, the density caps lift — expand to full evidence, longer paragraphs, and complete citations. The caps govern first-pass survey responses, not drill-downs.',
         'COVERAGE RECOVERY: coverage.status is machine-readable routing data — NEVER tell the user coverage is "thin", "low", or "empty". When status is thin or empty, silently run coverage.suggested_action (get_supplemental_context) in the SAME turn and blend what it returns into the answer. If that also returns nothing usable, present what exists plainly — "this is what we have on this right now" — and offer the coverage.escalation options (a Deep Dive report via deep_research_topic, or your own web/LLM research with non-Fodda findings clearly attributed). Never pad weak matches into a confident-looking answer.',
@@ -359,15 +359,34 @@ export async function createServer(
     // No client-side trial state remains.
     const sessionTracker = createSessionTracker();
 
+    const getKnownBrand = (): string | undefined => {
+        if (accountProfile?.companyName && accountProfile.companyName.trim()) {
+            return accountProfile.companyName.trim();
+        }
+        if (accountProfile?.userContext) {
+            // Match explicit brand: or client: keys only
+            const m = accountProfile.userContext.match(/\b(?:brand|client):\s*["']?([A-Za-z0-9&' -]{2,40}?)["']?(?:[.,;\n\r]|$)/i);
+            if (m && m[1]) {
+                const brand = m[1].trim();
+                if (!/^(?:the\s+next|next\s+|this\s+|our\s+|a\s+|an\s+|none|n\/a|unknown)/i.test(brand)) {
+                    return brand;
+                }
+            }
+        }
+        return undefined;
+    };
+
     // Fire-and-forget: log the user's query text to the Questions table.
     // Called at tool entry — BEFORE cache-eligible foddaRequest calls —
     // so the question is captured even when the MCP query cache serves a hit.
-    function logUserQuery(query: string, interactionType: string, graphId?: string) {
+    function logUserQuery(query: string, interactionType: string, graphId?: string, toolArgs?: any) {
+        const nextMoveTaken = sessionTracker.evaluateNextMoveMatch(query, interactionType, { graphId, ...toolArgs });
         foddaRequest('POST', '/v1/log/question', apiKey, userId, {
             question: query,
             graphId: graphId || 'all',
             interactionType,
             source: 'mcp',
+            ...(nextMoveTaken ? { next_move_taken: nextMoveTaken, nextMoveTaken } : {}),
         }).catch(() => {}); // Never block on logging failures
     }
 
@@ -377,8 +396,12 @@ export async function createServer(
         query: string,
         interactionType: string,
         coverage: any,
-        searchedGraphs: any[]
+        searchedGraphs: any[],
+        nextMoves?: any
     ) {
+        if (nextMoves) {
+            sessionTracker.recordNextMoves(nextMoves, query);
+        }
         if (!coverage || coverage.status === 'error') return;
 
         const count = coverage.results_on_topic !== undefined
@@ -1280,9 +1303,13 @@ export async function createServer(
                     } catch { /* Broadening failed silently */ }
                 }
 
-                data = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                data = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                    total: data.total,
+                    onTopicTotal: data.on_topic_total,
+                    knownBrand: getKnownBrand(),
+                });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_graph', query, data?.coverage);
-                logQueryResult(query, 'search', data?.coverage, searchedGraphs);
+                logQueryResult(query, 'search', data?.coverage, searchedGraphs, data?.next_moves);
                 if (data?.coverage?.status === 'error' || data?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
                 }
@@ -1588,6 +1615,11 @@ export async function createServer(
                 params.set('limit', String(Math.min(limit || 10, 20)));
                 if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
                 let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/adjacent?${params.toString()}`, apiKey, resolveUserId(userId, uid));
+
+                data = addCoverageAnnotation(data, trend_id, [graphId], limit, true, getGraphs(), {
+                    knownBrand: getKnownBrand(),
+                });
+                sessionTracker.recordNextMoves(data?.next_moves, trend_id);
 
                 appendUsageWarning(data, resolveUserId(userId));
                 const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
@@ -2182,11 +2214,24 @@ export async function createServer(
                 const guard = sptGuard('brand_intelligence');
                 if (guard) return guard;
 
-                const { widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(brand_name, uid, graph_ids, include_evidence, max_evidence);
+                const { profile, widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(brand_name, uid, graph_ids, include_evidence, max_evidence);
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
                 const withheld = await settleOrWithhold({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name }, 'brand_tracker');
                 if (withheld) return withheld;
+
+                const brandNextMoves = generateNextMoves(
+                    profile?.trend_footprint || [],
+                    brand_name,
+                    graph_ids || [],
+                    'ok',
+                    undefined,
+                    undefined,
+                    getGraphs(),
+                    getAnalysts(),
+                    { knownBrand: brand_name }
+                );
+                sessionTracker.recordNextMoves(brandNextMoves, brand_name);
 
                 const content: Array<{ type: 'text'; text: string }> = [
                     { type: 'text' as const, text: widget.widget_html },
@@ -2194,7 +2239,7 @@ export async function createServer(
                 if (EDITORIAL_INSTRUCTION) {
                     content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
                 }
-                return { content };
+                return { next_moves: brandNextMoves, content };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -2244,7 +2289,22 @@ export async function createServer(
                         chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[supplemental] chargeQuery failed:', e.message));
 
-                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(data, null, 2) });
+                        const nextMoves = generateNextMoves(
+                            [],
+                            query,
+                            graph_ids || [],
+                            'ok',
+                            undefined,
+                            undefined,
+                            getGraphs(),
+                            getAnalysts(),
+                            { knownBrand: getKnownBrand() }
+                        );
+                        if (data && typeof data === 'object') {
+                            data.next_moves = nextMoves;
+                        }
+
+                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(data, null, 2), nextMoves, query });
                     } catch (err: any) {
                         const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Unknown error';
                         activeSupplementalJobs.set(jobId, { status: 'FAILED', error: errMsg });
@@ -2281,6 +2341,14 @@ export async function createServer(
 
             if (job.status === 'RUNNING') {
                 return { content: [{ type: 'text' as const, text: `Job ${job_id} is still RUNNING. The server is waiting on external APIs. Please poll again in 5 seconds.` }] };
+            }
+
+            if (job.status === 'COMPLETE') {
+                activeSupplementalJobs.delete(job_id); // cleanup
+                if (job.nextMoves) {
+                    sessionTracker.recordNextMoves(job.nextMoves, job.query || '');
+                }
+                return { content: [{ type: 'text' as const, text: job.result }] };
             }
 
             if (job.status === 'FAILED') {
@@ -2327,9 +2395,13 @@ export async function createServer(
                 if (domainWithheld) return domainWithheld;
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'domain');
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                    total: data?.total,
+                    onTopicTotal: data?.on_topic_total,
+                    knownBrand: getKnownBrand(),
+                });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_domain_intelligence', query, annotatedData?.coverage);
-                logQueryResult(query, 'domain_intelligence', annotatedData?.coverage, searchedGraphs);
+                logQueryResult(query, 'domain_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2372,9 +2444,13 @@ export async function createServer(
                 if (expertWithheld) return expertWithheld;
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report' || g.graph_type === 'analyst');
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                    total: data?.total,
+                    onTopicTotal: data?.on_topic_total,
+                    knownBrand: getKnownBrand(),
+                });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_expert_intelligence', query, annotatedData?.coverage);
-                logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs);
+                logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2417,9 +2493,13 @@ export async function createServer(
                 if (reportWithheld) return reportWithheld;
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'industry report');
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                    total: data?.total,
+                    onTopicTotal: data?.on_topic_total,
+                    knownBrand: getKnownBrand(),
+                });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_report_intelligence', query, annotatedData?.coverage);
-                logQueryResult(query, 'report_intelligence', annotatedData?.coverage, searchedGraphs);
+                logQueryResult(query, 'report_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2466,9 +2546,13 @@ export async function createServer(
                 if (statsWithheld) return statsWithheld;
 
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
+                    total: data?.total,
+                    onTopicTotal: data?.on_topic_total,
+                    knownBrand: getKnownBrand(),
+                });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_statistics', query, annotatedData?.coverage);
-                logQueryResult(query, 'search_statistics', annotatedData?.coverage, searchedGraphs);
+                logQueryResult(query, 'search_statistics', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -2511,9 +2595,13 @@ export async function createServer(
                 if (insightsWithheld) return insightsWithheld;
 
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true);
+                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
+                    total: data?.total,
+                    onTopicTotal: data?.on_topic_total,
+                    knownBrand: getKnownBrand(),
+                });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_insights', query, annotatedData?.coverage);
-                logQueryResult(query, 'search_insights', annotatedData?.coverage, searchedGraphs);
+                logQueryResult(query, 'search_insights', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
@@ -3335,6 +3423,20 @@ export async function createServer(
                     _presentation_hint: 'Present as a brainstorm map. Center: the query. First ring: seed trends. Second ring: adjacent territories. Highlight cross-trend brands and unexpected connections. Suggest follow-up explorations.',
                 };
 
+                const brainstormNextMoves = generateNextMoves(
+                    allResults || [],
+                    query,
+                    graphIdsToSearch || [],
+                    allResults.length === 0 ? 'empty' : 'ok',
+                    undefined,
+                    undefined,
+                    getGraphs(),
+                    getAnalysts(),
+                    { knownBrand: getKnownBrand() }
+                );
+                sessionTracker.recordNextMoves(brainstormNextMoves, query);
+                (brainstormMap as any).next_moves = brainstormNextMoves;
+
                 // ── Query-level billing ──
                 chargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[brainstorm] chargeQuery failed:', e.message));
@@ -3946,14 +4048,27 @@ export async function createServer(
                 if (result.partial_credit_warning || result.credit_note) {
                     parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
                 }
-                if (result.session_id) {
-                    parts.push(`--- SESSION: ${result.session_id}${result.session_note ? ` — ${result.session_note}` : ''} ---`);
-                }
+                const analystNextMoves = generateNextMoves(
+                    result.sources_used || [],
+                    query,
+                    [resolvedAnalystId || analyst_id],
+                    (result.coverage || 'ok').toLowerCase() === 'out' ? 'empty' : (result.coverage || 'ok').toLowerCase() === 'adjacent' ? 'thin' : 'ok',
+                    undefined,
+                    undefined,
+                    getGraphs(),
+                    getAnalysts(),
+                    {
+                        currentAnalystId: resolvedAnalystId || analyst_id,
+                        knownBrand: resolvedCompany || getKnownBrand(),
+                    }
+                );
+                sessionTracker.recordNextMoves(analystNextMoves, query);
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
                 if (consultWithheld) return consultWithheld;
                 return {
                     coverage: result.coverage,
+                    next_moves: analystNextMoves,
                     sources_used: result.sources_used,
                     content: [{ type: 'text' as const, text: parts.join('\n') }]
                 };
@@ -4178,14 +4293,27 @@ export async function createServer(
                 if (result.partial_credit_warning || result.credit_note) {
                     parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
                 }
-                if (result.session_id) {
-                    parts.push(`--- SESSION: ${result.session_id}${result.session_note ? ` — ${result.session_note}` : ''} ---`);
-                }
+                const humanAgentNextMoves = generateNextMoves(
+                    result.sources_used || [],
+                    query,
+                    [resolvedAnalystId || analyst_id],
+                    (result.coverage || 'ok').toLowerCase() === 'out' ? 'empty' : (result.coverage || 'ok').toLowerCase() === 'adjacent' ? 'thin' : 'ok',
+                    undefined,
+                    undefined,
+                    getGraphs(),
+                    getAnalysts(),
+                    {
+                        currentAnalystId: resolvedAnalystId || analyst_id,
+                        knownBrand: resolvedCompany || getKnownBrand(),
+                    }
+                );
+                sessionTracker.recordNextMoves(humanAgentNextMoves, query);
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
                 if (consultWithheld) return consultWithheld;
                 return {
                     coverage: result.coverage,
+                    next_moves: humanAgentNextMoves,
                     sources_used: result.sources_used,
                     content: [{ type: 'text' as const, text: parts.join('\n') }]
                 };

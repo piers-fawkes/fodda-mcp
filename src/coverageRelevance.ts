@@ -32,8 +32,8 @@
  * returned — callers keep the legacy count-only behavior.
  */
 
-import { getGraphs } from './catalogCache.js';
-import type { CatalogGraph } from './catalogCache.js';
+import { getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getAnalysts } from './catalogCache.js';
+import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
 
 /** Nominal on-topic relevance-score scale per graph tier (observed in QA:
  *  domain composites ~2.0, report vector scores ~0.8; expert sits between). */
@@ -205,7 +205,8 @@ export function addCoverageAnnotation(
     searchedGraphs: any[],
     limit: number | undefined,
     skipEvidenceCheck: boolean = false,
-    catalog: CatalogGraph[] = getGraphs()
+    catalog: CatalogGraph[] = getGraphs(),
+    options?: NextMovesOptions
 ): any {
     if (!data || typeof data !== 'object') return data;
 
@@ -376,7 +377,315 @@ export function addCoverageAnnotation(
         };
     }
 
+    normalizedData.next_moves = generateNextMoves(
+        rows,
+        query,
+        searchedGraphs,
+        status,
+        onTopicCount,
+        suggestedAction,
+        catalog,
+        options?.analysts || getAnalysts(),
+        options
+    );
+
     console.error(`[coverage] status: ${status}, results: ${resultCount}/${limit || 'default'}${onTopicCount !== undefined ? `, on-topic: ${onTopicCount}` : ''}, query: "${query}"`);
 
     return normalizedData;
+}
+
+export interface NextMovesThread {
+    kind: 'more_in_graph' | 'adjacent_room' | 'honest_thin';
+    graph_id?: string | undefined;
+    graph_display?: string | undefined;
+    remaining_count?: number | undefined;
+    theme?: string | undefined;
+    adjacent?: {
+        graph_id: string;
+        graph_display: string;
+        reason: string;
+    } | undefined;
+}
+
+export interface NextMovesSpecific {
+    brands?: string[] | undefined;
+    statistics_source?: string | undefined;
+    expert?: {
+        analyst_id: string;
+        display_name: string;
+        reason: string;
+    } | undefined;
+}
+
+export interface NextMoves {
+    thread?: NextMovesThread | undefined;
+    specific?: NextMovesSpecific | undefined;
+    scope_prompt: boolean;
+    known_brand?: string | undefined;
+    presentation?: 'internal' | undefined;
+}
+
+export interface NextMovesOptions {
+    total?: number | undefined;
+    onTopicTotal?: number | undefined;
+    knownBrand?: string | undefined;
+    currentAnalystId?: string | undefined;
+    analysts?: CatalogAnalyst[] | undefined;
+}
+
+export function generateNextMoves(
+    rows: any[],
+    query: string,
+    searchedGraphs: any[],
+    status: 'ok' | 'thin' | 'empty',
+    onTopicCount: number | undefined,
+    suggestedAction: any,
+    catalog: CatalogGraph[] = getGraphs(),
+    analysts: CatalogAnalyst[] = getAnalysts(),
+    options?: NextMovesOptions
+): NextMoves {
+    const nextMoves: NextMoves = {
+        scope_prompt: true,
+        presentation: 'internal',
+    };
+
+    if (options?.knownBrand) {
+        nextMoves.known_brand = options.knownBrand;
+    }
+
+    const searchedGraphIds = new Set<string>();
+    for (const g of searchedGraphs) {
+        const gid = typeof g === 'string' ? g : (g.graph_id || g.id || g.slug);
+        if (gid) searchedGraphIds.add(gid);
+    }
+    for (const r of rows) {
+        const gid = rowGraphId(r);
+        if (gid) searchedGraphIds.add(gid);
+    }
+
+    // ── 1. Thread (Pull the thread) ──
+    const tokens = specificQueryTokens(query);
+    const rowsByGraph = new Map<string, any[]>();
+    for (const r of rows) {
+        const gid = rowGraphId(r) || (searchedGraphs[0]?.graph_id) || 'unknown';
+        if (!rowsByGraph.has(gid)) rowsByGraph.set(gid, []);
+        rowsByGraph.get(gid)!.push(r);
+    }
+
+    let maxRemainder = 0;
+    let bestGraphId: string | undefined;
+    let bestGraphTheme: string | undefined;
+
+    if (rowsByGraph.size > 1) {
+        const totalMulti = options?.onTopicTotal ?? options?.total;
+        if (typeof totalMulti === 'number' && totalMulti > rows.length) {
+            maxRemainder = totalMulti - rows.length;
+            let maxCount = 0;
+            for (const [gid, gRows] of rowsByGraph.entries()) {
+                if (gRows.length > maxCount) {
+                    maxCount = gRows.length;
+                    bestGraphId = gid;
+                }
+            }
+            if (bestGraphId) {
+                const gRows = rowsByGraph.get(bestGraphId) || [];
+                const themes: string[] = [];
+                for (const r of gRows) {
+                    if (Array.isArray(r.topics)) themes.push(...r.topics);
+                    if (r.title) themes.push(r.title);
+                }
+                const graphMeta = catalog.find(g => g.graph_id === bestGraphId);
+                bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
+            }
+        }
+    } else {
+        for (const [gid, gRows] of rowsByGraph.entries()) {
+            const onTopicRows = gRows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
+            const renderedCount = gRows.length;
+            const gTotal = gRows[0]?.on_topic_total ?? gRows[0]?.total_count ?? gRows[0]?.total ?? options?.onTopicTotal ?? options?.total;
+            let remainder = 0;
+            if (typeof gTotal === 'number' && gTotal > renderedCount) {
+                remainder = gTotal - renderedCount;
+            }
+
+            if (remainder > maxRemainder) {
+                maxRemainder = remainder;
+                bestGraphId = gid;
+                const themes: string[] = [];
+                for (const r of onTopicRows) {
+                    if (Array.isArray(r.topics)) themes.push(...r.topics);
+                    if (Array.isArray(r.sectors)) themes.push(...r.sectors);
+                    if (r.title) themes.push(r.title);
+                }
+                const graphMeta = catalog.find(g => g.graph_id === gid);
+                if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
+                bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
+            }
+        }
+    }
+
+    if (maxRemainder > 0 && bestGraphId) {
+        const gMeta = catalog.find(g => g.graph_id === bestGraphId);
+        const display = gMeta ? buildDisplayName(gMeta) : bestGraphId;
+        nextMoves.thread = {
+            kind: 'more_in_graph',
+            graph_id: bestGraphId,
+            graph_display: display,
+            remaining_count: maxRemainder,
+            theme: bestGraphTheme,
+        };
+    } else if (status === 'thin' || status === 'empty') {
+        // honest_thin ONLY when status is thin or empty
+        let relevantCandidates: any[] = [];
+        try {
+            relevantCandidates = getRelevantGraphs(query);
+        } catch {
+            relevantCandidates = [];
+        }
+        const candidateGraphs = relevantCandidates.map(c => c.graph).filter(Boolean);
+        if (candidateGraphs.length === 0 && catalog?.length > 0) {
+            candidateGraphs.push(...catalog);
+        }
+        const closest = candidateGraphs.find(g => !searchedGraphIds.has(g.graph_id)) || candidateGraphs[0];
+        if (closest) {
+            const closestDisplay = buildDisplayName(closest);
+            const primarySearched = searchedGraphs[0];
+            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || closestDisplay);
+
+            nextMoves.thread = {
+                kind: 'honest_thin',
+                graph_id: primaryGid || closest.graph_id,
+                graph_display: primaryDisplay,
+                adjacent: {
+                    graph_id: closest.graph_id,
+                    graph_display: closestDisplay,
+                    reason: closest.headline || closest.domain || closest.name,
+                }
+            };
+        }
+        // If no candidate exists, thread is undefined (no fabrication)
+    } else {
+        // status is 'ok' with 0 remainder everywhere: check for unsearched adjacent room
+        let relevantCandidates: any[] = [];
+        try {
+            relevantCandidates = getRelevantGraphs(query);
+        } catch {
+            relevantCandidates = [];
+        }
+
+        const unsearched = relevantCandidates.find(cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id));
+        if (unsearched) {
+            const adjG = unsearched.graph;
+            const adjDisplay = buildDisplayName(adjG);
+            const primarySearched = searchedGraphs[0];
+            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || adjDisplay);
+
+            nextMoves.thread = {
+                kind: 'adjacent_room',
+                graph_id: primaryGid || adjG.graph_id,
+                graph_display: primaryDisplay,
+                adjacent: {
+                    graph_id: adjG.graph_id,
+                    graph_display: adjDisplay,
+                    reason: adjG.headline || adjG.domain || adjG.description || adjG.name,
+                }
+            };
+        }
+        // If no unsearched relevant room, thread is undefined (drop the line, no fabrication)
+    }
+
+    // ── 2. Specific (Go specific: brands, statistics_source, expert) ──
+    const specific: NextMovesSpecific = {};
+
+    // Brands: extract top 2 brand entities present in the returned rows
+    const brandCounts = new Map<string, number>();
+    for (const r of rows) {
+        const brandList: string[] = [];
+        if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
+        if (Array.isArray(r.brands)) brandList.push(...r.brands);
+        if (typeof r.brand === 'string' && r.brand) brandList.push(r.brand);
+        if (typeof r.company === 'string' && r.company) brandList.push(r.company);
+        if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
+
+        for (const b of brandList) {
+            if (typeof b === 'string' && b.trim().length > 1) {
+                const cleaned = b.trim();
+                brandCounts.set(cleaned, (brandCounts.get(cleaned) || 0) + 1);
+            }
+        }
+    }
+
+    if (brandCounts.size > 0) {
+        const sortedBrands = [...brandCounts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([brand]) => brand)
+            .slice(0, 2);
+        specific.brands = sortedBrands;
+    }
+
+    // Statistics source: supplemental source or scored stat dataset
+    const qLower = query.toLowerCase();
+    const isStatOrMarketShaped =
+        suggestedAction !== undefined ||
+        isDemandShaped(query) ||
+        options?.knownBrand !== undefined ||
+        brandCounts.size > 0 ||
+        /(?:market|spend|sales|growth|size|volume|rate|adoption|share|stats?|numbers?|forecast|demographics?|economic|inflation|pricing|consumer|retail|cpg|beauty|fashion|auto|tech|work|travel|food|drink|beverage|culture|trends?|brand|performance|activity)/i.test(qLower);
+
+    if (isStatOrMarketShaped) {
+        if (/(?:retail|spend|sales|commerce|shopping|store|grocery|cpg|consumer)/i.test(qLower)) {
+            specific.statistics_source = 'Census retail trade and spending data';
+        } else if (/(?:search|demand|interest|popular|google|volume|buzz|social)/i.test(qLower)) {
+            specific.statistics_source = 'Google Trends search volume and breakout queries';
+        } else if (/(?:employment|labor|job|wage|worker|workplace|talent|hiring)/i.test(qLower)) {
+            specific.statistics_source = 'BLS labor and employment metrics';
+        } else if (/(?:economic|inflation|cpi|interest\s+rate|gdp|macro|fed|recession)/i.test(qLower)) {
+            specific.statistics_source = 'FRED macroeconomic series';
+        } else if (/(?:beauty|fashion|apparel|luxury|sport|wellness|food|beverage)/i.test(qLower)) {
+            specific.statistics_source = 'Census and Google Trends market demand data';
+        } else {
+            specific.statistics_source = 'Census and FRED market statistics';
+        }
+    }
+
+    // Expert: first Active analyst whose graph was searched or scored >= threshold in routing
+    const activeAnalysts = analysts.filter(a => {
+        const st = (a.status || a.Status || '').toLowerCase().trim();
+        return !st || st === 'active';
+    });
+
+    const isCurrentAnalyst = (a: CatalogAnalyst) => {
+        if (!options?.currentAnalystId) return false;
+        const cur = options.currentAnalystId.toLowerCase().trim();
+        return (a.analyst_id && a.analyst_id.toLowerCase().trim() === cur) ||
+               (a.name && a.name.toLowerCase().trim() === cur);
+    };
+
+    const matchedAnalyst = activeAnalysts.find(a => {
+        if (isCurrentAnalyst(a)) return false;
+        const aSlug = (a.analyst_id || '').toLowerCase().trim();
+        if (searchedGraphIds.has(aSlug)) return true;
+        const aName = (a.name || '').toLowerCase();
+        const aDesc = (a.description || '').toLowerCase();
+        if (tokens.some(t => aName.includes(t) || aDesc.includes(t))) return true;
+        return false;
+    });
+
+    if (matchedAnalyst) {
+        specific.expert = {
+            analyst_id: matchedAnalyst.analyst_id,
+            display_name: matchedAnalyst.name,
+            reason: matchedAnalyst.description ? `covers ${matchedAnalyst.description.slice(0, 50).trim()} directly` : 'covers this domain directly',
+        };
+    }
+
+    if (Object.keys(specific).length > 0) {
+        nextMoves.specific = specific;
+    }
+
+    return nextMoves;
 }

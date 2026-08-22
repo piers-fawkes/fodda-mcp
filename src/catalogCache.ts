@@ -154,6 +154,13 @@ export async function initCatalogCache(): Promise<void> {
     }, CATALOG_REFRESH_MS);
 }
 
+export function setCachedCatalogForTesting(catalog: CatalogResponse, analysts?: CatalogAnalyst[]): void {
+    cachedCatalog = catalog;
+    if (analysts) cachedAnalysts = analysts;
+    lastFetchedAt = Date.now();
+    rebuildSearchIndex();
+}
+
 /**
  * Get the cached catalog. Returns null if not yet fetched.
  */

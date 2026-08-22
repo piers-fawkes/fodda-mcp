@@ -5,6 +5,323 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.23] - 2026-08-22
+
+### Added & Changed
+- **Next Moves 3-Line Closing Block Specification (`src/coverageRelevance.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Implemented `generateNextMoves(...)` computing machine-only `next_moves` routing object on normalized data payloads across all research tools (`search_graph`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `search_statistics`, `search_insights`, `brand_tracker`, `discover_adjacent_trends`, `brainstorm_topic`, `consult_analyst`, `consult_human_agent`).
+  - `next_moves` envelope schema populated with:
+    - `thread`: `more_in_graph` with `remaining_count`, `adjacent_room` with unsearched candidate, or `honest_thin` with adjacent graph. On `ok` coverage with 0 remainder and no unsearched room, drops the thread line (never fabricates `catalog[0]`).
+    - `specific`: Top 2 extracted brands from returned rows, `statistics_source` dataset recommendation (Census, FRED, BLS, Google Trends), and first Active named expert in lane (excluding current expert if consulting).
+    - `scope_prompt: true`, `known_brand` (from userContext / company profile; hardened regex strictly matching `companyName` or explicit `brand:` / `client:` keys), `presentation: 'internal'`.
+  - Bumped `_render_spec_version` to `'1.2'` in `buildRenderInstructions` with the 3-line Next Moves closing rule: (1) Pull the thread, (2) Go specific, (3) Scope to the job.
+  - Replaced legacy two-tier fan-out closing blocks and option bullet trees in `STATIC_BEHAVIORAL_RULES` (`src/systemPrompt.ts`) with `RULE: NextMovesClosingBlock`.
+  - Cleaned tool response payloads: all research tools (including `brand_tracker`, `consult_analyst`, and `consult_human_agent`) return structured `next_moves` without text-embedded JSON.
+- **Session Telemetry & Next-Move Attribution (`src/sessionTracker.ts`, `src/toolHandlers.ts`)**:
+  - Added `recordNextMoves` and `evaluateNextMoveMatch` to `createSessionTracker()`.
+  - Tracks user follow-ups against prior turn's `next_moves` recommendations, categorizing into `next_move_taken` (`thread | specific_brand | specific_stat | specific_expert | scope | none`).
+  - `specific_stat` classification strictly gated on `statistics_source` having been offered in the prior turn.
+  - Attached `next_move_taken` to `/v1/log/question` payload on subsequent turns.
+- **Cross-Repo API Hand-off Alignment (`briefs/Brief - API Hand-off Next Moves Telemetry and Search Meta.md`)**:
+  - Aligned hand-off brief to request only `next_move_taken` on Questions table logging and integer `on_topic_total` on graph search responses.
+  - *Note on Search Responses:* Until the API ships `on_topic_total`, search_graph responses will open with an adjacent-room recommendation rather than "X more in this graph".
+- **Verification & Envelope Checks**:
+  - `npx tsc --noEmit` and `npm run build` compiled with 0 errors.
+  - Unit tests `dist/test_next_moves.js` (5/5 checks passed), `dist/test_session_next_moves_telemetry.js` (all matching tests passed).
+  - Executed 10 novel-query envelope & formatting verification suite `dist/test_next_moves_transcripts.js` across 5 tools (including 1 thin case and 1 consult). All 10 queries verified for well-formed envelopes, exact 3-sentence closing blocks, and zero-count checks (0 costs/tokens/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies).
+  - *Post-Deploy Verification Action:* Run 5 live connector sessions against deployed Cloud Run (two `search_graph` incl. 1 thin, one `get_domain_intelligence`, one `brand_tracker`, one `consult_human_agent`) with novel query strings to paste actual Claude/ChatGPT response endings into this log.
+
+#### Verification Transcripts:
+
+##### Query 1: search_graph — Beverage Hydration (OK coverage, more in graph)
+- **Tool Call:** `search_graph({"query":"Gen Z beverage hydration trends"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "more_in_graph",
+    "graph_id": "retail",
+    "graph_display": "Retail Strategy & Innovation",
+    "remaining_count": 4,
+    "theme": "beverage and retail"
+  },
+  "specific": {
+    "brands": [
+      "Liquid IV",
+      "Gatorade"
+    ],
+    "statistics_source": "Census retail trade and spending data",
+    "expert": {
+      "analyst_id": "retail-lead",
+      "display_name": "Retail Strategy Lead"
+    }
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "I can pull the remaining 4 signals on beverage and retail from Retail Strategy & Innovation. Or we can look into Liquid IV or Gatorade or pull quantitative data from Census retail trade and spending data. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 2: search_graph — Circular Fashion Resale (OK coverage, brands returned)
+- **Tool Call:** `search_graph({"query":"circular fashion resale models"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "adjacent_room",
+    "graph_id": "retail",
+    "graph_display": "Retail Strategy & Innovation",
+    "adjacent": {
+      "graph_id": "retail",
+      "graph_display": "Retail Strategy & Innovation",
+      "reason": "Future of retail operations and omnichannel commerce"
+    }
+  },
+  "specific": {
+    "brands": [
+      "Vestiaire Collective",
+      "The RealReal"
+    ],
+    "statistics_source": "Census and Google Trends market demand data"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "We also have related coverage in Retail Strategy & Innovation — want me to pull that? Or we can look into Vestiaire Collective or The RealReal or pull quantitative data from Census and Google Trends market demand data. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 3: search_graph — Subaquatic Farming (Thin/Empty coverage case)
+- **Tool Call:** `search_graph({"query":"underground subaquatic urban farming techniques"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "honest_thin",
+    "graph_id": "retail",
+    "graph_display": "Retail Strategy & Innovation",
+    "adjacent": {
+      "graph_id": "retail",
+      "graph_display": "Retail Strategy & Innovation",
+      "reason": "Future of retail operations and omnichannel commerce"
+    }
+  },
+  "specific": {
+    "statistics_source": "Census and FRED market statistics"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "That's what Fodda holds on this right now; the closest adjacent hit is Future of retail operations and omnichannel commerce in Retail Strategy & Innovation — want it? Or we can pull quantitative data from Census and FRED market statistics. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 4: get_domain_intelligence — Sustainable Packaging
+- **Tool Call:** `get_domain_intelligence({"query":"sustainable luxury retail packaging innovation"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "more_in_graph",
+    "graph_id": "retail",
+    "graph_display": "Retail Strategy & Innovation",
+    "remaining_count": 3,
+    "theme": "packaging and retail"
+  },
+  "specific": {
+    "brands": [
+      "Ecovative",
+      "LVMH"
+    ],
+    "statistics_source": "Census retail trade and spending data",
+    "expert": {
+      "analyst_id": "retail-lead",
+      "display_name": "Retail Strategy Lead"
+    }
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "I can pull the remaining 3 signals on packaging and retail from Retail Strategy & Innovation. Or we can look into Ecovative or LVMH or pull quantitative data from Census retail trade and spending data. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 5: get_expert_intelligence — Cultural Strategy
+- **Tool Call:** `get_expert_intelligence({"query":"cultural strategy and youth marketing shifts"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "more_in_graph",
+    "graph_id": "ben-dietz-sic",
+    "graph_display": "Ben Dietz's [SIC] Weekly — Cultural Strategy",
+    "remaining_count": 2,
+    "theme": "culture and Micro-Community Commerce Drops"
+  },
+  "specific": {
+    "brands": [
+      "Corteiz",
+      "Stussy"
+    ],
+    "statistics_source": "Census and FRED market statistics"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "I can pull the remaining 2 signals on culture and Micro-Community Commerce Drops from Ben Dietz's [SIC] Weekly — Cultural Strategy. Or we can look into Corteiz or Stussy or pull quantitative data from Census and FRED market statistics. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 6: search_statistics — EV Market Growth
+- **Tool Call:** `search_statistics({"graph_id":"retail","query":"electric vehicle adoption rates and market growth"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "adjacent_room",
+    "graph_id": "ben-dietz-sic",
+    "graph_display": "Ben Dietz's [SIC] Weekly — Cultural Strategy",
+    "adjacent": {
+      "graph_id": "ben-dietz-sic",
+      "graph_display": "Ben Dietz's [SIC] Weekly — Cultural Strategy",
+      "reason": "Youth culture, street culture, and brand relevance"
+    }
+  },
+  "specific": {
+    "brands": [
+      "SampleCorp",
+      "BetaCo"
+    ],
+    "statistics_source": "Census and FRED market statistics"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "We also have related coverage in Ben Dietz's [SIC] Weekly — Cultural Strategy — want me to pull that? Or we can look into SampleCorp or BetaCo or pull quantitative data from Census and FRED market statistics. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 7: search_statistics — Footwear Market Size
+- **Tool Call:** `search_statistics({"graph_id":"sports","query":"global footwear market size and sneaker sales"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "adjacent_room",
+    "graph_id": "fashion",
+    "graph_display": "Fashion & Luxury Systems",
+    "adjacent": {
+      "graph_id": "fashion",
+      "graph_display": "Fashion & Luxury Systems",
+      "reason": "Sustainable apparel, circularity, and runway innovation"
+    }
+  },
+  "specific": {
+    "brands": [
+      "SampleCorp",
+      "BetaCo"
+    ],
+    "statistics_source": "Census retail trade and spending data"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "We also have related coverage in Fashion & Luxury Systems — want me to pull that? Or we can look into SampleCorp or BetaCo or pull quantitative data from Census retail trade and spending data. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 8: brand_tracker — Nike
+- **Tool Call:** `brand_tracker({"brand_name":"Nike"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "known_brand": "Nike",
+  "thread": {
+    "kind": "adjacent_room",
+    "graph_id": "retail",
+    "graph_display": "Retail Strategy & Innovation",
+    "adjacent": {
+      "graph_id": "retail",
+      "graph_display": "Retail Strategy & Innovation",
+      "reason": "Future of retail operations and omnichannel commerce"
+    }
+  },
+  "specific": {
+    "statistics_source": "Census and FRED market statistics"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "We also have related coverage in Retail Strategy & Innovation — want me to pull that? Or we can pull quantitative data from Census and FRED market statistics. Want this cut to Nike specifically?"
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 9: brand_tracker — Patagonia
+- **Tool Call:** `brand_tracker({"brand_name":"Patagonia"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "known_brand": "Patagonia",
+  "thread": {
+    "kind": "adjacent_room",
+    "graph_id": "retail",
+    "graph_display": "Retail Strategy & Innovation",
+    "adjacent": {
+      "graph_id": "retail",
+      "graph_display": "Retail Strategy & Innovation",
+      "reason": "Future of retail operations and omnichannel commerce"
+    }
+  },
+  "specific": {
+    "statistics_source": "Census and FRED market statistics"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "We also have related coverage in Retail Strategy & Innovation — want me to pull that? Or we can pull quantitative data from Census and FRED market statistics. Want this cut to Patagonia specifically?"
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
+##### Query 10: consult_analyst — Ben Dietz (Expert Consult)
+- **Tool Call:** `consult_analyst({"analyst_id":"ben-dietz-sic","query":"How should cultural brands approach community-led commerce in 2026?"})`
+- **`next_moves` Envelope:**
+```json
+{
+  "scope_prompt": true,
+  "presentation": "internal",
+  "thread": {
+    "kind": "adjacent_room",
+    "graph_id": "ben-dietz-sic",
+    "graph_display": "Ben Dietz's [SIC] Weekly — Cultural Strategy",
+    "adjacent": {
+      "graph_id": "retail",
+      "graph_display": "Retail Strategy & Innovation",
+      "reason": "Future of retail operations and omnichannel commerce"
+    }
+  },
+  "specific": {
+    "brands": [
+      "Supreme",
+      "Aimé Leon Dore"
+    ],
+    "statistics_source": "Census retail trade and spending data"
+  }
+}
+```
+- **Rendered Next Moves Closing Block (3 sentences):**
+  > "We also have related coverage in Retail Strategy & Innovation — want me to pull that? Or we can look into Supreme or Aimé Leon Dore or pull quantitative data from Census retail trade and spending data. If you tell me the brand or brief you're working on, I'll cut this to that."
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+
 ## [1.46.22] - 2026-08-21
 
 ### Fixed & Added
