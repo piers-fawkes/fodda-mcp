@@ -5,6 +5,26 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.30] - 2026-08-22
+
+### Added & Enhanced (Human Agent "Book a Call" Intent & Plain-Language Whitelisting)
+- **`book_a_call` Pass-Through & Cached Enrichment (`src/toolHandlers.ts`)**:
+  - Added cached `/v1/human-agents` enrichment (`getHumanAgentsBookACallMap` with 5-minute in-memory TTL) to `list_analysts`, seamlessly augmenting analyst records with `book_a_call: { url, rate_display } | null`.
+  - In `consult_human_agent`, placed `book_a_call` at top level of the returned result envelope alongside `analyst`, and appended `--- BOOK A CALL: ... ---` markers to text parts when present.
+  - Bumped `list_analysts` and `consult_human_agent` tool versions in `src/tools.ts` to `1.1.0`.
+- **System Prompt Rules for Booking Intent & Plain-Language Presentation (`src/systemPrompt.ts`)**:
+  - Added `HIRE / BOOK / SPEAK-TO-THE-PERSON INTENT` rule: when a user asks to hire, book, call, meet, or speak with the real expert (not the Human Agent) and `book_a_call` is present, the agent outputs the pre-written `rate_display` sentence verbatim on its own line followed by the booking URL, while offering on-platform alternatives (commission deliverable / continuing consultation).
+  - Extended the conversational framing and anti-leakage rule: banned technical field names (`askLine`, `blindSpots`, `signatureInsights`, `exampleQueries`, `consult_tool`, `book_a_call`, `rate_display`) and tool names (`consult_human_agent`, `request_deliverable`, `list_analysts`, `session_id`) in user-facing text, translating them to conversational plain-English phrasing.
+  - Updated tool parameter descriptions for `analyst_id` in `consult_analyst`, `consult_human_agent`, and `request_deliverable` to prohibit exposing raw slugs, field names, or tool names.
+- **Whitelist Output Projection in `list_analysts` (`src/toolHandlers.ts`)**:
+  - Replaced raw object spreading (`...a`) with explicit projection: `analyst_id`, `name`, `type`, `consult_tool`, `expert_in`, `description`, `what_they_offer`, `example_questions`, `outside_their_lane`, `credentials` (`roleTitle`, `yearsExperience`, `pastEmployers`), `is_verified_real_person`, `price`, `book_a_call`, `offerings`, `commissionable`, `note`.
+  - Stripped unneeded internal fields (`voiceProfile`, `expertCard`, `systemInstructions`, `signatureInsights`, images, dates), reducing payload size by ~74% (from 211,340 bytes down to 55,612 bytes).
+- **Verification & Test Suite (`src/test_book_a_call_live.ts`)**:
+  - Verified `list_analysts` projection and zero leaked raw Airtable keys.
+  - Verified `consult_human_agent` with Jeremy Bergstein returns top-level `book_a_call` with verbatim `rate_display` and URL.
+  - Verified `consult_human_agent` with James Colistra returns `book_a_call: null`.
+  - Verified zero occurrences of banned internal keys or tool names in consult output prose.
+
 ## [1.46.29] - 2026-08-22
 
 ### Fixed & Enhanced (Next Moves Closing Block Cleanup)

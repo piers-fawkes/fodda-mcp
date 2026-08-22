@@ -822,6 +822,42 @@ export async function createServer(
         }
     );
 
+    interface BookACallInfo {
+        url: string;
+        rate_display: string;
+    }
+
+    let cachedHumanAgentsBookACall: Map<string, BookACallInfo | null> = new Map();
+    let lastHumanAgentsFetchTime: number = 0;
+    const HUMAN_AGENTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+    async function getHumanAgentsBookACallMap(foddaReq: FoddaRequestFn, apiKey: string, userId: string): Promise<Map<string, BookACallInfo | null>> {
+        const now = Date.now();
+        if (cachedHumanAgentsBookACall.size > 0 && (now - lastHumanAgentsFetchTime) < HUMAN_AGENTS_CACHE_TTL_MS) {
+            return cachedHumanAgentsBookACall;
+        }
+
+        try {
+            const haData = await foddaReq('GET', '/v1/human-agents', apiKey, userId);
+            const list: any[] = Array.isArray(haData) ? haData : (haData?.human_agents || haData?.analysts || haData?.data || []);
+            const newMap = new Map<string, BookACallInfo | null>();
+            for (const a of list) {
+                const key = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+                if (key) {
+                    newMap.set(key, a.book_a_call ?? null);
+                }
+                if (a.name) {
+                    newMap.set(a.name.toLowerCase().trim(), a.book_a_call ?? null);
+                }
+            }
+            cachedHumanAgentsBookACall = newMap;
+            lastHumanAgentsFetchTime = now;
+            return cachedHumanAgentsBookACall;
+        } catch {
+            return cachedHumanAgentsBookACall;
+        }
+    }
+
     // --- list_analysts ---
     server.tool(
         'list_analysts',
@@ -830,7 +866,11 @@ export async function createServer(
         { title: 'List Human Agents & Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             try {
-                const data = await foddaRequest('GET', '/v1/analysts', apiKey, resolveUserId(userId, uid));
+                const targetUserId = resolveUserId(userId, uid);
+                const [data, bookACallMap] = await Promise.all([
+                    foddaRequest('GET', '/v1/analysts', apiKey, targetUserId),
+                    getHumanAgentsBookACallMap(foddaRequest, apiKey, targetUserId)
+                ]);
                 let analystsList: any[] = [];
                 if (Array.isArray(data)) {
                     analystsList = data;
@@ -850,11 +890,30 @@ export async function createServer(
                         const consult_tool = isHumanAgent ? 'consult_human_agent' : 'consult_analyst';
                         const price = a.price || a.promoPriceUsd || a.publishedPriceUsd || a.price_usd || undefined;
                         const hasOfferings = Array.isArray(a.offerings) && a.offerings.length > 0;
+                        const nameKey = (a.name || '').toLowerCase().trim();
+                        const book_a_call = a.book_a_call !== undefined ? a.book_a_call : (bookACallMap.get(key) ?? (nameKey ? bookACallMap.get(nameKey) : null) ?? (isHumanAgent ? null : undefined));
+
+                        const credentials = (a.roleTitle || a.yearsExperience != null || a.pastEmployers || a.role_title || a.years_experience != null || a.past_employers) ? {
+                            roleTitle: a.roleTitle || a.role_title || undefined,
+                            yearsExperience: a.yearsExperience ?? a.years_experience ?? undefined,
+                            pastEmployers: a.pastEmployers || a.past_employers || undefined
+                        } : undefined;
+
                         const enriched = {
-                            ...a,
+                            analyst_id: a.analyst_id || a.id || a.slug || a.name || '',
+                            name: a.name,
                             type,
                             consult_tool,
-                            ...(price ? { price } : {}),
+                            ...(a.expertIn || a.expert_in || a.topic ? { expert_in: a.expertIn || a.expert_in || a.topic } : {}),
+                            ...(a.description ? { description: a.description } : {}),
+                            ...(a.askLine || a.what_they_offer || a.whatTheyOffer ? { what_they_offer: a.askLine || a.what_they_offer || a.whatTheyOffer } : {}),
+                            ...(a.exampleQueries || a.example_questions ? { example_questions: a.exampleQueries || a.example_questions } : {}),
+                            ...(a.blindSpots || a.outside_their_lane || a.outsideTheirLane ? { outside_their_lane: a.blindSpots || a.outside_their_lane || a.outsideTheirLane } : {}),
+                            ...(credentials ? { credentials } : {}),
+                            is_verified_real_person: Boolean(a.isVerifiedRealPerson || a.is_verified_real_person || isHumanAgent),
+                            ...(price !== undefined ? { price } : {}),
+                            ...(book_a_call !== undefined ? { book_a_call } : {}),
+                            offerings: a.offerings || [],
                             commissionable: hasOfferings,
                             ...(!hasOfferings ? { note: `Analyst profile available for consultation (${consult_tool}); deliverables not yet commissionable.` } : {})
                         };
@@ -870,15 +929,12 @@ export async function createServer(
                     const deduplicated = Array.from(seen.values());
                     const result = {
                         company_query_guide,
-                        analysts: deduplicated,
-                        ...(typeof data === 'object' && !Array.isArray(data) ? data : {})
+                        analysts: deduplicated
                     };
                     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
                 }
 
-                const fallbackResult = (typeof data === 'object' && !Array.isArray(data))
-                    ? { company_query_guide, ...data }
-                    : { company_query_guide, analysts: data };
+                const fallbackResult = { company_query_guide, analysts: [] };
                 return { content: [{ type: 'text' as const, text: JSON.stringify(fallbackResult, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -3926,7 +3982,7 @@ export async function createServer(
         'consult_analyst',
         'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
         {
-            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
+            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
             query: z.string().describe("The question or topic to discuss with the synthetic analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
@@ -4229,9 +4285,9 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
+        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. Response may include `book_a_call` (URL + a pre-written booking sentence shown verbatim) for booking time with the real person — surface it when the user wants to hire or speak to the expert.',
         {
-            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
+            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context and follow-ups cost less. Omit for a one-off question."),
@@ -4262,7 +4318,7 @@ export async function createServer(
 
                 const reportText = typeof result.result === 'string'
                     ? result.result
-                    : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
+                    : (typeof result.report === 'string' ? result.report : (typeof result.response === 'string' ? result.response : JSON.stringify(result, null, 2)));
 
                 // 1. Capture initial raw sources returned by upstream API
                 const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
@@ -4424,6 +4480,13 @@ export async function createServer(
                     parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
                 }
 
+                if (result.book_a_call) {
+                    const callText = result.book_a_call.rate_display
+                        ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
+                        : (result.book_a_call.url || '');
+                    parts.push(`--- BOOK A CALL: ${callText} ---`);
+                }
+
                 if (result.partial_credit_warning || result.credit_note) {
                     parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
                 }
@@ -4451,6 +4514,8 @@ export async function createServer(
                     coverage: result.coverage,
                     next_moves: humanAgentNextMoves,
                     sources_used: result.sources_used,
+                    ...(result.analyst ? { analyst: result.analyst } : {}),
+                    book_a_call: result.book_a_call ?? null,
                     content: [{ type: 'text' as const, text: parts.join('\n') }]
                 };
             } catch (err: any) {
@@ -4474,7 +4539,7 @@ export async function createServer(
         'request_deliverable',
         'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon."',
         {
-            analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). Never display raw IDs or slugs to the user — refer to the expert by display name."),
+            analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
             brief: z.string().describe("2–5 sentences: audience, goal, constraints. Agents imitate the example in the tool description — be concrete."),
             attachments: z.array(z.object({ content: z.string() })).optional().describe("Optional supporting text files mounted into the analyst's workspace (max 5)."),
