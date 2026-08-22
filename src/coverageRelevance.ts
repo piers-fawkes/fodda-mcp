@@ -452,6 +452,7 @@ export interface NextMovesOptions {
     currentAnalystId?: string | undefined;
     analysts?: CatalogAnalyst[] | undefined;
     isBrandTracker?: boolean | undefined;
+    brandDisplayName?: string | undefined;
     competitiveLandscape?: string[] | undefined;
     earningsTicker?: string | undefined;
     earningsStatsSource?: string | undefined;
@@ -559,7 +560,36 @@ export function generateNextMoves(
     let bestGraphId: string | undefined;
     let bestGraphTheme: string | undefined;
 
-    if (rowsByGraph.size > 1) {
+    // First pass: check per-graph on_topic_total / total attached to gRows[0]
+    for (const [gid, gRows] of rowsByGraph.entries()) {
+        const onTopicRows = gRows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
+        const renderedCount = gRows.length;
+        const gTotal = gRows[0]?.on_topic_total ?? gRows[0]?.total_count ?? gRows[0]?.total;
+        let remainder = 0;
+        if (typeof gTotal === 'number' && gTotal > renderedCount) {
+            remainder = gTotal - renderedCount;
+        }
+
+        if (remainder > maxRemainder) {
+            maxRemainder = remainder;
+            bestGraphId = gid;
+            const themes: string[] = [];
+            for (const r of onTopicRows) {
+                if (Array.isArray(r.topics)) themes.push(...r.topics);
+                if (Array.isArray(r.sectors)) themes.push(...r.sectors);
+            }
+            const graphMeta = catalog.find(g => g.graph_id === gid);
+            if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
+            for (const r of onTopicRows) {
+                if (r.title) themes.push(r.title);
+                if (r.trend_name) themes.push(r.trend_name);
+            }
+            bestGraphTheme = formatThemePhrase(themes, graphMeta?.domain || 'emerging signals');
+        }
+    }
+
+    // Second pass: if per-graph totals were not present on rows, check aggregate multi-graph totals in options
+    if (maxRemainder === 0) {
         const totalMulti = options?.onTopicTotal ?? options?.total;
         if (typeof totalMulti === 'number' && totalMulti > rows.length) {
             maxRemainder = totalMulti - rows.length;
@@ -580,60 +610,6 @@ export function generateNextMoves(
                 const graphMeta = catalog.find(g => g.graph_id === bestGraphId);
                 if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
                 for (const r of gRows) {
-                    if (r.title) themes.push(r.title);
-                    if (r.trend_name) themes.push(r.trend_name);
-                }
-                bestGraphTheme = formatThemePhrase(themes, graphMeta?.domain || 'emerging signals');
-            }
-        } else {
-            for (const [gid, gRows] of rowsByGraph.entries()) {
-                const onTopicRows = gRows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
-                const renderedCount = gRows.length;
-                const gTotal = gRows[0]?.on_topic_total ?? gRows[0]?.total_count ?? gRows[0]?.total;
-                let remainder = 0;
-                if (typeof gTotal === 'number' && gTotal > renderedCount) {
-                    remainder = gTotal - renderedCount;
-                }
-
-                if (remainder > maxRemainder) {
-                    maxRemainder = remainder;
-                    bestGraphId = gid;
-                    const themes: string[] = [];
-                    for (const r of onTopicRows) {
-                        if (Array.isArray(r.topics)) themes.push(...r.topics);
-                        if (Array.isArray(r.sectors)) themes.push(...r.sectors);
-                    }
-                    const graphMeta = catalog.find(g => g.graph_id === gid);
-                    if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
-                    for (const r of onTopicRows) {
-                        if (r.title) themes.push(r.title);
-                        if (r.trend_name) themes.push(r.trend_name);
-                    }
-                    bestGraphTheme = formatThemePhrase(themes, graphMeta?.domain || 'emerging signals');
-                }
-            }
-        }
-    } else {
-        for (const [gid, gRows] of rowsByGraph.entries()) {
-            const onTopicRows = gRows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
-            const renderedCount = gRows.length;
-            const gTotal = gRows[0]?.on_topic_total ?? gRows[0]?.total_count ?? gRows[0]?.total ?? options?.onTopicTotal ?? options?.total;
-            let remainder = 0;
-            if (typeof gTotal === 'number' && gTotal > renderedCount) {
-                remainder = gTotal - renderedCount;
-            }
-
-            if (remainder > maxRemainder) {
-                maxRemainder = remainder;
-                bestGraphId = gid;
-                const themes: string[] = [];
-                for (const r of onTopicRows) {
-                    if (Array.isArray(r.topics)) themes.push(...r.topics);
-                    if (Array.isArray(r.sectors)) themes.push(...r.sectors);
-                }
-                const graphMeta = catalog.find(g => g.graph_id === gid);
-                if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
-                for (const r of onTopicRows) {
                     if (r.title) themes.push(r.title);
                     if (r.trend_name) themes.push(r.trend_name);
                 }
@@ -737,7 +713,7 @@ export function generateNextMoves(
         }
         // If no candidate exists, thread is undefined (no fabrication)
     } else {
-        // status is 'ok' with 0 remainder everywhere: check for unsearched adjacent room
+    // status is 'ok' with 0 remainder everywhere: check for unsearched adjacent room
         let relevantCandidates: any[] = [];
         try {
             relevantCandidates = getRelevantGraphs(query);
@@ -745,7 +721,7 @@ export function generateNextMoves(
             relevantCandidates = [];
         }
 
-        const unsearched = relevantCandidates.find(cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id));
+        const unsearched = relevantCandidates.find(cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10);
         if (unsearched) {
             const adjG = unsearched.graph;
             const adjDisplay = buildDisplayName(adjG);
@@ -778,8 +754,12 @@ export function generateNextMoves(
         // For brand reports, if competitiveLandscape is empty or omitted, leave specific.brands undefined — never pad!
         specific.brands = undefined;
     } else {
+        const tokens = specificQueryTokens(query);
+        const onTopicRows = rows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
+        const brandSourceRows = onTopicRows.length > 0 ? onTopicRows : rows;
+
         const brandCounts = new Map<string, number>();
-        for (const r of rows) {
+        for (const r of brandSourceRows) {
             const brandList: string[] = [];
             if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
             if (Array.isArray(r.brands)) brandList.push(...r.brands);
@@ -1051,8 +1031,10 @@ export function generateConsultNextMoves(
         if ((matchedAnalyst as any).slug) expertOwnIds.add(String((matchedAnalyst as any).slug).toLowerCase());
     }
 
+    const SHELF_RELEVANCE_FLOOR = 0.10;
     const shelfCandidateGraphs: CatalogGraph[] = [];
     for (const cand of relevantCandidates) {
+        if ((cand.score ?? 0) < SHELF_RELEVANCE_FLOOR) continue;
         const g = cand.graph;
         if (!g) continue;
         const gid = (g.graph_id || (g as any).id || '').toLowerCase();

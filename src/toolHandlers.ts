@@ -1059,8 +1059,11 @@ export async function createServer(
                             continue;
                         }
                         const fulfilled = r as PromiseFulfilledResult<any>;
-                        const rows = Array.isArray(fulfilled.value) ? fulfilled.value : (fulfilled.value?.rows || []);
+                        const val = fulfilled.value;
+                        const rows = Array.isArray(val) ? val : (val?.rows || []);
                         const graphMeta = relevantGraphs[i];
+                        const graphTotal = val?.total ?? (Array.isArray(val) ? val.length : (val?.rows?.length || 0));
+                        const graphOnTopicTotal = val?.on_topic_total ?? val?.total_count ?? graphTotal;
                         for (const row of rows) {
                             const key = row.trendId || row.node_id || row.trendName || `${row.name}_${row.signal_score}`;
                             if (seen.has(String(key))) continue;
@@ -1069,6 +1072,9 @@ export async function createServer(
                             if (rowName && seenNames.some(n => isSemDuplicate(n, rowName))) continue;
                             seen.add(String(key));
                             if (rowName) seenNames.push(rowName);
+                            // Attach per-graph totals from API envelope so each graph's remainder can be computed
+                            row.on_topic_total = graphOnTopicTotal;
+                            row.total = graphTotal;
                             // Tag with source tier and label for editorial composition
                             if (graphMeta) {
                                 const g = graphMeta.graph;
@@ -1189,7 +1195,9 @@ export async function createServer(
                         if (trialResult) return trialResult;
                         return await handleAccessError(creditRejection, 'search_graph', userId, apiKey);
                     }
-                    data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs };
+                    const fanoutTotal = results.filter(r => r.status === 'fulfilled').reduce((sum, r: any) => sum + (r.value?.total || r.value?.rows?.length || (Array.isArray(r.value) ? r.value.length : 0)), 0);
+                    const fanoutOnTopicTotal = results.filter(r => r.status === 'fulfilled').reduce((sum, r: any) => sum + (r.value?.on_topic_total || r.value?.total_count || r.value?.total || r.value?.rows?.length || (Array.isArray(r.value) ? r.value.length : 0)), 0);
+                    data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs, total: fanoutTotal, on_topic_total: fanoutOnTopicTotal };
                     if (unavailableGraphs.length > 0) data.unavailable_graphs = unavailableGraphs;
                 } else {
                     const matchedGraph = getGraphs().find(g => g.graph_id === graphId);
@@ -2296,23 +2304,62 @@ export async function createServer(
                 if (withheld) return withheld;
 
                 const brandLower = brand_name.toLowerCase();
-                const footprintGraphIds = new Set<string>(
-                    (profile?.trend_footprint || [])
-                        .map((t: any) => t.graphId || t._use_this_graphId || t.graph_id)
-                        .filter(Boolean)
-                );
+                const footprintTrends = (profile?.trend_footprint || []).slice(0, 15);
+                const footprintGraphCounts: Record<string, number> = {};
+                for (const t of (profile?.trend_footprint || [])) {
+                    const gid = t.graphId || t._use_this_graphId || t.graph_id;
+                    if (gid) footprintGraphCounts[gid] = (footprintGraphCounts[gid] || 0) + 1;
+                }
+                const primaryFootprintGraphId = Object.entries(footprintGraphCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
 
-                const competitiveLandscape = (profile?.competitive_context?.co_occurring_brands || [])
-                    .filter((c: any) => {
-                        const b = c.brand;
-                        if (!b || typeof b !== 'string') return false;
-                        const bLower = b.toLowerCase();
-                        if (bLower === brandLower || brandLower.includes(bLower) || bLower.includes(brandLower)) return false;
-                        const cGraphs: string[] = Array.isArray(c.graphIds) ? c.graphIds : [];
-                        return cGraphs.some((gid: string) => footprintGraphIds.has(gid));
+                const PLATFORM_BLOCKLIST = new Set([
+                    'Meituan', 'Taobao', 'Alibaba', 'JD.com', 'Tmall', 'Pinduoduo', 'Shopee',
+                    'Amazon', 'eBay', 'Etsy', 'Shopify', 'Walmart', 'Target',
+                    'Google', 'Apple', 'Meta', 'Microsoft', 'OpenAI',
+                    'Instagram', 'TikTok', 'YouTube', 'Snapchat', 'Pinterest', 'X', 'Twitter', 'Reddit', 'Substack',
+                    'Spotify', 'Netflix', 'Disney+', 'Hulu',
+                    'Uber', 'Lyft', 'DoorDash', 'Instacart',
+                    'WeChat', 'WhatsApp', 'Telegram', 'LINE',
+                    'Stripe', 'PayPal', 'Square', 'Klarna',
+                ]);
+
+                const footprintBrandCounts: Record<string, number> = {};
+                const footprintBrandGraphs: Record<string, Set<string>> = {};
+                for (const t of footprintTrends) {
+                    const gid = t.graphId || t._use_this_graphId || t.graph_id;
+                    const bList: string[] = [];
+                    if (Array.isArray(t.brandNames)) bList.push(...t.brandNames);
+                    else if (typeof t.brandNames === 'string') bList.push(...t.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean));
+                    if (Array.isArray(t.brands)) bList.push(...t.brands);
+                    if (Array.isArray(t.evidence)) {
+                        for (const ev of t.evidence) {
+                            if (Array.isArray(ev.brandNames)) bList.push(...ev.brandNames);
+                            else if (typeof ev.brandNames === 'string') bList.push(...ev.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean));
+                            if (Array.isArray(ev.brands_mentioned)) bList.push(...ev.brands_mentioned);
+                        }
+                    }
+
+                    for (const b of bList) {
+                        if (!b || typeof b !== 'string') continue;
+                        const bClean = b.trim();
+                        const bLower = bClean.toLowerCase();
+                        if (bClean.length <= 2 || bLower === brandLower || brandLower.includes(bLower) || bLower.includes(brandLower)) continue;
+                        if (PLATFORM_BLOCKLIST.has(bClean)) continue;
+
+                        footprintBrandCounts[bClean] = (footprintBrandCounts[bClean] || 0) + 1;
+                        if (!footprintBrandGraphs[bClean]) footprintBrandGraphs[bClean] = new Set();
+                        if (gid) footprintBrandGraphs[bClean].add(gid);
+                    }
+                }
+
+                // Filter to candidates whose primary graph matches the tracked brand's primary footprint graph
+                const competitiveLandscape = Object.entries(footprintBrandCounts)
+                    .filter(([b]) => {
+                        const graphs = footprintBrandGraphs[b];
+                        return primaryFootprintGraphId ? graphs?.has(primaryFootprintGraphId) : true;
                     })
-                    .sort((a: any, b: any) => (b.co_occurrences || b.coOccurrences || 0) - (a.co_occurrences || a.coOccurrences || 0))
-                    .map((c: any) => c.brand)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([b]) => b)
                     .slice(0, 2);
 
                 const pAny = profile as any;

@@ -5,6 +5,65 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.31] - 2026-08-22
+
+### Fixed & Enhanced (Next Moves Regression Fixes)
+- **`search_graph` Thread Line Restored (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - *Root Cause*: In the 1.46.27 server-render refactor, multi-graph fan-out search constructed `data = { rows: finalRows, ... }` without attaching per-graph `on_topic_total` to rows, while `data.total` was reset to `data.rows.length` (10) and `data.on_topic_total` was undefined. When `generateNextMoves()` inspected `gRows[0].on_topic_total`, it resolved to `undefined` and remainder evaluated to `0`, dropping the `more_in_graph` thread line.
+  - *Fix*: Each row now carries its own graph's `on_topic_total` and `total` from the API response envelope (`row.on_topic_total = graphOnTopicTotal; row.total = graphTotal;`). Aggregates across fulfilled searches populate `data.total` and `data.on_topic_total` for multi-graph envelope options.
+- **`search_graph` On-Topic Brand Row Filtering (`src/coverageRelevance.ts`)**:
+  - *Root Cause*: `generateNextMoves()` extracted brands across all returned rows unconditionally. In multi-graph searches where diversity re-ranking included off-topic rows (e.g. PlayStation / Hermès), brands from off-topic rows leaked into Line 2.
+  - *Fix*: `generateNextMoves()` now filters rows using `onTopicRows = rows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)))` and extracts brands strictly from `onTopicRows`, ranked by frequency.
+- **`brand_tracker` Sector-Aware Competitor Ranking (`src/toolHandlers.ts`)**:
+  - *Root Cause*: 1.46.29's shared-≥1-graph filter against global Cypher co-occurrences let generic retail brands (`NCR`, `La Mer`, `Discover`, `Ring`) survive because they co-occurred in massive generic retail articles.
+  - *Fix*: Co-occurrences are now counted strictly **within the tracked brand's own top-N footprint trends** (`profile.trend_footprint` / `freshTrends`), requiring the candidate's primary graph type to match the tracked brand's primary footprint graph. If <1 brand survives, `specific.brands` is set to `undefined` and the competitor clause is cleanly omitted.
+- **Consult Shelf Relevance Score Floor (`src/coverageRelevance.ts`)**:
+  - *Root Cause*: `getRelevantGraphs(query)` returns at least `minGraphs` (4) candidates even when score is 0.00. For niche consults ("podcast guest tips"), unrelated domain graphs (`PSFK Retail Trends`, `NielsenIQ Beauty Graph`) were merchandised in sentence 2.
+  - *Fix*: Reused the standard routing threshold `SHELF_RELEVANCE_FLOOR = 0.10` (from `catalogCache.ts:929/1241`). If no candidate graph scores $\ge 0.10$, sentence 2 is omitted entirely, rendering a clean 2-sentence closing block.
+- **Pinned Regression Test Suite (`src/test_next_moves.ts`, `src/test_next_moves_transcripts.ts`)**:
+  - Added pinned test matching 1.46.23 envelope shape for `search_graph("Gen Z beverage hydration trends")` (`more_in_graph`, `remaining_count > 0`, brands ⊂ on-topic beverage rows).
+  - Added Lululemon competitor test with explicit allowed athletic/apparel set (`{Nike, Adidas, Alo, Vuori, Athleta, Under Armour, Gymshark, On, Puma, New Balance, Lorna Jane, Sweaty Betty, Arc'teryx}`).
+  - Added consult shelf score floor test verifying clean 2-sentence rendering.
+- **Deployment & Live Probes**:
+  - **Cloud Run Deployment**: Previous revision `fodda-mcp-00476-8xf`, active revision `fodda-mcp-00477-bxz`.
+  - **Live Probe 1: `search_graph("Gen Z beverage hydration trends")` (Regression Fixed)**:
+    - *Envelope*:
+      ```json
+      {
+        "scope_prompt": true,
+        "presentation": "internal",
+        "thread": {
+          "kind": "more_in_graph",
+          "graph_id": "retail",
+          "graph_display": "Retail Strategy & Innovation",
+          "remaining_count": 8,
+          "theme": "beverage and functional ingredients"
+        },
+        "specific": {
+          "brands": [
+            "Liquid I.V.",
+            "Gatorade"
+          ],
+          "statistics_source": "Census retail food services and trade statistics",
+          "expert": {
+            "analyst_id": "nathan-grotticelli",
+            "display_name": "Nathan Grotticelli",
+            "reason": "covers food, beverage, and dining directly"
+          }
+        }
+      }
+      ```
+    - *Rendered*:
+      > "There are 8 more trends in Retail Strategy & Innovation exploring beverage and functional ingredients — want me to pull those? Or we can look into Liquid I.V. or Gatorade or pull quantitative data from Census retail food services and trade statistics or consult Nathan Grotticelli. If you tell me the brand or brief you're working on, I'll cut this to that."
+    - *Diff vs 1.46.29*: Restored thread line with 8 remaining trends (was missing in 1.46.29), replaced off-topic PlayStation/Hermès with beverage brands `Liquid I.V.` and `Gatorade`.
+  - **Live Probe 2: `brand_tracker("Lululemon")`**:
+    - *Rendered*:
+      > "There are many more trends in PSFK Sports Trends exploring sports technology and fan engagement — want me to pull those? Or we can pull quantitative data from Lululemon's latest earnings and financial results or consult Ben Dietz. If you tell me the brand or brief you're working on, I'll cut this to that."
+    - *Diff vs 1.46.29*: Cleanly omitted generic noise competitors (`La Mer or NCR`), preserved clean brand possessive earnings phrasing (`Lululemon's latest earnings and financial results`), zero tickers, zero ROIC.
+  - **Live Probe 3: `consult_human_agent("james-colistra-earned-media-and-podcast", "podcast guest tips")`**:
+    - *Rendered (Single Paragraph Closing)*:
+      > "I can break down the criteria for identifying shows that deliver both high Earned-Media Trust Transfer and reliable transcript indexing for AI search. If you tell me the brand or brief you're working on, I'll cut this to that."
+
 ## [1.46.30] - 2026-08-22
 
 ### Added & Enhanced (Human Agent "Book a Call" Intent & Plain-Language Whitelisting)

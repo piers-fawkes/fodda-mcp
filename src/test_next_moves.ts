@@ -426,4 +426,142 @@ setCachedCatalogForTesting(
     console.log('✅ Test 11 Passed: Consult with empty shelf candidates cleanly omits sentence 2');
 }
 
-console.log('All Next Moves unit tests passed successfully!');
+// Test 12: Pinned regression test against 1.46.23 envelope for search_graph("Gen Z beverage hydration trends")
+{
+    const rows = [
+        { title: 'Functional Hydration Beverages', brandNames: ['Liquid IV', 'Gatorade'], graphId: 'retail', score: 1.8, topics: ['beverage', 'retail'], on_topic_total: 8 },
+        { title: 'Electrolyte Micro-Dosing', brandNames: ['Waterdrop'], graphId: 'retail', score: 1.6, topics: ['wellness'], on_topic_total: 8 },
+        { title: 'Adaptogenic Sparkling Waters', brandNames: ['Recess', 'Kin'], graphId: 'retail', score: 1.7, topics: ['beverage'], on_topic_total: 8 },
+        { title: 'Off-topic Gaming trend', brandNames: ['PlayStation'], graphId: 'retail', score: 0.2, topics: ['gaming'], on_topic_total: 8 },
+        { title: 'Off-topic Luxury trend', brandNames: ['Hermès'], graphId: 'retail', score: 0.1, topics: ['luxury'], on_topic_total: 8 }
+    ];
+
+    const nextMoves = generateNextMoves(
+        rows,
+        'Gen Z beverage hydration trends',
+        ['retail'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts,
+        { total: 12, onTopicTotal: 8 }
+    );
+
+    assert.ok(nextMoves, 'nextMoves must be defined');
+    assert.strictEqual(nextMoves.thread?.kind, 'more_in_graph', 'Thread kind must be more_in_graph');
+    assert.strictEqual(nextMoves.thread?.graph_id, 'retail');
+    assert.ok(typeof nextMoves.thread?.remaining_count === 'number' && nextMoves.thread.remaining_count > 0, 'remaining_count must be > 0');
+
+    // Brands must be extracted strictly from on-topic rows (Liquid IV, Gatorade, Waterdrop, Recess, Kin)
+    // and NEVER from off-topic rows (PlayStation, Hermès)
+    assert.ok(nextMoves.specific?.brands && nextMoves.specific.brands.length > 0, 'specific.brands must be populated');
+    const ON_TOPIC_BEVERAGE_BRANDS = new Set(['Liquid IV', 'Gatorade', 'Waterdrop', 'Recess', 'Kin']);
+    for (const b of nextMoves.specific.brands) {
+        assert.ok(ON_TOPIC_BEVERAGE_BRANDS.has(b), `Brand "${b}" must be from on-topic rows`);
+        assert.notStrictEqual(b, 'PlayStation', 'Must not contain off-topic PlayStation');
+        assert.notStrictEqual(b, 'Hermès', 'Must not contain off-topic Hermès');
+    }
+    console.log('✅ Test 12 Passed: Pinned regression test against 1.46.23 envelope for search_graph');
+}
+
+// Test 13: Lululemon competitor filter with explicit allowed athletic/apparel list
+{
+    const ALLOWED_LULULEMON_COMPETITORS = new Set([
+        'Nike', 'Adidas', 'Alo', 'Alo Yoga', 'Vuori', 'Athleta',
+        'Under Armour', 'Gymshark', 'On', 'On Running', 'Puma',
+        'New Balance', 'Lorna Jane', 'Sweaty Betty', "Arc'teryx"
+    ]);
+
+    // Simulated Lululemon footprint trends (sports graph)
+    const sportsFootprint = [
+        { trend_name: 'Studio Athletic Performance', brandNames: ['Alo', 'Vuori'], graphId: 'sports', signal_score: 180 },
+        { trend_name: 'Technical Running Apparel', brandNames: ['Nike', 'On Running'], graphId: 'sports', signal_score: 160 }
+    ];
+
+    const nextMovesWithSports = generateNextMoves(
+        sportsFootprint,
+        'Lululemon',
+        ['sports'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts,
+        {
+            isBrandTracker: true,
+            competitiveLandscape: ['Alo', 'Vuori'],
+            brandDisplayName: 'Lululemon',
+            earningsStatsSource: "Lululemon's latest earnings and financial results"
+        }
+    );
+
+    if (nextMovesWithSports.specific?.brands) {
+        for (const b of nextMovesWithSports.specific.brands) {
+            assert.ok(ALLOWED_LULULEMON_COMPETITORS.has(b), `Brand "${b}" must be in allowed athletic/apparel competitor list`);
+        }
+    }
+
+    // Simulated Lululemon with no sector-matching competitors (e.g. noise only -> competitiveLandscape empty)
+    const nextMovesEmptyCompetitors = generateNextMoves(
+        sportsFootprint,
+        'Lululemon',
+        ['sports'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts,
+        {
+            isBrandTracker: true,
+            competitiveLandscape: [], // <1 competitor survives
+            brandDisplayName: 'Lululemon',
+            earningsStatsSource: "Lululemon's latest earnings and financial results"
+        }
+    );
+
+    assert.strictEqual(nextMovesEmptyCompetitors.specific?.brands, undefined, 'specific.brands must be undefined when competitiveLandscape is empty');
+    assert.strictEqual(nextMovesEmptyCompetitors.specific?.statistics_source, "Lululemon's latest earnings and financial results");
+
+    const closing = renderConsultClosingEnvelope(nextMovesEmptyCompetitors);
+    assert.ok(!closing.text.includes('La Mer'), 'Must never mention La Mer');
+    assert.ok(!closing.text.includes('NCR'), 'Must never mention NCR');
+    assert.ok(!closing.text.includes('Discover'), 'Must never mention Discover');
+    console.log('✅ Test 13 Passed: Lululemon competitor filter strictly adheres to athletic/apparel allowed set or omits clause');
+}
+
+// Test 14: Consult shelf score floor (query with low relevance to domain graphs cleanly omits sentence 2)
+{
+    const mockResult = {
+        coverage: 'in',
+        report: 'Earned media and podcast strategies.',
+        sources_used: [{ title: 'Podcast Guesting Tips', type: 'own_graph', graph_id: 'james-colistra-earned-media-and-podcast' }],
+        expert_thread: {
+            on_topic_total: 4,
+            cited_count: 1,
+            uncited_themes: ['Host Alignment'],
+            next_angle: 'We can explore host alignment and podcast pitching strategies next.'
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'podcast guest tips',
+        'james-colistra-earned-media-and-podcast',
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(nextMoves.consult_envelope.shelf_line, undefined, 'shelf_line must be omitted when candidate graphs score below 0.10 floor');
+    assert.strictEqual(nextMoves.shelf, undefined, 'shelf must be undefined below floor');
+
+    const rendered = renderConsultClosingEnvelope(nextMoves);
+    assert.strictEqual(rendered.lines.length, 2, 'Must render exactly 2 sentences when shelf is below 0.10 floor');
+    assert.ok(!rendered.text.includes('Retail Strategy & Innovation'), 'Must not merchandise unrelated retail graph');
+    assert.ok(!rendered.text.includes('Beauty & Wellness'), 'Must not merchandise unrelated beauty graph');
+    console.log('✅ Test 14 Passed: Consult shelf score floor cleanly omits sentence 2 on low relevance');
+}
+
+console.log('\nAll Next Moves unit tests passed successfully!');
