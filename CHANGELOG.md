@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Attached `next_move_taken` to `/v1/log/question` payload on subsequent turns.
 - **Cross-Repo API Hand-off Alignment (`briefs/Brief - API Hand-off Next Moves Telemetry and Search Meta.md`)**:
   - Aligned hand-off brief to request only `next_move_taken` on Questions table logging and integer `on_topic_total` on graph search responses.
-  - *Note on Search Responses:* Until the API ships `on_topic_total`, search_graph responses will open with an adjacent-room recommendation rather than "X more in this graph".
+  - *API Status:* Implemented and verified by `api-agent` across search endpoints (`on_topic_total`) and `/v1/log/question` (`next_move_taken` logging to Airtable Questions table).
 - **Verification & Envelope Checks**:
   - `npx tsc --noEmit` and `npm run build` compiled with 0 errors.
   - Unit tests `dist/test_next_moves.js` (5/5 checks passed), `dist/test_session_next_moves_telemetry.js` (all matching tests passed).
