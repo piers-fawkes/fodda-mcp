@@ -5,6 +5,37 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.29] - 2026-08-22
+
+### Fixed & Enhanced (Next Moves Closing Block Cleanup)
+- **Competitor list — filter by shared footprint (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Filtered `competitiveLandscape` in `brand_tracker` by verifying candidate brands share $\ge 1$ graph with the tracked brand's `profile.trend_footprint` graph IDs.
+  - In `generateNextMoves()`, strictly gated `specific.brands` for `isBrandTracker: true` to prevent fallback to raw entity rows, cleanly omitting the competitor clause when no shared-footprint competitors survive.
+- **Stats line — brand name, not ticker (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Replaced bare tickers (e.g. `LULU`) and `ROIC` with clean display name possessive phrasing: `pull quantitative data from [Brand]'s latest earnings and financial results` (e.g. `Lululemon's latest earnings and financial results`).
+  - Added zero-tolerance assertions for `\bROIC\b` and bare-ticker patterns across the test suite.
+- **Shelf line must name real graphs or be dropped (`src/coverageRelevance.ts`)**:
+  - In `generateConsultNextMoves()`, derived candidate shelf graphs strictly from `getRelevantGraphs(query)` excluding the expert's own graph.
+  - Cleanly omitted sentence 2 (`shelfSentence = ''`, `shelf_line: undefined`, `nextMoves.shelf = undefined`) when the candidate list is empty, rendering a clean 2-sentence closing block and eliminating generic ungrounded shelf clauses.
+- **One paragraph consult ending (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Formatted consult closing envelope as a single contiguous paragraph (`\n\n${consultClosing.text}`) with zero internal line breaks in `consult_analyst` and `consult_human_agent`.
+- **Line-1 theme phrasing (`src/coverageRelevance.ts`)**:
+  - Added `cleanThemeCandidate()` and `formatThemePhrase()` to lowercase, clean punctuation, strip stop words, and truncate themes to $\le 3$ words each (e.g. `retail and commerce`, `sports technology and fan engagement`, `packaging and retail`).
+- **Airtable Schema Verification**:
+  - Confirmed `next_move_taken` (`fldg9NmEa92MFz4yL`) on Questions table (`tblvHx1DzwuTq3TJE`) contains choice `shelf` (`selXdFDFT9aycr9oW`).
+- **Deployment & Live Probes**:
+  - **Cloud Run Deployment**: Previous revision `fodda-mcp-00472-4t9`, new active revision `fodda-mcp-00473-bwh`.
+  - **`tools/list` Probe**: Verified 47 tools returned on live server.
+  - **Live Probe 1: `brand_tracker("Lululemon")`**:
+    > "There are many more trends in PSFK Sports Trends exploring sports technology and fan engagement — want me to pull those?\nOr we can look into La Mer or NCR or pull quantitative data from Lululemon's latest earnings and financial results.\nIf you tell me the brand or brief you're working on, I'll cut this to that."
+    - *Verified*: Competitors share footprint graphs (`sports`, `retail`, `beauty`), stats line uses brand display name possessive with 0 tickers and 0 ROIC, line 1 theme is $\le 3$ words lowercase.
+  - **Live Probe 2: `consult_human_agent("james-colistra-earned-media-and-podcast", "podcast guest tips")`**:
+    > "I can break down the criteria for identifying shows that deliver both high Earned-Media Trust Transfer and reliable transcript indexing for AI search. Fodda also holds trend signals on this in PSFK Retail Trends and Tara James Taylor's NielsenIQ NIQ Beauty Graph if you want the wider picture. If you tell me the brand or brief you're working on, I'll cut this to that."
+    - *Verified*: Rendered as a single contiguous paragraph with zero internal line breaks; shelf line names 2 real catalog graphs (`PSFK Retail Trends` and `Tara James Taylor's NielsenIQ NIQ Beauty Graph`).
+  - **Live Probe 3: `search_graph("Gen Z beverage hydration trends")` (Regression Check)**:
+    > "Or we can look into PlayStation or Hermès or consult Nathan Grotticelli. If you tell me the brand or brief you're working on, I'll cut this to that."
+    - *Verified*: Unchanged standard multi-graph search closing block.
+
 ## [1.46.28] - 2026-08-22
 
 ### Added & Enhanced (Institutional Financial Snapshot Rendering in Brand Tracker)

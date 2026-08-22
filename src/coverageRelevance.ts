@@ -431,7 +431,7 @@ export interface NextMovesSpecific {
 
 export interface NextMovesConsultEnvelope {
     thread_line: string;
-    shelf_line: string;
+    shelf_line?: string | undefined;
     scope_line: string;
 }
 
@@ -461,6 +461,59 @@ export interface ConsultNextMovesOptions {
     knownBrand?: string | undefined;
     currentAnalystId?: string | undefined;
     analysts?: CatalogAnalyst[] | undefined;
+}
+
+/**
+ * Clean and truncate a single theme candidate to <= 3 words, lowercase.
+ */
+export function cleanThemeCandidate(raw: string): string | null {
+    if (!raw || typeof raw !== 'string') return null;
+    let cleaned = raw
+        .replace(/^\[(?:REVIW|REVIEW|DRAFT|WIP)\]\s*/i, '')
+        .replace(/[&/+,]+/g, ' ')
+        .replace(/[^a-zA-Z0-9\s-]/g, '')
+        .toLowerCase()
+        .trim();
+
+    if (!cleaned) return null;
+    const stopWords = new Set(['and', 'or', 'the', 'in', 'of', 'for', 'with', 'to', 'a', 'an']);
+    let words = cleaned.split(/\s+/).filter(Boolean);
+    while (words.length > 0 && words[0] && stopWords.has(words[0])) words.shift();
+    while (words.length > 0 && words[words.length - 1] && stopWords.has(words[words.length - 1]!)) words.pop();
+
+    if (words.length === 0) return null;
+    if (words.length > 3) {
+        words = words.slice(0, 3);
+        while (words.length > 0 && words[words.length - 1] && stopWords.has(words[words.length - 1]!)) words.pop();
+    }
+    return words.length > 0 ? words.join(' ') : null;
+}
+
+/**
+ * Format raw theme candidates (topics, sectors, trend names, titles)
+ * into concise, lowercase theme phrases (<= 3 words each).
+ */
+export function formatThemePhrase(rawCandidates: string[], fallback: string = 'emerging signals'): string {
+    const cleanedThemes: string[] = [];
+    const seen = new Set<string>();
+
+    for (const raw of rawCandidates) {
+        const cleaned = cleanThemeCandidate(raw);
+        if (cleaned && !seen.has(cleaned)) {
+            seen.add(cleaned);
+            cleanedThemes.push(cleaned);
+        }
+    }
+
+    if (cleanedThemes.length === 0) {
+        return cleanThemeCandidate(fallback) || fallback.toLowerCase();
+    }
+
+    if (cleanedThemes.length === 1 && cleanedThemes[0]) {
+        return cleanedThemes[0];
+    }
+
+    return `${cleanedThemes[0]} and ${cleanedThemes[1]}`;
 }
 
 export function generateNextMoves(
@@ -522,10 +575,15 @@ export function generateNextMoves(
                 const themes: string[] = [];
                 for (const r of gRows) {
                     if (Array.isArray(r.topics)) themes.push(...r.topics);
-                    if (r.title) themes.push(r.title);
+                    if (Array.isArray(r.sectors)) themes.push(...r.sectors);
                 }
                 const graphMeta = catalog.find(g => g.graph_id === bestGraphId);
-                bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
+                if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
+                for (const r of gRows) {
+                    if (r.title) themes.push(r.title);
+                    if (r.trend_name) themes.push(r.trend_name);
+                }
+                bestGraphTheme = formatThemePhrase(themes, graphMeta?.domain || 'emerging signals');
             }
         } else {
             for (const [gid, gRows] of rowsByGraph.entries()) {
@@ -544,11 +602,14 @@ export function generateNextMoves(
                     for (const r of onTopicRows) {
                         if (Array.isArray(r.topics)) themes.push(...r.topics);
                         if (Array.isArray(r.sectors)) themes.push(...r.sectors);
-                        if (r.title) themes.push(r.title);
                     }
                     const graphMeta = catalog.find(g => g.graph_id === gid);
                     if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
-                    bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
+                    for (const r of onTopicRows) {
+                        if (r.title) themes.push(r.title);
+                        if (r.trend_name) themes.push(r.trend_name);
+                    }
+                    bestGraphTheme = formatThemePhrase(themes, graphMeta?.domain || 'emerging signals');
                 }
             }
         }
@@ -569,11 +630,14 @@ export function generateNextMoves(
                 for (const r of onTopicRows) {
                     if (Array.isArray(r.topics)) themes.push(...r.topics);
                     if (Array.isArray(r.sectors)) themes.push(...r.sectors);
-                    if (r.title) themes.push(r.title);
                 }
                 const graphMeta = catalog.find(g => g.graph_id === gid);
                 if (graphMeta?.topics?.length) themes.push(...graphMeta.topics);
-                bestGraphTheme = themes.slice(0, 2).join(' and ') || graphMeta?.domain || 'emerging signals';
+                for (const r of onTopicRows) {
+                    if (r.title) themes.push(r.title);
+                    if (r.trend_name) themes.push(r.trend_name);
+                }
+                bestGraphTheme = formatThemePhrase(themes, graphMeta?.domain || 'emerging signals');
             }
         }
     }
@@ -594,12 +658,14 @@ export function generateNextMoves(
                 for (const r of gRows) {
                     if (Array.isArray(r.topics)) themes.push(...r.topics);
                     if (Array.isArray(r.sectors)) themes.push(...r.sectors);
-                    if (r.trend_name) themes.push(r.trend_name);
-                    if (r.title) themes.push(r.title);
                 }
                 const gMeta = catalog.find(g => g.graph_id === topGraphId);
                 if (gMeta?.topics?.length) themes.push(...gMeta.topics);
-                const bestTheme = themes.slice(0, 2).join(' and ') || gMeta?.domain || 'emerging signals';
+                for (const r of gRows) {
+                    if (r.trend_name) themes.push(r.trend_name);
+                    if (r.title) themes.push(r.title);
+                }
+                const bestTheme = formatThemePhrase(themes, gMeta?.domain || 'emerging signals');
                 const display = gMeta ? buildDisplayName(gMeta) : (gRows[0]?.graphName || topGraphId);
 
                 nextMoves.thread = {
@@ -708,6 +774,9 @@ export function generateNextMoves(
     // Brands: extract competitive landscape or top 2 brand entities present in returned rows
     if (options?.competitiveLandscape && options.competitiveLandscape.length > 0) {
         specific.brands = options.competitiveLandscape.slice(0, 2);
+    } else if (options?.isBrandTracker) {
+        // For brand reports, if competitiveLandscape is empty or omitted, leave specific.brands undefined — never pad!
+        specific.brands = undefined;
     } else {
         const brandCounts = new Map<string, number>();
         for (const r of rows) {
@@ -745,12 +814,23 @@ export function generateNextMoves(
     // Statistics source: supplemental source or scored stat dataset
     if (options?.earningsStatsSource) {
         specific.statistics_source = options.earningsStatsSource;
-    } else if (options?.earningsTicker) {
-        specific.statistics_source = `earnings and financial performance data for ${options.earningsTicker}`;
-    } else if (options?.isBrandTracker) {
-        // If no competitor brands were found, fall back to market demand signals so line 2 is never empty
-        if (!specific.brands || specific.brands.length === 0) {
-            specific.statistics_source = 'Google Trends and market demand signals';
+    } else if (options?.earningsTicker || options?.isBrandTracker) {
+        // Format with brand display name: "Lululemon's latest earnings and financial results"
+        const brandName = (options as any)?.brandDisplayName || (options as any)?.brandName || query || 'the company';
+        const cleanName = brandName.trim();
+        let possessiveName = `${cleanName}'s`;
+        if (cleanName.endsWith("'s") || cleanName.endsWith("’s")) {
+            possessiveName = cleanName;
+        } else if (cleanName.endsWith("s") || cleanName.endsWith("S")) {
+            possessiveName = `${cleanName}'`;
+        }
+        if (options?.earningsTicker) {
+            specific.statistics_source = `${possessiveName} latest earnings and financial results`;
+        } else if (options?.isBrandTracker) {
+            // If no competitor brands were found, fall back to market demand signals so line 2 is never empty
+            if (!specific.brands || specific.brands.length === 0) {
+                specific.statistics_source = 'Google Trends and market demand signals';
+            }
         }
     } else {
         const qLower = query.toLowerCase();
@@ -984,46 +1064,40 @@ export function generateConsultNextMoves(
         }
     }
 
-    if (shelfCandidateGraphs.length === 0) {
-        const liveGraphs = catalog.filter(g => {
-            const st = (g.status || '').toLowerCase();
-            const gid = (g.graph_id || '').toLowerCase();
-            return (st === 'live' || !st) && !expertOwnIds.has(gid) && g.graph_type !== 'expert';
-        });
-        if (liveGraphs.length > 0) {
-            shelfCandidateGraphs.push(...liveGraphs.slice(0, 2));
-        }
-    }
-
-    const shelfGraphs: NextMovesShelfGraph[] = shelfCandidateGraphs.map(g => ({
-        graph_id: g.graph_id,
-        graph_display: buildDisplayName(g),
-        domain: g.domain,
-        headline: g.headline,
-        reason: g.headline || g.domain || g.name,
-    }));
-
     let shelfSentence = '';
-    if (shelfGraphs.length >= 2 && shelfGraphs[0]?.graph_display && shelfGraphs[1]?.graph_display) {
-        shelfSentence = `Fodda also holds trend signals on this in ${shelfGraphs[0].graph_display} and ${shelfGraphs[1].graph_display} if you want the wider picture`;
-    } else if (shelfGraphs.length >= 1 && shelfGraphs[0]?.graph_display) {
-        shelfSentence = `Fodda also holds trend signals on this in ${shelfGraphs[0].graph_display} if you want the wider picture`;
-    } else {
-        shelfSentence = `Fodda also holds related research across domain and industry report graphs if you want the wider picture`;
-    }
-
     const hasDeliverableOffering = Array.isArray(matchedAnalyst?.offerings) && matchedAnalyst.offerings.length > 0;
-    if (hasDeliverableOffering) {
-        shelfSentence += `, and ${expertDisplayName} takes scoped briefs on this if you need a deliverable.`;
+
+    if (shelfCandidateGraphs.length > 0) {
+        const shelfGraphs: NextMovesShelfGraph[] = shelfCandidateGraphs.map(g => ({
+            graph_id: g.graph_id,
+            graph_display: buildDisplayName(g),
+            domain: g.domain,
+            headline: g.headline,
+            reason: g.headline || g.domain || g.name,
+        }));
+        nextMoves.shelf = shelfGraphs;
+
+        if (shelfGraphs.length >= 2 && shelfGraphs[0]?.graph_display && shelfGraphs[1]?.graph_display) {
+            shelfSentence = `Fodda also holds trend signals on this in ${shelfGraphs[0].graph_display} and ${shelfGraphs[1].graph_display} if you want the wider picture`;
+        } else if (shelfGraphs.length >= 1 && shelfGraphs[0]?.graph_display) {
+            shelfSentence = `Fodda also holds trend signals on this in ${shelfGraphs[0].graph_display} if you want the wider picture`;
+        }
+
+        if (hasDeliverableOffering) {
+            shelfSentence += `, and ${expertDisplayName} takes scoped briefs on this if you need a deliverable.`;
+        } else {
+            shelfSentence += `.`;
+        }
     } else {
-        shelfSentence += `.`;
+        // Empty candidate list — omit sentence 2 per Brief 1.46.29
+        shelfSentence = '';
+        nextMoves.shelf = undefined;
     }
 
-    nextMoves.shelf = shelfGraphs;
-
-    const specific: NextMovesSpecific = {
-        shelf_graphs: shelfGraphs,
-    };
+    const specific: NextMovesSpecific = {};
+    if (nextMoves.shelf && nextMoves.shelf.length > 0) {
+        specific.shelf_graphs = nextMoves.shelf;
+    }
     if (Array.isArray(expertThread?.brands) && expertThread.brands.length > 0) {
         specific.brands = expertThread.brands.slice(0, 2);
     }
@@ -1035,7 +1109,9 @@ export function generateConsultNextMoves(
             reason: topRef.reason || 'related expertise',
         };
     }
-    nextMoves.specific = specific;
+    if (Object.keys(specific).length > 0) {
+        nextMoves.specific = specific;
+    }
 
     // ── Sentence 3: Scope (Platform Voice, Render Spec 1.2 Copy) ──
     let scopeSentence = '';
@@ -1047,7 +1123,7 @@ export function generateConsultNextMoves(
 
     nextMoves.consult_envelope = {
         thread_line: threadSentence,
-        shelf_line: shelfSentence,
+        shelf_line: shelfSentence || undefined,
         scope_line: scopeSentence,
     };
 
@@ -1062,7 +1138,7 @@ export function renderConsultClosingEnvelope(nextMoves: NextMoves | undefined): 
         return renderClosingBlock(nextMoves);
     }
     const { thread_line, shelf_line, scope_line } = nextMoves.consult_envelope;
-    const lines = [thread_line, shelf_line, scope_line].filter(Boolean);
+    const lines = [thread_line, shelf_line, scope_line].filter((l): l is string => Boolean(l));
     return {
         lines,
         text: lines.join(' '),
@@ -1078,7 +1154,7 @@ export function renderClosingBlock(nextMoves: NextMoves | undefined): { lines: s
 
     if (nextMoves.consult_envelope) {
         const { thread_line, shelf_line, scope_line } = nextMoves.consult_envelope;
-        const lines = [thread_line, shelf_line, scope_line].filter(Boolean);
+        const lines = [thread_line, shelf_line, scope_line].filter((l): l is string => Boolean(l));
         return {
             lines,
             text: lines.join(' '),

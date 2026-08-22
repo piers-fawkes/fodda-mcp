@@ -255,14 +255,44 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
     }
 
     if (endpoint.includes('/supplemental/earnings')) {
-        return {
-            source: 'truth_layer',
-            truth_layer: { ticker: 'NKE', company: 'Nike Inc.', headline: 'Direct channel growth and inventory normalization' }
-        };
+        const brandParam = endpoint.includes('brand=') ? decodeURIComponent(endpoint.split('brand=')[1]?.split('&')[0] || '') : 'Nike';
+        if (brandParam.toLowerCase().includes('nike')) {
+            return {
+                source: 'truth_layer',
+                truth_layer: { ticker: 'NKE', company: 'Nike, Inc.', headline: 'Direct channel growth and inventory normalization' }
+            };
+        }
+        return { source: 'truth_layer', results: [] };
     }
 
     if (endpoint.includes('/brand-intelligence') || endpoint.includes('/graphs/')) {
-        const brandName = body?.brand || 'Nike';
+        const brandName = endpoint.includes('/v1/brand-intelligence/')
+            ? decodeURIComponent(endpoint.split('/v1/brand-intelligence/')[1]?.split('?')[0] || '')
+            : (body?.brand || 'Nike');
+
+        if (brandName.toLowerCase().includes('patagonia')) {
+            return {
+                brand: 'Patagonia',
+                trend_footprint: [
+                    { title: 'Circular Apparel Programs', graphId: 'fashion', score: 1.9, brandNames: ['Patagonia', 'Eileen Fisher'] },
+                    { title: 'Worn Wear Repair Ecosystems', graphId: 'sports', score: 1.8, brandNames: ['Patagonia', 'Arc\'teryx'] },
+                    { title: 'Regenerative Organic Agriculture', graphId: 'retail', score: 1.6, brandNames: ['Patagonia', 'North Face'] }
+                ],
+                competitive_context: {
+                    co_occurring: [
+                        { brand: 'Eileen Fisher', co_occurrences: 4, graphIds: ['fashion'] },
+                        { brand: 'Arc\'teryx', co_occurrences: 3, graphIds: ['sports'] },
+                        { brand: 'La Mer', co_occurrences: 2, graphIds: ['beauty'] }
+                    ]
+                },
+                summary: {
+                    total_evidence_items: 18,
+                    total_trends_connected: 6,
+                    graphs_present_in: ['fashion', 'sports', 'retail']
+                }
+            };
+        }
+
         return {
             brand: brandName,
             trend_footprint: [
@@ -270,6 +300,13 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
                 { title: 'Direct-to-Consumer Innovation', graphId: 'retail', score: 1.7, brandNames: [brandName, 'Adidas'] },
                 { title: 'Sustainable Performance Materials', graphId: 'sports', score: 1.6, brandNames: [brandName] }
             ],
+            competitive_context: {
+                co_occurring: [
+                    { brand: 'Adidas', co_occurrences: 6, graphIds: ['retail', 'sports'] },
+                    { brand: 'Lululemon', co_occurrences: 4, graphIds: ['sports'] },
+                    { brand: 'NCR', co_occurrences: 3, graphIds: ['finance'] }
+                ]
+            },
             summary: {
                 total_evidence_items: 24,
                 total_trends_connected: 8,
@@ -289,7 +326,11 @@ function verifyZeroCountBannedTerms(block: string): void {
         { name: 'Tool names', regex: /\b(search_graph|get_domain_intelligence|get_expert_intelligence|consult_analyst|consult_human_agent|get_supplemental_context|search_statistics|brand_tracker)\b/i },
         { name: 'Emojis', regex: /[\u{1F300}-\u{1F9FF}]/u },
         { name: 'Section headers', regex: /(^|\n)#{1,6}\s+|(\*\*Next Steps\*\*|\*\*Closing\*\*)/i },
-        { name: 'Apologies', regex: /\b(sorry|apologize|apologies|unfortunately)\b/i }
+        { name: 'Apologies', regex: /\b(sorry|apologize|apologies|unfortunately)\b/i },
+        { name: 'ROIC vendor term', regex: /\bROIC\b/i },
+        { name: 'Bare-ticker pattern in stats clause', regex: /(?:from|for)\s+earnings.*?\b[A-Z]{2,5}\b/i },
+        { name: 'Bare ticker in stats source', regex: /\bearnings and financial performance data for [A-Z]{2,5}\b/i },
+        { name: 'Generic ungrounded shelf clause', regex: /across domain and industry report graphs/i }
     ];
 
     for (const pat of bannedPatterns) {
@@ -371,19 +412,31 @@ async function runTranscripts() {
             lines = closing.lines;
             closingBlock = closing.text;
         } else if (tq.tool === 'consult_analyst' || tq.tool === 'consult_human_agent') {
-            // For consult tools, closing lines are rendered directly into prose text in content[0].text
-            const proseLines = (res.content[0]?.text || '').trim().split('\n').map((l: string) => l.trim()).filter(Boolean);
-            lines = proseLines.slice(-3);
-            closingBlock = lines.join(' ');
+            // For consult tools, closing lines are rendered as a single paragraph at the end of content[0].text
+            const paragraphs = (res.content[0]?.text || '').trim().split(/\n\s*\n/).map((p: string) => p.trim()).filter(Boolean);
+            const closingParagraph = paragraphs[paragraphs.length - 1] || '';
+            
+            // Verify single paragraph: no newlines inside closing paragraph
+            assert.ok(!closingParagraph.includes('\n'), `Consult closing block must be a single paragraph without line breaks: "${closingParagraph}"`);
+
+            // Extract sentences from closing paragraph
+            lines = closingParagraph.split(/(?<=[.!?])\s+/).map((s: string) => s.trim()).filter(Boolean);
+            closingBlock = closingParagraph;
+
+            // Shelf check: if 3 sentences, sentence 2 is shelf line and must name a real catalog graph
+            if (lines.length === 3 && lines[1]) {
+                const shelfLine = lines[1];
+                const namesGraph = mockGraphsList.some(g => shelfLine.includes(g.name));
+                assert.ok(namesGraph, `Shelf line in consult must name a real graph from catalog: "${shelfLine}"`);
+            }
         }
 
         assert.ok(closingBlock.length > 0, `Closing block must not be empty for ${tq.tool}`);
 
-        // Verify exactly 3 sentences
-        assert.strictEqual(
-            lines.length,
-            3,
-            `Expected exactly 3 sentences for ${tq.tool}, got ${lines.length}: "${closingBlock}"`
+        // Verify 2 or 3 sentences
+        assert.ok(
+            lines.length === 2 || lines.length === 3,
+            `Expected 2 or 3 sentences for ${tq.tool}, got ${lines.length}: "${closingBlock}"`
         );
 
         // For tools where closing block is server-rendered into content text, verify lines appear in content
@@ -405,12 +458,10 @@ async function runTranscripts() {
 \`\`\`json
 ${nextMoves ? JSON.stringify(nextMoves, null, 2) : '{\n  "note": "Rendered in prose content envelope"\n}'}
 \`\`\`
-- **Rendered Next Moves Closing Block (3 sentences):**
+- **Rendered Next Moves Closing Block (${lines.length} sentences):**
   > "${closingBlock}"
-- **Line 1 (Pull the thread):** ${lines[0]}
-- **Line 2 (Go specific):** ${lines[1]}
-- **Line 3 (Scope to the job):** ${lines[2]}
-- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies)
+${lines.map((l, i) => `- **Line ${i + 1}:** ${l}`).join('\n')}
+- **Zero-Count Verification:** PASSED (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies, 0 ROIC, 0 bare tickers)
 `;
 
         transcripts.push(transcript);

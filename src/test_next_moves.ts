@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import { generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope } from './coverageRelevance.js';
-import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
+import { setCachedCatalogForTesting, type CatalogGraph, type CatalogAnalyst } from './catalogCache.js';
 
 console.log('--- Running Next Moves Unit Tests ---');
 
@@ -63,6 +63,12 @@ const mockAnalysts: any[] = [
         graph_type: 'expert',
     }
 ];
+
+// Initialize catalog cache for testing
+setCachedCatalogForTesting(
+    { version: '1.0', generated_at: new Date().toISOString(), graph_count: mockGraphs.length, graphs: mockGraphs as any },
+    mockAnalysts as any
+);
 
 // Test 1: Full coverage with more signals remaining
 {
@@ -217,6 +223,7 @@ const mockAnalysts: any[] = [
         'We can explore how creator collectives differ across European luxury markets next.'
     );
     // Shelf must exclude Ben Dietz's own graph
+    assert.ok(nextMoves.consult_envelope.shelf_line, 'Shelf line must be defined');
     assert.ok(
         !nextMoves.consult_envelope.shelf_line.includes('Ben Dietz'),
         'Shelf must strictly exclude current expert'
@@ -374,6 +381,49 @@ const mockAnalysts: any[] = [
         'Ungrounded next_angle must fail token check and fall back to uncited_themes'
     );
     console.log('✅ Test 10 Passed: next_angle token check failure triggers clean fallback');
+}
+
+// Test 11: Consult with empty shelf candidate list omits sentence 2 (2 sentences rendered)
+{
+    const mockResult = {
+        coverage: 'in',
+        report: 'Niche topic report.',
+        sources_used: [{ title: 'Niche Analysis', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
+        expert_thread: {
+            on_topic_total: 3,
+            cited_count: 1,
+            uncited_themes: ['Subculture Zines'],
+            next_angle: 'We can explore subculture zines next.'
+        }
+    };
+
+    // Only 1 graph in catalog (the expert's own graph), so no candidate shelf graphs exist
+    const onlyOwnGraph: CatalogGraph[] = [mockGraphs[1]];
+    setCachedCatalogForTesting(
+        { version: '1.0', generated_at: new Date().toISOString(), graph_count: 1, graphs: onlyOwnGraph as any },
+        mockAnalysts as any
+    );
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'obscure query with no other graph coverage',
+        'ben-dietz-sic',
+        undefined,
+        onlyOwnGraph,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(nextMoves.consult_envelope.shelf_line, undefined, 'shelf_line must be omitted when no relevant graphs exist');
+    assert.strictEqual(nextMoves.shelf, undefined, 'shelf must be undefined when no candidates exist');
+
+    const rendered = renderConsultClosingEnvelope(nextMoves);
+    assert.strictEqual(rendered.lines.length, 2, 'Must render exactly 2 sentences when shelf is omitted');
+    assert.strictEqual(
+        rendered.text,
+        "We can explore subculture zines next. If you tell me the brand or brief you're working on, I'll cut this to that."
+    );
+    console.log('✅ Test 11 Passed: Consult with empty shelf candidates cleanly omits sentence 2');
 }
 
 console.log('All Next Moves unit tests passed successfully!');

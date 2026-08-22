@@ -2240,22 +2240,45 @@ export async function createServer(
                 if (withheld) return withheld;
 
                 const brandLower = brand_name.toLowerCase();
+                const footprintGraphIds = new Set<string>(
+                    (profile?.trend_footprint || [])
+                        .map((t: any) => t.graphId || t._use_this_graphId || t.graph_id)
+                        .filter(Boolean)
+                );
+
                 const competitiveLandscape = (profile?.competitive_context?.co_occurring_brands || [])
+                    .filter((c: any) => {
+                        const b = c.brand;
+                        if (!b || typeof b !== 'string') return false;
+                        const bLower = b.toLowerCase();
+                        if (bLower === brandLower || brandLower.includes(bLower) || bLower.includes(brandLower)) return false;
+                        const cGraphs: string[] = Array.isArray(c.graphIds) ? c.graphIds : [];
+                        return cGraphs.some((gid: string) => footprintGraphIds.has(gid));
+                    })
+                    .sort((a: any, b: any) => (b.co_occurrences || b.coOccurrences || 0) - (a.co_occurrences || a.coOccurrences || 0))
                     .map((c: any) => c.brand)
-                    .filter((b: string) => b && b.toLowerCase() !== brandLower && !brandLower.includes(b.toLowerCase()) && !b.toLowerCase().includes(brandLower))
                     .slice(0, 2);
 
                 const pAny = profile as any;
-                const earningsTicker = pAny?.market_data?.ticker ||
-                    pAny?.earningsTruthLayer?.ticker ||
-                    pAny?.earningsIntelligence?.[0]?.ticker ||
-                    pAny?.earningsIntelligence?.[0]?.symbol;
+                const hasEarnings = !!(
+                    pAny?.market_data?.ticker ||
+                    pAny?.market_data?.quarterly_financials ||
+                    pAny?.earningsTruthLayer ||
+                    (pAny?.earningsIntelligence && pAny.earningsIntelligence.length > 0)
+                );
 
-                const earningsStatsSource = earningsTicker
-                    ? `earnings and financial performance data for ${earningsTicker}`
-                    : (pAny?.earningsTruthLayer || (pAny?.earningsIntelligence && pAny.earningsIntelligence.length > 0))
-                        ? `earnings and financial performance data`
-                        : undefined;
+                const brandDisplayName = pAny?.market_data?.company_name || brand_name;
+                const cleanBrandName = brandDisplayName.trim();
+                let possessiveBrandName = `${cleanBrandName}'s`;
+                if (cleanBrandName.endsWith("'s") || cleanBrandName.endsWith("’s")) {
+                    possessiveBrandName = cleanBrandName;
+                } else if (cleanBrandName.endsWith("s") || cleanBrandName.endsWith("S")) {
+                    possessiveBrandName = `${cleanBrandName}'`;
+                }
+
+                const earningsStatsSource = hasEarnings
+                    ? `${possessiveBrandName} latest earnings and financial results`
+                    : undefined;
 
                 const trendCount = profile?.trend_footprint?.length || 0;
                 const coverageStatus: 'ok' | 'thin' | 'empty' = trendCount === 0 ? 'empty' : trendCount < 3 ? 'thin' : 'ok';
@@ -2272,7 +2295,6 @@ export async function createServer(
                         knownBrand: getKnownBrand(),
                         isBrandTracker: true,
                         competitiveLandscape,
-                        earningsTicker,
                         earningsStatsSource,
                     }
                 );
@@ -4161,7 +4183,7 @@ export async function createServer(
 
                 const consultClosing = renderConsultClosingEnvelope(analystNextMoves);
                 if (consultClosing.text) {
-                    parts.push(`\n${consultClosing.lines.join('\n')}`);
+                    parts.push(`\n\n${consultClosing.text}`);
                 }
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
@@ -4420,7 +4442,7 @@ export async function createServer(
 
                 const consultClosing = renderConsultClosingEnvelope(humanAgentNextMoves);
                 if (consultClosing.text) {
-                    parts.push(`\n${consultClosing.lines.join('\n')}`);
+                    parts.push(`\n\n${consultClosing.text}`);
                 }
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
