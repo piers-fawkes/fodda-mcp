@@ -31,13 +31,13 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, generateNextMoves } from './coverageRelevance.js';
+import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
 // don't receive MCP server-level `instructions` (e.g. Claude.ai).
 // ---------------------------------------------------------------------------
-const RENDER_SPEC_VERSION = '1.2';
+const RENDER_SPEC_VERSION = '1.3';
 
 export function resolveAnalystAlias(analystIdInput: string, companyInput?: string): { analyst_id: string; company?: string | undefined } {
     if (!analystIdInput) return { analyst_id: analystIdInput, company: companyInput };
@@ -100,7 +100,7 @@ function buildRenderInstructions(opts: {
         'ONE TREND, ONE PARAGRAPH: Each trend gets exactly one paragraph of at most 3 sentences (~60 words). Open the paragraph with the trend name in bold followed by its lifecycle stage in italics, e.g. **Human-centric luxury** *(building)*. Insert a blank line between trends — never run two trends into one paragraph.',
         'MAX 3 TRENDS by default, ranked by relevance, even when the payload contains more. Mention in the closing line that further trends are available on request. Exception: the user explicitly asked for an exhaustive list.',
         'CITATIONS — SHORT ANCHORS: Every claim still requires its source link. Prefer short_citation (e.g. "[via Jing Daily](url)") or short source labels ("via Jing Daily", "BoF-McKinsey survey"), never the full evidence headline. Place links at the end of a sentence or in a trailing parenthetical — never mid-clause. Maximum 2 links per trend paragraph; if a trend has more evidence, cite the strongest 2 and note more exists.',
-        'NEXT MOVES CLOSING BLOCK: Every research answer must end with exactly three plain sentences (no heading, no "any questions?", no emoji, no apology) in this fixed order: (1) Pull the thread: One specific thing surfaced but not finished, generated from next_moves.thread. Avoid quoting exact raw digit counts — use natural editorial phrasing: "several more trends/signals" for modest remaining counts (2–8) or "many more trends/signals" for substantial counts (10+), e.g. "There are several more trends in [Graph Display Name] exploring this topic — want me to pull those?" For 0 remaining, smoothly pivot to the adjacent room without mentioning numbers; if coverage is thin/empty, use the honest version: "That\'s what Fodda holds on this right now; the closest adjacent hit is [X] in [Graph] — want it?". (2) Go specific: Offer at most two of: brand drill-down (from next_moves.specific.brands), statistics source (from next_moves.specific.statistics_source), or named expert (from next_moves.specific.expert). Only offer options with material present in next_moves.specific. (3) Scope to the job: Fixed copy: "If you tell me the brand or brief you\'re working on, I\'ll cut this to that." (If the user\'s research profile already specifies a brand/brief, use: "Want this cut to [brand] specifically?"). Never invent names, brands, or numbers — all material must come from next_moves or result rows.',
+        'NEXT MOVES CLOSING BLOCK (Render Spec 1.3): Every research answer and expert consult must end with a deterministic three-sentence closing block (no heading, no "any questions?", no emoji, no apology) in this fixed order: (1) Pull the thread: One specific thing surfaced but not finished, generated from next_moves.thread. In general search, use natural editorial phrasing ("several more trends/signals" for 2–8, "many more trends/signals" for 10+, or honest thin version). In expert consults (consult_human_agent / consult_analyst), this is the expert\'s authentic 1st-person next move (using expert_thread.next_angle or uncited themes, or referral recommendation on out-of-lane decline). (2) Explore the shelf / Go specific: Merchandises <=2 relevant graphs from catalogCache (excluding expert\'s own graph) or offers brand/statistics options from next_moves.specific. (3) Scope the work: Fixed copy: "To turn this into an executive brief or project deliverable, ask me to scope a deliverable." (or "If you tell me the brand or brief you\'re working on, I\'ll cut this to that."). Never invent names, brands, or numbers — all material must come from next_moves or result rows.',
         'NO FILLER STRUCTURE: No section headers for responses of 3 trends or fewer. No bullet-lists of evidence items. No restating evidence counts, graph counts, or relevance scores in prose.',
         'DEPTH ON REQUEST: When the user asks about ONE specific trend, the density caps lift — expand to full evidence, longer paragraphs, and complete citations. The caps govern first-pass survey responses, not drill-downs.',
         'COVERAGE RECOVERY: coverage.status is machine-readable routing data — NEVER tell the user coverage is "thin", "low", or "empty". When status is thin or empty, silently run coverage.suggested_action (get_supplemental_context) in the SAME turn and blend what it returns into the answer. If that also returns nothing usable, present what exists plainly — "this is what we have on this right now" — and offer the coverage.escalation options (a Deep Dive report via deep_research_topic, or your own web/LLM research with non-Fodda findings clearly attributed). Never pad weak matches into a confident-looking answer.',
@@ -4048,21 +4048,23 @@ export async function createServer(
                 if (result.partial_credit_warning || result.credit_note) {
                     parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
                 }
-                const analystNextMoves = generateNextMoves(
-                    result.sources_used || [],
+                const analystNextMoves = generateConsultNextMoves(
+                    result,
                     query,
-                    [resolvedAnalystId || analyst_id],
-                    (result.coverage || 'ok').toLowerCase() === 'out' ? 'empty' : (result.coverage || 'ok').toLowerCase() === 'adjacent' ? 'thin' : 'ok',
-                    undefined,
-                    undefined,
-                    getGraphs(),
-                    getAnalysts(),
+                    resolvedAnalystId || analyst_id,
                     {
                         currentAnalystId: resolvedAnalystId || analyst_id,
                         knownBrand: resolvedCompany || getKnownBrand(),
-                    }
+                    },
+                    getGraphs(),
+                    getAnalysts()
                 );
                 sessionTracker.recordNextMoves(analystNextMoves, query);
+
+                const consultClosing = renderConsultClosingEnvelope(analystNextMoves);
+                if (consultClosing.text) {
+                    parts.push(`\n${consultClosing.lines.join('\n')}`);
+                }
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
                 if (consultWithheld) return consultWithheld;
@@ -4293,21 +4295,23 @@ export async function createServer(
                 if (result.partial_credit_warning || result.credit_note) {
                     parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
                 }
-                const humanAgentNextMoves = generateNextMoves(
-                    result.sources_used || [],
+                const humanAgentNextMoves = generateConsultNextMoves(
+                    result,
                     query,
-                    [resolvedAnalystId || analyst_id],
-                    (result.coverage || 'ok').toLowerCase() === 'out' ? 'empty' : (result.coverage || 'ok').toLowerCase() === 'adjacent' ? 'thin' : 'ok',
-                    undefined,
-                    undefined,
-                    getGraphs(),
-                    getAnalysts(),
+                    resolvedAnalystId || analyst_id,
                     {
                         currentAnalystId: resolvedAnalystId || analyst_id,
                         knownBrand: resolvedCompany || getKnownBrand(),
-                    }
+                    },
+                    getGraphs(),
+                    getAnalysts()
                 );
                 sessionTracker.recordNextMoves(humanAgentNextMoves, query);
+
+                const consultClosing = renderConsultClosingEnvelope(humanAgentNextMoves);
+                if (consultClosing.text) {
+                    parts.push(`\n${consultClosing.lines.join('\n')}`);
+                }
 
                 const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
                 if (consultWithheld) return consultWithheld;

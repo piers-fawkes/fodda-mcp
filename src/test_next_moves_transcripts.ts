@@ -1,9 +1,10 @@
 import assert from 'node:assert';
 import { createServer } from './toolHandlers.js';
 import { setCachedCatalogForTesting } from './catalogCache.js';
+import { renderClosingBlock } from './coverageRelevance.js';
 import type { NextMoves } from './coverageRelevance.js';
 
-console.log('=== Running Next Moves 10-Query Live Transcripts & Verification ===\n');
+console.log('=== Running Next Moves Live Transcripts & Verification (Render Spec 1.3) ===\n');
 
 const mockGraphsList = [
     {
@@ -103,6 +104,13 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
                 sources_used: [
                     { title: 'Community Rituals in Streetwear', graphId: 'ben-dietz-sic', brandNames: ['Supreme', 'Aimé Leon Dore'] }
                 ],
+                expert_thread: {
+                    on_topic_total: 8,
+                    cited_count: 1,
+                    uncited_themes: ['Zines & Subcultures', 'Discord Councils'],
+                    brands: ['Supreme', 'Aimé Leon Dore'],
+                    next_angle: 'We can explore how creator-led retail formats differ across European luxury markets next.'
+                },
                 session_id: 'sess_12345'
             };
         }
@@ -229,56 +237,6 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
     return {};
 }
 
-/**
- * Render simulation adhering to Render Spec 1.2 and RULE: NextMovesClosingBlock
- */
-function renderClosingBlock(nextMoves: NextMoves | undefined): { lines: string[]; text: string } {
-    if (!nextMoves) return { lines: [], text: '' };
-
-    const lines: string[] = [];
-
-    // Line 1: Pull the thread
-    if (nextMoves.thread) {
-        const t = nextMoves.thread;
-        if (t.kind === 'more_in_graph' && t.remaining_count && t.remaining_count > 0) {
-            const countPhrase = t.remaining_count >= 10 ? 'many more trends' : 'several more trends';
-            lines.push(`There are ${countPhrase} in ${t.graph_display || 'the graph'} exploring ${t.theme || 'this topic'} — want me to pull those?`);
-        } else if (t.kind === 'adjacent_room' && t.adjacent) {
-            lines.push(`We also have related coverage in ${t.adjacent.graph_display} — want me to pull that?`);
-        } else if (t.kind === 'honest_thin' && t.adjacent) {
-            lines.push(`That's what Fodda holds on this right now; the closest adjacent hit is ${t.adjacent.reason || 'related research'} in ${t.adjacent.graph_display} — want it?`);
-        }
-    }
-
-    // Line 2: Go specific
-    if (nextMoves.specific) {
-        const s = nextMoves.specific;
-        const options: string[] = [];
-        if (s.brands && s.brands.length > 0) {
-            options.push(`look into ${s.brands.join(' or ')}`);
-        }
-        if (s.statistics_source) {
-            options.push(`pull quantitative data from ${s.statistics_source}`);
-        }
-        if (s.expert && options.length < 2) {
-            options.push(`consult ${s.expert.display_name}`);
-        }
-
-        if (options.length > 0) {
-            lines.push(`Or we can ${options.slice(0, 2).join(' or ')}.`);
-        }
-    }
-
-    // Line 3: Scope to the job
-    if (nextMoves.known_brand) {
-        lines.push(`Want this cut to ${nextMoves.known_brand} specifically?`);
-    } else {
-        lines.push(`If you tell me the brand or brief you're working on, I'll cut this to that.`);
-    }
-
-    return { lines, text: lines.join(' ') };
-}
-
 // Banned words checker
 function verifyZeroCountBannedTerms(block: string): void {
     const bannedPatterns: Array<{ name: string; regex: RegExp }> = [
@@ -319,7 +277,8 @@ async function runTranscripts() {
         { tool: 'search_statistics', args: { graph_id: 'sports', query: 'global footwear market size and sneaker sales' }, title: 'Query 7: search_statistics — Footwear Market Size' },
         { tool: 'brand_tracker', args: { brand_name: 'Nike' }, title: 'Query 8: brand_tracker — Nike' },
         { tool: 'brand_tracker', args: { brand_name: 'Patagonia' }, title: 'Query 9: brand_tracker — Patagonia' },
-        { tool: 'consult_analyst', args: { analyst_id: 'ben-dietz-sic', query: 'How should cultural brands approach community-led commerce in 2026?' }, title: 'Query 10: consult_analyst — Ben Dietz (Expert Consult)' }
+        { tool: 'consult_analyst', args: { analyst_id: 'ben-dietz-sic', query: 'How should cultural brands approach community-led commerce in 2026?' }, title: 'Query 10: consult_analyst — Ben Dietz (Expert Consult)' },
+        { tool: 'consult_human_agent', args: { analyst_id: 'ben-dietz-sic', query: 'What is the future of creator-led retail?' }, title: 'Query 11: consult_human_agent — Ben Dietz (Human Agent Consult)' }
     ];
 
     const transcripts: string[] = [];

@@ -95,4 +95,89 @@ assert.strictEqual(
     'Should not classify as specific_stat if statistics_source was never offered'
 );
 
+// ── Consult-Specific Next Moves Telemetry Tests (Render Spec 1.3) ──
+const consultNextMoves: NextMoves = {
+    scope_prompt: true,
+    presentation: 'internal',
+    thread: {
+        kind: 'expert_thread',
+        graph_id: 'ben-dietz-sic',
+        graph_display: 'Ben Dietz',
+        next_angle: 'We can explore creator-led retail formats next.',
+        uncited_themes: ['Discord Communities'],
+        text: 'We can explore creator-led retail formats next.'
+    },
+    shelf: [
+        { graph_id: 'retail', graph_display: 'Retail Strategy & Innovation', reason: 'Retail operations' },
+        { graph_id: 'fashion', graph_display: 'Fashion & Luxury Systems', reason: 'Luxury circularity' }
+    ],
+    specific: {
+        expert: {
+            analyst_id: 'retail-lead',
+            display_name: 'Retail Strategy Lead',
+            reason: 'omnichannel retail'
+        },
+        shelf_graphs: [
+            { graph_id: 'retail', graph_display: 'Retail Strategy & Innovation', reason: 'Retail operations' }
+        ]
+    },
+    consult_envelope: {
+        thread_line: 'We can explore creator-led retail formats next.',
+        shelf_line: 'You can also explore related research in Retail Strategy & Innovation and Fashion & Luxury Systems.',
+        scope_line: 'To turn this into an executive brief or project deliverable, ask me to scope a deliverable.'
+    }
+};
+
+tracker.recordNextMoves(consultNextMoves, 'cultural commerce');
+
+// 1. Thread match: continuing with current expert
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('Tell me more about creator-led retail formats', 'consult_human_agent', { analyst_id: 'ben-dietz-sic' }),
+    'thread',
+    'Follow-up with same expert should match thread'
+);
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('Let us look into Discord Communities', 'consult_analyst', { analyst_id: 'ben-dietz-sic' }),
+    'thread',
+    'Follow-up on uncited theme with same expert should match thread'
+);
+
+// 2. Shelf graph match: exploring shelf graphs recommended in sentence 2
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('Show me retail operations research', 'search_graph', { graphId: 'retail' }),
+    'specific_brand',
+    'Exploring shelf graph should match specific_brand per telemetry spec'
+);
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('Explore Fashion & Luxury Systems', 'get_domain_intelligence', { query: 'fashion luxury systems' }),
+    'specific_brand',
+    'Exploring shelf graph by name should match specific_brand'
+);
+
+// 3. Alternate expert referral match
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('I want to consult Retail Strategy Lead', 'consult_analyst', { analyst_id: 'retail-lead' }),
+    'specific_expert',
+    'Consulting referred expert should match specific_expert'
+);
+
+// 4. Scope deliverable match
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('Scope a deliverable on creator commerce', 'request_deliverable', { analyst_id: 'ben-dietz-sic', offering_key: 'brief' }),
+    'scope',
+    'Scoping deliverable should match scope'
+);
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('To turn this into an executive brief, please scope a project deliverable', 'consult_human_agent', { analyst_id: 'ben-dietz-sic' }),
+    'scope',
+    'Scoping text prompt should match scope'
+);
+
+// 5. None match
+assert.strictEqual(
+    tracker.evaluateNextMoveMatch('How is the weather in Tokyo?', 'search_graph'),
+    'none',
+    'Unrelated topic should match none'
+);
+
 console.log('✅ All Session Tracker Next Moves Telemetry tests passed successfully!');

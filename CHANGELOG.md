@@ -5,6 +5,24 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.25] - 2026-08-22
+
+### Added & Changed
+- **Consult-Specific Next Moves Envelope & Render Spec 1.3 (`src/coverageRelevance.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Implemented `generateConsultNextMoves(result, query, analystId, options, catalog, analysts)` constructing the consult-specific `next_moves` object and 3-sentence closing envelope:
+    - **Sentence 1 (Thread)**: Expert's 1st-person authentic continuation. Uses `expert_thread.next_angle` from the API response; falls back to uncited themes (*"If you want to stay on this, we can look into [Theme] in my graph."*), or graph remainder (*"There are several/many more trends in my graph..."*). For out-of-lane / decline cases (`coverage === 'out'`), cleanly formats the top referral from `result.referrals` (*"For inquiries on this topic, I'd recommend connecting with [Name] who covers [Reason]."*).
+    - **Sentence 2 (Shelf)**: Fodda platform voice merchandising of $\le 2$ relevant domain/industry graphs via `catalogCache.getRelevantGraphs()`, strictly excluding the expert's own graph.
+    - **Sentence 3 (Scope)**: Scope copy (*"To turn this into an executive brief or project deliverable, ask me to scope a deliverable."* or with client brand).
+  - Implemented `renderConsultClosingEnvelope()` and `renderClosingBlock()`.
+  - Updated both `consult_analyst` and `consult_human_agent` in `src/toolHandlers.ts` to invoke `generateConsultNextMoves`, render the deterministic 3-sentence closing envelope directly into tool output `parts`, and record next moves in `sessionTracker`.
+  - Bumped `_render_spec_version` to `'1.3'` in `buildRenderInstructions()` and updated `STATIC_BEHAVIORAL_RULES` in `src/systemPrompt.ts`.
+- **Session Telemetry Enhancements (`src/sessionTracker.ts`)**:
+  - Enhanced `evaluateNextMoveMatch()` to match consult thread follow-ups, shelf graph explorations, peer expert referrals, and deliverable scoping (`request_deliverable`).
+- **Tests & Verification**:
+  - `src/test_next_moves.ts`: Added 4 new consult test cases (all 9 unit tests passing).
+  - `src/test_session_next_moves_telemetry.ts`: Added consult telemetry tests (thread, shelf, referral, deliverable scope).
+  - `src/test_next_moves_transcripts.ts`: Verified 11 novel queries across all research & consult tools, confirming exact 3-sentence closing blocks with 0 banned terms (0 costs, 0 token/SPT mentions, 0 technical slugs, 0 tool names, 0 emojis, 0 headers, 0 apologies).
+
 ## [1.46.24] - 2026-08-22
 
 ### Changed

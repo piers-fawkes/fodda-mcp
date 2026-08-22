@@ -395,16 +395,27 @@ export function addCoverageAnnotation(
 }
 
 export interface NextMovesThread {
-    kind: 'more_in_graph' | 'adjacent_room' | 'honest_thin';
+    kind: 'more_in_graph' | 'adjacent_room' | 'honest_thin' | 'expert_thread';
     graph_id?: string | undefined;
     graph_display?: string | undefined;
     remaining_count?: number | undefined;
     theme?: string | undefined;
+    next_angle?: string | undefined;
+    uncited_themes?: string[] | undefined;
+    text?: string | undefined;
     adjacent?: {
         graph_id: string;
         graph_display: string;
         reason: string;
     } | undefined;
+}
+
+export interface NextMovesShelfGraph {
+    graph_id: string;
+    graph_display: string;
+    domain?: string | undefined;
+    headline?: string | undefined;
+    reason?: string | undefined;
 }
 
 export interface NextMovesSpecific {
@@ -415,19 +426,34 @@ export interface NextMovesSpecific {
         display_name: string;
         reason: string;
     } | undefined;
+    shelf_graphs?: NextMovesShelfGraph[] | undefined;
+}
+
+export interface NextMovesConsultEnvelope {
+    thread_line: string;
+    shelf_line: string;
+    scope_line: string;
 }
 
 export interface NextMoves {
     thread?: NextMovesThread | undefined;
     specific?: NextMovesSpecific | undefined;
+    shelf?: NextMovesShelfGraph[] | undefined;
     scope_prompt: boolean;
     known_brand?: string | undefined;
     presentation?: 'internal' | undefined;
+    consult_envelope?: NextMovesConsultEnvelope | undefined;
 }
 
 export interface NextMovesOptions {
     total?: number | undefined;
     onTopicTotal?: number | undefined;
+    knownBrand?: string | undefined;
+    currentAnalystId?: string | undefined;
+    analysts?: CatalogAnalyst[] | undefined;
+}
+
+export interface ConsultNextMovesOptions {
     knownBrand?: string | undefined;
     currentAnalystId?: string | undefined;
     analysts?: CatalogAnalyst[] | undefined;
@@ -688,4 +714,295 @@ export function generateNextMoves(
     }
 
     return nextMoves;
+}
+
+/**
+ * Generate consult-specific next moves envelope adhering to Render Spec 1.3.
+ *
+ * Sentence 1 (Thread): Expert's 1st-person next move (using expert_thread.next_angle,
+ *   with fallback to uncited themes / remaining count; out-of-lane declination uses top referral).
+ * Sentence 2 (Shelf): Fodda platform merchandising via catalogCache.getRelevantGraphs()
+ *   (strictly excluding the expert's own graph).
+ * Sentence 3 (Scope): Deliverable / project scope line.
+ */
+export function generateConsultNextMoves(
+    result: any,
+    query: string,
+    analystId: string,
+    options?: ConsultNextMovesOptions,
+    catalog: CatalogGraph[] = getGraphs(),
+    analysts: CatalogAnalyst[] = getAnalysts()
+): NextMoves {
+    const nextMoves: NextMoves = {
+        scope_prompt: true,
+        presentation: 'internal',
+    };
+
+    if (options?.knownBrand) {
+        nextMoves.known_brand = options.knownBrand;
+    }
+
+    const cleanAnalystId = (analystId || '').toLowerCase().trim();
+    const matchedAnalyst = analysts.find(a => {
+        const aId = (a.analyst_id || (a as any).id || (a as any).slug || '').toLowerCase().trim();
+        const aName = (a.name || '').toLowerCase().trim();
+        return aId === cleanAnalystId || aName === cleanAnalystId;
+    });
+
+    const expertDisplayName = matchedAnalyst?.name || analystId;
+    const expertGraphId = matchedAnalyst?.analyst_id || analystId;
+
+    const expertThread = result?.expert_thread || {};
+    const nextAngleRaw = result?.next_angle || expertThread?.next_angle;
+    const uncitedThemes = Array.isArray(expertThread?.uncited_themes) ? expertThread.uncited_themes : [];
+    const coverage = (result?.coverage || 'ok').toLowerCase().trim();
+    const isOutOfLane = coverage === 'out' || expertThread?.on_topic_total === 0;
+
+    // ── Sentence 1: Thread (Expert's 1st Person / Referral on decline) ──
+    let threadSentence = '';
+
+    if (isOutOfLane) {
+        const activeReferrals = Array.isArray(result?.referrals)
+            ? result.referrals.filter((r: any) => {
+                const rStatus = (r.status || r.Status || '').toLowerCase().trim();
+                return !rStatus || rStatus === 'active';
+            })
+            : [];
+        if (activeReferrals.length > 0) {
+            const topRef = activeReferrals[0];
+            const refName = topRef.name || topRef.curator || 'another expert';
+            const refReason = topRef.reason ? `who covers ${topRef.reason}` : 'who covers this topic directly';
+            threadSentence = `For inquiries on this topic, I'd recommend connecting with ${refName} ${refReason}.`;
+            nextMoves.thread = {
+                kind: 'adjacent_room',
+                graph_id: topRef.id || topRef.analyst_id || topRef.slug,
+                graph_display: refName,
+                adjacent: {
+                    graph_id: topRef.id || topRef.analyst_id || topRef.slug,
+                    graph_display: refName,
+                    reason: topRef.reason || 'related expertise',
+                },
+                text: threadSentence,
+            };
+        } else {
+            threadSentence = `That's what Fodda holds on this right now; if you have a related topic in my graph, let me know.`;
+            nextMoves.thread = {
+                kind: 'honest_thin',
+                graph_id: expertGraphId,
+                graph_display: expertDisplayName,
+                text: threadSentence,
+            };
+        }
+    } else if (typeof nextAngleRaw === 'string' && nextAngleRaw.trim().length > 0) {
+        let cleanNextAngle = nextAngleRaw.trim();
+        if (!/[.!?]$/.test(cleanNextAngle)) {
+            cleanNextAngle += '.';
+        }
+        threadSentence = cleanNextAngle;
+        nextMoves.thread = {
+            kind: 'expert_thread',
+            graph_id: expertGraphId,
+            graph_display: expertDisplayName,
+            next_angle: cleanNextAngle,
+            text: threadSentence,
+        };
+    } else if (uncitedThemes.length > 0) {
+        const topTheme = uncitedThemes[0];
+        threadSentence = `If you want to stay on this, we can look into ${topTheme} in my graph.`;
+        nextMoves.thread = {
+            kind: 'expert_thread',
+            graph_id: expertGraphId,
+            graph_display: expertDisplayName,
+            theme: topTheme,
+            uncited_themes: uncitedThemes,
+            text: threadSentence,
+        };
+    } else {
+        const onTopicTotal = typeof expertThread?.on_topic_total === 'number' ? expertThread.on_topic_total : undefined;
+        const citedCount = typeof expertThread?.cited_count === 'number' ? expertThread.cited_count : (Array.isArray(result?.sources_used) ? result.sources_used.length : 0);
+        let remainder = (onTopicTotal !== undefined && onTopicTotal > citedCount) ? (onTopicTotal - citedCount) : 0;
+
+        if (remainder >= 10) {
+            threadSentence = `There are many more trends in my graph exploring this topic — want me to pull those?`;
+        } else if (remainder > 0) {
+            threadSentence = `There are several more trends in my graph exploring this topic — want me to pull those?`;
+        } else {
+            threadSentence = `If you want to stay on this, we can explore deeper signals in my graph.`;
+        }
+
+        nextMoves.thread = {
+            kind: 'expert_thread',
+            graph_id: expertGraphId,
+            graph_display: expertDisplayName,
+            remaining_count: remainder > 0 ? remainder : undefined,
+            text: threadSentence,
+        };
+    }
+
+    // ── Sentence 2: Shelf (Platform Voice Merchandising) ──
+    let relevantCandidates: any[] = [];
+    try {
+        relevantCandidates = getRelevantGraphs(query);
+    } catch {
+        relevantCandidates = [];
+    }
+
+    const expertOwnIds = new Set<string>([cleanAnalystId, expertGraphId.toLowerCase()]);
+    if (matchedAnalyst) {
+        if (matchedAnalyst.analyst_id) expertOwnIds.add(matchedAnalyst.analyst_id.toLowerCase());
+        if ((matchedAnalyst as any).id) expertOwnIds.add(String((matchedAnalyst as any).id).toLowerCase());
+        if ((matchedAnalyst as any).slug) expertOwnIds.add(String((matchedAnalyst as any).slug).toLowerCase());
+    }
+
+    const shelfCandidateGraphs: CatalogGraph[] = [];
+    for (const cand of relevantCandidates) {
+        const g = cand.graph;
+        if (!g) continue;
+        const gid = (g.graph_id || (g as any).id || '').toLowerCase();
+        if (expertOwnIds.has(gid)) continue;
+        if (g.curator && g.curator.toLowerCase() === expertDisplayName.toLowerCase()) continue;
+        if (g.name && g.name.toLowerCase() === expertDisplayName.toLowerCase()) continue;
+        if (shelfCandidateGraphs.length < 2 && !shelfCandidateGraphs.some(sg => sg.graph_id === g.graph_id)) {
+            shelfCandidateGraphs.push(g);
+        }
+    }
+
+    if (shelfCandidateGraphs.length === 0) {
+        const liveGraphs = catalog.filter(g => {
+            const st = (g.status || '').toLowerCase();
+            const gid = (g.graph_id || '').toLowerCase();
+            return (st === 'live' || !st) && !expertOwnIds.has(gid) && g.graph_type !== 'expert';
+        });
+        if (liveGraphs.length > 0) {
+            shelfCandidateGraphs.push(...liveGraphs.slice(0, 2));
+        }
+    }
+
+    const shelfGraphs: NextMovesShelfGraph[] = shelfCandidateGraphs.map(g => ({
+        graph_id: g.graph_id,
+        graph_display: buildDisplayName(g),
+        domain: g.domain,
+        headline: g.headline,
+        reason: g.headline || g.domain || g.name,
+    }));
+
+    let shelfSentence = '';
+    if (shelfGraphs.length >= 2 && shelfGraphs[0]?.graph_display && shelfGraphs[1]?.graph_display) {
+        shelfSentence = `You can also explore related research in ${shelfGraphs[0].graph_display} and ${shelfGraphs[1].graph_display}.`;
+    } else if (shelfGraphs.length >= 1 && shelfGraphs[0]?.graph_display) {
+        shelfSentence = `You can also explore related research in ${shelfGraphs[0].graph_display}.`;
+    } else {
+        shelfSentence = `You can also explore related research across Fodda's domain and industry report graphs.`;
+    }
+
+    nextMoves.shelf = shelfGraphs;
+
+    const specific: NextMovesSpecific = {
+        shelf_graphs: shelfGraphs,
+    };
+    if (Array.isArray(expertThread?.brands) && expertThread.brands.length > 0) {
+        specific.brands = expertThread.brands.slice(0, 2);
+    }
+    if (Array.isArray(result?.referrals) && result.referrals.length > 0) {
+        const topRef = result.referrals[0];
+        specific.expert = {
+            analyst_id: topRef.id || topRef.analyst_id || topRef.slug,
+            display_name: topRef.name || topRef.curator,
+            reason: topRef.reason || 'related expertise',
+        };
+    }
+    nextMoves.specific = specific;
+
+    // ── Sentence 3: Scope (Platform / Engagement Voice) ──
+    let scopeSentence = '';
+    if (options?.knownBrand) {
+        scopeSentence = `To turn this into an executive brief or project deliverable for ${options.knownBrand}, ask me to scope a deliverable.`;
+    } else {
+        scopeSentence = `To turn this into an executive brief or project deliverable, ask me to scope a deliverable.`;
+    }
+
+    nextMoves.consult_envelope = {
+        thread_line: threadSentence,
+        shelf_line: shelfSentence,
+        scope_line: scopeSentence,
+    };
+
+    return nextMoves;
+}
+
+/**
+ * Render the consult 3-sentence closing envelope complying with Render Spec 1.3.
+ */
+export function renderConsultClosingEnvelope(nextMoves: NextMoves | undefined): { lines: string[]; text: string } {
+    if (!nextMoves?.consult_envelope) {
+        return renderClosingBlock(nextMoves);
+    }
+    const { thread_line, shelf_line, scope_line } = nextMoves.consult_envelope;
+    const lines = [thread_line, shelf_line, scope_line].filter(Boolean);
+    return {
+        lines,
+        text: lines.join(' '),
+    };
+}
+
+/**
+ * Universal closing block renderer supporting both general research (Render Spec 1.2/1.3)
+ * and consult-specific responses (Render Spec 1.3).
+ */
+export function renderClosingBlock(nextMoves: NextMoves | undefined): { lines: string[]; text: string } {
+    if (!nextMoves) return { lines: [], text: '' };
+
+    if (nextMoves.consult_envelope) {
+        const { thread_line, shelf_line, scope_line } = nextMoves.consult_envelope;
+        const lines = [thread_line, shelf_line, scope_line].filter(Boolean);
+        return {
+            lines,
+            text: lines.join(' '),
+        };
+    }
+
+    const lines: string[] = [];
+
+    // Line 1: Pull the thread
+    if (nextMoves.thread) {
+        const t = nextMoves.thread;
+        if (t.text) {
+            lines.push(t.text);
+        } else if (t.kind === 'more_in_graph' && t.remaining_count && t.remaining_count > 0) {
+            const countPhrase = t.remaining_count >= 10 ? 'many more trends' : 'several more trends';
+            lines.push(`There are ${countPhrase} in ${t.graph_display || 'the graph'} exploring ${t.theme || 'this topic'} — want me to pull those?`);
+        } else if (t.kind === 'adjacent_room' && t.adjacent) {
+            lines.push(`We also have related coverage in ${t.adjacent.graph_display} — want me to pull that?`);
+        } else if (t.kind === 'honest_thin' && t.adjacent) {
+            lines.push(`That's what Fodda holds on this right now; the closest adjacent hit is ${t.adjacent.reason || 'related research'} in ${t.adjacent.graph_display} — want it?`);
+        }
+    }
+
+    // Line 2: Go specific
+    if (nextMoves.specific) {
+        const s = nextMoves.specific;
+        const options: string[] = [];
+        if (s.brands && s.brands.length > 0) {
+            options.push(`look into ${s.brands.join(' or ')}`);
+        }
+        if (s.statistics_source) {
+            options.push(`pull quantitative data from ${s.statistics_source}`);
+        }
+        if (s.expert && options.length < 2) {
+            options.push(`consult ${s.expert.display_name}`);
+        }
+
+        if (options.length > 0) {
+            lines.push(`Or we can ${options.slice(0, 2).join(' or ')}.`);
+        }
+    }
+
+    // Line 3: Scope to the job
+    if (nextMoves.known_brand) {
+        lines.push(`Want this cut to ${nextMoves.known_brand} specifically?`);
+    } else {
+        lines.push(`If you tell me the brand or brief you're working on, I'll cut this to that.`);
+    }
+
+    return { lines, text: lines.join(' ') };
 }

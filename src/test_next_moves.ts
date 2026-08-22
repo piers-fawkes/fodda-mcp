@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { generateNextMoves } from './coverageRelevance.js';
+import { generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope } from './coverageRelevance.js';
 import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
 
 console.log('--- Running Next Moves Unit Tests ---');
@@ -183,6 +183,160 @@ const mockAnalysts: any[] = [
     assert.ok(nextMoves.specific?.statistics_source, 'Should recommend a statistics source for retail spending queries');
     assert.ok(nextMoves.specific.statistics_source.includes('Census'), 'Should recommend Census for retail spending');
     console.log('✅ Test 5 Passed: Statistics source populated for market query');
+}
+
+// ── Consult-Specific Next Moves Unit Tests (Render Spec 1.3) ──
+
+// Test 6: Consult with explicit expert_thread.next_angle
+{
+    const mockResult = {
+        coverage: 'in',
+        report: 'In my cultural strategy framework, community commerce requires authentic creator alignment.',
+        sources_used: [{ title: 'Creator Collectives', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
+        expert_thread: {
+            on_topic_total: 8,
+            cited_count: 1,
+            uncited_themes: ['Zines & Subcultures', 'Discord Councils'],
+            brands: ['Supreme', 'Aimé Leon Dore'],
+            next_angle: 'We can explore how creator-led retail formats differ across European luxury markets next.'
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'cultural community commerce and luxury retail',
+        'ben-dietz-sic',
+        { knownBrand: 'Aimé Leon Dore' },
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(
+        nextMoves.consult_envelope.thread_line,
+        'We can explore how creator-led retail formats differ across European luxury markets next.'
+    );
+    // Shelf must exclude Ben Dietz's own graph
+    assert.ok(
+        !nextMoves.consult_envelope.shelf_line.includes('Ben Dietz'),
+        'Shelf must strictly exclude current expert'
+    );
+    assert.ok(
+        nextMoves.consult_envelope.shelf_line.includes('Retail Strategy & Innovation') ||
+        nextMoves.consult_envelope.shelf_line.includes('Beauty & Wellness'),
+        'Shelf must recommend other graphs from catalog'
+    );
+    assert.strictEqual(
+        nextMoves.consult_envelope.scope_line,
+        'To turn this into an executive brief or project deliverable for Aimé Leon Dore, ask me to scope a deliverable.'
+    );
+
+    const rendered = renderConsultClosingEnvelope(nextMoves);
+    assert.strictEqual(rendered.lines.length, 3, 'Must render exactly 3 sentences');
+    console.log('✅ Test 6 Passed: Consult with explicit next_angle');
+}
+
+// Test 7: Consult fallback to uncited_themes when next_angle is absent
+{
+    const mockResult = {
+        coverage: 'in',
+        report: 'Community commerce analysis.',
+        sources_used: [{ title: 'Creator Collectives', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
+        expert_thread: {
+            on_topic_total: 5,
+            cited_count: 1,
+            uncited_themes: ['Discord Councils', 'Zines & Subcultures'],
+            brands: ['Supreme'],
+            next_angle: null
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'cultural community commerce',
+        'ben-dietz-sic',
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(
+        nextMoves.consult_envelope.thread_line,
+        'If you want to stay on this, we can look into Discord Councils in my graph.'
+    );
+    assert.strictEqual(
+        nextMoves.consult_envelope.scope_line,
+        'To turn this into an executive brief or project deliverable, ask me to scope a deliverable.'
+    );
+    console.log('✅ Test 7 Passed: Consult fallback to uncited_themes');
+}
+
+// Test 8: Consult fallback to graph remainder when next_angle and uncited_themes are absent
+{
+    const mockResult = {
+        coverage: 'in',
+        report: 'Community commerce analysis.',
+        sources_used: [{ title: 'Creator Collectives', type: 'own_graph', graph_id: 'ben-dietz-sic' }],
+        expert_thread: {
+            on_topic_total: 6,
+            cited_count: 1,
+            uncited_themes: [],
+            brands: [],
+            next_angle: null
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'cultural community commerce',
+        'ben-dietz-sic',
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(
+        nextMoves.consult_envelope.thread_line,
+        'There are several more trends in my graph exploring this topic — want me to pull those?'
+    );
+    console.log('✅ Test 8 Passed: Consult fallback to graph remainder');
+}
+
+// Test 9: Out-of-lane / decline consult with referrals
+{
+    const mockResult = {
+        coverage: 'out',
+        report: 'This Human Agent does not cover technical retail logistics.',
+        sources_used: [],
+        referrals: [
+            { id: 'retail-lead', name: 'Retail Strategy Lead', curator: 'Retail Strategy Lead', reason: 'omnichannel retail logistics directly', status: 'Active' }
+        ],
+        expert_thread: {
+            on_topic_total: 0,
+            cited_count: 0,
+            uncited_themes: [],
+            brands: [],
+            next_angle: null
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'warehouse logistics automation',
+        'ben-dietz-sic',
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(
+        nextMoves.consult_envelope.thread_line,
+        "For inquiries on this topic, I'd recommend connecting with Retail Strategy Lead who covers omnichannel retail logistics directly."
+    );
+    console.log('✅ Test 9 Passed: Out-of-lane consult with peer referral');
 }
 
 console.log('All Next Moves unit tests passed successfully!');
