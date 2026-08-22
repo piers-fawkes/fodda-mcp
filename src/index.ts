@@ -56,7 +56,7 @@ app.use((req, _res, next) => {
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-Stripe-SPT, Mcp-Session-Id, Accept');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-Stripe-SPT, Mcp-Session-Id, Accept, X-Fodda-Session-Kind, X-Fodda-Source');
     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
@@ -475,6 +475,12 @@ function getServiceUrl(): string {
  * Make an authenticated request to the Fodda API.
  * Checks the query cache first; stores responses on cache miss.
  */
+const PLACEHOLDER_USER_IDS = new Set(['', 'anonymous', 'undefined', 'null', 'oauth_user']);
+export function isPlaceholderUserId(id?: string | null): boolean {
+    if (!id) return true;
+    return PLACEHOLDER_USER_IDS.has(id.trim().toLowerCase());
+}
+
 async function foddaRequest(
     method: 'GET' | 'POST' | 'PATCH',
     path: string,
@@ -491,11 +497,14 @@ async function foddaRequest(
 
     const timestamp = Date.now().toString();
     const headers: Record<string, string> = {
-        'X-User-Id': userId,
         'X-Fodda-Timestamp': timestamp,
         'X-Fodda-Billing': 'mcp-orchestrated',  // Tells API to skip per-call billing — MCP charges lump sum via meter
         'Content-Type': 'application/json',
     };
+    // Never send placeholder user IDs upstream — let the API's account-label fallback apply
+    if (userId && !isPlaceholderUserId(userId)) {
+        headers['X-User-Id'] = userId;
+    }
     // SPT settlement: the Shared Payment Token is the payer (Authorization Bearer), no X-API-Key.
     if (spt) {
         headers['Authorization'] = `Bearer ${spt}`;
@@ -1109,8 +1118,10 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             || (req.query.user_id as string)
             || (req.headers['x-user-id'] as string)
             || (isEmailId ? entryId : 'anonymous'));
-        const defaultSource = (offeringSlug !== 'mcp' && allowedTools !== undefined) ? offeringSlug : (isSpt ? 'spt' : '');
-        const source = (req.headers['x-fodda-source'] as string) || (req.query.source as string) || defaultSource;
+        const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || 'customer';
+        const isInternalTest = sessionKind === 'internal-test';
+        const defaultSource = isInternalTest ? 'mcp-internal-test' : ((offeringSlug !== 'mcp' && allowedTools !== undefined) ? offeringSlug : (isSpt ? 'spt' : ''));
+        const source = isInternalTest ? 'mcp-internal-test' : ((req.headers['x-fodda-source'] as string) || (req.query.source as string) || defaultSource);
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;
@@ -1159,11 +1170,11 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // otherwise bake in source attribution.
                 const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
                 const boundFoddaRequest = isSpt
-                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, 'spt', sptArg)) as typeof foddaRequest)
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg)) as typeof foddaRequest)
                     : (source
                         ? (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest)
                         : foddaRequest);
-                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools);
+                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, source || undefined);
                 transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: () => crypto.randomUUID(),
                     onsessioninitialized: (sid) => {
@@ -1230,7 +1241,9 @@ app.get('/sse', async (req, res) => {
     const userId = (req.query.user_id as string)
         || (req.headers['x-user-id'] as string)
         || (isEmailId ? entryId : 'anonymous');
-    const source = (req.query.source as string) || '';
+    const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || 'customer';
+    const isInternalTest = sessionKind === 'internal-test';
+    const source = isInternalTest ? 'mcp-internal-test' : ((req.headers['x-fodda-source'] as string) || (req.query.source as string) || '');
     const sessionId = crypto.randomUUID();
     const transport = new SSEServerTransport('/messages', res);
 
@@ -1239,7 +1252,7 @@ app.get('/sse', async (req, res) => {
         ? ((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest
         : foddaRequest;
 
-    const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl);
+    const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, undefined, undefined, source || undefined);
     await server.connect(transport as any);
     console.error(`SSE session: ${sessionId}`);
 });

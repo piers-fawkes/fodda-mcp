@@ -6,7 +6,7 @@ async function main() {
 
     // Create an SSE transport pointed at the live Cloud Run endpoint
     const transport = new SSEClientTransport(
-        new URL("https://fodda-mcp-p3uz7zw7ja-uc.a.run.app/sse")
+        new URL("https://fodda-mcp-p3uz7zw7ja-uc.a.run.app/sse?session_kind=internal-test")
     );
 
     // Initialize the client

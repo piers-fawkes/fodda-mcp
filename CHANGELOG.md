@@ -5,6 +5,24 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.32] - 2026-08-22
+
+### Fixed & Enhanced (MCP Identity Gap & Internal Test Session Tagging — `briefs/brief_mcp_identity_gap.md`)
+- **Omit `'anonymous'` User ID Upstream (`src/index.ts`, `src/skillClient.ts`)**:
+  - In `foddaRequest()` and `executeSkillTool()`, `X-User-Id` is now only attached when `userId && userId !== 'anonymous'`.
+  - When an unauthenticated / anonymous MCP session makes upstream API calls, omitting `X-User-Id` allows the API's account-label fallback (`Billing Email` $\to$ `"<Account Name> (API)"`) to take effect instead of logging `Anonymous`.
+- **Tag Internal Test Sessions (`src/index.ts`, `src/toolHandlers.ts`)**:
+  - Extracted `session_kind` from `req.headers['x-fodda-session-kind']` and `req.query.session_kind` (default `'customer'`) across Streamable HTTP and SSE transports.
+  - When `session_kind === 'internal-test'`, session source is set to `'mcp-internal-test'`.
+  - Bound `X-Fodda-Source: mcp-internal-test` to all upstream fan-out calls and passed `sessionSource` to `createServer()`.
+  - Updated `logUserQuery()` and `logQueryResult()` in `src/toolHandlers.ts` to log `source: sessionSource || 'mcp'` to `POST /v1/log/question`, isolating test traffic from customer analytics without manual email exclusions.
+- **Deployed Test Scripts Tagged with `session_kind=internal-test`**:
+  - Updated `src/test_live_mcp.ts`, `src/test_live_deployed_split.ts`, `src/test_live_deployed_mcp_search.ts`, `src/test_live_endpoint_runner.ts`, `src/test_referral_live.ts`, `src/test_referral_piers.ts`, `src/test_sources_live.ts`, and `src/test_list_graphs_topics.ts` to connect with `session_kind=internal-test`.
+- **Identity Gap Automated Test Suite (`src/test_identity_gap.ts`)**:
+  - Verified `X-User-Id` omission for anonymous sessions and preservation for named sessions.
+  - Verified default session logging (`source: 'mcp'`) vs internal-test session logging (`source: 'mcp-internal-test'`).
+  - Verified `session_kind` header and query parameter resolution.
+
 ## [1.46.31] - 2026-08-22
 
 ### Fixed & Enhanced (Next Moves Regression Fixes)

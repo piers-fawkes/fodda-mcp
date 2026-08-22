@@ -29,7 +29,7 @@ async function testLiveEndpoint() {
 
         // 2. MCP Client connection
         const transport = new StreamableHTTPClientTransport(
-            new URL(`${BASE_URL}/${slug}?api_key=sk_live_test_verifier`)
+            new URL(`${BASE_URL}/${slug}?api_key=sk_live_test_verifier&session_kind=internal-test`)
         );
         const client = new Client({ name: 'verifier-client', version: '1.0.0' });
         await client.connect(transport as any);
@@ -57,7 +57,7 @@ async function testLiveEndpoint() {
     // Compare with main gateway
     console.log('--- Testing Main Gateway /mcp ---');
     const mainTransport = new StreamableHTTPClientTransport(
-        new URL(`${BASE_URL}/mcp?api_key=sk_live_test_verifier`)
+        new URL(`${BASE_URL}/mcp?api_key=sk_live_test_verifier&session_kind=internal-test`)
     );
     const mainClient = new Client({ name: 'verifier-client', version: '1.0.0' });
     await mainClient.connect(mainTransport as any);

@@ -186,16 +186,22 @@ export async function executeSkillTool(
     const startTime = Date.now();
     const url = `${API_BASE_URL}/v1/skills/${encodeURIComponent(skillId)}/execute`;
 
+    const headers: Record<string, string> = {
+        'X-API-Key': apiKey,
+        'X-Fodda-Billing': 'mcp-orchestrated',
+        'Content-Type': 'application/json',
+    };
+    const PLACEHOLDER_USER_IDS = new Set(['', 'anonymous', 'undefined', 'null', 'oauth_user']);
+    // Never send placeholder user IDs upstream — let the API's account-label fallback apply
+    if (userId && !PLACEHOLDER_USER_IDS.has(userId.trim().toLowerCase())) {
+        headers['X-User-Id'] = userId;
+    }
+
     const response = await axios.post(url, {
         tool: toolName,
         arguments: args,
     }, {
-        headers: {
-            'X-API-Key': apiKey,
-            'X-User-Id': userId,
-            'X-Fodda-Billing': 'mcp-orchestrated',
-            'Content-Type': 'application/json',
-        },
+        headers,
         timeout: EXECUTION_TIMEOUT_MS,
     });
 

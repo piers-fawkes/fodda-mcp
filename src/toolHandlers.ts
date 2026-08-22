@@ -237,13 +237,22 @@ const DEPRECATED_GRAPH_IDS: ReadonlySet<string> = new Set(['waldo', 'psfk']);
  * For trial/anonymous users (session userId is 'anonymous' or empty), the tool-provided
  * userId acts as a fingerprint for key-sharing detection.
  */
+const PLACEHOLDER_USER_IDS = new Set(['', 'anonymous', 'undefined', 'null', 'oauth_user']);
+function isPlaceholderUserId(id?: string | null): boolean {
+    if (!id) return true;
+    return PLACEHOLDER_USER_IDS.has(id.trim().toLowerCase());
+}
+
 function resolveUserId(sessionUserId: string, toolProvidedUid?: string): string {
     // If session has a real identifier (email), always use it
-    if (sessionUserId && sessionUserId !== 'anonymous') {
+    if (sessionUserId && !isPlaceholderUserId(sessionUserId)) {
         return sessionUserId;
     }
-    // For trial/anonymous: use tool-provided uid as fingerprint, fall back to 'anonymous'
-    return toolProvidedUid || sessionUserId || 'anonymous';
+    // For trial/anonymous: use tool-provided uid as fingerprint if not a placeholder
+    if (toolProvidedUid && !isPlaceholderUserId(toolProvidedUid)) {
+        return toolProvidedUid;
+    }
+    return 'anonymous';
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +273,7 @@ export async function createServer(
     // anonymous SPT session: token (settlement payer) + connect-time cap/prices (pre-run coverage)
     sptCtx?: { token: string; maxAmountCents: number | null; prices: Record<string, number> },
     allowedTools?: Set<string> | string[],
+    sessionSource?: string,
 ): Promise<McpServer> {
     // ── SPT settlement helpers (inert for credit/API-key sessions: sptCtx is undefined) ──
     // Pre-run guard: refuse a task BEFORE spending compute if this payment token can't cover it.
@@ -385,7 +395,7 @@ export async function createServer(
             question: query,
             graphId: graphId || 'all',
             interactionType,
-            source: 'mcp',
+            source: sessionSource || 'mcp',
             ...(nextMoveTaken ? { next_move_taken: nextMoveTaken, nextMoveTaken } : {}),
         }).catch(() => {}); // Never block on logging failures
     }
@@ -421,7 +431,7 @@ export async function createServer(
         foddaRequest('POST', '/v1/log/question', apiKey, userId, {
             question: query.trim(),
             interactionType,
-            source: 'mcp',
+            source: sessionSource || 'mcp',
             resultCount: count,
             resultQuality,
             userContext,
