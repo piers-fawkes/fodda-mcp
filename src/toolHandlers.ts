@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens } from './coverageRelevance.js';
+import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -525,8 +525,7 @@ export async function createServer(
             if ((tool as any).directory_visible === false) continue;
 
             const prefixedName = `${discovered.skill_id}_${tool.name}`;
-            const costNote = `(costs ${discovered.cost_per_call} API calls)`;
-            const description = `[${discovered.skill_name}] ${tool.description || tool.name} ${costNote}`;
+            const description = `[${discovered.skill_name}] ${tool.description || tool.name}`;
 
             // Build per-tool annotations from skills API, with safe defaults.
             // IMPORTANT: readOnlyHint defaults to false (write-capable) when not provided by the API —
@@ -730,26 +729,15 @@ export async function createServer(
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
-        'Returns Fodda\'s main capabilities / features / offerings / products / services / tools and what they cost. Call this for any question about what Fodda can do or what\'s available.',
+        'Returns Fodda\'s main capabilities / features / offerings / products / services / tools and how to use them. Call this for any question about what Fodda can do or what\'s available.',
         { userId: z.string().optional().describe('Optional user identifier.') },
-        { title: 'Get Fodda Capabilities & Pricing', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Get Fodda Capabilities', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async () => {
-            const toolCosts = getToolCostSummary();
-            const getCostStr = (toolName: string, fallback: string) => {
-                const matches = toolCosts.filter(c => c.tool === toolName);
-                if (matches.length > 0) {
-                    const costs = matches.map(m => m.apiCalls);
-                    const min = Math.min(...costs);
-                    const max = Math.max(...costs);
-                    return min === max ? `${min} API calls` : `${min}–${max} API calls`;
-                }
-                return fallback;
-            };
-
             return {
                 content: [{
                     type: 'text' as const,
                     text: JSON.stringify({
+                        pricing_url: "https://fodda.ai/pricing",
                         scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
                         capabilities: [
                             {
@@ -757,7 +745,6 @@ export async function createServer(
                                 name: 'Brand Intelligence',
                                 value: 'Brand health, trend footprint & competitive landscape for any brand.',
                                 tools: ['brand_tracker'],
-                                cost_units: getCostStr('brand_tracker', '20 API calls'),
                                 audience: 'Brand strategists, market researchers, competitive intelligence teams',
                                 example_prompts: [
                                     'Run a brand intelligence footprint for Patagonia focusing on circular economy signals.',
@@ -769,7 +756,6 @@ export async function createServer(
                                 name: 'Deep Research',
                                 value: 'Autonomous multi-graph research briefing report with multi-source synthesis.',
                                 tools: ['deep_research_topic'],
-                                cost_units: getCostStr('deep_research_topic', '20–30 API calls'),
                                 audience: 'Strategists needing exhaustive, executive-ready briefing decks',
                                 example_prompts: [
                                     'Write a comprehensive briefing on how Gen Z is reshaping luxury retail in APAC.'
@@ -780,7 +766,6 @@ export async function createServer(
                                 name: 'Earnings Intelligence',
                                 value: 'Earnings-call analysis, divergence & per-ticker canonical records.',
                                 tools: ['get_company_earnings', 'get_earnings_intelligence', 'get_earnings_divergence', 'get_validated_trends'],
-                                cost_units: '0–15 API calls (coverage is free)',
                                 audience: 'Financial analysts, equity researchers, corporate strategy',
                                 example_prompts: [
                                     'What are retail executives saying about inventory levels?',
@@ -792,7 +777,6 @@ export async function createServer(
                                 name: 'Topic Research',
                                 value: 'Multi-graph topic search + evidence + stats across expert knowledge graphs.',
                                 tools: ['search_graph', 'search_statistics', 'search_insights'],
-                                cost_units: getCostStr('search_graph', '15 API calls'),
                                 audience: 'Researchers, planners, innovation teams',
                                 example_prompts: [
                                     'Pressure-test our sustainability strategy against Fodda\'s packaging trends.',
@@ -804,7 +788,6 @@ export async function createServer(
                                 name: 'Expert Consult & Deliverables',
                                 value: 'Direct chat with named synthetic experts & commissioned finished deliverables.',
                                 tools: ['consult_analyst', 'list_analysts', 'request_deliverable'],
-                                cost_units: '5–10 API calls',
                                 audience: 'Teams seeking specialized domain perspectives or marketing plans',
                                 example_prompts: [
                                     'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
@@ -816,13 +799,11 @@ export async function createServer(
                             {
                                 name: 'Scheduled Intelligence Briefings',
                                 tool: 'manage_scheduled_reports',
-                                cost_units: getCostStr('manage_scheduled_reports', '20 API calls'),
                                 description: 'Track brand positioning or topic trends on a weekly automated schedule.'
                             },
                             {
                                 name: 'Executive Content Studio',
                                 tools: ['draft_linkedin_post', 'draft_linkedin_article'],
-                                cost_units: '10 API calls',
                                 description: 'Draft evidence-backed executive articles and posts from Fodda graph data.'
                             }
                         ]
@@ -898,8 +879,14 @@ export async function createServer(
                         const isHumanAgent = a.type === 'human_agent' || a.type === 'human_twin' || a.agent_type === 'human_twin' || a.agent_type === 'human_agent' || a.kind === 'human_agent' || a.kind === 'human_twin' || a.is_digital_twin === true || a.is_human_agent === true;
                         const type = isHumanAgent ? 'human_agent' : (a.type || 'synthetic_analyst');
                         const consult_tool = isHumanAgent ? 'consult_human_agent' : 'consult_analyst';
-                        const price = a.price || a.promoPriceUsd || a.publishedPriceUsd || a.price_usd || undefined;
                         const hasOfferings = Array.isArray(a.offerings) && a.offerings.length > 0;
+                        const sanitizedOfferings = hasOfferings ? a.offerings.map((o: any) => ({
+                            key: o.key,
+                            name: o.name,
+                            ...(o.turnaround ? { turnaround: o.turnaround } : {}),
+                            ...(o.example_brief ? { example_brief: o.example_brief } : {}),
+                            ...(o.description ? { description: o.description } : {}),
+                        })) : [];
                         const nameKey = (a.name || '').toLowerCase().trim();
                         const book_a_call = a.book_a_call !== undefined ? a.book_a_call : (bookACallMap.get(key) ?? (nameKey ? bookACallMap.get(nameKey) : null) ?? (isHumanAgent ? null : undefined));
 
@@ -921,9 +908,8 @@ export async function createServer(
                             ...(a.blindSpots || a.outside_their_lane || a.outsideTheirLane ? { outside_their_lane: a.blindSpots || a.outside_their_lane || a.outsideTheirLane } : {}),
                             ...(credentials ? { credentials } : {}),
                             is_verified_real_person: Boolean(a.isVerifiedRealPerson || a.is_verified_real_person || isHumanAgent),
-                            ...(price !== undefined ? { price } : {}),
                             ...(book_a_call !== undefined ? { book_a_call } : {}),
-                            offerings: a.offerings || [],
+                            offerings: sanitizedOfferings,
                             commissionable: hasOfferings,
                             ...(!hasOfferings ? { note: `Analyst profile available for consultation (${consult_tool}); deliverables not yet commissionable.` } : {})
                         };
@@ -959,7 +945,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search. Price: $20 per query.',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -1074,6 +1060,13 @@ export async function createServer(
                         const graphMeta = relevantGraphs[i];
                         const graphTotal = val?.total ?? (Array.isArray(val) ? val.length : (val?.rows?.length || 0));
                         const graphOnTopicTotal = val?.on_topic_total ?? val?.total_count ?? graphTotal;
+
+                        // Item 5: Drop rows from any graph whose on_topic_total === 0 before diversity reranking
+                        if (typeof val?.on_topic_total === 'number' && val.on_topic_total === 0) {
+                            console.error(`[fanout] dropped ${rows.length} zero-on-topic rows from ${graphMeta?.graph?.graph_id || 'unknown'}`);
+                            continue;
+                        }
+
                         for (const row of rows) {
                             const key = row.trendId || row.node_id || row.trendName || `${row.name}_${row.signal_score}`;
                             if (seen.has(String(key))) continue;
@@ -1100,7 +1093,18 @@ export async function createServer(
                             allRows.push(row);
                         }
                     }
+
+                    const tokens = specificQueryTokens(query);
+                    const catalog = getGraphs();
+                    const isRowOnTopic = (row: any) =>
+                        rowMatchesQueryTokens(row, tokens, catalog) ||
+                        (rowScore(row) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(row, searchedGraphs, catalog)] ?? 0.8));
+
                     allRows.sort((a, b) => {
+                        const onTopicA = isRowOnTopic(a) ? 1 : 0;
+                        const onTopicB = isRowOnTopic(b) ? 1 : 0;
+                        if (onTopicA !== onTopicB) return onTopicB - onTopicA;
+
                         const relA = a.relevance_score || a.semantic_score || a._score || 0;
                         const relB = b.relevance_score || b.semantic_score || b._score || 0;
                         // Primary: relevance score (includes evidence + freshness from API)
@@ -1163,7 +1167,12 @@ export async function createServer(
                         const overflow = allRows.slice(effectiveLimit);
                         const alternatives = overflow
                             .filter(r => getGraphId(r) !== dominantGraphId && getScore(r) >= qualityThreshold)
-                            .sort((a, b) => getScore(b) - getScore(a));
+                            .sort((a, b) => {
+                                const onTopicA = isRowOnTopic(a) ? 1 : 0;
+                                const onTopicB = isRowOnTopic(b) ? 1 : 0;
+                                if (onTopicA !== onTopicB) return onTopicB - onTopicA;
+                                return getScore(b) - getScore(a);
+                            });
 
                         if (alternatives.length === 0) return candidate;
 
@@ -1178,7 +1187,12 @@ export async function createServer(
                                     result.push(row);
                                     dominantUsed++;
                                 } else if (altQueue.length > 0) {
-                                    result.push(altQueue.shift()!);
+                                    const alt = altQueue.shift()!;
+                                    if (!isRowOnTopic(alt) && isRowOnTopic(row)) {
+                                        result.push(row);
+                                    } else {
+                                        result.push(alt);
+                                    }
                                 } else {
                                     result.push(row); // no alternatives left, keep original
                                 }
@@ -1377,10 +1391,15 @@ export async function createServer(
                     } catch { /* Broadening failed silently */ }
                 }
 
-                data = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                data = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data.total,
                     onTopicTotal: data.on_topic_total,
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_graph', query, data?.coverage);
                 logQueryResult(query, 'search', data?.coverage, searchedGraphs, data?.next_moves);
@@ -1582,7 +1601,7 @@ export async function createServer(
     // --- get_evidence ---
     server.tool(
         'get_evidence',
-        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool. Price: $0.50 per lookup.',
+        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -1690,8 +1709,13 @@ export async function createServer(
                 if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
                 let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/adjacent?${params.toString()}`, apiKey, resolveUserId(userId, uid));
 
-                data = addCoverageAnnotation(data, trend_id, [graphId], limit, true, getGraphs(), {
+                data = await addCoverageAnnotation(data, trend_id, [graphId], limit, true, getGraphs(), {
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
                 sessionTracker.recordNextMoves(data?.next_moves, trend_id);
 
@@ -2289,7 +2313,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble. Price: $30 per report.',
+        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -2395,7 +2419,7 @@ export async function createServer(
 
                 const trendCount = profile?.trend_footprint?.length || 0;
                 const coverageStatus: 'ok' | 'thin' | 'empty' = trendCount === 0 ? 'empty' : trendCount < 3 ? 'thin' : 'ok';
-                const brandNextMoves = generateNextMoves(
+                const brandNextMoves = await generateNextMoves(
                     profile?.trend_footprint || [],
                     brand_name,
                     graph_ids || [],
@@ -2409,6 +2433,11 @@ export async function createServer(
                         isBrandTracker: true,
                         competitiveLandscape,
                         earningsStatsSource,
+                        foddaRequest,
+                        apiKey,
+                        userId: resolveUserId(userId, uid),
+                        sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                        sessionTracker,
                     }
                 );
                 sessionTracker.recordNextMoves(brandNextMoves, brand_name);
@@ -2458,7 +2487,7 @@ export async function createServer(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation. Price: $10 per query.',
+        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation.',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty'). Include country names if searching non-US markets (e.g. 'Thailand consumer sentiment')."),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design', 'macro'. Do NOT pass 'culture' or 'technology' for macro economic or consumer sentiment queries — leave omitted or set to 'macro'."),
@@ -2491,7 +2520,7 @@ export async function createServer(
                         chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[supplemental] chargeQuery failed:', e.message));
 
-                        const nextMoves = generateNextMoves(
+                        const nextMoves = await generateNextMoves(
                             [],
                             query,
                             graph_ids || [],
@@ -2500,7 +2529,14 @@ export async function createServer(
                             undefined,
                             getGraphs(),
                             getAnalysts(),
-                            { knownBrand: getKnownBrand() }
+                            {
+                                knownBrand: getKnownBrand(),
+                                foddaRequest,
+                                apiKey,
+                                userId: resolveUserId(userId, uid),
+                                sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                                sessionTracker,
+                            }
                         );
                         if (data && typeof data === 'object') {
                             data.next_moves = nextMoves;
@@ -2597,10 +2633,15 @@ export async function createServer(
                 if (domainWithheld) return domainWithheld;
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'domain');
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_domain_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'domain_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2646,10 +2687,15 @@ export async function createServer(
                 if (expertWithheld) return expertWithheld;
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report' || g.graph_type === 'analyst');
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_expert_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2695,10 +2741,15 @@ export async function createServer(
                 if (reportWithheld) return reportWithheld;
 
                 const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'industry report');
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_report_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'report_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2718,7 +2769,7 @@ export async function createServer(
     // --- search_statistics ---
     server.tool(
         'search_statistics',
-        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage. Price: $0.50 per search.",
+        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage.",
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
@@ -2733,12 +2784,47 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search_statistics', graph_id);
 
+                // Check graph_id in catalog
+                const catalog = getGraphs();
+                const matchedGraph = catalog.find(g => g.graph_id === graph_id);
+                if (!matchedGraph) {
+                    const gidLower = graph_id.toLowerCase().trim();
+                    const nearest = catalog.find(g =>
+                        g.graph_id.toLowerCase() === gidLower ||
+                        g.graph_id.toLowerCase().includes(gidLower) ||
+                        gidLower.includes(g.graph_id.toLowerCase()) ||
+                        g.name.toLowerCase().includes(gidLower)
+                    );
+                    const resp = {
+                        statistics: [],
+                        total: 0,
+                        dataStatus: 'SCOPE_UNAVAILABLE',
+                        unavailable_graphs: [
+                            {
+                                graph_id,
+                                reason: 'unknown graph id (not in catalog)',
+                                ...(nearest ? { suggestion: nearest.graph_id } : {})
+                            }
+                        ],
+                        coverage: {
+                            status: 'empty',
+                            results_returned: 0,
+                            presentation: 'internal'
+                        },
+                        next_moves: {
+                            scope_prompt: true,
+                            presentation: 'internal'
+                        }
+                    };
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(resp, null, 2) }] };
+                }
+
                 const params = new URLSearchParams();
                 params.set('query', query);
                 if (limit !== undefined) params.set('limit', String(limit));
                 if (min_score !== undefined) params.set('min_score', String(min_score));
                 if (include_signals) params.set('include_signals', 'true');
-                const path = `/v1/graphs/${graph_id}/statistics?${params.toString()}`;
+                const path = `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`;
                 const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
                 // Inject theme block for visualization branding
                 if (data && typeof data === 'object') {
@@ -2747,12 +2833,28 @@ export async function createServer(
                 const statsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_statistics', apiKey, userId: resolveUserId(userId, uid), query }, 'search_statistics');
                 if (statsWithheld) return statsWithheld;
 
-                const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
+                const searchedGraphs = [matchedGraph];
+                const isFallbackTrendNodes = Boolean(
+                    data?._fallback_note ||
+                    data?.fallback === 'trend_nodes' ||
+                    (Array.isArray(data?.statistics) && data.statistics.some((r: any) => r.fallback === 'trend_nodes' || r._fallback_note))
+                );
+
+                const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
+
+                if (isFallbackTrendNodes && annotatedData?.coverage?.status === 'ok') {
+                    annotatedData.coverage.status = 'thin';
+                }
+
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_statistics', query, annotatedData?.coverage);
                 logQueryResult(query, 'search_statistics', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
@@ -2770,7 +2872,7 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide. Price: $0.50 per search.",
+        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide.",
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
@@ -2797,10 +2899,15 @@ export async function createServer(
                 if (insightsWithheld) return insightsWithheld;
 
                 const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
-                const annotatedData = addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
+                const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
                     knownBrand: getKnownBrand(),
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                    sessionTracker,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_insights', query, annotatedData?.coverage);
                 logQueryResult(query, 'search_insights', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2921,7 +3028,7 @@ export async function createServer(
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
     server.tool(
         'get_earnings_intelligence',
-        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance. Price: $30 per query.',
+        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance.',
         {
             ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
             brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
@@ -2974,7 +3081,7 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness. Price: $20 per query.',
+        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness.',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
             industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
@@ -3022,7 +3129,7 @@ export async function createServer(
     // One tool with a `view` parameter — not 5 separate tools (context budget).
     server.tool(
         'get_company_earnings',
-        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Price: $20 per query (coverage view is free). Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
+        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
         {
             mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot, history, qa, compare, guidance, coverage (free). Defaults to snapshot.'),
             view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends. history: narrative timeline across quarters. qa: per-analyst Q&A entries with thematic tagging and response directness. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free).'),
@@ -3118,7 +3225,7 @@ export async function createServer(
     // --- get_validated_trends ---
     server.tool(
         'get_validated_trends',
-        'Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda\'s analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals. Price: $25 per query.',
+        'Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda\'s analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals.',
         {
             ticker: z.string().optional().describe("Filter by company ticker symbol (e.g. 'NKE', 'LULU')."),
             sector: z.string().optional().describe("Filter by sector (e.g. 'retail', 'sportswear', 'beauty')."),
@@ -3632,7 +3739,7 @@ export async function createServer(
                     _presentation_hint: 'Present as a brainstorm map. Center: the query. First ring: seed trends. Second ring: adjacent territories. Highlight cross-trend brands and unexpected connections. Suggest follow-up explorations.',
                 };
 
-                const brainstormNextMoves = generateNextMoves(
+                const brainstormNextMoves = await generateNextMoves(
                     allResults || [],
                     query,
                     graphIdsToSearch || [],
@@ -3641,7 +3748,14 @@ export async function createServer(
                     undefined,
                     getGraphs(),
                     getAnalysts(),
-                    { knownBrand: getKnownBrand() }
+                    {
+                        knownBrand: getKnownBrand(),
+                        foddaRequest,
+                        apiKey,
+                        userId: resolveUserId(userId, uid),
+                        sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                        sessionTracker,
+                    }
                 );
                 sessionTracker.recordNextMoves(brainstormNextMoves, query);
                 (brainstormMap as any).next_moves = brainstormNextMoves;
@@ -3727,7 +3841,7 @@ export async function createServer(
     // --- manage_scheduled_reports ---
     server.tool(
         'manage_scheduled_reports',
-        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Price: $20 per run. Supports topic research or brand intelligence report types.',
+        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Supports topic research or brand intelligence report types.',
         {
             action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']),
             query: z.string().optional().describe('For "create": the research query to run'),
@@ -3802,7 +3916,7 @@ export async function createServer(
     // --- read_url ---
     server.tool(
         'read_url',
-        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis. Price: $20 per URL lookup.',
+        'Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis.',
         {
             url: z.string().describe('The URL to read and extract content from'),
             userId: z.string().optional().describe('Optional user identifier for usage tracking.')
@@ -3872,13 +3986,13 @@ export async function createServer(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Price: $55 (light mode) or $100 (heavy mode). Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
+        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
         {
             query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
             sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
             graphId: z.string().optional().describe('Optional specific graph ID to limit the research to'),
-            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster research ($55), "heavy" for comprehensive deep dive ($100). Defaults to "light".'),
-            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster research ($55), "heavy" for comprehensive deep dive ($100). Defaults to "light".'),
+            mode: z.enum(['light', 'heavy']).optional().describe('Research mode: "light" for faster research, "heavy" for comprehensive deep dive. Defaults to "light".'),
+            depth: z.enum(['light', 'heavy']).optional().describe('Research depth: "light" for faster research, "heavy" for comprehensive deep dive. Defaults to "light".'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Deep Research Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -4594,7 +4708,7 @@ export async function createServer(
     // --- request_deliverable (Agentic Analysts Phase C) ---
     server.tool(
         'request_deliverable',
-        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon."',
+        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, 50k budget, 90-day horizon."',
         {
             analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
@@ -4623,7 +4737,6 @@ export async function createServer(
                     `Deliverable commissioned from ${result?.offering?.name || offering_key}.`,
                     `Job ID: ${result?.job_id}`,
                     `Status: ${result?.status || 'working'}`,
-                    result?.price_usd != null ? `Price: $${result.price_usd}` : '',
                     `The analyst is producing this in the background. Poll with check_deliverable_status(job_id: "${result?.job_id}") until status is "completed", then present the artifact links.`,
                 ].filter(Boolean);
                 return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
@@ -4671,7 +4784,7 @@ export async function createServer(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "Second, here\'s the flow: you provide answers in this chat session, then we\'ll run a background research project on your public work, then we run an AI probe of your expertise and reasoning style, and finally schedule a 15–20 minute audio interview to explore your forward-looking predictions, contrarian views, and practical problem-solving — filling the gaps that chat history alone cannot capture. You\'ll get to review everything before anything is submitted." When indexing or analyzing expert data, reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). When presenting the expertise map JSON to the expert, label it "Expertise Review - Step 1" and introduce it with: "This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker. The details reflect the themes above. If you are not happy about something I have included, just provide the feedback and I will run the exercise again to update the document." Never use the title "Iteration Feedback Invitation". Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". Do not state or output any framing about older material being demoted to legacy canon.\nQ3 - Preferred 1-hour consultation rate (single select): "If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, $250/hr, $500/hr, $750/hr, $1,000/hr, $2,000/hr)". Record this value under callPrice in submit_basic_info.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label and Stage 5 theme cards MUST stay legible on any page background (this often renders on a dark/black page): give the "You are here" label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. FOR THEME-SELECTION CARDS (STAGE 5): Never pair a hard-coded light fill (#f5f0ff) with theme-inherited foreground text (which flips to white/near-white in dark mode). Either (1) use native client surface and text tokens for card backgrounds and body text so light/dark mode auto-adjusts, reserving #663399 for borders, checkboxes, and active dots; or (2) if prescribing exact hexes, ALWAYS pin foreground and background together — a #f5f0ff fill MUST carry dark-purple text (#3C3489 or #26215C), never inherited or theme-default text.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
+        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "Second, here\'s the flow: you provide answers in this chat session, then we\'ll run a background research project on your public work, then we run an AI probe of your expertise and reasoning style, and finally schedule a 15–20 minute audio interview to explore your forward-looking predictions, contrarian views, and practical problem-solving — filling the gaps that chat history alone cannot capture. You\'ll get to review everything before anything is submitted." When indexing or analyzing expert data, reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). When presenting the expertise map JSON to the expert, label it "Expertise Review - Step 1" and introduce it with: "This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker. The details reflect the themes above. If you are not happy about something I have included, just provide the feedback and I will run the exercise again to update the document." Never use the title "Iteration Feedback Invitation". Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". Do not state or output any framing about older material being demoted to legacy canon.\nQ3 - Preferred 1-hour consultation rate (single select): "If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, 250 USD/hr, 500 USD/hr, 750 USD/hr, 1,000 USD/hr, 2,000 USD/hr)". Record this value under callPrice in submit_basic_info.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label and Stage 5 theme cards MUST stay legible on any page background (this often renders on a dark/black page): give the "You are here" label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. FOR THEME-SELECTION CARDS (STAGE 5): Never pair a hard-coded light fill (#f5f0ff) with theme-inherited foreground text (which flips to white/near-white in dark mode). Either (1) use native client surface and text tokens for card backgrounds and body text so light/dark mode auto-adjusts, reserving #663399 for borders, checkboxes, and active dots; or (2) if prescribing exact hexes, ALWAYS pin foreground and background together — a #f5f0ff fill MUST carry dark-purple text (#3C3489 or #26215C), never inherited or theme-default text.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live.\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },

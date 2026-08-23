@@ -5,6 +5,59 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.34] - 2026-08-22
+
+### Changed & Enhanced (Next Moves on Thin Niches & Search-Envelope Hygiene — `briefs/brief_next_moves_thin_niche_and_search_hygiene.md`)
+- **Thin-Niche Graph Exhaustion Guard (`src/coverageRelevance.ts`)**:
+  - Added guard suppressing `more_in_graph` when `trend_count <= 15` (e.g. single reports) or when `on_topic_total >= 0.6 * trend_count` (query exhausts $\ge 60\%$ of graph inventory), preventing offering nonexistent depth.
+  - Falls through cleanly to unsearched `adjacent_room` or `honest_thin`.
+  - Guaranteed `adjacent.graph_id` is never equal to `thread.graph_id` or any searched graph (`searchedGraphIds.has(...)`). If only self or searched graphs are available, thread is cleanly omitted.
+- **Publisher / Curator Brand Exclusion & Deduplication (`src/coverageRelevance.ts`)**:
+  - Deduplicated extracted brands on normalized alphanumeric keys.
+  - Excluded publisher, agency, and curator tokens (`dentsu`, `havas`, `psfk`, `nielseniq`, `niq`, `wpp`, `omnicom`, `ipg`, `publicis`, `accenture`, `deloitte`, `mckinsey`, `bcg`, `bain`, `gartner`, `forrester`, etc.) and searched graph metadata names/curators.
+  - If 0 on-topic brands survive, `specific.brands` is left `undefined` instead of falling back to off-topic noise rows.
+- **Expert Reason Word-Boundary Formatting (`src/coverageRelevance.ts`, `src/catalogCache.ts`)**:
+  - Added `expert_in?: string;` and `topics?: string[];` to `CatalogAnalyst`.
+  - Formatted expert reason to truncate `expert_in` or the first clause of `description` on a word boundary ($\le 60$ chars), formatted as `covers ${lane} directly`, never ending mid-word.
+- **`search_statistics` Unknown-ID & Fallback Resolution (`src/toolHandlers.ts`)**:
+  - Checked `graph_id` against `getGraphs()`. If unknown, returns `unavailable_graphs` with nearest suggestion, `statistics: []`, `total: 0`, and `coverage.status = "empty"`.
+  - Set `coverage.status = "thin"` when API indicates `_fallback_note` or `fallback: "trend_nodes"`.
+- **Search Fan-out Hygiene & On-Topic Sorting (`src/toolHandlers.ts`)**:
+  - Dropped rows from graphs with `on_topic_total === 0` prior to diversity reranking, logging `[fanout] dropped N zero-on-topic rows from <graph>`.
+  - Sorted on-topic rows above off-topic rows, protecting on-topic leaders during diversity reranking.
+- **Cost Silence Guards & Airtable Sync Protection (`scripts/sync-descriptions-from-airtable.mjs`, `scripts/generate-tools-manifest.mjs`, `src/systemPrompt.ts`)**:
+  - Stripped trailing `Price: ...` in `scripts/sync-descriptions-from-airtable.mjs` before writing to `toolHandlers.ts`.
+  - Added build-time cost silence assertion guard in `scripts/generate-tools-manifest.mjs` failing on `/Price:\s*\$|\$\s?\d/i` in tool descriptions or system prompt.
+  - Bounded `suggestCache` to 500 entries with oldest-entry eviction.
+  - Stripped legacy "and follow-ups cost less" from `src/systemPrompt.ts` line 108 and removed dead `costPerCall` parameter.
+  - Tightened `specific_stat` stopword list and required matching $\ge 2$ tokens.
+- **Verification & Test Suite**:
+  - Added Tests 19–23 to `src/test_next_moves.ts` covering small graph exhaustion, brand publisher exclusions, word-boundary expert reasons, and self-adjacent prevention.
+  - Verified 100% pass across all unit test suites and novel-query transcript checks.
+
+## [1.46.33] - 2026-08-22
+
+### Changed & Enhanced (MCP Cost Silence & Dynamic Statistics Source — `briefs/brief_no_cost_confirm_and_stats_source_from_suggest.md`)
+- **Cost Silence in Conversational Answers (`src/systemPrompt.ts`)**:
+  - Added `### RULE: CostSilence` to `STATIC_BEHAVIORAL_RULES` — strictly forbidding stating, estimating, or confirming tool/query/deliverable costs or printing currency amounts, credits, or token counts for digital products.
+  - Pricing inquiries route cleanly to `https://fodda.ai/pricing` without figures.
+  - Preserved `book_a_call.rate_display` verbatim as the sole priced exception for human expert booking.
+  - Removed deprecated `costBlock` and `getToolCostSummary` interpolation from system prompts.
+- **Dynamic Statistics Source via `/v1/supplemental/suggest` (`src/coverageRelevance.ts`, `src/sessionTracker.ts`)**:
+  - Implemented async `fetchSupplementalSuggest` with 1.5s time-boxing (`Promise.race`) and in-memory TTL caching (5 min).
+  - For stat/market queries or `thin|empty` coverage, dynamically retrieves registry suggestions, filtering out draft sources, and formatting the top 1–2 public source names (`"<Name A> and <Name B>"` or `"<Name A>"`).
+  - Added deterministic fallback to regex-based statistics lookup on suggest timeout or failure.
+  - Broadened token matching in `sessionTracker.ts` for `specific_stat` and added telemetry for suggest paths (`cache_hit`, `network_fresh`, `timeout_fallback`, `error_fallback`, `regex_direct`).
+- **Tool Descriptions & Handlers Cleaned (`src/toolHandlers.ts`)**:
+  - Stripped `Price: ...` strings from all tool descriptions (`search_graph`, `get_evidence`, `brand_tracker`, `get_supplemental_context`, `search_statistics`, `search_insights`, `get_earnings_intelligence`, `get_earnings_divergence`, `get_company_earnings`, `get_validated_trends`, `manage_scheduled_reports`, `read_url`, `deep_research_topic`).
+  - Removed `cost_units` and `getCostStr()` from `get_capabilities`, adding top-level `pricing_url: "https://fodda.ai/pricing"`.
+  - Removed top-level `price` and `price_usd` from `list_analysts` offerings, keeping `rate_display` for `book_a_call`.
+  - Removed `Price: $...` output line from `request_deliverable`.
+  - Converted `addCoverageAnnotation` and `generateNextMoves` callers to async across all tools.
+- **Verification & Test Suite**:
+  - Updated unit tests in `src/test_coverage_relevance.ts` and `src/test_next_moves.ts` (18 unit tests passed).
+  - Validated all 14 novel-query live transcripts in `src/test_next_moves_transcripts.ts` with 0 banned terms, 0 cost mentions, and 3-sentence closing blocks.
+
 ## [1.46.32] - 2026-08-22
 
 ### Fixed & Enhanced (MCP Identity Gap & Internal Test Session Tagging — `briefs/brief_mcp_identity_gap.md`)

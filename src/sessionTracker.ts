@@ -355,9 +355,21 @@ export function createSessionTracker() {
             ) {
                 return 'specific_stat';
             }
-            const statWords = lastNextMoves.specific.statistics_source.toLowerCase().split(/\s+/).filter(w => w.length > 3);
-            if (statWords.some(w => q.includes(w))) {
+            const stopWords = new Set([
+                'and', 'or', 'the', 'in', 'of', 'for', 'with', 'to', 'a', 'an', 'from',
+                'data', 'metrics', 'series', 'stats', 'statistics', 'intelligence',
+                'trends', 'trend', 'search', 'interest', 'market', 'product', 'catalog', 'signals', 'report'
+            ]);
+            const statSourceLower = lastNextMoves.specific.statistics_source.toLowerCase();
+            if (q.includes(statSourceLower)) {
                 return 'specific_stat';
+            }
+            const statWords = statSourceLower.split(/[\s,&/+-]+/).filter(w => w.length > 2 && !stopWords.has(w));
+            if (statWords.length > 0) {
+                const matchedCount = statWords.filter(w => q.includes(w)).length;
+                if (matchedCount >= Math.min(2, statWords.length)) {
+                    return 'specific_stat';
+                }
             }
         }
 
@@ -438,6 +450,24 @@ export function createSessionTracker() {
         return 'none';
     }
 
+    const suggestPaths: Array<'suggest' | 'regex-fallback'> = [];
+
+    function recordSuggestPath(path: 'suggest' | 'regex-fallback'): void {
+        suggestPaths.push(path);
+    }
+
+    function getSuggestStats(): { total: number; suggest: number; fallback: number; hitRate: number } {
+        const total = suggestPaths.length;
+        const suggest = suggestPaths.filter(p => p === 'suggest').length;
+        const fallback = total - suggest;
+        return {
+            total,
+            suggest,
+            fallback,
+            hitRate: total > 0 ? suggest / total : 0,
+        };
+    }
+
     return {
         trackSearch,
         detectFrustration,
@@ -448,6 +478,8 @@ export function createSessionTracker() {
         recordNextMoves,
         getLastNextMoves,
         evaluateNextMoveMatch,
+        recordSuggestPath,
+        getSuggestStats,
     };
 }
 

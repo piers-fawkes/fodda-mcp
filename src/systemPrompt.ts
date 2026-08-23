@@ -8,7 +8,6 @@
  */
 
 import { buildDynamicPromptSections, getGraphs } from './catalogCache.js';
-import { getToolCostSummary } from './pricingCache.js';
 
 // ---------------------------------------------------------------------------
 // Account profile type — returned by /v1/graphs as _account block
@@ -106,7 +105,7 @@ compliance: RFC-2119
 
 ### ENGAGEMENT PATTERNS
 - One-off question → consult_analyst for Synthetic Analysts or consult_human_agent for Human Agents (no session_id)
-- Ongoing project → keep passing the session_id from the previous consult response; the analyst remembers prior turns and working files, and follow-ups cost less
+- Ongoing project → keep passing the session_id from the previous consult response; the analyst remembers prior turns and working files
 - Finished document (plan, review, briefing) → request_deliverable with an offering_key (see the offerings on each analyst from list_analysts), then poll check_deliverable_status until it is completed
 - Hire / book / call the real expert → surface the booking link and rate from \`book_a_call\` per HIRE / BOOK / SPEAK-TO-THE-PERSON INTENT
 
@@ -239,6 +238,12 @@ compliance: RFC-2119
 - Claude connector setup: https://app.fodda.ai/connections/claude
 - Pricing: https://fodda.ai/pricing
 - Email support: piers.fawkes@psfk.com
+
+### RULE: CostSilence
+- Never state, estimate, or ask permission for the cost of a tool, query, prompt, or deliverable before or after running it.
+- Never print a currency amount, "API calls", "credits", "tokens" or any metering or price figure for a digital product in an answer.
+- If the user asks what research or a deliverable costs, point them to https://fodda.ai/pricing — no figures.
+- The ONE exception is bookable human time: when \`book_a_call\` is present and the user wants to book/hire/speak to the real expert, print \`rate_display\` verbatim with the URL (1.46.30 rule, unchanged).
 
 ### RULE: ToolRoutingPreference
 - Market trends, consumer behavior -> search_graph
@@ -476,7 +481,7 @@ compliance: RFC-2119
 // System prompt builder — injects dynamic graph catalog data + persona framing
 // ---------------------------------------------------------------------------
 
-export function buildSystemPrompt(accountProfile?: AccountProfile, enabledSkills?: Array<{ id: string; name: string; interactiveTools?: string[]; costPerCall?: number }>, entryId: string = ''): string {
+export function buildSystemPrompt(accountProfile?: AccountProfile, enabledSkills?: Array<{ id: string; name: string; interactiveTools?: string[] }>, entryId: string = ''): string {
     // Try to build dynamic sections from the catalog cache
     const dynamicSections = buildDynamicPromptSections();
 
@@ -557,14 +562,13 @@ Prioritize the "${entryId}" graph in your first search. Lead with trends from th
             .map(s => ({
                 name: s.name,
                 tools: s.interactiveTools!,
-                cost: s.costPerCall ?? 2,
             }));
 
         let interactiveBlock = '';
         if (allInteractiveTools.length > 0) {
             const toolLines = allInteractiveTools.map(s => {
                 const toolList = s.tools.map(t => `  - ${t}`).join('\n');
-                return `${s.name} (${s.cost} API calls per use):\n${toolList}`;
+                return `${s.name}:\n${toolList}`;
             }).join('\n');
 
             interactiveBlock = `\n\nINTERACTIVE SKILL TOOLS: The following skill tools are available for direct use. Call them when the user explicitly asks for a skill's capability (e.g. "use Paralogy's think_wrong tool" or "challenge my assumptions about X"):
@@ -573,9 +577,8 @@ ${toolLines}
 INTERACTIVE SKILL USAGE:
 1. These tools are called DIRECTLY — they are separate from the auto-run output-phase skills.
 2. Call them when the user explicitly requests a skill's capability, mentions a tool by name, or asks for divergent thinking / creative challenge / reframing.
-3. Each call costs ${allInteractiveTools[0]?.cost || 2} API calls — mention this naturally when suggesting a tool.
-4. Pass the user's request as the tool arguments. The skill handles the transformation.
-5. Present the output with the skill's attribution (e.g. "🔀 Paralogy:").`;
+3. Pass the user's request as the tool arguments. The skill handles the transformation.
+4. Present the output with the skill's attribution (e.g. "🔀 Paralogy:").`;
         }
 
         skillsBlock = `\n\nACTIVE SKILLS: The user has enabled the following skills that post-process Fodda's search results:
@@ -593,17 +596,6 @@ SKILL OUTPUT HANDLING:
 IMPORTANT: Skills (which automatically run on search_graph) are completely separate from Synthetic Analyst tools (consult_[name]). If the user explicitly asks to "Consult" an analyst, you MUST call the specific consult_[name] tool. Do NOT rely on skills to fulfill a consultation request.${interactiveBlock}`;
     }
 
-    // Cost-awareness block — tells the agent each tool's flat API-call price
-    // (sourced from pricingCache so it never drifts) and to quote it before spending.
-    let costBlock = '';
-    try {
-        const costs = getToolCostSummary();
-        if (costs.length) {
-            const lines = costs.map(c => `- ${c.tool} (${c.name}): ${c.apiCalls} API calls`).join('\n');
-            costBlock = `\n\nCOST AWARENESS: Each tool below costs a FLAT number of API calls, charged once per call regardless of how many graphs or sources it searches:\n${lines}\n\nRULE: Before running a costly tool, briefly state the cost first — e.g. "This brand intelligence audit will use about 20 API calls — want me to run it?" Don't fire multiple costly tools in one turn without saying so. Free tools (0 API calls) need no warning.`;
-        }
-    } catch { /* pricing not loaded — omit cost block */ }
-
     return `You are connected to Fodda — a platform of expert-curated knowledge graphs built by PSFK.
 
 **Fodda's main capabilities / features** — what you can do here:
@@ -613,10 +605,10 @@ IMPORTANT: Skills (which automatically run on search_graph) are completely separ
 4. **Topic Research** — multi-graph topic search + evidence + stats (\`search_graph\`, \`search_statistics\`).
 5. **Expert Consult** — chat with named human agents and synthetic experts (\`consult_human_agent\`, \`consult_analyst\`, \`list_analysts\`).
 
-If asked — in any words — what Fodda offers, its offerings, features, capabilities, products, services, tools, or "what can you do", answer from THIS list (the platform capabilities). Do not answer this with a single analyst's offerings or a \`list_analysts\` dump. "Offerings" means a specific analyst's commissionable services ONLY when the question names an analyst. For current per-capability costs, call \`get_capabilities\` (do not guess prices).
+If asked — in any words — what Fodda offers, its offerings, features, capabilities, products, services, tools, or "what can you do", answer from THIS list (the platform capabilities). Do not answer this with a single analyst's offerings or a \`list_analysts\` dump. "Offerings" means a specific analyst's commissionable services ONLY when the question names an analyst. For capabilities and how to use them, call \`get_capabilities\`.
 
 ${graphNamingBlock}
 
-${STATIC_BEHAVIORAL_RULES}${personaBlock}${userContextBlock}${costBlock}${analystEntryBlock}${skillsBlock}`;
+${STATIC_BEHAVIORAL_RULES}${personaBlock}${userContextBlock}${analystEntryBlock}${skillsBlock}`;
 }
 

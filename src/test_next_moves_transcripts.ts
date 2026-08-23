@@ -117,6 +117,24 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
         return mockAnalystsList;
     }
 
+    if (endpoint.includes('/v1/supplemental/suggest')) {
+        const q = endpoint.includes('query=') ? decodeURIComponent(endpoint.split('query=')[1]?.split('&')[0] || '') : '';
+        if (q.includes('collectible') || q.includes('card') || q.includes('memorabilia')) {
+            return {
+                sources: [
+                    { id: 'google_trends', name: 'Google Trends' },
+                    { id: 'amazon_price', name: 'Amazon Price Intelligence' },
+                ]
+            };
+        }
+        return {
+            sources: [
+                { id: 'google_trends', name: 'Google Trends' },
+                { id: 'census_retail', name: 'Census Retail Data' }
+            ]
+        };
+    }
+
     // Mock adjacent endpoint for discover_adjacent_trends & brainstorm_topic
     if (endpoint.includes('/adjacent')) {
         return {
@@ -140,6 +158,16 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
                 rows: [],
                 total: 0,
                 on_topic_total: 0
+            };
+        }
+
+        if (q.includes('collectible') || q.includes('card')) {
+            return {
+                rows: [
+                    { title: 'Sports Card Vaults and Fractional Trading', brandNames: ['Topps', 'Fanatics'], graphId: 'retail', score: 1.8, topics: ['retail'] }
+                ],
+                total: 1,
+                on_topic_total: 1
             };
         }
 
@@ -321,7 +349,7 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
 // Banned words checker
 function verifyZeroCountBannedTerms(block: string): void {
     const bannedPatterns: Array<{ name: string; regex: RegExp }> = [
-        { name: 'Cost / Token terms', regex: /\b(cost|price|token|tokens|spt|\$|cents?)\b/i },
+        { name: 'Cost / Token terms', regex: /\b(cost|costs|token|tokens|spt|\$|cents?)\b|\bprice\b(?!\s+(?:intelligence|index|tracker|data))/i },
         { name: 'Technical slugs', regex: /\b(ben-dietz-sic|peter-abraham-bicycles-cycling|brand-cmo|retail-lead)\b/i },
         { name: 'Tool names', regex: /\b(search_graph|get_domain_intelligence|get_expert_intelligence|consult_analyst|consult_human_agent|get_supplemental_context|search_statistics|brand_tracker)\b/i },
         { name: 'Emojis', regex: /[\u{1F300}-\u{1F9FF}]/u },
@@ -365,7 +393,8 @@ async function runTranscripts() {
         { tool: 'discover_adjacent_trends', args: { graphId: 'retail', trend_id: '2507.0' }, title: 'Query 10: discover_adjacent_trends — Retail Adjacent' },
         { tool: 'brainstorm_topic', args: { query: 'sustainable luxury retail packaging innovation' }, title: 'Query 11: brainstorm_topic — Luxury Packaging' },
         { tool: 'consult_analyst', args: { analyst_id: 'ben-dietz-sic', query: 'How should cultural brands approach community-led commerce in 2026?' }, title: 'Query 12: consult_analyst — Ben Dietz (Expert Consult)' },
-        { tool: 'consult_human_agent', args: { analyst_id: 'ben-dietz-sic', query: 'What is the future of creator-led retail?' }, title: 'Query 13: consult_human_agent — Ben Dietz (Human Agent Consult)' }
+        { tool: 'consult_human_agent', args: { analyst_id: 'ben-dietz-sic', query: 'What is the future of creator-led retail?' }, title: 'Query 13: consult_human_agent — Ben Dietz (Human Agent Consult)' },
+        { tool: 'search_graph', args: { query: 'collectible card trading and sports memorabilia market' }, title: 'Query 14: search_graph — Neil\'s Collectibles Query (Suggest-backed stats line)' }
     ];
 
     const transcripts: string[] = [];

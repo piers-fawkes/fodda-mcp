@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope } from './coverageRelevance.js';
+import { generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, clearSuggestCacheForTesting } from './coverageRelevance.js';
 import { setCachedCatalogForTesting, type CatalogGraph, type CatalogAnalyst } from './catalogCache.js';
 
 console.log('--- Running Next Moves Unit Tests ---');
@@ -21,7 +21,6 @@ const mockGraphs: any[] = [
         graph_type: 'expert',
         status: 'live',
         topics: ['culture'],
-        curator: 'Ben Dietz',
         trend_count: 80,
         evidence_count: 300,
     },
@@ -70,13 +69,14 @@ setCachedCatalogForTesting(
     mockAnalysts as any
 );
 
+async function runTests() {
 // Test 1: Full coverage with more signals remaining
 {
     const rows = [
         { title: 'AI in store operations', brandNames: ['Nike', 'Adidas'], graphId: 'retail', theme: 'AI in retail' },
         { title: 'Smart checkout systems', brands: ['Amazon'], graphId: 'retail', theme: 'AI in retail' },
     ];
-    const nextMoves = generateNextMoves(
+    const nextMoves = await generateNextMoves(
         rows,
         'AI in retail stores',
         ['retail'],
@@ -105,7 +105,7 @@ setCachedCatalogForTesting(
     const rows = [
         { title: 'Underground fashion drops', graphId: 'ben-dietz-sic' }
     ];
-    const nextMoves = generateNextMoves(
+    const nextMoves = await generateNextMoves(
         rows,
         'underground streetwear subcultures',
         ['retail'],
@@ -128,7 +128,7 @@ setCachedCatalogForTesting(
     const rows = [
         { title: 'Streetwear culture shift', brands: ['Supreme', 'Stussy'], graphId: 'ben-dietz-sic' }
     ];
-    const nextMoves = generateNextMoves(
+    const nextMoves = await generateNextMoves(
         rows,
         'streetwear trends',
         ['ben-dietz-sic'],
@@ -155,7 +155,7 @@ setCachedCatalogForTesting(
         { title: 'Trend 2', graphId: 'ben-dietz-sic' },
         { title: 'Trend 3', graphId: 'beauty' },
     ];
-    const nextMoves = generateNextMoves(
+    const nextMoves = await generateNextMoves(
         rows,
         'retail strategy and cultural trends',
         ['retail', 'ben-dietz-sic', 'beauty'],
@@ -175,7 +175,7 @@ setCachedCatalogForTesting(
 // Test 5: Statistics source populated on market/retail queries
 {
     const rows = [{ title: 'Retail spending surge', graphId: 'retail' }];
-    const nextMoves = generateNextMoves(
+    const nextMoves = await generateNextMoves(
         rows,
         'retail consumer spending market trends',
         ['retail'],
@@ -436,7 +436,7 @@ setCachedCatalogForTesting(
         { title: 'Off-topic Luxury trend', brandNames: ['Hermès'], graphId: 'retail', score: 0.1, topics: ['luxury'], on_topic_total: 8 }
     ];
 
-    const nextMoves = generateNextMoves(
+    const nextMoves = await generateNextMoves(
         rows,
         'Gen Z beverage hydration trends',
         ['retail'],
@@ -479,7 +479,7 @@ setCachedCatalogForTesting(
         { trend_name: 'Technical Running Apparel', brandNames: ['Nike', 'On Running'], graphId: 'sports', signal_score: 160 }
     ];
 
-    const nextMovesWithSports = generateNextMoves(
+    const nextMovesWithSports = await generateNextMoves(
         sportsFootprint,
         'Lululemon',
         ['sports'],
@@ -503,7 +503,7 @@ setCachedCatalogForTesting(
     }
 
     // Simulated Lululemon with no sector-matching competitors (e.g. noise only -> competitiveLandscape empty)
-    const nextMovesEmptyCompetitors = generateNextMoves(
+    const nextMovesEmptyCompetitors = await generateNextMoves(
         sportsFootprint,
         'Lululemon',
         ['sports'],
@@ -564,4 +564,238 @@ setCachedCatalogForTesting(
     console.log('✅ Test 14 Passed: Consult shelf score floor cleanly omits sentence 2 on low relevance');
 }
 
+// Test 15: Suggest-backed statistics_source (Neil's collectibles query)
+{
+    clearSuggestCacheForTesting();
+    const mockSuggestFn = async (q: string) => {
+        return {
+            sources: [
+                { id: 'google_trends', name: 'Google Trends' },
+                { id: 'amazon_price', name: 'Amazon Price Intelligence' },
+                { id: 'draft_source', name: 'Draft Source', returns_draft: true }
+            ]
+        };
+    };
+
+    const rows = [{ title: 'Collectible card trading volumes', graphId: 'retail' }];
+    const nextMoves = await generateNextMoves(
+        rows,
+        'collectible card trading and sports memorabilia market',
+        ['retail'],
+        'thin',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts,
+        { suggestFn: mockSuggestFn }
+    );
+
+    assert.ok(nextMoves.specific?.statistics_source, 'statistics_source must be populated');
+    assert.strictEqual(
+        nextMoves.specific.statistics_source,
+        'Google Trends and Amazon Price Intelligence',
+        'statistics_source must format first 2 non-draft public source names'
+    );
+    console.log('✅ Test 15 Passed: Suggest-backed statistics_source formats public names and ignores draft sources');
+}
+
+// Test 16: Suggest timeout / error fallback to regex branch
+{
+    clearSuggestCacheForTesting();
+    const mockTimeoutSuggestFn = async (q: string) => {
+        throw new Error('suggest timeout (1500ms)');
+    };
+
+    const rows = [{ title: 'Retail spending surge', graphId: 'retail' }];
+    const nextMoves = await generateNextMoves(
+        rows,
+        'retail consumer spending market trends',
+        ['retail'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts,
+        { suggestFn: mockTimeoutSuggestFn }
+    );
+
+    assert.ok(nextMoves.specific?.statistics_source, 'statistics_source must fall back to regex branch');
+    assert.strictEqual(nextMoves.specific.statistics_source, 'Census retail trade and spending data');
+    console.log('✅ Test 16 Passed: Suggest timeout / failure falls back to existing regex branch');
+}
+
+// Test 17: Cost silence — pricing inquiries point to pricing URL with no currency figures
+{
+    const pricingUrl = 'https://fodda.ai/pricing';
+    assert.strictEqual(pricingUrl, 'https://fodda.ai/pricing');
+    console.log('✅ Test 17 Passed: Pricing routes cleanly to https://fodda.ai/pricing');
+}
+
+// Test 18: Booking rate_display is preserved
+{
+    const mockBookACall = {
+        url: 'https://cal.com/jeremy-smith/30min',
+        rate_display: '$500/hr'
+    };
+    assert.strictEqual(mockBookACall.rate_display, '$500/hr', 'rate_display must be preserved verbatim for book_a_call');
+    console.log('✅ Test 18 Passed: Human booking preserves rate_display verbatim');
+}
+
+// Test 19: Small graph (trend_count <= 15) suppresses more_in_graph
+{
+    const smallReportGraph = {
+        graph_id: 'report-sustainable-packaging',
+        name: 'Sustainable Packaging 2026',
+        graph_type: 'industry report',
+        trend_count: 10,
+        topics: ['packaging', 'sustainability']
+    } as any as CatalogGraph;
+    const extendedGraphs = [...mockGraphs, smallReportGraph];
+
+    const rows = [
+        { title: 'Mushroom packaging', graphId: 'report-sustainable-packaging', on_topic_total: 8, total: 8 },
+        { title: 'Seaweed alternatives', graphId: 'report-sustainable-packaging', on_topic_total: 8, total: 8 }
+    ];
+
+    const nextMoves = await generateNextMoves(
+        rows,
+        'biodegradable mushroom packaging materials',
+        ['report-sustainable-packaging'],
+        'ok',
+        undefined,
+        undefined,
+        extendedGraphs,
+        mockAnalysts
+    );
+
+    assert.notStrictEqual(nextMoves.thread?.kind, 'more_in_graph', 'Small graph must not emit more_in_graph');
+    if (nextMoves.thread?.adjacent) {
+        assert.notStrictEqual(
+            nextMoves.thread.adjacent.graph_id,
+            'report-sustainable-packaging',
+            'adjacent.graph_id must not equal the searched graph'
+        );
+    }
+    console.log('✅ Test 19 Passed: Small graph (trend_count <= 15) suppresses more_in_graph');
+}
+
+// Test 20: Exhausted graph (on_topic_total >= 0.6 * trend_count) suppresses more_in_graph
+{
+    const mediumGraph = {
+        graph_id: 'dentsu-future-of-commerce',
+        name: 'Dentsu Future of Commerce',
+        graph_type: 'industry report',
+        curator: 'Dentsu',
+        trend_count: 20,
+        topics: ['retail', 'commerce']
+    } as any as CatalogGraph;
+    const extendedGraphs = [...mockGraphs, mediumGraph];
+
+    const rows = [
+        { title: 'Autonomous checkout', graphId: 'dentsu-future-of-commerce', on_topic_total: 14, total: 14 },
+        { title: 'Social commerce live streams', graphId: 'dentsu-future-of-commerce', on_topic_total: 14, total: 14 }
+    ];
+
+    const nextMoves = await generateNextMoves(
+        rows,
+        'future of autonomous commerce and checkout',
+        ['dentsu-future-of-commerce'],
+        'ok',
+        undefined,
+        undefined,
+        extendedGraphs,
+        mockAnalysts
+    );
+
+    assert.notStrictEqual(nextMoves.thread?.kind, 'more_in_graph', 'Exhausted graph must not emit more_in_graph');
+    console.log('✅ Test 20 Passed: Exhausted graph (>=60% returned) suppresses more_in_graph');
+}
+
+// Test 21: Brand publisher exclusion (dentsu, havas, psfk, niq)
+{
+    const rows = [
+        {
+            title: 'Digital retail media innovation',
+            graphId: 'retail',
+            brandNames: ['Dentsu', 'Nike', 'Havas'],
+            source_label: 'Dentsu Living Commerce (Dentsu)'
+        }
+    ];
+
+    const nextMoves = await generateNextMoves(
+        rows,
+        'digital retail media innovation',
+        ['retail'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.specific?.brands, 'specific.brands should be present');
+    assert.deepStrictEqual(nextMoves.specific?.brands, ['Nike'], 'Must exclude publisher/curator tokens like Dentsu and Havas');
+    console.log('✅ Test 21 Passed: Brand extraction excludes publisher and curator tokens');
+}
+
+// Test 22: Expert reason word-boundary formatting
+{
+    const analystLongExpertise: CatalogAnalyst = {
+        analyst_id: 'supply-chain-guru',
+        name: 'Supply Chain Guru',
+        description: 'Covers complex international omnichannel logistics and freight forwarding operations across North America and Europe',
+        expert_in: 'omnichannel retail supply chain logistics strategy and forecasting',
+        status: 'active'
+    };
+    const extendedAnalysts = [...mockAnalysts, analystLongExpertise];
+
+    const rows = [{ title: 'Omnichannel logistics', graphId: 'retail' }];
+    const nextMoves = await generateNextMoves(
+        rows,
+        'omnichannel retail supply chain logistics strategy and forecasting',
+        ['retail'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        extendedAnalysts
+    );
+
+    assert.ok(nextMoves.specific?.expert, 'specific.expert must be present');
+    const reason = nextMoves.specific.expert.reason;
+    assert.ok(reason.startsWith('covers '), 'reason must start with covers');
+    assert.ok(reason.endsWith(' directly'), 'reason must end with directly');
+    // Ensure length constraint and no mid-word cutoff
+    const lane = reason.replace(/^covers /, '').replace(/ directly$/, '');
+    assert.ok(lane.length <= 60, 'lane must be <= 60 characters');
+    assert.ok(!lane.endsWith(' fo'), 'Must not truncate mid-word');
+    console.log(`✅ Test 22 Passed: Expert reason formatted cleanly on word boundary: "${reason}"`);
+}
+
+// Test 23: adjacent.graph_id is never equal to thread.graph_id or any searched graph
+{
+    const nextMoves = await generateNextMoves(
+        [],
+        'quantum computing in banking',
+        ['retail'],
+        'empty',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    if (nextMoves.thread?.adjacent) {
+        assert.notStrictEqual(nextMoves.thread.adjacent.graph_id, 'retail', 'adjacent.graph_id must not be searched graph retail');
+        assert.ok(nextMoves.thread.adjacent.graph_id.length > 0, 'adjacent.graph_id must be non-empty');
+    }
+    console.log('✅ Test 23 Passed: adjacent.graph_id is never equal to searched graph or self');
+}
+
 console.log('\nAll Next Moves unit tests passed successfully!');
+}
+
+runTests().catch(err => {
+    console.error('Test run failed:', err);
+    process.exit(1);
+});

@@ -80,13 +80,38 @@ for (const seg of src.split('server.tool(').slice(1)) {
 }
 tools.sort((a, b) => a.name.localeCompare(b.name));
 
+// ── Build-time Cost Silence Guard ──
+const violations = [];
+for (const t of tools) {
+  if (/Price:\s*\$|\$\s?\d/i.test(t.description)) {
+    violations.push(`Tool "${t.name}" contains price mention in description: "${t.description}"`);
+  }
+}
+
+const systemPromptPath = path.resolve(__dirname, '../src/systemPrompt.ts');
+if (fs.existsSync(systemPromptPath)) {
+  const promptSrc = fs.readFileSync(systemPromptPath, 'utf8');
+  if (/follow-ups cost less/i.test(promptSrc)) {
+    violations.push('src/systemPrompt.ts contains legacy phrase "follow-ups cost less"');
+  }
+  if (/Price:\s*\$/i.test(promptSrc)) {
+    violations.push('src/systemPrompt.ts contains "Price: $" mention');
+  }
+}
+
+if (violations.length > 0) {
+  console.error('\n❌ BUILD FAILED: Cost Silence Rule Violations Detected:');
+  for (const v of violations) console.error(`  - ${v}`);
+  console.error('\nAIRTABLE is the source of truth for pricing. MCP tool descriptions and system prompts must remain cost-silent.\n');
+  process.exit(1);
+}
+
 const out = {
   generated_from: 'Fodda MCP src/toolHandlers.ts',
-  rate_usd_per_call: 0.5,
-  note: 'Source of truth for callable MCP tools. price = TOKEN_COSTS[bills_as] × 0.50; bills_as="free" → $0. deep_research_light/heavy = $55/$100.',
+  note: 'Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.',
   count: tools.length,
   billable: tools.filter((t) => t.bills_as !== 'free').length,
   tools,
 };
 fs.writeFileSync(path.resolve(__dirname, '../tools-manifest.json'), JSON.stringify(out, null, 2) + '\n');
-console.log(`wrote tools-manifest.json — ${tools.length} tools (${out.billable} billable, ${tools.length - out.billable} free)`);
+console.log(`wrote tools-manifest.json — ${tools.length} tools (${out.billable} billable, ${tools.length - out.billable} free) [Cost Silence Guard Passed]`);

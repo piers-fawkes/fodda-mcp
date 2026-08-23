@@ -77,6 +77,8 @@ export interface CatalogAnalyst {
     offerings?: any[];
     status?: string;
     Status?: string;
+    expert_in?: string;
+    topics?: string[];
 }
 
 // ---------------------------------------------------------------------------

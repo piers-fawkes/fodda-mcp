@@ -53,7 +53,11 @@ async function sync() {
       const toolKey = fields.mcp_tool_name || fields.key || fields.offering_key || fields.tool_name || fields.name;
       const desc = fields.description || fields.Description || fields.mcp_description || fields.published_description;
       if (toolKey && desc) {
-        descriptionMap.set(toolKey.trim(), desc.trim());
+        let cleanDesc = desc.trim()
+          .replace(/\s*Price:\s*\$[\d.]+(?:\s*(?:per|\/)\s*[^.]+)?\.?/gi, '')
+          .replace(/\s*Price:\s*Free\.?/gi, '')
+          .trim();
+        descriptionMap.set(toolKey.trim(), cleanDesc);
       }
     }
 

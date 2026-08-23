@@ -34,6 +34,7 @@
 
 import { getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getAnalysts } from './catalogCache.js';
 import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
+import type { FoddaRequestFn } from './types.js';
 
 /** Nominal on-topic relevance-score scale per graph tier (observed in QA:
  *  domain composites ~2.0, report vector scores ~0.8; expert sits between). */
@@ -83,15 +84,15 @@ export function specificQueryTokens(query: string): string[] {
     )];
 }
 
-function rowScore(row: any): number {
+export function rowScore(row: any): number {
     return row.relevance_score || row.semantic_score || row._score || row.score || 0;
 }
 
-function rowGraphId(row: any): string | undefined {
+export function rowGraphId(row: any): string | undefined {
     return row._use_this_graphId || row.graphId || row.graph_id || row.psfk_graph_slug || undefined;
 }
 
-function resolveRowTier(row: any, searchedGraphs: any[], catalog: CatalogGraph[]): string {
+export function resolveRowTier(row: any, searchedGraphs: any[], catalog: CatalogGraph[]): string {
     const gid = rowGraphId(row);
     let type: string | undefined;
     if (gid) {
@@ -199,7 +200,7 @@ export function isDemandShaped(query: string): boolean {
     return demandKeywords.some(pat => pat.test(q));
 }
 
-export function addCoverageAnnotation(
+export async function addCoverageAnnotation(
     data: any,
     query: string,
     searchedGraphs: any[],
@@ -207,7 +208,7 @@ export function addCoverageAnnotation(
     skipEvidenceCheck: boolean = false,
     catalog: CatalogGraph[] = getGraphs(),
     options?: NextMovesOptions
-): any {
+): Promise<any> {
     if (!data || typeof data !== 'object') return data;
 
     let normalizedData = data;
@@ -377,7 +378,7 @@ export function addCoverageAnnotation(
         };
     }
 
-    normalizedData.next_moves = generateNextMoves(
+    normalizedData.next_moves = await generateNextMoves(
         rows,
         query,
         searchedGraphs,
@@ -456,6 +457,97 @@ export interface NextMovesOptions {
     competitiveLandscape?: string[] | undefined;
     earningsTicker?: string | undefined;
     earningsStatsSource?: string | undefined;
+    foddaRequest?: FoddaRequestFn | undefined;
+    apiKey?: string | undefined;
+    userId?: string | undefined;
+    sessionId?: string | undefined;
+    sessionTracker?: any | undefined;
+    suggestFn?: ((query: string) => Promise<any>) | undefined;
+}
+
+interface SuggestCacheEntry {
+    timestamp: number;
+    sources: Array<{ id: string; name: string; returns?: string; returns_draft?: boolean }>;
+}
+
+const suggestCache = new Map<string, SuggestCacheEntry>();
+const SUGGEST_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_SUGGEST_CACHE_SIZE = 500;
+
+export function clearSuggestCacheForTesting(): void {
+    suggestCache.clear();
+}
+
+function setSuggestCacheEntry(key: string, sources: Array<{ id: string; name: string; returns?: string; returns_draft?: boolean }>): void {
+    const now = Date.now();
+    if (suggestCache.size >= MAX_SUGGEST_CACHE_SIZE) {
+        for (const [k, v] of suggestCache.entries()) {
+            if (now - v.timestamp >= SUGGEST_CACHE_TTL_MS) {
+                suggestCache.delete(k);
+            }
+        }
+    }
+    if (suggestCache.size >= MAX_SUGGEST_CACHE_SIZE) {
+        const oldestKey = suggestCache.keys().next().value;
+        if (oldestKey) suggestCache.delete(oldestKey);
+    }
+    suggestCache.set(key, { timestamp: now, sources });
+}
+
+export function truncateAtWordBoundary(str: string, maxLength: number): string {
+    if (!str || str.length <= maxLength) return str;
+    const sub = str.slice(0, maxLength);
+    const lastSpace = sub.lastIndexOf(' ');
+    if (lastSpace > 10) {
+        return sub.slice(0, lastSpace).trim();
+    }
+    return sub.trim();
+}
+
+export async function fetchSupplementalSuggest(
+    query: string,
+    options?: NextMovesOptions
+): Promise<Array<{ id: string; name: string; returns?: string; returns_draft?: boolean }> | null> {
+    const normQuery = query.toLowerCase().trim();
+    const sessionId = options?.sessionId || options?.userId || 'default';
+    const cacheKey = `${sessionId}:${normQuery}`;
+
+    const cached = suggestCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp) < SUGGEST_CACHE_TTL_MS) {
+        return cached.sources;
+    }
+
+    try {
+        let suggestPromise: Promise<any> | null = null;
+        if (options?.suggestFn) {
+            suggestPromise = options.suggestFn(query);
+        } else if (options?.foddaRequest && options?.apiKey) {
+            suggestPromise = options.foddaRequest(
+                'GET',
+                `/v1/supplemental/suggest?query=${encodeURIComponent(query)}`,
+                options.apiKey,
+                options.userId || ''
+            );
+        }
+
+        if (!suggestPromise) {
+            return null;
+        }
+
+        let timer: any;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('suggest timeout (1500ms)')), 1500);
+        });
+
+        const data = await Promise.race([suggestPromise, timeoutPromise]);
+        clearTimeout(timer);
+        const sources: any[] = Array.isArray(data?.sources) ? data.sources : [];
+        setSuggestCacheEntry(cacheKey, sources);
+        return sources;
+    } catch (err: any) {
+        console.error(`[next_moves] suggest fetch failed: ${err.message}`);
+        return null;
+    }
 }
 
 export interface ConsultNextMovesOptions {
@@ -517,7 +609,7 @@ export function formatThemePhrase(rawCandidates: string[], fallback: string = 'e
     return `${cleanedThemes[0]} and ${cleanedThemes[1]}`;
 }
 
-export function generateNextMoves(
+export async function generateNextMoves(
     rows: any[],
     query: string,
     searchedGraphs: any[],
@@ -527,7 +619,7 @@ export function generateNextMoves(
     catalog: CatalogGraph[] = getGraphs(),
     analysts: CatalogAnalyst[] = getAnalysts(),
     options?: NextMovesOptions
-): NextMoves {
+): Promise<NextMoves> {
     const nextMoves: NextMoves = {
         scope_prompt: true,
         presentation: 'internal',
@@ -654,94 +746,108 @@ export function generateNextMoves(
             }
         } else {
             // Empty brand footprint: pick top domain graph from catalog without keyword-matching on bare brand name
-            const domainGraphs = catalog.filter(g => g.graph_type === 'domain' || !g.curator);
-            const topDomain = domainGraphs[0] || catalog[0];
-            if (topDomain) {
-                const topDisplay = buildDisplayName(topDomain);
+            const unsearchedDomain = catalog.filter(g => !searchedGraphIds.has(g.graph_id) && (g.graph_type === 'domain' || !g.curator))[0] ||
+                                     catalog.find(g => !searchedGraphIds.has(g.graph_id));
+            if (unsearchedDomain) {
+                const topDisplay = buildDisplayName(unsearchedDomain);
+                const primarySearched = searchedGraphs[0];
+                const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+                const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+                const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || topDisplay);
                 nextMoves.thread = {
                     kind: 'honest_thin',
-                    graph_id: topDomain.graph_id,
-                    graph_display: topDisplay,
+                    graph_id: primaryGid || unsearchedDomain.graph_id,
+                    graph_display: primaryDisplay,
                     adjacent: {
-                        graph_id: topDomain.graph_id,
+                        graph_id: unsearchedDomain.graph_id,
                         graph_display: topDisplay,
-                        reason: topDomain.headline || topDomain.domain || topDomain.name,
+                        reason: unsearchedDomain.headline || unsearchedDomain.domain || unsearchedDomain.name,
                     }
                 };
             }
         }
-    } else if (maxRemainder > 0 && bestGraphId) {
-        const gMeta = catalog.find(g => g.graph_id === bestGraphId);
-        const display = gMeta ? buildDisplayName(gMeta) : bestGraphId;
-        nextMoves.thread = {
-            kind: 'more_in_graph',
-            graph_id: bestGraphId,
-            graph_display: display,
-            remaining_count: maxRemainder,
-            theme: bestGraphTheme,
-        };
-    } else if (status === 'thin' || status === 'empty') {
-        // honest_thin ONLY when status is thin or empty
-        let relevantCandidates: any[] = [];
-        try {
-            relevantCandidates = getRelevantGraphs(query);
-        } catch {
-            relevantCandidates = [];
-        }
-        const candidateGraphs = relevantCandidates.map(c => c.graph).filter(Boolean);
-        if (candidateGraphs.length === 0 && catalog?.length > 0) {
-            candidateGraphs.push(...catalog);
-        }
-        const closest = candidateGraphs.find(g => !searchedGraphIds.has(g.graph_id)) || candidateGraphs[0];
-        if (closest) {
-            const closestDisplay = buildDisplayName(closest);
-            const primarySearched = searchedGraphs[0];
-            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || closestDisplay);
-
-            nextMoves.thread = {
-                kind: 'honest_thin',
-                graph_id: primaryGid || closest.graph_id,
-                graph_display: primaryDisplay,
-                adjacent: {
-                    graph_id: closest.graph_id,
-                    graph_display: closestDisplay,
-                    reason: closest.headline || closest.domain || closest.name,
-                }
-            };
-        }
-        // If no candidate exists, thread is undefined (no fabrication)
     } else {
-    // status is 'ok' with 0 remainder everywhere: check for unsearched adjacent room
-        let relevantCandidates: any[] = [];
-        try {
-            relevantCandidates = getRelevantGraphs(query);
-        } catch {
-            relevantCandidates = [];
-        }
+        const bestMeta = bestGraphId ? catalog.find(g => g.graph_id === bestGraphId) : undefined;
+        const trendCount = bestMeta?.trend_count;
+        const gOnTopicTotal = bestGraphId
+            ? (rowsByGraph.get(bestGraphId)?.[0]?.on_topic_total ?? options?.onTopicTotal ?? (maxRemainder + rows.length))
+            : undefined;
 
-        const unsearched = relevantCandidates.find(cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10);
-        if (unsearched) {
-            const adjG = unsearched.graph;
-            const adjDisplay = buildDisplayName(adjG);
-            const primarySearched = searchedGraphs[0];
-            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || adjDisplay);
+        const isSmallReportOrExhausted =
+            (typeof trendCount === 'number' && trendCount > 0 && trendCount <= 15) ||
+            (typeof trendCount === 'number' && trendCount > 0 && typeof gOnTopicTotal === 'number' && gOnTopicTotal >= 0.6 * trendCount);
 
+        const canEmitMoreInGraph = maxRemainder > 0 && bestGraphId && !isSmallReportOrExhausted;
+
+        if (canEmitMoreInGraph && bestGraphId) {
+            const display = bestMeta ? buildDisplayName(bestMeta) : bestGraphId;
             nextMoves.thread = {
-                kind: 'adjacent_room',
-                graph_id: primaryGid || adjG.graph_id,
-                graph_display: primaryDisplay,
-                adjacent: {
-                    graph_id: adjG.graph_id,
-                    graph_display: adjDisplay,
-                    reason: adjG.headline || adjG.domain || adjG.description || adjG.name,
-                }
+                kind: 'more_in_graph',
+                graph_id: bestGraphId,
+                graph_display: display,
+                remaining_count: maxRemainder,
+                theme: bestGraphTheme,
             };
+        } else {
+            // Fall through to unsearched adjacent_room or honest_thin
+            let relevantCandidates: any[] = [];
+            try {
+                relevantCandidates = getRelevantGraphs(query);
+            } catch {
+                relevantCandidates = [];
+            }
+
+            const unsearchedCandidate = relevantCandidates.find(
+                cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10
+            );
+
+            if (unsearchedCandidate) {
+                const adjG = unsearchedCandidate.graph;
+                const adjDisplay = buildDisplayName(adjG);
+                const primarySearched = searchedGraphs[0];
+                const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+                const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+                const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || adjDisplay);
+
+                nextMoves.thread = {
+                    kind: (status === 'thin' || status === 'empty' || isSmallReportOrExhausted) ? 'honest_thin' : 'adjacent_room',
+                    graph_id: primaryGid || adjG.graph_id,
+                    graph_display: primaryDisplay,
+                    adjacent: {
+                        graph_id: adjG.graph_id,
+                        graph_display: adjDisplay,
+                        reason: adjG.headline || adjG.domain || adjG.description || adjG.name,
+                    }
+                };
+            } else if (status === 'thin' || status === 'empty' || isSmallReportOrExhausted) {
+                // Find any unsearched catalog graph (never self/searched)
+                const unsearchedFallback = catalog.find(g => !searchedGraphIds.has(g.graph_id));
+                if (unsearchedFallback) {
+                    const adjDisplay = buildDisplayName(unsearchedFallback);
+                    const primarySearched = searchedGraphs[0];
+                    const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+                    const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+                    const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || adjDisplay);
+
+                    nextMoves.thread = {
+                        kind: 'honest_thin',
+                        graph_id: primaryGid || unsearchedFallback.graph_id,
+                        graph_display: primaryDisplay,
+                        adjacent: {
+                            graph_id: unsearchedFallback.graph_id,
+                            graph_display: adjDisplay,
+                            reason: unsearchedFallback.headline || unsearchedFallback.domain || unsearchedFallback.name,
+                        }
+                    };
+                } else {
+                    // All candidates are searched -> drop thread completely
+                    nextMoves.thread = undefined;
+                }
+            } else {
+                // ok status with 0 remainder and no unsearched room -> thread is undefined
+                nextMoves.thread = undefined;
+            }
         }
-        // If no unsearched relevant room, thread is undefined (drop the line, no fabrication)
     }
 
     // ── 2. Specific (Go specific: brands, statistics_source, expert) ──
@@ -756,37 +862,93 @@ export function generateNextMoves(
     } else {
         const tokens = specificQueryTokens(query);
         const onTopicRows = rows.filter(r => rowMatchesQueryTokens(r, tokens, catalog) || (rowScore(r) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(r, searchedGraphs, catalog)] ?? 0.8)));
-        const brandSourceRows = onTopicRows.length > 0 ? onTopicRows : rows;
 
-        const brandCounts = new Map<string, number>();
-        for (const r of brandSourceRows) {
-            const brandList: string[] = [];
-            if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
-            if (Array.isArray(r.brands)) brandList.push(...r.brands);
-            if (typeof r.brand === 'string' && r.brand) brandList.push(r.brand);
-            if (typeof r.company === 'string' && r.company) brandList.push(r.company);
-            if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
+        // If no on-topic rows exist, leave specific.brands undefined (do not fall back to off-topic noise rows)
+        if (onTopicRows.length > 0) {
+            // Build exclusion set of curator / organization / publisher tokens
+            const publisherTokens = new Set([
+                'dentsu', 'dentsu creative', 'havas', 'psfk', 'nielseniq', 'niq',
+                'wpp', 'omnicom', 'ipg', 'publicis', 'accenture', 'deloitte',
+                'mckinsey', 'bcg', 'bain', 'gartner', 'forrester', 'kantar', 'jwt',
+                'ogilvy', 'edelman', 'mccann', 'bbdo', 'tbwa', 'vml', 'leo burnett'
+            ]);
 
-            for (const b of brandList) {
-                if (typeof b === 'string' && b.trim().length > 1) {
-                    const cleaned = b.trim();
-                    brandCounts.set(cleaned, (brandCounts.get(cleaned) || 0) + 1);
+            // Add searched graph curators, companies, and names
+            for (const sg of searchedGraphs) {
+                const gMeta = typeof sg === 'string' ? catalog.find(x => x.graph_id === sg) : sg;
+                if (gMeta) {
+                    if (gMeta.curator) publisherTokens.add(gMeta.curator.toLowerCase().trim());
+                    if (gMeta.company) publisherTokens.add(gMeta.company.toLowerCase().trim());
+                    if (gMeta.name) publisherTokens.add(gMeta.name.toLowerCase().trim());
+                    for (const word of `${gMeta.curator || ''} ${gMeta.company || ''} ${gMeta.name || ''}`.toLowerCase().split(/[\s,.-]+/)) {
+                        if (word.length > 2) publisherTokens.add(word);
+                    }
                 }
             }
-        }
 
-        if (brandCounts.size > 0) {
-            const sortedBrands = [...brandCounts.entries()]
-                .filter(([b]) => {
-                    const bLow = b.toLowerCase();
-                    const qLow = query.toLowerCase();
-                    return bLow !== qLow && !qLow.includes(bLow) && !bLow.includes(qLow);
-                })
-                .sort((a, b) => b[1] - a[1])
-                .map(([brand]) => brand)
-                .slice(0, 2);
-            if (sortedBrands.length > 0) {
-                specific.brands = sortedBrands;
+            // Also check source_label from rows
+            for (const r of onTopicRows) {
+                if (r.source_label) {
+                    const match = String(r.source_label).match(/\(([^)]+)\)/);
+                    if (match && match[1]) {
+                        const org = match[1].toLowerCase().trim();
+                        publisherTokens.add(org);
+                        for (const w of org.split(/[\s,.-]+/)) {
+                            if (w.length > 2) publisherTokens.add(w);
+                        }
+                    }
+                }
+            }
+
+            const normalizeBrandKey = (name: string) => name.toLowerCase().replace(/[^\w\s]/g, '').trim().replace(/\s+/g, ' ');
+
+            const brandCounts = new Map<string, { count: number; displayName: string }>();
+
+            for (const r of onTopicRows) {
+                const brandList: string[] = [];
+                if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
+                if (Array.isArray(r.brands)) brandList.push(...r.brands);
+                if (typeof r.brand === 'string' && r.brand) brandList.push(r.brand);
+                if (typeof r.company === 'string' && r.company) brandList.push(r.company);
+                if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
+
+                for (const b of brandList) {
+                    if (typeof b === 'string' && b.trim().length > 1) {
+                        const clean = b.trim();
+                        const norm = normalizeBrandKey(clean);
+                        if (!norm) continue;
+
+                        // Check against publisher tokens
+                        if (publisherTokens.has(norm) || publisherTokens.has(clean.toLowerCase())) {
+                            continue;
+                        }
+                        const isPub = [...publisherTokens].some(pt => norm === pt || norm.startsWith(`${pt} `) || norm.endsWith(` ${pt}`));
+                        if (isPub) continue;
+
+                        const existing = brandCounts.get(norm);
+                        if (existing) {
+                            existing.count++;
+                        } else {
+                            brandCounts.set(norm, { count: 1, displayName: clean });
+                        }
+                    }
+                }
+            }
+
+            if (brandCounts.size > 0) {
+                const qLow = query.toLowerCase();
+                const sortedBrands = [...brandCounts.values()]
+                    .filter(b => {
+                        const bLow = b.displayName.toLowerCase();
+                        return bLow !== qLow && !qLow.includes(bLow) && !bLow.includes(qLow);
+                    })
+                    .sort((a, b) => b.count - a.count)
+                    .map(b => b.displayName)
+                    .slice(0, 2);
+
+                if (sortedBrands.length > 0) {
+                    specific.brands = sortedBrands;
+                }
             }
         }
     }
@@ -816,24 +978,49 @@ export function generateNextMoves(
         const qLower = query.toLowerCase();
         const isStatOrMarketShaped =
             suggestedAction !== undefined ||
+            status === 'thin' ||
+            status === 'empty' ||
             isDemandShaped(query) ||
             options?.knownBrand !== undefined ||
             (specific.brands && specific.brands.length > 0) ||
             /(?:market|spend|sales|growth|size|volume|rate|adoption|share|stats?|numbers?|forecast|demographics?|economic|inflation|pricing|consumer|retail|cpg|beauty|fashion|auto|tech|work|travel|food|drink|beverage|culture|trends?|brand|performance|activity)/i.test(qLower);
 
         if (isStatOrMarketShaped) {
-            if (/(?:retail|spend|sales|commerce|shopping|store|grocery|cpg|consumer)/i.test(qLower)) {
-                specific.statistics_source = 'Census retail trade and spending data';
-            } else if (/(?:search|demand|interest|popular|google|volume|buzz|social)/i.test(qLower)) {
-                specific.statistics_source = 'Google Trends search volume and breakout queries';
-            } else if (/(?:employment|labor|job|wage|worker|workplace|talent|hiring)/i.test(qLower)) {
-                specific.statistics_source = 'BLS labor and employment metrics';
-            } else if (/(?:economic|inflation|cpi|interest\s+rate|gdp|macro|fed|recession)/i.test(qLower)) {
-                specific.statistics_source = 'FRED macroeconomic series';
-            } else if (/(?:beauty|fashion|apparel|luxury|sport|wellness|food|beverage)/i.test(qLower)) {
-                specific.statistics_source = 'Census and Google Trends market demand data';
-            } else {
-                specific.statistics_source = 'Census and FRED market statistics';
+            let suggestHandled = false;
+            if (options?.foddaRequest || options?.suggestFn) {
+                const sources = await fetchSupplementalSuggest(query, options);
+                if (sources && sources.length > 0) {
+                    const validSources = sources.filter(s => s && s.returns_draft !== true && s.name);
+                    if (validSources.length > 0) {
+                        const topSources = validSources.slice(0, 2);
+                        if (topSources.length === 2 && topSources[0] && topSources[1]) {
+                            specific.statistics_source = `${topSources[0].name} and ${topSources[1].name}`;
+                        } else if (topSources[0]) {
+                            specific.statistics_source = topSources[0].name;
+                        }
+                        suggestHandled = true;
+                        options?.sessionTracker?.recordSuggestPath?.('suggest');
+                        console.error(`[next_moves] statistics_source from suggest: "${specific.statistics_source}"`);
+                    }
+                }
+            }
+
+            if (!suggestHandled) {
+                options?.sessionTracker?.recordSuggestPath?.('regex-fallback');
+                console.error(`[next_moves] statistics_source from regex-fallback`);
+                if (/(?:retail|spend|sales|commerce|shopping|store|grocery|cpg|consumer)/i.test(qLower)) {
+                    specific.statistics_source = 'Census retail trade and spending data';
+                } else if (/(?:search|demand|interest|popular|google|volume|buzz|social)/i.test(qLower)) {
+                    specific.statistics_source = 'Google Trends search volume and breakout queries';
+                } else if (/(?:employment|labor|job|wage|worker|workplace|talent|hiring)/i.test(qLower)) {
+                    specific.statistics_source = 'BLS labor and employment metrics';
+                } else if (/(?:economic|inflation|cpi|interest\s+rate|gdp|macro|fed|recession)/i.test(qLower)) {
+                    specific.statistics_source = 'FRED macroeconomic series';
+                } else if (/(?:beauty|fashion|apparel|luxury|sport|wellness|food|beverage)/i.test(qLower)) {
+                    specific.statistics_source = 'Census and Google Trends market demand data';
+                } else {
+                    specific.statistics_source = 'Census and FRED market statistics';
+                }
             }
         }
     }
@@ -862,10 +1049,22 @@ export function generateNextMoves(
     });
 
     if (matchedAnalyst) {
+        let lane = '';
+        if (matchedAnalyst.expert_in && matchedAnalyst.expert_in.trim().length > 0) {
+            lane = truncateAtWordBoundary(matchedAnalyst.expert_in.trim(), 60);
+        } else if (matchedAnalyst.description && matchedAnalyst.description.trim().length > 0) {
+            const firstClause = (matchedAnalyst.description.split(/[,.;]/)[0] || '').trim();
+            lane = truncateAtWordBoundary(firstClause, 60);
+        }
+
+        const reason = lane && lane.length > 3
+            ? `covers ${lane} directly`
+            : 'covers this domain directly';
+
         specific.expert = {
             analyst_id: matchedAnalyst.analyst_id,
             display_name: matchedAnalyst.name,
-            reason: matchedAnalyst.description ? `covers ${matchedAnalyst.description.slice(0, 50).trim()} directly` : 'covers this domain directly',
+            reason,
         };
     }
 
