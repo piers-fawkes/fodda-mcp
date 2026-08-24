@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Re-keyed the Dentsu Creative profile entry from legacy `generative-realities` to canonical `dentsu-creative-marketing`.
 - **Tool Descriptions & Examples (`src/toolHandlers.ts`)**:
   - Replaced example references to `'generative-realities'` with `'dentsu-creative-marketing'` in `GRAPH_ID_DESC` and `search_graph` parameter descriptions.
+- **Cloud Run Deployment**:
+  - Deployed to Cloud Run service `fodda-mcp` as revision `fodda-mcp-00483-rxx` (100% traffic, HTTP 200 OK on `https://mcp.fodda.ai/health`).
 
 ## [1.46.38] - 2026-08-24
 
