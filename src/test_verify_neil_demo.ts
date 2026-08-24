@@ -62,10 +62,19 @@ async function runProbe() {
 
     const parsed1 = extractJson(res1.content[0].text);
     console.log('Results returned:', parsed1?.rows?.length || 0);
+    console.log('Top 3 rows:');
+    (parsed1?.rows || []).slice(0, 3).forEach((r: any, idx: number) => {
+        console.log(`  #${idx + 1}: ${r.title || r.trendName || r.name} (signal: ${r.signal_score}, rel: ${r.relevance_score})`);
+    });
     console.log('Coverage status:', parsed1?.coverage?.status);
     console.log('Next moves:', JSON.stringify(parsed1?.next_moves, null, 2));
 
     const textContent1 = res1.content.map((c: any) => c.text).join('\n');
+    const widgetMatch = textContent1.match(/── SEARCH WIDGET[\s\S]*?(?=\n\n──|$)/);
+    if (widgetMatch) {
+        console.log('\nWidget excerpt:');
+        console.log(widgetMatch[0].slice(0, 800));
+    }
     const closingMatch1 = textContent1.match(/── NEXT MOVES CLOSING BLOCK[\s\S]*?(?=\n\n──|$)/);
     if (closingMatch1) {
         console.log('\nClosing Block:');
