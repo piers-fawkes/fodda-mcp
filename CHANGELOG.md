@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.39] - 2026-08-24
+
+### Changed (Dentsu Creative Graph References Standardization)
+- **Graph Profiles Alignment (`graph_profiles.json`, `graph_profiles_fixed.csv`, `graph_profiles_fixed-llm.csv`)**:
+  - Re-keyed the Dentsu Creative profile entry from legacy `generative-realities` to canonical `dentsu-creative-marketing`.
+- **Tool Descriptions & Examples (`src/toolHandlers.ts`)**:
+  - Replaced example references to `'generative-realities'` with `'dentsu-creative-marketing'` in `GRAPH_ID_DESC` and `search_graph` parameter descriptions.
+
 ## [1.46.38] - 2026-08-24
 
 ### Fixed & Enhanced (Widget Brand Guard, Zero-Stat Card Omission & Niche-Query Direct-Token Reranking — `briefs/brief_widget_guard_and_niche_ranking.md`)

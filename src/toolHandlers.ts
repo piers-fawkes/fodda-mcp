@@ -195,7 +195,7 @@ import type { FoddaRequestFn, WaverunnerRequestFn } from './types.js';
 
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 
-const GRAPH_ID_DESC = "The graph ID. Use list_graphs to see all options. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'michaels-2026-creativity-trend-report', 'delta/the-connection-index'";
+const GRAPH_ID_DESC = "The graph ID. Use list_graphs to see all options. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'michaels-2026-creativity-trend-report', 'delta/the-connection-index'";
 
 // ── P0 Security: Allowlist serializer for list_graphs ──
 const GRAPH_LIST_ALLOWLIST: ReadonlySet<string> = new Set([
@@ -949,7 +949,7 @@ export async function createServer(
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
-            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'generative-realities', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
+            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
