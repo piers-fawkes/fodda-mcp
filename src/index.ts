@@ -21,7 +21,6 @@ import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
 import { registerAgentFactsRoute } from './agentFacts.js';
 import { getTelemetryStats, recordFeedbackEntry } from './telemetry.js';
-import { handleOauthRegister } from './oauthRegisterShim.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -96,65 +95,22 @@ app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
 });
 
 // OAuth discovery endpoints — Clerk-backed OAuth for the MCP Connectors Directory.
-// Discovery advertises mcp.fodda.ai as authorization server metadata host and points
-// registration_endpoint to /oauth/register shim for DCR openid scope injection.
+// Advertises Clerk (CLERK_ISSUER) as the authorization server for RFC 9728 discovery,
+// ensuring RFC 8414 issuer matching and RFC 9207 callback iss validation succeed end-to-end.
 const CLERK_ISSUER = process.env.CLERK_ISSUER_URL || 'https://clerk.fodda.ai';
 
 app.get('/.well-known/oauth-protected-resource', (_req, res) => {
     res.status(200).json({
         resource: getServiceUrl(),
-        authorization_servers: [getServiceUrl()],
+        authorization_servers: [CLERK_ISSUER],
     });
 });
 app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
     res.status(200).json({
         resource: `${getServiceUrl()}/mcp`,
-        authorization_servers: [getServiceUrl()],
+        authorization_servers: [CLERK_ISSUER],
     });
 });
-
-let cachedClerkMetadata: any = null;
-let lastClerkFetch = 0;
-
-app.get('/.well-known/oauth-authorization-server', async (_req, res) => {
-    const now = Date.now();
-    if (!cachedClerkMetadata || now - lastClerkFetch > 5 * 60 * 1000) {
-        try {
-            const resp = await axios.get(`${CLERK_ISSUER}/.well-known/oauth-authorization-server`, { timeout: 5000 });
-            if (resp.status === 200 && resp.data) {
-                cachedClerkMetadata = resp.data;
-                lastClerkFetch = now;
-            }
-        } catch (err: any) {
-            console.error('[oauth-discovery] Unable to refresh Clerk OAuth metadata:', err.message);
-        }
-    }
-    const serviceUrl = getServiceUrl();
-    const metadata = {
-        authorization_endpoint: `${CLERK_ISSUER}/oauth/authorize`,
-        token_endpoint: `${CLERK_ISSUER}/oauth/token`,
-        revocation_endpoint: `${CLERK_ISSUER}/oauth/token/revoke`,
-        jwks_uri: `${CLERK_ISSUER}/.well-known/jwks.json`,
-        response_types_supported: ['code'],
-        grant_types_supported: ['authorization_code', 'refresh_token'],
-        token_endpoint_auth_methods_supported: ['client_secret_basic', 'none', 'client_secret_post'],
-        scopes_supported: ['openid', 'profile', 'email', 'public_metadata', 'private_metadata', 'offline_access', 'user:org:read'],
-        subject_types_supported: ['public'],
-        id_token_signing_alg_values_supported: ['RS256'],
-        claims_supported: ['sub', 'iss', 'aud', 'exp', 'iat', 'email', 'name', 'org_id'],
-        service_documentation: 'https://clerk.com/docs/oauth/scoped-access',
-        ui_locales_supported: ['en'],
-        op_tos_uri: 'https://clerk.com/legal/standard-terms',
-        code_challenge_methods_supported: ['S256'],
-        authorization_response_iss_parameter_supported: true,
-        ...(cachedClerkMetadata || {}),
-        issuer: CLERK_ISSUER,
-        registration_endpoint: `${serviceUrl}/oauth/register`,
-    };
-    res.status(200).json(metadata);
-});
-
-app.post(['/oauth/register', '/register'], handleOauthRegister);
 
 // ---------------------------------------------------------------------------
 // .well-known MCP Server Discovery Card & Pricing Metadata Tier

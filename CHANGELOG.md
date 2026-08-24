@@ -5,6 +5,23 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.35] - 2026-08-22
+
+### Fixed & Enhanced (OAuth Discovery Issuer Alignment, Native Clerk DCR Scopes & Cloud Run Deploy — `briefs/oauth-discovery-issuer-mismatch-fix.md`)
+- **OAuth Discovery Issuer & Resource Metadata Alignment (`src/index.ts`)**:
+  - Updated `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp` to set `authorization_servers: [CLERK_ISSUER]` (`["https://clerk.fodda.ai"]`), pointing clients directly to Clerk as the authorization server.
+  - Aligned discovery end-to-end: clients discover Clerk's metadata directly at `https://clerk.fodda.ai/.well-known/oauth-authorization-server` where `issuer: "https://clerk.fodda.ai"` matches the metadata host URL per RFC 8414 §3.3.
+  - Aligned authorize callback: Clerk redirects with `iss=https://clerk.fodda.ai`, matching the discovered issuer per RFC 9207 §2.4 without callback rejection.
+  - Removed orphaned `/oauth/register` shim handler, dead `src/oauthRegisterShim.ts`, and local `/.well-known/oauth-authorization-server` endpoint following native Clerk DCR default scope configuration.
+- **Live Verification & Production Deployment**:
+  - Probed live Clerk native DCR endpoint (`https://clerk.fodda.ai/oauth/register`) without `scope` parameter and confirmed default granted scopes include `openid`:
+    `{"client_id":"5npgwQO8olsNJDRQ", "scope":"email offline_access openid profile user:org:read", ...}`
+  - Automated test suite (`node dist/test_dcr_and_legacy_deprecation.js`) passed all assertions.
+  - Deployed to Google Cloud Run (`fodda-mcp`, revision `fodda-mcp-00480-pmq`, `us-east4`):
+    - `GET https://mcp.fodda.ai/.well-known/oauth-protected-resource` -> `{"resource":"https://mcp.fodda.ai","authorization_servers":["https://clerk.fodda.ai"]}` (HTTP 200)
+    - `GET https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp` -> `{"resource":"https://mcp.fodda.ai/mcp","authorization_servers":["https://clerk.fodda.ai"]}` (HTTP 200)
+    - `GET https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.35"}` (HTTP 200)
+
 ## [1.46.34] - 2026-08-22
 
 ### Changed & Enhanced (Next Moves on Thin Niches & Search-Envelope Hygiene — `briefs/brief_next_moves_thin_niche_and_search_hygiene.md`)

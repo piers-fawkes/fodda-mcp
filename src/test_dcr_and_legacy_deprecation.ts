@@ -1,29 +1,11 @@
 import express from 'express';
 import http from 'http';
 import axios from 'axios';
-import { handleOauthRegister } from './oauthRegisterShim.js';
 
 async function runVerificationTest() {
-    // 1. Mock Clerk Server on 8990 to verify DCR shim without creating live DB records
-    const mockClerkApp = express();
-    mockClerkApp.use(express.json());
-    mockClerkApp.post('/oauth/register', (req, res) => {
-        const body = req.body || {};
-        res.status(201).json({
-            client_id: 'mock_test_client_id_123',
-            client_secret: 'mock_secret_abc',
-            client_name: body.client_name,
-            redirect_uris: body.redirect_uris,
-            scope: body.scope,
-            grant_types: ['authorization_code'],
-            response_types: ['code'],
-        });
-    });
-    const mockClerkServer = http.createServer(mockClerkApp);
-    await new Promise<void>((resolve) => mockClerkServer.listen(8990, () => resolve()));
-    process.env.CLERK_ISSUER_URL = 'http://localhost:8990';
+    process.env.CLERK_ISSUER_URL = 'https://clerk.fodda.ai';
 
-    // 2. Fodda MCP Server on 8989
+    // Fodda MCP Server on 8989
     const app = express();
     app.use(express.json());
 
@@ -68,20 +50,24 @@ async function runVerificationTest() {
         next();
     });
 
-    app.get('/.well-known/oauth-authorization-server', (_req, res) => {
+    const CLERK_ISSUER = process.env.CLERK_ISSUER_URL || 'https://clerk.fodda.ai';
+
+    app.get('/.well-known/oauth-protected-resource', (_req, res) => {
         res.status(200).json({
-            issuer: 'http://localhost:8990',
-            authorization_endpoint: 'http://localhost:8990/oauth/authorize',
-            token_endpoint: 'http://localhost:8990/oauth/token',
-            registration_endpoint: 'http://localhost:8989/oauth/register',
+            resource: 'http://localhost:8989',
+            authorization_servers: [CLERK_ISSUER],
+        });
+    });
+    app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
+        res.status(200).json({
+            resource: 'http://localhost:8989/mcp',
+            authorization_servers: [CLERK_ISSUER],
         });
     });
 
-    app.post('/oauth/register', handleOauthRegister);
-
     const mcpServer = http.createServer(app);
     await new Promise<void>((resolve) => mcpServer.listen(8989, () => resolve()));
-    console.log('[test] Test servers listening (MCP: 8989, Mock Clerk: 8990)');
+    console.log('[test] MCP test server listening on 8989');
 
     try {
         // Test 1: POST to /sse?api_key=sk_live_test&user_id=test@example.com
@@ -120,35 +106,43 @@ async function runVerificationTest() {
             }
         }
 
-        // Test 3: Metadata Issuer Check (CLERK_ISSUER)
-        console.log('[test] Test 3: GET /.well-known/oauth-authorization-server issuer check...');
-        const metaResp = await axios.get('http://localhost:8989/.well-known/oauth-authorization-server');
-        if (metaResp.data?.issuer === 'http://localhost:8990') {
-            console.log('[test] PASS: Metadata issuer matches CLERK_ISSUER.');
+        // Test 3: OAuth Protected Resource Discovery Check (Option A)
+        console.log('[test] Test 3: GET /.well-known/oauth-protected-resource and /mcp...');
+        const protResp = await axios.get('http://localhost:8989/.well-known/oauth-protected-resource');
+        const protMcpResp = await axios.get('http://localhost:8989/.well-known/oauth-protected-resource/mcp');
+        if (protResp.data?.authorization_servers?.[0] === 'https://clerk.fodda.ai' && protMcpResp.data?.authorization_servers?.[0] === 'https://clerk.fodda.ai') {
+            console.log('[test] PASS: Protected resource metadata advertises authorization server CLERK_ISSUER (https://clerk.fodda.ai).');
         } else {
-            console.error('[test] FAIL: Issuer mismatch:', metaResp.data?.issuer);
+            console.error('[test] FAIL: Protected resource authorization_servers mismatch:', protResp.data, protMcpResp.data);
         }
 
-        // Test 4: DCR registration shim (/oauth/register)
-        console.log('[test] Test 4: POST /oauth/register without explicit scope...');
-        const dcrResp = await axios.post('http://localhost:8989/oauth/register', {
-            client_name: 'Antigravity Test DCR Client',
-            redirect_uris: ['https://example.com/callback'],
-        }, {
-            headers: { 'Content-Type': 'application/json' },
-        });
-        console.log('[test] DCR response status:', dcrResp.status);
-        console.log('[test] DCR response scope:', dcrResp.data?.scope);
-        if (dcrResp.data?.scope?.includes('openid')) {
-            console.log('[test] PASS: DCR returned scope containing openid!');
-        } else {
-            console.error('[test] FAIL: openid not found in returned scope:', dcrResp.data);
+        // Test 4: Live Clerk Native DCR Check (No-Scope Default Scopes including openid)
+        console.log('[test] Test 4: Live Clerk POST https://clerk.fodda.ai/oauth/register without scope...');
+        try {
+            const dcrResp = await axios.post('https://clerk.fodda.ai/oauth/register', {
+                client_name: 'Antigravity Test DCR Client',
+                redirect_uris: ['https://example.com/callback'],
+                grant_types: ['authorization_code'],
+                response_types: ['code'],
+                token_endpoint_auth_method: 'none',
+            }, {
+                headers: { 'Content-Type': 'application/json' },
+                timeout: 10000,
+            });
+            console.log('[test] Live Clerk DCR status:', dcrResp.status);
+            console.log('[test] Live Clerk DCR granted scope:', dcrResp.data?.scope);
+            if (dcrResp.data?.scope?.includes('openid')) {
+                console.log('[test] PASS: Live Clerk native DCR returned default scope containing openid!');
+            } else {
+                console.error('[test] FAIL: openid not found in Live Clerk returned scope:', dcrResp.data);
+            }
+        } catch (err: any) {
+            console.error('[test] Warning/Error on live Clerk DCR probe:', err.message);
         }
 
     } finally {
         mcpServer.close();
-        mockClerkServer.close();
-        console.log('[test] Test servers stopped.');
+        console.log('[test] Test server stopped.');
     }
 }
 

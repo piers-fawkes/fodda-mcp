@@ -15,7 +15,7 @@
       ]
     }
   ],
-  "version": "1.46.17",
+  "version": "1.46.35",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"
@@ -34,7 +34,7 @@
     {
       "registryType": "npm",
       "identifier": "fodda-mcp",
-      "version": "1.46.17",
+      "version": "1.46.35",
       "transport": {
         "type": "stdio"
       },
