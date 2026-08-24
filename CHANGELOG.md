@@ -18,14 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cleanly omitted the entire `<div class="sec">Market</div>` section when neither Google Trends nor Census has non-zero valid series data.
   - Reconciled Sources footer (`sources`) to strictly include "Census Bureau" or "Google Trends" only when their respective HTML section actually rendered.
 - **Niche-Query Direct-Token Match Reranking Tier (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
-  - Added top-tier direct token matching helper `rowHasDirectTokenMatch()` checking specific query tokens against `trendName`, `name`, `label`, `title`, `trendSlug`, `slug`, `sectorNames`, `sectors`, `categories`, and `topics`.
+  - Added top-tier direct token matching helper `rowHasDirectTokenMatch()` with singular/plural folding and stemming (`stemToken()`), checking specific query tokens against `trendName`, `name`, `label`, `title`, `trendSlug`, `slug`, `sectorNames`, `sectors`, `categories`, and `topics`.
   - Prioritized direct token matches as the top sorting tier in `search_graph` fan-out and quality-gated diversity reranking above general semantic relevance.
-  - Ensured niche queries (e.g. collectibles, booster packs) headline and place on-target trends into top 3 instead of semantically adjacent mega-trends with high raw signal scores.
+  - Ensured niche queries (e.g. collectibles, booster packs, trading cards) headline and place on-target trends into top 3 instead of semantically adjacent mega-trends with high raw signal scores.
   - Preserved existing relevance/signal sort order for generic queries without direct niche tokens (e.g. "retail trends 2026").
   - Preserved ranked row order in `renderSearchWidget()` so widget card order and "Key signal" headline track the reranked results.
-- **Verification & Test Suite (`src/test_widget_guards.ts`)**:
-  - Created automated test suite covering brand guard suppression, zero-stat omission, sources reconciliation, niche-query direct ranking, and generic query stability.
-  - All test suites green: `test_widget_guards.ts`, `test_next_moves.ts`, `test_next_moves_transcripts.ts`.
+- **Live Production Deployment & Verification (Cloud Run revision `fodda-mcp-00482-q97`)**:
+  - **Neil Carty Collectibles Live Probe** (`search_graph` for *"what are the trends in the collectible space, particularly trading cards, like baseball trading cards"*):
+    - **Top 3 Rows**:
+      - `#1: Mass-Market Brands Ship Premium Collector Editions with Booster/Variation Mechanics` (signal: 96, rel: 1.04) — elevated to Rank #1 by direct token match tier.
+      - `#2: Smells Like Home` (signal: 100, rel: 0.724)
+      - `#3: Experiential Loyalty` (signal: 200, rel: 2.24)
+    - **Widget Guards**: 0 PlayStation / Hermès brand chips rendered on cards; zero-value *"Gasoline Stations $0.0B"* and Market section cleanly omitted; Sources footer aligned without phantom Census pills.
+    - **Widget Editorial Context**: Headline Top signal: *"Mass-Market Brands Ship Premium Collector Editions with Booster/Variation Mechanics"* (score 96).
+  - **1.46.29 Regression Probes**: Lululemon `brand_tracker`, James Colistra `consult_human_agent`, Gen Z beverage search all passed with 3-sentence closing blocks and intact metadata.
 - **System Clarifications Bible (`Fodda API/docs/bibles/system_clarifications.md`)**:
   - Updated bible gotchas documenting that widget renders obey the same brand/stat guards as prose, and niche direct-token matches outrank mega-trend boosts.
 
