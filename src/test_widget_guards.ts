@@ -202,7 +202,37 @@ console.log('\n[Test 3] Niche-Query Direct Token Match Reranking Tier');
     });
 
     assert.strictEqual(rows[0]?.trendName, nicheTrend.trendName, 'Niche trend MUST rank #1 above high-scoring generic mega-trends');
-    console.log('✅ Test 3 Passed: Direct token match tier places niche trend at rank #1.');
+
+    // Also test Neil's exact verbatim phrasing: "what are the trends in the collectible space, particularly trading cards, like baseball trading cards"
+    const neilVerbatimQuery = 'what are the trends in the collectible space, particularly trading cards, like baseball trading cards';
+    const neilTokens = specificQueryTokens(neilVerbatimQuery);
+    assert.strictEqual(rowHasDirectTokenMatch(nicheTrend, neilTokens), true, 'Neil verbatim query (singular "collectible") must match sector "Collectibles" and "trading cards"');
+    assert.strictEqual(rowHasDirectTokenMatch(genericMegaTrend1, neilTokens), false, 'Experiential Loyalty must not match Neil verbatim tokens');
+
+    const neilRows = [genericMegaTrend1, genericMegaTrend2, nicheTrend];
+    const isNeilRowDirectMatch = (row: any) => rowHasDirectTokenMatch(row, neilTokens);
+    const isNeilRowOnTopic = (row: any) =>
+        rowMatchesQueryTokens(row, neilTokens, mockGraphs) ||
+        (rowScore(row) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(row, mockGraphs, mockGraphs)] ?? 0.8));
+
+    neilRows.sort((a, b) => {
+        const directA = isNeilRowDirectMatch(a) ? 1 : 0;
+        const directB = isNeilRowDirectMatch(b) ? 1 : 0;
+        if (directA !== directB) return directB - directA;
+
+        const onTopicA = isNeilRowOnTopic(a) ? 1 : 0;
+        const onTopicB = isNeilRowOnTopic(b) ? 1 : 0;
+        if (onTopicA !== onTopicB) return onTopicB - onTopicA;
+
+        const relA = a.relevance_score || 0;
+        const relB = b.relevance_score || 0;
+        if (Math.abs(relB - relA) > 0.05) return relB - relA;
+
+        return (b.signal_score || 0) - (a.signal_score || 0);
+    });
+    assert.strictEqual(neilRows[0]?.trendName, nicheTrend.trendName, 'Neil verbatim query must rank Booster/Variation collectibles trend at #1');
+
+    console.log('✅ Test 3 Passed: Direct token match tier with stemming places niche trend at rank #1 on Neil query.');
 }
 
 // ── Test 4: Generic Query Regression Check ──

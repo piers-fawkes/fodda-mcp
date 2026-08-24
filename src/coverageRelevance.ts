@@ -137,9 +137,22 @@ export function rowMatchesQueryTokens(row: any, tokens: string[], catalog: Catal
     return false;
 }
 
+export function stemToken(token: string): string {
+    let s = token.toLowerCase().trim();
+    if (s.endsWith('ies') && s.length > 4) {
+        s = s.slice(0, -3) + 'y';
+    } else if (s.endsWith('es') && s.length > 4) {
+        s = s.slice(0, -2);
+    } else if (s.endsWith('s') && !s.endsWith('ss') && s.length > 3) {
+        s = s.slice(0, -1);
+    }
+    return s;
+}
+
 /**
  * Direct token match tier: checks if specific query tokens match directly
  * against the row's core trend name, sectors, or trend slug/categories.
+ * Applies singular/plural folding and stem matching (e.g. "collectible" matches "Collectibles", "trading cards" matches "cards").
  * (Used to rank direct niche matches above semantically adjacent mega-trends).
  */
 export function rowHasDirectTokenMatch(row: any, tokens: string[]): boolean {
@@ -156,11 +169,22 @@ export function rowHasDirectTokenMatch(row: any, tokens: string[]): boolean {
     const words = new Set(
         parts.filter((x: any) => typeof x === 'string').join(' ').toLowerCase().split(/[^a-z0-9]+/)
     );
+    const stemmedWords = new Set<string>();
+    for (const w of words) {
+        stemmedWords.add(stemToken(w));
+    }
+
     for (const t of tokens) {
         if (words.has(t)) return true;
+        const stemT = stemToken(t);
+        if (stemmedWords.has(stemT)) return true;
         if (t.length >= 4) {
             for (const w of words) {
-                if (w.startsWith(t)) return true;
+                if (w.startsWith(t) || (w.length >= 4 && t.startsWith(w))) return true;
+                const stemW = stemToken(w);
+                if (stemW.length >= 4 && stemT.length >= 4) {
+                    if (stemW.startsWith(stemT) || stemT.startsWith(stemW)) return true;
+                }
             }
         }
     }
