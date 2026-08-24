@@ -64,15 +64,17 @@ async function verifyNeilLive() {
     });
 
     const fullText = res.content.map((c: any) => c.text).join('\n');
+    const widgetContentBlock = res.content.find((c: any) => c.text?.startsWith('── WIDGET HTML ──') || (c.text?.includes('<div class="w">') && !c.text?.startsWith('{')));
+    const widgetHtml = widgetContentBlock?.text || '';
 
     console.log('\n--- Widget Analysis ---');
-    const hasGasolineZero = fullText.includes('Gasoline Stations') || fullText.includes('$0.0B');
+    const hasGasolineZero = widgetHtml.includes('Gasoline Stations') || widgetHtml.includes('$0.0B');
     console.log(`Contains zero-value Gasoline Stations ($0.0B): ${hasGasolineZero ? '❌ FAIL' : '✅ CLEAN OMIT'}`);
 
-    const hasPlayStationChips = fullText.includes('PlayStation') || fullText.includes('Hermès') || fullText.includes('Louis Vuitton');
+    const hasPlayStationChips = widgetHtml.includes('PlayStation') || widgetHtml.includes('Hermès') || widgetHtml.includes('Louis Vuitton');
     console.log(`Contains mega-trend brand chips (PlayStation/Hermès): ${hasPlayStationChips ? '❌ FAIL' : '✅ CLEAN OMIT'}`);
 
-    const hasMarketSection = fullText.includes('<div class="sec">Market</div>');
+    const hasMarketSection = widgetHtml.includes('<div class="sec">Market</div>');
     console.log(`Rendered Market section: ${hasMarketSection ? 'YES' : 'CLEAN-OMITTED'}`);
 
     const top3ContainsNiche = rows.slice(0, 3).some((r: any) =>
