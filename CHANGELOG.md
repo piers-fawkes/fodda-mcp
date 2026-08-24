@@ -5,6 +5,30 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.38] - 2026-08-24
+
+### Fixed & Enhanced (Widget Brand Guard, Zero-Stat Card Omission & Niche-Query Direct-Token Reranking — `briefs/brief_widget_guard_and_niche_ranking.md`)
+- **Shared Brand Guard Helper (`src/coverageRelevance.ts`, `src/searchTemplate.ts`)**:
+  - Exported reusable helper `isRowBrandEligible()` and `extractCleanRowBrands()` to single-source the mega-trend roster suppression (`brand_count > 30` or `brandNames.length >= 10`).
+  - Integrated `extractCleanRowBrands()` into `renderSearchWidget()` card rendering, suppressing brand chips on mega-trend cards (e.g. PlayStation / Hermès on Experiential Loyalty).
+  - Updated `buildCompaniesHtml()` to count brand mentions strictly from qualifying rows and clean-omit the entire `<div class="sec">Companies</div>` section when no brands survive.
+  - Applied publisher / curator token exclusion set (`buildPublisherExclusionSet()`) to all widget brand chips.
+- **Stat-Card Emission Guard & Sources Alignment (`src/searchTemplate.ts`)**:
+  - Guarded `buildCensusHtml()` to never emit stat cards whose value is 0, missing, or undefined (e.g. "Gasoline Stations $0.0B").
+  - Cleanly omitted the entire `<div class="sec">Market</div>` section when neither Google Trends nor Census has non-zero valid series data.
+  - Reconciled Sources footer (`sources`) to strictly include "Census Bureau" or "Google Trends" only when their respective HTML section actually rendered.
+- **Niche-Query Direct-Token Match Reranking Tier (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Added top-tier direct token matching helper `rowHasDirectTokenMatch()` checking specific query tokens against `trendName`, `name`, `label`, `title`, `trendSlug`, `slug`, `sectorNames`, `sectors`, `categories`, and `topics`.
+  - Prioritized direct token matches as the top sorting tier in `search_graph` fan-out and quality-gated diversity reranking above general semantic relevance.
+  - Ensured niche queries (e.g. collectibles, booster packs) headline and place on-target trends into top 3 instead of semantically adjacent mega-trends with high raw signal scores.
+  - Preserved existing relevance/signal sort order for generic queries without direct niche tokens (e.g. "retail trends 2026").
+  - Preserved ranked row order in `renderSearchWidget()` so widget card order and "Key signal" headline track the reranked results.
+- **Verification & Test Suite (`src/test_widget_guards.ts`)**:
+  - Created automated test suite covering brand guard suppression, zero-stat omission, sources reconciliation, niche-query direct ranking, and generic query stability.
+  - All test suites green: `test_widget_guards.ts`, `test_next_moves.ts`, `test_next_moves_transcripts.ts`.
+- **System Clarifications Bible (`Fodda API/docs/bibles/system_clarifications.md`)**:
+  - Updated bible gotchas documenting that widget renders obey the same brand/stat guards as prose, and niche direct-token matches outrank mega-trend boosts.
+
 ## [1.46.37] - 2026-08-24
 
 ### Fixed & Enhanced (Neil Demo Readiness: Parallel Supplemental Suggest 3s Box, Mega-Trend Brand Guard & Live Verification — `briefs/brief_neil_demo_readiness.md`)

@@ -8,6 +8,8 @@
 
 import { wrapWidget, esc } from './widgetShell.js';
 import { fillSearchInsight, fillAnalysis, replaceSlots, type TrendSummary } from './editorialFill.js';
+import { isRowBrandEligible, buildPublisherExclusionSet, extractCleanRowBrands, normalizeBrandKey } from './coverageRelevance.js';
+import { getGraphs } from './catalogCache.js';
 
 
 // ---------------------------------------------------------------------------
@@ -22,6 +24,8 @@ interface TrendRow {
     evidence_count?: number;
     brandNames?: string | string[];
     Brand?: string | string[];
+    brand_count?: number;
+    brandCount?: number;
     firstSeen?: string;
     lastSeen?: string;
     trendDescription?: string;
@@ -50,12 +54,6 @@ function computeStage(t: TrendRow): string {
     return 'emerging';
 }
 
-function normalizeBrands(raw: string | string[] | undefined): string[] {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw.slice(0, 4);
-    return raw.split('|').map(b => b.trim()).filter(Boolean).slice(0, 4);
-}
-
 // ---------------------------------------------------------------------------
 // Build Google Trends section
 // ---------------------------------------------------------------------------
@@ -69,6 +67,8 @@ function buildGoogleTrendsHtml(gt: any, query: string): string {
     const latest = points[points.length - 1];
     const latestVal = latest?.values?.[0]?.extracted_value ?? latest?.value ?? 0;
     const peak = Math.max(...points.map((p: any) => p?.values?.[0]?.extracted_value ?? p?.value ?? 0));
+    if (peak <= 0) return '';
+
     const peakPoint = points.find((p: any) => (p?.values?.[0]?.extracted_value ?? p?.value ?? 0) === peak);
     const peakDate = peakPoint?.date || '';
     const direction = latestVal > (points[Math.max(0, points.length - 4)]?.values?.[0]?.extracted_value ?? 0) ? '↑ rising' : '↓ declining';
@@ -104,46 +104,57 @@ function buildCensusHtml(census: any): string {
     const snap = census?.snapshot || census;
     const total = snap?.total_retail;
     const subs = snap?.subcategories || [];
-    if (!total && !subs.length) return '';
 
     const fmtB = (v: number) => `$${(v / 1e9).toFixed(1)}B`;
     const fmtPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
 
-    let html = `<div class="sl2">US retail sales — Census Bureau</div><div class="sg">`;
+    const cards: string[] = [];
 
-    if (total) {
-        html += `<div class="sk"><div class="skl">Total US retail</div><div class="skv">${fmtB(total.value || 0)}</div><div class="sks">${fmtPct(total.mom_change || 0)} MoM</div></div>`;
+    // Guard: only emit card if value is non-zero number > 0
+    if (total && typeof total.value === 'number' && total.value > 0) {
+        cards.push(`<div class="sk"><div class="skl">Total US retail</div><div class="skv">${fmtB(total.value)}</div><div class="sks">${fmtPct(total.mom_change || 0)} MoM</div></div>`);
     }
 
-    // Show first subcategory
-    if (subs.length > 0) {
-        const sub = subs[0];
-        html += `<div class="sk"><div class="skl">${esc(sub.name || '')}</div><div class="skv">${fmtB(sub.value || 0)}</div><div class="sks">${fmtPct(sub.mom_change || 0)} MoM</div></div>`;
+    // Show first valid subcategory with non-zero value > 0
+    for (const sub of subs) {
+        if (sub && typeof sub.value === 'number' && sub.value > 0) {
+            cards.push(`<div class="sk"><div class="skl">${esc(sub.name || '')}</div><div class="skv">${fmtB(sub.value)}</div><div class="sks">${fmtPct(sub.mom_change || 0)} MoM</div></div>`);
+            break;
+        }
     }
 
-    html += `</div>`;
-    return html;
+    if (cards.length === 0) return '';
+
+    return `<div class="sl2">US retail sales — Census Bureau</div><div class="sg">${cards.join('')}</div>`;
 }
 
 // ---------------------------------------------------------------------------
 // Build Companies section (brand frequency bars)
 // ---------------------------------------------------------------------------
-function buildCompaniesHtml(rows: any[]): string {
-    const brandCounts: Record<string, number> = {};
-    rows.forEach(r => {
-        const brands = normalizeBrands(r.brandNames || r.Brand);
-        brands.forEach(b => {
-            brandCounts[b] = (brandCounts[b] || 0) + 1;
-        });
-    });
+function buildCompaniesHtml(rows: any[], publisherTokens?: Set<string>): string {
+    const brandCounts: Record<string, { count: number; displayName: string }> = {};
 
-    const sorted = Object.entries(brandCounts)
-        .sort((a, b) => b[1] - a[1])
+    for (const r of rows) {
+        if (!isRowBrandEligible(r)) continue;
+        const brands = extractCleanRowBrands(r, publisherTokens, 10);
+        for (const b of brands) {
+            const norm = normalizeBrandKey(b);
+            if (!norm) continue;
+            if (brandCounts[norm]) {
+                brandCounts[norm].count++;
+            } else {
+                brandCounts[norm] = { count: 1, displayName: b };
+            }
+        }
+    }
+
+    const sorted = Object.values(brandCounts)
+        .sort((a, b) => b.count - a.count)
         .slice(0, 20);
 
-    if (sorted.length === 0) return '<p class="fnote">No brand data available for these trends.</p>';
+    if (sorted.length === 0) return '';
 
-    return `<div class="co-grid">${sorted.map(([brand, count]) => {
+    return `<div class="co-grid">${sorted.map(({ displayName: brand, count }) => {
         const query = `Tell me about ${brand.replace(/'/g, "\\'")}'s innovation strategy across the knowledge graphs`;
         return `<button class="co-pill" onclick="sendPrompt('${query}')">${esc(brand)}<span class="co-count">${count}</span></button>`;
     }).join('\n')}</div>`;
@@ -241,42 +252,40 @@ export async function renderSearchWidget(
 
 
 
-    // Compute stages
+    const publisherTokens = buildPublisherExclusionSet(
+        data?._routed_graphs || [],
+        getGraphs(),
+        rows
+    );
+
+    // Compute stages while preserving ranked row order
     const enriched = rows.map(r => ({
         ...r,
         _stage: r.trendLifecycle || computeStage(r),
         _signal: r.signal_score || 0,
         _name: r.trendName || r.name || (r as any).label || '',
         _desc: (r.trendDescription || r.description || '').slice(0, 140),
-        _brands: normalizeBrands(r.brandNames || (r as any).Brand),
+        _brands: extractCleanRowBrands(r, publisherTokens, 4),
         _graphName: r.graphName || graphName || '',
         _evCount: r.evidence_count || r.evidenceCount || 0,
         _firstSeen: r.firstSeen || '',
         _lastSeen: r.lastSeen || '',
     }));
 
-    enriched.sort((a, b) => b._signal - a._signal);
-
-
-
-    // Collect source names
-    const sourceSet = new Set<string>();
-    enriched.forEach(t => { if (t._graphName) sourceSet.add(t._graphName); });
-    if (supplemental?.google_trends) sourceSet.add('Google Trends');
-    if (supplemental?.census_retail) sourceSet.add('Census Bureau');
-    const sources = [...sourceSet];
-
-
-
-    // Build Market tab content
+    // Build Market section content
     const censusHtml = buildCensusHtml(supplemental?.census_retail);
     const gtHtml = buildGoogleTrendsHtml(supplemental?.google_trends, query);
-    const marketContent = (censusHtml || gtHtml)
-        ? `${censusHtml}${gtHtml}`
-        : '<p class="fnote">No market data available for this query.</p>';
+    const marketContent = (censusHtml || gtHtml) ? `${censusHtml}${gtHtml}` : '';
 
-    // Build Companies tab content
-    const companiesHtml = buildCompaniesHtml(rows);
+    // Collect source names only for sources that actually rendered elements
+    const sourceSet = new Set<string>();
+    enriched.forEach(t => { if (t._graphName) sourceSet.add(t._graphName); });
+    if (gtHtml) sourceSet.add('Google Trends');
+    if (censusHtml) sourceSet.add('Census Bureau');
+    const sources = [...sourceSet];
+
+    // Build Companies section content
+    const companiesHtml = buildCompaniesHtml(rows, publisherTokens);
 
     const signalCountHtml = `<p class="scr-count">${enriched.length} signals across ${sources.filter(s => s !== 'Google Trends' && s !== 'Census Bureau').join(', ')}</p>`;
 
@@ -286,15 +295,30 @@ export async function renderSearchWidget(
         const stageObj = smap[t._stage] || smap['emerging'];
         const sc = t._signal >= 80 ? 'high' : t._signal >= 50 ? 'mid' : 'low';
         const queryStr = `Tell me about ${t._name} from the ${t._graphName}`.replace(/'/g, "\\'");
+        const chipsHtml = t._brands.length > 0
+            ? `<div class="bchips">${t._brands.map((b: string) => `<span class="bchip">${esc(b)}</span>`).join('')}</div>`
+            : '';
         return `<div class="tc2">
           <div class="tc2-eyebrow">${esc(t._graphName)} <span class="sep">·</span> ${(stageObj?.label || 'Emerging').toUpperCase()}</div>
           <div class="tc2-top"><p class="tc2-name">${esc(t._name)}</p>
           <div class="signal ${sc}"><span class="signal-num">${t._signal}</span><span class="signal-meta">signal</span></div></div>
           <p class="tc2-desc">${esc(t._desc)}</p>
-          <div class="bchips">${t._brands.map((b: string) => `<span class="bchip">${esc(b)}</span>`).join('')}</div>
+          ${chipsHtml}
           <div class="tc2-foot"><span class="tc2-graph">${esc(t._graphName)}</span><span>${(t as any).relevance ? (t as any).relevance + '% match' : t._evCount + ' ev.'}</span></div>
           <button class="tc2-exp" onclick="sendPrompt('${queryStr}')">Explore ↗</button></div>`;
     }).join('');
+
+    const companiesSectionHtml = companiesHtml ? `
+<div class="sec">Companies</div>
+<div class="sl2">Brands appearing across these trends</div>
+<p class="fnote">Frequency of brand mentions across ${enriched.length} trends. Higher count = wider strategic footprint.</p>
+${companiesHtml}
+` : '';
+
+    const marketSectionHtml = marketContent ? `
+<div class="sec">Market</div>
+${marketContent}
+` : '';
 
     // Build content HTML linearly without tabs
     const contentHtml = `
@@ -303,15 +327,7 @@ export async function renderSearchWidget(
 <div class="sec">Trends</div>
 ${signalCountHtml}
 <div class="tgrid" id="tgrid">${trendsGridHtml}</div>
-
-<div class="sec">Companies</div>
-<div class="sl2">Brands appearing across these trends</div>
-<p class="fnote">Frequency of brand mentions across ${enriched.length} trends. Higher count = wider strategic footprint.</p>
-${companiesHtml}
-
-<div class="sec">Market</div>
-${marketContent}
-
+${companiesSectionHtml}${marketSectionHtml}
 <div class="sec">Analysis</div>
 <div class="analysis-content">{{ANALYSIS_HTML}}</div>
 `;

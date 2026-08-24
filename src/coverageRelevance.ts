@@ -137,6 +137,147 @@ export function rowMatchesQueryTokens(row: any, tokens: string[], catalog: Catal
     return false;
 }
 
+/**
+ * Direct token match tier: checks if specific query tokens match directly
+ * against the row's core trend name, sectors, or trend slug/categories.
+ * (Used to rank direct niche matches above semantically adjacent mega-trends).
+ */
+export function rowHasDirectTokenMatch(row: any, tokens: string[]): boolean {
+    if (!tokens || tokens.length === 0 || !row) return false;
+    const parts: any[] = [
+        row.trendName, row.name, row.label, row.title,
+        row.trendSlug, row.slug,
+        row.sectorNames, row.sectors, row.sector,
+        row.categoryNames, row.categories, row.category,
+    ];
+    for (const arr of [row.sectors, row.sectorNames, row.categories, row.categoryNames, row.topics]) {
+        if (Array.isArray(arr)) parts.push(...arr);
+    }
+    const words = new Set(
+        parts.filter((x: any) => typeof x === 'string').join(' ').toLowerCase().split(/[^a-z0-9]+/)
+    );
+    for (const t of tokens) {
+        if (words.has(t)) return true;
+        if (t.length >= 4) {
+            for (const w of words) {
+                if (w.startsWith(t)) return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Row-level brand guard: returns true if the row is NOT a mega-trend brand roster.
+ * Excludes rows with brand_count > 30 (or brandNames.length >= 10 when brand_count is absent).
+ */
+export function isRowBrandEligible(row: any): boolean {
+    if (!row) return false;
+    const brandCount = typeof row.brand_count === 'number'
+        ? row.brand_count
+        : (typeof row.brandCount === 'number' ? row.brandCount : undefined);
+    if (brandCount !== undefined) {
+        if (brandCount > 30) return false;
+    } else {
+        const rawNames = Array.isArray(row.brandNames)
+            ? row.brandNames
+            : (Array.isArray(row.brands) ? row.brands : undefined);
+        if (rawNames && rawNames.length >= 10) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** Normalize brand string for deduplication / comparison. */
+export function normalizeBrandKey(name: string): string {
+    return name.toLowerCase().replace(/[^\w\s]/g, '').trim().replace(/\s+/g, ' ');
+}
+
+/** Build standard publisher / curator exclusion set. */
+export function buildPublisherExclusionSet(
+    searchedGraphs: any[] = [],
+    catalog: CatalogGraph[] = [],
+    rows: any[] = []
+): Set<string> {
+    const publisherTokens = new Set([
+        'dentsu', 'dentsu creative', 'havas', 'psfk', 'nielseniq', 'niq',
+        'wpp', 'omnicom', 'ipg', 'publicis', 'accenture', 'deloitte',
+        'mckinsey', 'bcg', 'bain', 'gartner', 'forrester', 'kantar', 'jwt',
+        'ogilvy', 'edelman', 'mccann', 'bbdo', 'tbwa', 'vml', 'leo burnett'
+    ]);
+
+    for (const sg of searchedGraphs) {
+        const gMeta = typeof sg === 'string' ? catalog.find(x => x.graph_id === sg) : sg;
+        if (gMeta) {
+            if (gMeta.curator) publisherTokens.add(gMeta.curator.toLowerCase().trim());
+            if (gMeta.company) publisherTokens.add(gMeta.company.toLowerCase().trim());
+            if (gMeta.name) publisherTokens.add(gMeta.name.toLowerCase().trim());
+            for (const word of `${gMeta.curator || ''} ${gMeta.company || ''} ${gMeta.name || ''}`.toLowerCase().split(/[\s,.-]+/)) {
+                if (word.length > 2) publisherTokens.add(word);
+            }
+        }
+    }
+
+    for (const r of rows) {
+        if (r && r.source_label) {
+            const match = String(r.source_label).match(/\(([^)]+)\)/);
+            if (match && match[1]) {
+                const org = match[1].toLowerCase().trim();
+                publisherTokens.add(org);
+                for (const w of org.split(/[\s,.-]+/)) {
+                    if (w.length > 2) publisherTokens.add(w);
+                }
+            }
+        }
+    }
+
+    return publisherTokens;
+}
+
+/** Test whether a brand name matches publisher / curator tokens. */
+export function isPublisherBrand(brand: string, publisherTokens: Set<string>): boolean {
+    const clean = brand.trim();
+    const norm = normalizeBrandKey(clean);
+    if (!norm) return true;
+    if (publisherTokens.has(norm) || publisherTokens.has(clean.toLowerCase())) {
+        return true;
+    }
+    return [...publisherTokens].some(pt => norm === pt || norm.startsWith(`${pt} `) || norm.endsWith(` ${pt}`));
+}
+
+/** Extract clean, guarded brand names for a single row up to limit. */
+export function extractCleanRowBrands(row: any, publisherTokens?: Set<string>, limit: number = 4): string[] {
+    if (!isRowBrandEligible(row)) return [];
+
+    const rawList: string[] = [];
+    if (Array.isArray(row.brandNames)) rawList.push(...row.brandNames);
+    else if (typeof row.brandNames === 'string') rawList.push(...row.brandNames.split('|'));
+    if (Array.isArray(row.brands)) rawList.push(...row.brands);
+    if (typeof row.brand === 'string' && row.brand) rawList.push(row.brand);
+    if (typeof row.Brand === 'string' && row.Brand) rawList.push(...row.Brand.split('|'));
+    else if (Array.isArray(row.Brand)) rawList.push(...row.Brand);
+    if (typeof row.company === 'string' && row.company) rawList.push(row.company);
+    if (Array.isArray(row.entities?.brands)) rawList.push(...row.entities.brands);
+
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    for (const b of rawList) {
+        if (typeof b === 'string' && b.trim().length > 1) {
+            const clean = b.trim();
+            const norm = normalizeBrandKey(clean);
+            if (!norm || seen.has(norm)) continue;
+            if (publisherTokens && isPublisherBrand(clean, publisherTokens)) continue;
+            seen.add(norm);
+            result.push(clean);
+            if (result.length >= limit) break;
+        }
+    }
+
+    return result;
+}
+
 export interface OnTopicResult {
     /** Rows judged on-topic for the query. */
     onTopic: number;
@@ -868,61 +1009,19 @@ export async function generateNextMoves(
 
         // If no on-topic rows exist, leave specific.brands undefined (do not fall back to off-topic noise rows)
         if (onTopicRows.length > 0) {
-            // Build exclusion set of curator / organization / publisher tokens
-            const publisherTokens = new Set([
-                'dentsu', 'dentsu creative', 'havas', 'psfk', 'nielseniq', 'niq',
-                'wpp', 'omnicom', 'ipg', 'publicis', 'accenture', 'deloitte',
-                'mckinsey', 'bcg', 'bain', 'gartner', 'forrester', 'kantar', 'jwt',
-                'ogilvy', 'edelman', 'mccann', 'bbdo', 'tbwa', 'vml', 'leo burnett'
-            ]);
-
-            // Add searched graph curators, companies, and names
-            for (const sg of searchedGraphs) {
-                const gMeta = typeof sg === 'string' ? catalog.find(x => x.graph_id === sg) : sg;
-                if (gMeta) {
-                    if (gMeta.curator) publisherTokens.add(gMeta.curator.toLowerCase().trim());
-                    if (gMeta.company) publisherTokens.add(gMeta.company.toLowerCase().trim());
-                    if (gMeta.name) publisherTokens.add(gMeta.name.toLowerCase().trim());
-                    for (const word of `${gMeta.curator || ''} ${gMeta.company || ''} ${gMeta.name || ''}`.toLowerCase().split(/[\s,.-]+/)) {
-                        if (word.length > 2) publisherTokens.add(word);
-                    }
-                }
-            }
-
-            // Also check source_label from rows
-            for (const r of onTopicRows) {
-                if (r.source_label) {
-                    const match = String(r.source_label).match(/\(([^)]+)\)/);
-                    if (match && match[1]) {
-                        const org = match[1].toLowerCase().trim();
-                        publisherTokens.add(org);
-                        for (const w of org.split(/[\s,.-]+/)) {
-                            if (w.length > 2) publisherTokens.add(w);
-                        }
-                    }
-                }
-            }
-
-            const normalizeBrandKey = (name: string) => name.toLowerCase().replace(/[^\w\s]/g, '').trim().replace(/\s+/g, ' ');
-
+            const publisherTokens = buildPublisherExclusionSet(searchedGraphs, catalog, onTopicRows);
             const brandCounts = new Map<string, { count: number; displayName: string }>();
 
             for (const r of onTopicRows) {
-                // Mega-trend brand guard: exclude rows with brand_count > 30 (or brandNames.length >= 10 when brand_count is absent)
-                const brandCount = typeof r.brand_count === 'number' ? r.brand_count : (typeof r.brandCount === 'number' ? r.brandCount : undefined);
-                if (brandCount !== undefined) {
-                    if (brandCount > 30) continue;
-                } else {
-                    const rawNames = Array.isArray(r.brandNames) ? r.brandNames : (Array.isArray(r.brands) ? r.brands : undefined);
-                    if (rawNames && rawNames.length >= 10) {
-                        continue;
-                    }
-                }
+                if (!isRowBrandEligible(r)) continue;
 
                 const brandList: string[] = [];
                 if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
+                else if (typeof r.brandNames === 'string') brandList.push(...r.brandNames.split('|'));
                 if (Array.isArray(r.brands)) brandList.push(...r.brands);
                 if (typeof r.brand === 'string' && r.brand) brandList.push(r.brand);
+                if (typeof r.Brand === 'string' && r.Brand) brandList.push(...r.Brand.split('|'));
+                else if (Array.isArray(r.Brand)) brandList.push(...r.Brand);
                 if (typeof r.company === 'string' && r.company) brandList.push(r.company);
                 if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
 
@@ -932,12 +1031,7 @@ export async function generateNextMoves(
                         const norm = normalizeBrandKey(clean);
                         if (!norm) continue;
 
-                        // Check against publisher tokens
-                        if (publisherTokens.has(norm) || publisherTokens.has(clean.toLowerCase())) {
-                            continue;
-                        }
-                        const isPub = [...publisherTokens].some(pt => norm === pt || norm.startsWith(`${pt} `) || norm.endsWith(` ${pt}`));
-                        if (isPub) continue;
+                        if (isPublisherBrand(clean, publisherTokens)) continue;
 
                         const existing = brandCounts.get(norm);
                         if (existing) {

@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
+import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -1107,11 +1107,18 @@ export async function createServer(
 
                     const tokens = specificQueryTokens(query);
                     const catalog = getGraphs();
+                    const isRowDirectMatch = (row: any) => rowHasDirectTokenMatch(row, tokens);
                     const isRowOnTopic = (row: any) =>
                         rowMatchesQueryTokens(row, tokens, catalog) ||
                         (rowScore(row) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(row, searchedGraphs, catalog)] ?? 0.8));
 
                     allRows.sort((a, b) => {
+                        // 1. Direct niche token match tier (ranks direct keyword/sector matches above mega-trends)
+                        const directA = isRowDirectMatch(a) ? 1 : 0;
+                        const directB = isRowDirectMatch(b) ? 1 : 0;
+                        if (directA !== directB) return directB - directA;
+
+                        // 2. On-topic tier
                         const onTopicA = isRowOnTopic(a) ? 1 : 0;
                         const onTopicB = isRowOnTopic(b) ? 1 : 0;
                         if (onTopicA !== onTopicB) return onTopicB - onTopicA;
@@ -1179,6 +1186,10 @@ export async function createServer(
                         const alternatives = overflow
                             .filter(r => getGraphId(r) !== dominantGraphId && getScore(r) >= qualityThreshold)
                             .sort((a, b) => {
+                                const directA = isRowDirectMatch(a) ? 1 : 0;
+                                const directB = isRowDirectMatch(b) ? 1 : 0;
+                                if (directA !== directB) return directB - directA;
+
                                 const onTopicA = isRowOnTopic(a) ? 1 : 0;
                                 const onTopicB = isRowOnTopic(b) ? 1 : 0;
                                 if (onTopicA !== onTopicB) return onTopicB - onTopicA;
