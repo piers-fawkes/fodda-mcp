@@ -603,7 +603,7 @@ async function runTests() {
 {
     clearSuggestCacheForTesting();
     const mockTimeoutSuggestFn = async (q: string) => {
-        throw new Error('suggest timeout (1500ms)');
+        throw new Error('suggest timeout (3000ms)');
     };
 
     const rows = [{ title: 'Retail spending surge', graphId: 'retail' }];
@@ -790,6 +790,161 @@ async function runTests() {
         assert.ok(nextMoves.thread.adjacent.graph_id.length > 0, 'adjacent.graph_id must be non-empty');
     }
     console.log('✅ Test 23 Passed: adjacent.graph_id is never equal to searched graph or self');
+}
+
+// Test 24: Parallel suggest promise passed into options resolves properly
+{
+    clearSuggestCacheForTesting();
+    const parallelPromise = Promise.resolve({
+        sources: [
+            { id: 'google_trends', name: 'Google Trends' },
+            { id: 'fred', name: 'FRED Economic Data' }
+        ]
+    });
+
+    const rows = [{ title: 'Trading card secondary market values', graphId: 'retail' }];
+    const nextMoves = await generateNextMoves(
+        rows,
+        'what are the trends in the collectible space, particularly trading cards',
+        ['retail'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts,
+        { suggestPromise: parallelPromise }
+    );
+
+    assert.ok(nextMoves.specific?.statistics_source, 'statistics_source must be populated from suggestPromise');
+    assert.strictEqual(
+        nextMoves.specific.statistics_source,
+        'Google Trends and FRED Economic Data',
+        'statistics_source must use parallel suggest promise result'
+    );
+    console.log('✅ Test 24 Passed: Parallel suggest promise resolved cleanly without racing');
+}
+
+// Test 25: Mega-trend brand guard excludes rows with brand_count > 30 or brandNames.length >= 10
+{
+    const megaTrendRows = [
+        {
+            title: 'Experiential Loyalty',
+            graphId: 'retail',
+            brand_count: 734,
+            brandNames: ['PlayStation', 'Hermès', 'Nike', 'Apple', 'Target', 'Starbucks', 'Sephora', 'Gucci', 'LVMH', 'Prada']
+        },
+        {
+            title: 'Uncounted Mega Trend',
+            graphId: 'retail',
+            brandNames: ['Brand1', 'Brand2', 'Brand3', 'Brand4', 'Brand5', 'Brand6', 'Brand7', 'Brand8', 'Brand9', 'Brand10']
+        }
+    ];
+
+    const nextMoves = await generateNextMoves(
+        megaTrendRows,
+        'what are the trends in the collectible space, particularly trading cards',
+        ['retail'],
+        'ok',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.strictEqual(
+        nextMoves.specific?.brands,
+        undefined,
+        'specific.brands must be undefined when only mega-trend rows with >30 brands or >=10 brandNames are present'
+    );
+    console.log('✅ Test 25 Passed: Mega-trend brand guard cleanly excludes roster-like brand rows');
+}
+
+// Test 26: Thin-coverage expert routing picks lane match (Nathan Grotticelli) over first roster entry (Anu Lingala)
+{
+    const roster: CatalogAnalyst[] = [
+        {
+            analyst_id: 'anu-lingala',
+            name: 'Anu Lingala',
+            status: 'active',
+            topics: ['cultural macro-trends', 'lifestyle', 'culture'],
+            description: 'Cultural macro-trends and consumer lifestyle shifts',
+            expert_in: 'cultural macro-trends and lifestyle forecasting',
+            outside_their_lane: 'performance marketing, creative effectiveness benchmarks, ad tech',
+        },
+        {
+            analyst_id: 'nathan-grotticelli',
+            name: 'Nathan Grotticelli',
+            status: 'active',
+            topics: ['performance marketing', 'creative effectiveness', 'growth marketing'],
+            description: 'Performance marketing and creative effectiveness benchmarks',
+            expert_in: 'performance marketing, ad creative effectiveness benchmarks, and growth analytics',
+            outside_their_lane: 'haute couture fashion, fine jewelry',
+        }
+    ];
+
+    const thinRows = [{ title: 'Ad retention rate metric', graphId: 'retail' }];
+    const nextMoves = await generateNextMoves(
+        thinRows,
+        'creative effectiveness benchmarks',
+        ['retail'],
+        'thin',
+        undefined,
+        undefined,
+        mockGraphs,
+        roster
+    );
+
+    assert.ok(nextMoves.specific?.expert, 'specific.expert must be present');
+    assert.strictEqual(nextMoves.specific.expert.analyst_id, 'nathan-grotticelli', 'Must pick Nathan Grotticelli for creative effectiveness benchmarks, NOT Anu Lingala');
+    assert.strictEqual(nextMoves.specific.expert.display_name, 'Nathan Grotticelli');
+    assert.ok(nextMoves.specific.expert.reason.startsWith('closest expert lane'), `Reason must be honest and status-aware on thin coverage, got: ${nextMoves.specific.expert.reason}`);
+    console.log(`✅ Test 26 Passed: Thin-coverage scored expert routing picked Nathan over Anu: "${nextMoves.specific.expert.reason}"`);
+}
+
+// Test 27: Blind spot exclusion prevents out-of-lane recommendations
+{
+    const roster: CatalogAnalyst[] = [
+        {
+            analyst_id: 'anu-lingala',
+            name: 'Anu Lingala',
+            status: 'active',
+            topics: ['cultural macro-trends', 'lifestyle', 'culture'],
+            description: 'Cultural macro-trends and consumer lifestyle shifts',
+            expert_in: 'cultural macro-trends and lifestyle forecasting',
+            outside_their_lane: 'performance marketing, ad creative benchmarks, b2b saas',
+        }
+    ];
+
+    const nextMoves = await generateNextMoves(
+        [],
+        'performance marketing and ad creative benchmarks',
+        [],
+        'empty',
+        undefined,
+        undefined,
+        mockGraphs,
+        roster
+    );
+
+    assert.strictEqual(nextMoves.specific?.expert, undefined, 'Analyst with matching blind spot / outside_their_lane must be disqualified');
+    console.log('✅ Test 27 Passed: Blind spot exclusion prevented out-of-lane expert recommendation');
+}
+
+// Test 28: Zero lane-fit query omits specific.expert entirely
+{
+    const nextMoves = await generateNextMoves(
+        [],
+        'superconducting quantum qubit coherence',
+        [],
+        'empty',
+        undefined,
+        undefined,
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.strictEqual(nextMoves.specific?.expert, undefined, 'No-lane-fit query must omit specific.expert rather than naming first roster entry');
+    console.log('✅ Test 28 Passed: Zero lane-fit query cleanly omitted specific.expert');
 }
 
 console.log('\nAll Next Moves unit tests passed successfully!');

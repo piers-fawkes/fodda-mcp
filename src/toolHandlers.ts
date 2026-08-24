@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
+import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -976,6 +976,14 @@ export async function createServer(
                 let data: any;
                 let searchedGraphs: any[] = [];
 
+                // Start supplemental suggest in parallel with main search to avoid racing the API classifier
+                const suggestPromise = fetchSupplementalSuggest(query, {
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                });
+
                 // ── Explicit graph scope (`graphs` array): strict, no fallback routing ──
                 const explicitScope = Array.isArray(graphs) && graphs.length > 0
                     ? [...new Set(graphs.map(g => String(g).trim()).filter(Boolean))]
@@ -1021,7 +1029,10 @@ export async function createServer(
                     const relevantGraphs = scopedGraphs
                         ? scopedGraphs.map(g => ({ graph: g, score: 1.0, graphTier: classifyGraphTier(g), isDirectMatch: true }))
                         : getRelevantGraphs(query);
-                    const graphsToSearch = relevantGraphs.map(r => r.graph);
+                    const graphsToSearch = relevantGraphs.map(r => ({
+                        ...r.graph,
+                        relevanceScore: r.score
+                    }));
                     searchedGraphs = graphsToSearch;
 
                     const perGraphLimit = Math.max(5, Math.ceil(effectiveLimit / Math.max(graphsToSearch.length, 1)));
@@ -1400,6 +1411,7 @@ export async function createServer(
                     userId: resolveUserId(userId, uid),
                     sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                     sessionTracker,
+                    suggestPromise,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_graph', query, data?.coverage);
                 logQueryResult(query, 'search', data?.coverage, searchedGraphs, data?.next_moves);
@@ -2628,6 +2640,14 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'domain_intelligence');
 
+                // Start supplemental suggest in parallel with domain search
+                const suggestPromise = fetchSupplementalSuggest(query, {
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                });
+
                 const data = await foddaRequest('POST', '/v1/search/domain', apiKey, resolveUserId(userId, uid), body);
                 const domainWithheld = await settleOrWithhold({ queryTypeCode: 'domain_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_domain_intelligence');
                 if (domainWithheld) return domainWithheld;
@@ -2642,6 +2662,7 @@ export async function createServer(
                     userId: resolveUserId(userId, uid),
                     sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                     sessionTracker,
+                    suggestPromise,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_domain_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'domain_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2682,6 +2703,14 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'expert_intelligence');
 
+                // Start supplemental suggest in parallel with expert search
+                const suggestPromise = fetchSupplementalSuggest(query, {
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                });
+
                 const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
                 const expertWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_expert_intelligence');
                 if (expertWithheld) return expertWithheld;
@@ -2696,6 +2725,7 @@ export async function createServer(
                     userId: resolveUserId(userId, uid),
                     sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                     sessionTracker,
+                    suggestPromise,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_expert_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2736,6 +2766,14 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'report_intelligence');
 
+                // Start supplemental suggest in parallel with report search
+                const suggestPromise = fetchSupplementalSuggest(query, {
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                });
+
                 const data = await foddaRequest('POST', '/v1/search/report', apiKey, resolveUserId(userId, uid), body);
                 const reportWithheld = await settleOrWithhold({ queryTypeCode: 'report_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_report_intelligence');
                 if (reportWithheld) return reportWithheld;
@@ -2750,6 +2788,7 @@ export async function createServer(
                     userId: resolveUserId(userId, uid),
                     sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                     sessionTracker,
+                    suggestPromise,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_report_intelligence', query, annotatedData?.coverage);
                 logQueryResult(query, 'report_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
@@ -2840,6 +2879,14 @@ export async function createServer(
                     (Array.isArray(data?.statistics) && data.statistics.some((r: any) => r.fallback === 'trend_nodes' || r._fallback_note))
                 );
 
+                // Start supplemental suggest in parallel with statistics search
+                const suggestPromise = fetchSupplementalSuggest(query, {
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                });
+
                 const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
@@ -2849,6 +2896,7 @@ export async function createServer(
                     userId: resolveUserId(userId, uid),
                     sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                     sessionTracker,
+                    suggestPromise,
                 });
 
                 if (isFallbackTrendNodes && annotatedData?.coverage?.status === 'ok') {
@@ -2887,6 +2935,14 @@ export async function createServer(
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search_insights', graph_id);
 
+                // Start supplemental suggest in parallel with insights search
+                const suggestPromise = fetchSupplementalSuggest(query, {
+                    foddaRequest,
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                });
+
                 const searchTypes = types || 'quote,interpretation';
                 const params = new URLSearchParams();
                 params.set('query', query);
@@ -2908,6 +2964,7 @@ export async function createServer(
                     userId: resolveUserId(userId, uid),
                     sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                     sessionTracker,
+                    suggestPromise,
                 });
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_insights', query, annotatedData?.coverage);
                 logQueryResult(query, 'search_insights', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);

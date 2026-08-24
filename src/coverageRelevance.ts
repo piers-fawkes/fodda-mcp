@@ -463,6 +463,7 @@ export interface NextMovesOptions {
     sessionId?: string | undefined;
     sessionTracker?: any | undefined;
     suggestFn?: ((query: string) => Promise<any>) | undefined;
+    suggestPromise?: Promise<any> | undefined;
 }
 
 interface SuggestCacheEntry {
@@ -519,7 +520,9 @@ export async function fetchSupplementalSuggest(
 
     try {
         let suggestPromise: Promise<any> | null = null;
-        if (options?.suggestFn) {
+        if (options?.suggestPromise) {
+            suggestPromise = options.suggestPromise;
+        } else if (options?.suggestFn) {
             suggestPromise = options.suggestFn(query);
         } else if (options?.foddaRequest && options?.apiKey) {
             suggestPromise = options.foddaRequest(
@@ -536,12 +539,12 @@ export async function fetchSupplementalSuggest(
 
         let timer: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('suggest timeout (1500ms)')), 1500);
+            timer = setTimeout(() => reject(new Error('suggest timeout (3000ms)')), 3000);
         });
 
         const data = await Promise.race([suggestPromise, timeoutPromise]);
         clearTimeout(timer);
-        const sources: any[] = Array.isArray(data?.sources) ? data.sources : [];
+        const sources: any[] = Array.isArray(data) ? data : (Array.isArray(data?.sources) ? data.sources : []);
         setSuggestCacheEntry(cacheKey, sources);
         return sources;
     } catch (err: any) {
@@ -905,6 +908,17 @@ export async function generateNextMoves(
             const brandCounts = new Map<string, { count: number; displayName: string }>();
 
             for (const r of onTopicRows) {
+                // Mega-trend brand guard: exclude rows with brand_count > 30 (or brandNames.length >= 10 when brand_count is absent)
+                const brandCount = typeof r.brand_count === 'number' ? r.brand_count : (typeof r.brandCount === 'number' ? r.brandCount : undefined);
+                if (brandCount !== undefined) {
+                    if (brandCount > 30) continue;
+                } else {
+                    const rawNames = Array.isArray(r.brandNames) ? r.brandNames : (Array.isArray(r.brands) ? r.brands : undefined);
+                    if (rawNames && rawNames.length >= 10) {
+                        continue;
+                    }
+                }
+
                 const brandList: string[] = [];
                 if (Array.isArray(r.brandNames)) brandList.push(...r.brandNames);
                 if (Array.isArray(r.brands)) brandList.push(...r.brands);
@@ -987,7 +1001,7 @@ export async function generateNextMoves(
 
         if (isStatOrMarketShaped) {
             let suggestHandled = false;
-            if (options?.foddaRequest || options?.suggestFn) {
+            if (options?.foddaRequest || options?.suggestFn || options?.suggestPromise) {
                 const sources = await fetchSupplementalSuggest(query, options);
                 if (sources && sources.length > 0) {
                     const validSources = sources.filter(s => s && s.returns_draft !== true && s.name);
@@ -1025,7 +1039,7 @@ export async function generateNextMoves(
         }
     }
 
-    // Expert: first Active analyst whose graph was searched or scored >= threshold in routing
+    // Expert: scored lane-fit picker over active analysts
     const activeAnalysts = analysts.filter(a => {
         const st = (a.status || a.Status || '').toLowerCase().trim();
         return !st || st === 'active';
@@ -1038,15 +1052,126 @@ export async function generateNextMoves(
                (a.name && a.name.toLowerCase().trim() === cur);
     };
 
-    const matchedAnalyst = activeAnalysts.find(a => {
-        if (isCurrentAnalyst(a)) return false;
+    const qLower = (query || '').toLowerCase().trim();
+    const queryTokens = tokens;
+    const allQueryWords = qLower.split(/[^a-z0-9]+/).filter((w: string) => w.length >= 3);
+
+    interface ScoredAnalyst {
+        analyst: CatalogAnalyst;
+        score: number;
+        hasBlindSpot: boolean;
+        directMatch: boolean;
+    }
+
+    const scoredAnalysts: ScoredAnalyst[] = [];
+
+    for (const a of activeAnalysts) {
+        if (isCurrentAnalyst(a)) continue;
+
+        let score = 0;
+        let directMatch = false;
+
+        // 1. Negative signal: Blind spot / outside_their_lane
+        const blindSpot = (typeof a.outside_their_lane === 'string' ? a.outside_their_lane : '').toLowerCase();
+        let hasBlindSpot = false;
+        if (blindSpot.length > 0) {
+            for (const t of queryTokens) {
+                if (t.length >= 3 && blindSpot.includes(t)) {
+                    hasBlindSpot = true;
+                    score -= 20;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (w.length >= 4 && blindSpot.includes(w)) {
+                    hasBlindSpot = true;
+                    score -= 10;
+                }
+            }
+        }
+
+        // 2. Positive signal: expert_in & what_they_offer
+        const expertIn = (((typeof a.expert_in === 'string' ? a.expert_in : '') + ' ' + (typeof a.what_they_offer === 'string' ? a.what_they_offer : ''))).toLowerCase();
+        if (expertIn.length > 0) {
+            if (qLower.length > 5 && expertIn.includes(qLower)) {
+                score += 8;
+            }
+            for (const t of queryTokens) {
+                if (expertIn.includes(t)) {
+                    score += 4;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (expertIn.includes(w)) {
+                    score += 1.5;
+                }
+            }
+        }
+
+        // 3. Positive signal: topics
+        const aTopics = (Array.isArray(a.topics) ? a.topics : []).map((t: any) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean);
+        for (const tp of aTopics) {
+            if (qLower.includes(tp) || tp.includes(qLower)) {
+                score += 5;
+            }
+            for (const t of queryTokens) {
+                if (tp.includes(t)) {
+                    score += 3;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (tp.includes(w)) {
+                    score += 1.5;
+                }
+            }
+        }
+
+        // 4. Positive signal: description
+        const desc = (typeof a.description === 'string' ? a.description : '').toLowerCase();
+        if (desc.length > 0) {
+            if (qLower.length > 5 && desc.includes(qLower)) {
+                score += 4;
+            }
+            for (const t of queryTokens) {
+                if (desc.includes(t)) {
+                    score += 2;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (desc.includes(w)) {
+                    score += 1;
+                }
+            }
+        }
+
+        // 5. Positive signal: Searched graphs & graph relevance scores
         const aSlug = (a.analyst_id || '').toLowerCase().trim();
-        if (searchedGraphIds.has(aSlug)) return true;
-        const aName = (a.name || '').toLowerCase();
-        const aDesc = (a.description || '').toLowerCase();
-        if (tokens.some(t => aName.includes(t) || aDesc.includes(t))) return true;
-        return false;
-    });
+        const aName = (a.name || '').toLowerCase().trim();
+        for (const g of searchedGraphs) {
+            const gid = (typeof g === 'string' ? g : (g.graph_id || g.id || '')).toLowerCase().trim();
+            const gCurator = (typeof g === 'object' && g.curator ? g.curator : '').toLowerCase().trim();
+            const isOwner = (gid && (gid === aSlug || gid.includes(aSlug) || aSlug.includes(gid))) ||
+                            (gCurator && (gCurator === aName || gCurator.includes(aName) || aName.includes(gCurator)));
+            if (isOwner) {
+                const relScore = (typeof g === 'object' && typeof g.relevanceScore === 'number')
+                    ? g.relevanceScore
+                    : (searchedGraphIds.has(aSlug) ? 1.0 : 0);
+                if (relScore > 0) {
+                    score += relScore * 5.0;
+                    if (relScore >= 0.5) directMatch = true;
+                }
+            }
+        }
+
+        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, directMatch });
+    }
+
+    // Require minimum threshold score and no disqualifying blind spot match
+    const MIN_EXPERT_FIT_SCORE = 3.0;
+    const validCandidates = scoredAnalysts
+        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && !s.hasBlindSpot)
+        .sort((a, b) => b.score - a.score);
+
+    const matchedAnalyst = validCandidates.length > 0 ? validCandidates[0]?.analyst : null;
 
     if (matchedAnalyst) {
         let lane = '';
@@ -1057,9 +1182,9 @@ export async function generateNextMoves(
             lane = truncateAtWordBoundary(firstClause, 60);
         }
 
-        const reason = lane && lane.length > 3
-            ? `covers ${lane} directly`
-            : 'covers this domain directly';
+        const reason = (status === 'thin' || status === 'empty')
+            ? (lane && lane.length > 3 ? `closest expert lane for ${lane}` : 'closest expert lane for this topic')
+            : (lane && lane.length > 3 ? `covers ${lane} directly` : 'covers this domain directly');
 
         specific.expert = {
             analyst_id: matchedAnalyst.analyst_id,

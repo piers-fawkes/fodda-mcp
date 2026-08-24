@@ -5,7 +5,47 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.46.35] - 2026-08-22
+## [1.46.37] - 2026-08-24
+
+### Fixed & Enhanced (Neil Demo Readiness: Parallel Supplemental Suggest 3s Box, Mega-Trend Brand Guard & Live Verification — `briefs/brief_neil_demo_readiness.md`)
+- **Parallel Supplemental Suggest Fetch (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Raised suggest time-box from 1500ms to 3000ms.
+  - Started `fetchSupplementalSuggest` in parallel with main search across `search_graph`, `get_domain_intelligence`, `get_expert_intelligence`, `get_report_intelligence`, `search_statistics`, and `search_insights`.
+  - Passed in-flight `suggestPromise` through `options` to `generateNextMoves`, preventing race conditions against the API classifier and maintaining near-zero net added latency.
+  - Handled both array and object data returns with full cache hit and fallback telemetry preservation.
+- **Mega-Trend Brand Guard (`src/coverageRelevance.ts`)**:
+  - Excluded rows with `brand_count > 30` (or `brandNames.length >= 10` when `brand_count` is absent) from Line 2 brand extraction in `generateNextMoves`.
+  - Cleanly excludes roster-like mega-trend brand dumps (e.g. PlayStation / Hermès from 734-brand Experiential Loyalty row).
+  - Cleanly omits `specific.brands` when no qualifying rows survive.
+- **Live Production Verification (Cloud Run revision `fodda-mcp-00481-b7x`)**:
+  - **Neil Carty Collectibles Query** (`search_graph` for trading cards): `specific.statistics_source = "Cultural Attention Tracker and Live Experience Intelligence"` (derived dynamically from suggest), `specific.brands = ["IKEA", "Gucci"]` (0 PlayStation / Hermès), 0 currency / "API calls" mentions.
+  - **"what does this cost?" follow-up** (`get_capabilities`): `pricing_url = "https://fodda.ai/pricing"`, 0 currency figures, no tokens, no SPT.
+  - **"can I book Jeremy Bergstein?"** (`list_analysts`): `book_a_call.rate_display = "Or book 1 hour with the real Jeremy - $750 live video"`, `url = "https://www.postpalsworld.com/partners#partner-email"` (verbatim).
+  - **Patrick's Query** (`search_graph` for `creative effectiveness` in `dentsu-creative-marketing`): `coverage.status = "ok"`, `specific.brands = ["Skai", "Stratably"]` (0 `dentsu*` brands).
+  - **1.46.29 Regression Probes** (Lululemon `brand_tracker`, James Colistra consult, Gen Z beverage search): verified closing blocks intact with exact 3-sentence formatting.
+- **Bible Clarification (`Fodda API/docs/bibles/system_clarifications.md`)**:
+  - Documented 3s time-box and parallel suggest fetch in Active Gotchas section.
+
+### Fixed & Enhanced (Thin-Coverage Scored Expert Routing & Key Normalization — `briefs/brief_thin_coverage_expert_routing.md`)
+- **Key Normalization in Catalog Cache (`src/catalogCache.ts`)**:
+  - Implemented `normalizeAnalyst()` in `fetchAnalysts()` and `setCachedCatalogForTesting()`, normalizing raw API keys (`analyst_id ← id`, `expert_in ← expertIn`, `outside_their_lane ← blindSpots | outside_their_lane | outsideTheirLane`, `topics`, `what_they_offer`, `example_questions`).
+  - Added `outside_their_lane?: string;` and additional fields to `CatalogAnalyst` interface.
+  - Guaranteed `specific.expert.analyst_id` is always populated in downstream `next_moves`.
+- **Graph Relevance Score Propagation (`src/toolHandlers.ts`)**:
+  - Preserved `relevanceScore: r.score` in `searchedGraphs` from `getRelevantGraphs(query)` fan-out search so graph relevance signals pass directly into downstream expert scoring.
+- **Scored Lane-Fit Expert Picker & Blind-Spot Exclusion (`src/coverageRelevance.ts`)**:
+  - Replaced unranked `Array.find()` (which picked the first active analyst in Airtable roster order) with a scored lane-fit ranking algorithm across all active analysts.
+  - Integrated positive topical matching across `expert_in` (+4/token, +8 for phrase), `topics` (+3/token, +5 for phrase), `description` (+2/token, +4 for phrase), and searched graph owner relevance boost (+5 * relevanceScore).
+  - Integrated negative blind-spot exclusion: heavily penalizes (-20/token, -10/word) or disqualifies analysts whose declared `outside_their_lane` / `blindSpots` covers query keywords.
+  - Enforced minimum fit score threshold (`MIN_EXPERT_FIT_SCORE = 3.0`): cleanly omits `specific.expert` on zero-fit queries (e.g. quantum physics) rather than naming an arbitrary active analyst.
+- **Honest Status-Aware Reason Copy (`src/coverageRelevance.ts`)**:
+  - Emits status-aware copy on `thin` and `empty` coverage (`"closest expert lane for ${lane}"` or `"closest expert lane for this topic"`), reserving `"covers ${lane} directly"` strictly for `status === 'ok'`.
+- **Verification & Test Suite (`src/test_next_moves.ts`, `src/test_next_moves_transcripts.ts`)**:
+  - Added Unit Tests 26–28 in `src/test_next_moves.ts`:
+    - Test 26: Confirmed `"creative effectiveness benchmarks"` picks Nathan Grotticelli (performance marketing/growth) over first roster entry Anu Lingala (cultural macro-trends).
+    - Test 27: Confirmed blind-spot exclusion prevents recommending an analyst whose declared blind spot matches the query.
+    - Test 28: Confirmed zero-fit query (`"superconducting quantum qubit coherence"`) cleanly omits `specific.expert`.
+  - Added Transcripts Query 15, 16, 17 in `src/test_next_moves_transcripts.ts`: verified exact MCP output, 3-line closing block, and zero-count banned term compliance.
 
 ### Fixed & Enhanced (OAuth Discovery Issuer Alignment, Native Clerk DCR Scopes & Cloud Run Deploy — `briefs/oauth-discovery-issuer-mismatch-fix.md`)
 - **OAuth Discovery Issuer & Resource Metadata Alignment (`src/index.ts`)**:

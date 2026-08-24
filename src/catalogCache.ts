@@ -78,7 +78,61 @@ export interface CatalogAnalyst {
     status?: string;
     Status?: string;
     expert_in?: string;
+    outside_their_lane?: string;
     topics?: string[];
+    what_they_offer?: string;
+    example_questions?: string[];
+    [key: string]: any;
+}
+
+export function stringifyField(f: any): string {
+    if (!f) return '';
+    if (typeof f === 'string') return f.trim();
+    if (Array.isArray(f)) {
+        return f.map(item => {
+            if (typeof item === 'string') return item;
+            if (item && typeof item === 'object') {
+                return [item.title, item.name, item.description, item.topic].filter(Boolean).join(' ');
+            }
+            return '';
+        }).filter(Boolean).join('. ').trim();
+    }
+    if (typeof f === 'object') {
+        return [f.title, f.name, f.description, f.topic].filter(Boolean).join(' ').trim();
+    }
+    return String(f);
+}
+
+export function normalizeAnalyst(a: any): CatalogAnalyst {
+    if (!a) return a;
+    const analyst_id = a.analyst_id || a.id || a.slug || a.name || '';
+    const name = a.name || analyst_id;
+    const description = stringifyField(a.description);
+    const rawExpertIn = a.expert_in || a.expertIn || a.topic;
+    const expert_in = rawExpertIn ? stringifyField(rawExpertIn) : undefined;
+    const rawOutside = a.outside_their_lane || a.outsideTheirLane || a.blindSpots || a.blind_spots;
+    const outside_their_lane = rawOutside ? stringifyField(rawOutside) : undefined;
+
+    let topics = a.topics;
+    if (typeof topics === 'string') {
+        topics = topics.split(',').map((t: string) => t.trim()).filter(Boolean);
+    } else if (Array.isArray(topics)) {
+        topics = topics.map(t => typeof t === 'string' ? t.trim() : (t?.name || t?.title || '')).filter(Boolean);
+    } else {
+        topics = undefined;
+    }
+
+    return {
+        ...a,
+        analyst_id,
+        name,
+        description,
+        ...(expert_in ? { expert_in } : {}),
+        ...(outside_their_lane ? { outside_their_lane } : {}),
+        ...(topics ? { topics } : {}),
+        ...(a.what_they_offer || a.whatTheyOffer || a.askLine ? { what_they_offer: stringifyField(a.what_they_offer || a.whatTheyOffer || a.askLine) } : {}),
+        ...(a.example_questions || a.exampleQuestions || a.exampleQueries ? { example_questions: a.example_questions || a.exampleQuestions || a.exampleQueries } : {})
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +171,8 @@ async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
     
     try {
         const response = await axios.get(url, { headers, timeout: 10000 });
-        return Array.isArray(response.data) ? response.data : (response.data.analysts || []);
+        const raw = Array.isArray(response.data) ? response.data : (response.data.analysts || []);
+        return raw.map(normalizeAnalyst);
     } catch (err: any) {
         console.error(`[catalogCache] Failed to fetch analysts: ${err.message}`);
         return [];
@@ -156,9 +211,9 @@ export async function initCatalogCache(): Promise<void> {
     }, CATALOG_REFRESH_MS);
 }
 
-export function setCachedCatalogForTesting(catalog: CatalogResponse, analysts?: CatalogAnalyst[]): void {
+export function setCachedCatalogForTesting(catalog: CatalogResponse, analysts?: any[]): void {
     cachedCatalog = catalog;
-    if (analysts) cachedAnalysts = analysts;
+    if (analysts) cachedAnalysts = analysts.map(normalizeAnalyst);
     lastFetchedAt = Date.now();
     rebuildSearchIndex();
 }

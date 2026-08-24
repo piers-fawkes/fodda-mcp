@@ -62,10 +62,43 @@ const mockGraphsList = [
         trend_count: 95,
         evidence_count: 380,
         headline: 'Athletic performance, footwear innovations, and fan engagement'
+    },
+    {
+        graph_id: 'dentsu-growth',
+        name: 'Dentsu Performance & Growth Marketing',
+        domain: 'marketing',
+        graph_type: 'expert',
+        status: 'live',
+        curator: 'Nathan Grotticelli',
+        topics: ['performance marketing', 'creative effectiveness', 'growth', 'advertising'],
+        trend_count: 85,
+        evidence_count: 310,
+        headline: 'Performance creative, ROAS optimization, and ad effectiveness benchmarks'
     }
 ];
 
 const mockAnalystsList = [
+    {
+        // First in Airtable roster order
+        id: 'anu-lingala',
+        name: 'Anu Lingala',
+        status: 'Active',
+        topics: ['cultural macro-trends', 'lifestyle', 'culture'],
+        description: 'Cultural macro-trends and consumer lifestyle shifts',
+        expertIn: 'cultural macro-trends and lifestyle forecasting',
+        blindSpots: 'performance marketing, creative effectiveness benchmarks, ad tech',
+        graph_type: 'expert'
+    },
+    {
+        id: 'nathan-grotticelli',
+        name: 'Nathan Grotticelli',
+        status: 'Active',
+        topics: ['performance marketing', 'creative effectiveness', 'growth marketing'],
+        description: 'Performance marketing and creative effectiveness benchmarks',
+        expertIn: 'performance marketing, ad creative effectiveness benchmarks, and growth analytics',
+        outside_their_lane: 'haute couture fashion, fine jewelry',
+        graph_type: 'expert'
+    },
     {
         analyst_id: 'ben-dietz-sic',
         name: 'Ben Dietz',
@@ -153,11 +186,21 @@ async function mockFoddaBackend(method: string, endpoint: string, apiKey?: strin
         const q = (body?.query || '').toLowerCase();
 
         // Thin/Empty case
-        if (q.includes('underground subaquatic') || q.includes('subaquatic')) {
+        if (q.includes('underground subaquatic') || q.includes('subaquatic') || q.includes('superconducting') || q.includes('quantum qubit')) {
             return {
                 rows: [],
                 total: 0,
                 on_topic_total: 0
+            };
+        }
+
+        if (q.includes('creative effectiveness') || q.includes('benchmarks')) {
+            return {
+                rows: [
+                    { title: 'Short-Form Video Ad Retention Benchmarks', brandNames: ['TikTok', 'Meta'], graphId: 'dentsu-growth', score: 1.6, topics: ['advertising'] }
+                ],
+                total: 1,
+                on_topic_total: 1
             };
         }
 
@@ -394,7 +437,10 @@ async function runTranscripts() {
         { tool: 'brainstorm_topic', args: { query: 'sustainable luxury retail packaging innovation' }, title: 'Query 11: brainstorm_topic — Luxury Packaging' },
         { tool: 'consult_analyst', args: { analyst_id: 'ben-dietz-sic', query: 'How should cultural brands approach community-led commerce in 2026?' }, title: 'Query 12: consult_analyst — Ben Dietz (Expert Consult)' },
         { tool: 'consult_human_agent', args: { analyst_id: 'ben-dietz-sic', query: 'What is the future of creator-led retail?' }, title: 'Query 13: consult_human_agent — Ben Dietz (Human Agent Consult)' },
-        { tool: 'search_graph', args: { query: 'collectible card trading and sports memorabilia market' }, title: 'Query 14: search_graph — Neil\'s Collectibles Query (Suggest-backed stats line)' }
+        { tool: 'search_graph', args: { query: 'collectible card trading and sports memorabilia market' }, title: 'Query 14: search_graph — Neil\'s Collectibles Query (Suggest-backed stats line)' },
+        { tool: 'search_graph', args: { query: 'creative effectiveness benchmarks' }, title: 'Query 15: search_graph — Repro Case: Thin Coverage Expert Routing (Nathan Grotticelli, not Anu Lingala)' },
+        { tool: 'search_graph', args: { graph_id: 'dentsu-growth', query: 'creative effectiveness benchmarks' }, title: 'Query 16: search_graph — Scoped Dentsu Curator Routing (Nathan Grotticelli regression check)' },
+        { tool: 'search_graph', args: { query: 'superconducting quantum qubit coherence' }, title: 'Query 17: search_graph — No Lane Fit Expert Omission Check' }
     ];
 
     const transcripts: string[] = [];
@@ -428,6 +474,22 @@ async function runTranscripts() {
                     // Not valid JSON block, continue
                 }
             }
+        }
+
+        // Targeted assertions for thin-coverage expert routing
+        if (tq.title.includes('Query 15')) {
+            assert.ok(nextMoves?.specific?.expert, 'Query 15 must surface an expert');
+            assert.strictEqual(nextMoves!.specific!.expert!.analyst_id, 'nathan-grotticelli', 'Query 15 must pick Nathan Grotticelli (performance marketing), NOT Anu Lingala');
+            assert.strictEqual(nextMoves!.specific!.expert!.display_name, 'Nathan Grotticelli');
+            assert.ok(nextMoves!.specific!.expert!.reason.startsWith('closest expert lane'), `Query 15 reason must be status-aware on thin coverage, got: ${nextMoves!.specific!.expert!.reason}`);
+        }
+
+        if (tq.title.includes('Query 16')) {
+            assert.ok(fullContentText.includes('Nathan Grotticelli') || nextMoves?.specific?.expert?.display_name === 'Nathan Grotticelli', 'Query 16 must surface Nathan Grotticelli via curator metadata');
+        }
+
+        if (tq.title.includes('Query 17')) {
+            assert.strictEqual(nextMoves?.specific?.expert, undefined, 'Query 17 (superconducting quantum qubit coherence) must omit expert rather than name roster entry');
         }
 
         let lines: string[] = [];
