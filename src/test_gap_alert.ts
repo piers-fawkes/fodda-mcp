@@ -33,6 +33,11 @@ check('text: on-topic share', text.includes('thin — 2 of 10 results on-topic')
 check('text: layers', text.includes('domain, expert, report'), true);
 check('text: empty variant', buildGapAlertText('u', 't', 'q', emptyCoverage).includes('empty — 0 results'), true);
 
+// ── Zero retention message composition ──
+const zeroText = buildGapAlertText('piers.fawkes@psfk.com', 'search_graph', 'Secret Project XYZ Query', thinCoverage, true);
+check('zero text: redacts query', zeroText.includes('[zero-retention contract]'), true);
+check('zero text: does not include raw query', zeroText.includes('Secret Project XYZ Query'), false);
+
 // ── Gating and dedupe ──
 const tracker = createSessionTracker();
 check('ok coverage: no alert', tracker.postGapToSlack('u', 'search_graph', 'chinese ev market', okCoverage), false);
@@ -43,6 +48,11 @@ check('same query, different tool: still deduped', tracker.postGapToSlack('u', '
 check('whitespace/case variant: deduped', tracker.postGapToSlack('u', 'search_graph', '  Chinese  EV  Market ', thinCoverage), false);
 check('new query: fires', tracker.postGapToSlack('u', 'search_graph', 'peruvian surf tourism', emptyCoverage), true);
 check('new session: fires again', createSessionTracker().postGapToSlack('u', 'search_graph', 'chinese ev market', thinCoverage), true);
+
+// ── Zero retention session tracker ──
+const zeroTracker = createSessionTracker({ zeroQueryRetention: true });
+check('zero tracker isZeroQueryRetention', zeroTracker.isZeroQueryRetention(), true);
+check('zero tracker fires alert', zeroTracker.postGapToSlack('u', 'search_graph', 'confidential query', thinCoverage), true);
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

@@ -367,7 +367,15 @@ export async function createServer(
     // Note: trial accounts are retired and handled entirely server-side by the API
     // (rejected as no-longer-valid, or surfaced reactively via errorHandling.ts).
     // No client-side trial state remains.
-    const sessionTracker = createSessionTracker();
+    const isZeroRetention = Boolean(
+        accountProfile?.zero_query_retention ||
+        accountProfile?.zeroQueryRetention ||
+        accountProfile?.query_retention === 'zero (contract)' ||
+        (typeof accountProfile?.query_retention === 'string' && accountProfile.query_retention.startsWith('zero')) ||
+        accountProfile?.queryRetention === 'zero (contract)' ||
+        (typeof accountProfile?.queryRetention === 'string' && accountProfile.queryRetention.startsWith('zero'))
+    );
+    const sessionTracker = createSessionTracker({ zeroQueryRetention: isZeroRetention });
 
     const getKnownBrand = (): string | undefined => {
         if (accountProfile?.companyName && accountProfile.companyName.trim()) {
@@ -613,8 +621,19 @@ export async function createServer(
                 // Format a clean, user-friendly response
                 // Note: API still returns tokens_remaining etc. — we read those fields
                 // but present them as "api_calls" to the user.
+                const isZero = Boolean(
+                    account.zero_query_retention ||
+                    account.zeroQueryRetention ||
+                    account.query_retention === 'zero (contract)' ||
+                    (typeof account.query_retention === 'string' && account.query_retention.startsWith('zero')) ||
+                    account.queryRetention === 'zero (contract)' ||
+                    (typeof account.queryRetention === 'string' && account.queryRetention.startsWith('zero'))
+                );
+                sessionTracker.setZeroQueryRetention(isZero);
+
                 const status: Record<string, any> = {
                     plan: account.plan || 'Unknown',
+                    queryRetention: account.query_retention || (isZero ? 'zero (contract)' : 'standard'),
                     api_calls_remaining: account.tokens_remaining ?? account.credits ?? 'unknown',
                     api_calls_total: account.tokens_total ?? account.monthlyQueryLimit ?? 'unknown',
                 };
@@ -3448,14 +3467,18 @@ export async function createServer(
                 recordFeedbackEntry(catLabel, feedback, userLabel);
 
                 // ── Slack alert (fire-and-forget) ──
+                const promptDisplay = recent_prompt
+                    ? (sessionTracker.isZeroQueryRetention() ? '[zero-retention contract]' : recent_prompt)
+                    : undefined;
+
                 const slackLines = [
                     `<@U0AU49JG7AS> ${emoji} *User Feedback*`,
                     `👤 ${userLabel}`,
                     `📁 Category: ${catLabel}`,
                     `📝 ${feedback}`,
                 ];
-                if (recent_prompt) {
-                    slackLines.push(`❓ *Prompt Context:* ${recent_prompt}`);
+                if (promptDisplay) {
+                    slackLines.push(`❓ *Prompt Context:* ${promptDisplay}`);
                 }
                 slackLines.push(`→ Check if this needs a response or product action.`);
                 postToSlack(slackLines.join('\n')).catch(() => {});
@@ -3464,7 +3487,7 @@ export async function createServer(
                 const resendKey = process.env.RESEND_API_KEY;
                 if (!resendKey) {
                     console.error('[send_feedback] RESEND_API_KEY not set — logging feedback locally');
-                    console.error(`[FEEDBACK] category=${catLabel} email=${userLabel} feedback=${feedback}${recent_prompt ? ` prompt=${recent_prompt}` : ''}`);
+                    console.error(`[FEEDBACK] category=${catLabel} email=${userLabel} feedback=${feedback}${promptDisplay ? ` prompt=${promptDisplay}` : ''}`);
                     return {
                         content: [{
                             type: 'text' as const,
@@ -3486,7 +3509,7 @@ export async function createServer(
                     text: [
                         `Category: ${catLabel}`,
                         `User: ${userLabel}${entryLabel}`,
-                        `Prompt Context: ${recent_prompt || 'N/A'}`,
+                        `Prompt Context: ${promptDisplay || 'N/A'}`,
                         `API Key: ${apiKey.substring(0, 15)}...`,
                         `Date: ${new Date().toISOString()}`,
                         '',

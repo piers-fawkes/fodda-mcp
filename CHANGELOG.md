@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.40] - 2026-08-28
+
+### Added & Fixed (Zero-Retention Alert Suppression & Query Privacy — `briefs/brief_mcp_zero_retention_alert_suppression.md`)
+- **Zero-Retention Mode Consumption (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Added `zero_query_retention`, `zeroQueryRetention`, `query_retention`, and `queryRetention` fields to `AccountProfile`.
+  - Consumed `_account.zero_query_retention` and `_account.query_retention` from `/v1/graphs` API response on session initialization.
+  - Instantiated `sessionTracker` with `zeroQueryRetention` boolean state.
+- **Alert Suppression & Query Privacy (`src/sessionTracker.ts`)**:
+  - Exported `buildFrustrationAlertText()` alongside `buildGapAlertText()`.
+  - When `zeroQueryRetention` is `true`, data-gap alerts to `#fodda-research` redact query text to `[zero-retention contract]` while preserving coverage summary and searched layer metrics.
+  - When `zeroQueryRetention` is `true`, session frustration alerts to `#fodda-sales` redact recent queries to `[zero-retention contract]` while preserving frustration pattern, score, and graphs tried.
+  - Unflagged accounts continue to emit standard frustration/data-gap alerts with recent query snippets.
+- **`get_my_account` Tool Query Retention Exposure (`src/toolHandlers.ts`)**:
+  - Exposes `queryRetention: "zero (contract)"` for flagged accounts and `"standard"` for standard accounts, enabling enterprise admins and makers to verify their query retention entitlement directly from tool calls.
+  - Dynamically updates active `sessionTracker` zero-retention state from fresh live account queries.
+- **User Feedback Redaction Guard (`src/toolHandlers.ts`)**:
+  - Redacts `recent_prompt` context in `send_feedback` tool to `[zero-retention contract]` across Slack notifications, console logs, and email payloads when zero retention is active.
+- **Verification Suite**:
+  - Added `src/test_zero_retention_alerts.ts` covering data gap redaction, frustration alert redaction, session tracker lifecycle, and `get_my_account` resolution logic.
+  - Extended `src/test_gap_alert.ts` with zero-retention alert assertions.
+
 ## [1.46.39] - 2026-08-24
 
 ### Changed (Dentsu Creative Graph References Standardization)

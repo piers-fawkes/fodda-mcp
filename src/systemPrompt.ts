@@ -18,6 +18,10 @@ export interface AccountProfile {
     companyName?: string;
     userContext?: string;
     accountContext?: string;
+    zero_query_retention?: boolean;
+    zeroQueryRetention?: boolean;
+    query_retention?: string;
+    queryRetention?: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -80,7 +80,8 @@ export function buildGapAlertText(
     userIdentifier: string,
     toolName: string,
     query: string,
-    coverage: { status: string; results_returned?: number; results_on_topic?: number; layers_searched?: string[] }
+    coverage: { status: string; results_returned?: number; results_on_topic?: number; layers_searched?: string[] },
+    zeroQueryRetention: boolean = false
 ): string {
     const summary = coverage.status === 'empty'
         ? 'empty — 0 results'
@@ -88,13 +89,38 @@ export function buildGapAlertText(
             ? `thin — ${coverage.results_on_topic} of ${coverage.results_returned} results on-topic`
             : `thin — ${coverage.results_returned} results`;
     const layers = coverage.layers_searched?.length ? ` (layers searched: ${coverage.layers_searched.join(', ')})` : '';
+    const queryDisplay = zeroQueryRetention ? '[zero-retention contract]' : `"${query}"`;
     return [
         `🕳️ *Data Gap Detected*`,
         `👤 ${userIdentifier}`,
         `🔧 Tool: ${toolName}`,
-        `🔎 Query: "${query}"`,
+        `🔎 Query: ${queryDisplay}`,
         `📊 Coverage: ${summary}${layers}`,
         `→ A user asked for this and the graphs came up short. Candidate for new ingestion or expert coverage.`,
+    ].join('\n');
+}
+
+/**
+ * Build the sales-channel alert text for session frustration.
+ * Exported for tests — postFrustrationToSlack composes and sends it.
+ */
+export function buildFrustrationAlertText(
+    userIdentifier: string,
+    details: FrustrationDetails,
+    zeroQueryRetention: boolean = false
+): string {
+    const queriesLine = zeroQueryRetention
+        ? `🔎 Queries: [zero-retention contract]`
+        : `🔎 Queries: ${details.recentQueries.join(', ')}`;
+
+    return [
+        `<@${SLACK_BOT_USER_ID}> ⚠️ *Session Frustration Detected*`,
+        `👤 ${userIdentifier}`,
+        `🔍 Pattern: ${details.pattern}`,
+        `📊 Graphs tried: ${details.graphsTried.join(', ')}`,
+        queriesLine,
+        `📈 Frustration score: ${details.score}/3`,
+        `→ User may be struggling. Check if content gaps or UX issues are involved.`,
     ].join('\n');
 }
 
@@ -102,10 +128,23 @@ export function buildGapAlertText(
 // Session state — one instance per createServer() call
 // ---------------------------------------------------------------------------
 
-export function createSessionTracker() {
+export function createSessionTracker(options?: { zeroQueryRetention?: boolean }) {
+    let zeroQueryRetention = options?.zeroQueryRetention ?? false;
     const sessionSearches: SessionSearch[] = [];
     let frustrationSlackSent = false; // Only post once per session
     const gapAlertsSent = new Set<string>(); // dedupe: one alert per query topic per session
+
+    function setZeroQueryRetention(value: boolean): void {
+        zeroQueryRetention = value;
+    }
+
+    function isZeroQueryRetention(): boolean {
+        return zeroQueryRetention;
+    }
+
+    function getZeroQueryRetention(): boolean {
+        return zeroQueryRetention;
+    }
 
     /**
      * Record a search call after it completes.
@@ -241,15 +280,7 @@ export function createSessionTracker() {
 
         frustrationSlackSent = true;
 
-        const text = [
-            `<@${SLACK_BOT_USER_ID}> ⚠️ *Session Frustration Detected*`,
-            `👤 ${userIdentifier}`,
-            `🔍 Pattern: ${details.pattern}`,
-            `📊 Graphs tried: ${details.graphsTried.join(', ')}`,
-            `🔎 Queries: ${details.recentQueries.join(', ')}`,
-            `📈 Frustration score: ${details.score}/3`,
-            `→ User may be struggling. Check if content gaps or UX issues are involved.`,
-        ].join('\n');
+        const text = buildFrustrationAlertText(userIdentifier, details, zeroQueryRetention);
 
         // Fire-and-forget — never await in the hot path
         postToSlack(text).catch(() => {});
@@ -273,7 +304,7 @@ export function createSessionTracker() {
         if (gapAlertsSent.has(key)) return false;
         gapAlertsSent.add(key);
 
-        const text = buildGapAlertText(userIdentifier, toolName, query, coverage);
+        const text = buildGapAlertText(userIdentifier, toolName, query, coverage, zeroQueryRetention);
         // Fire-and-forget — never await in the hot path
         postToSlack(text, GAP_ALERT_CHANNEL).catch(() => {});
         return true;
@@ -480,6 +511,9 @@ export function createSessionTracker() {
         evaluateNextMoveMatch,
         recordSuggestPath,
         getSuggestStats,
+        setZeroQueryRetention,
+        isZeroQueryRetention,
+        getZeroQueryRetention,
     };
 }
 
