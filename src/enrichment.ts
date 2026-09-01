@@ -36,11 +36,23 @@ export function computeLifecycle(row: any, now?: number): string {
 
 export function computeMomentum(row: any, now?: number): string {
     const ts = now || Date.now();
-    const last = row.lastSeen ? new Date(row.lastSeen).getTime() : 0;
-    const freshnessDays = row.freshnessDays || (last ? (ts - last) / (1000 * 60 * 60 * 24) : 999);
-    if (freshnessDays < 30) return 'accelerating';
-    if (freshnessDays < 90) return 'steady';
-    return 'slowing';
+    const last = row.lastSeen
+        ? new Date(row.lastSeen).getTime()
+        : (row.lastSeenDate ? new Date(row.lastSeenDate).getTime() : (row.published_at ? new Date(row.published_at).getTime() : 0));
+    const freshnessDays = (row.freshnessDays !== undefined && row.freshnessDays !== null)
+        ? row.freshnessDays
+        : (last && !isNaN(last) ? (ts - last) / (1000 * 60 * 60 * 24) : null);
+
+    if (freshnessDays !== null) {
+        if (freshnessDays < 45) return 'accelerating';
+        if (freshnessDays < 120) return 'steady';
+        if (freshnessDays < 240) return 'building';
+        return 'slowing';
+    }
+    // Fallback based on lifecycle or evidence count
+    if (row.lifecycle === 'emerging' || row.lifecycle === 'building') return 'steady';
+    if ((row.evidence_count || row.evidenceCount || 0) >= 5) return 'steady';
+    return 'steady';
 }
 
 export function isFastMover(row: any, now?: number): boolean {

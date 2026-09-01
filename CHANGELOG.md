@@ -5,6 +5,47 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.46] - 2026-09-01
+
+### Added & Changed (Brand Intelligence Widget v2.2 House Style Hardening & Payload Streamlining)
+- **Widget House Style v2.2 Alignment (`src/brandTemplate.ts`)**:
+  - Scoped all CSS to `.fodda-brand-widget` (and `.w`), eliminating `:root` CSS variable leaks.
+  - Aligned color tokens with House Style v2.2 palette (`--fodda-bg`, `--fodda-text`, `--fodda-muted`, `--fodda-line`, `--fodda-accent`, `--fodda-accent-light`) across light and dark modes.
+  - Replaced `var(--font-mono)` on cards, text, and container with clean system sans stack (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`), reserving monospace strictly for data/stamps/timestamps.
+  - Inlined SVG brand mark logo, removing external CDN dependency (`jsdelivr`).
+- **Data Hygiene & Component Guard Fixes (`src/brandTemplate.ts`, `src/enrichment.ts`, `src/toolHandlers.ts`)**:
+  - **Dynamic Google Trends Start Date**: Formats the dynamic start date (e.g., `Aug '25`) directly from time-series points instead of hardcoding `Apr '25`.
+  - **Themed Sparklines**: Applied `var(--fodda-accent)` gradient and strokes to Google Trends sparkline, removing hardcoded `#663399`.
+  - **Gated Competitive Section**: Wrapped section header so `<div class="sec">Competitive</div>` is omitted when `co_occurring_brands` is empty.
+  - **Evidence Date Badge Guard**: Gated date badge so empty/missing dates don't render empty `<span class="bd"></span>` tags.
+  - **Safe Evidence URLs**: Gated external hyperlinks to valid destination URLs, avoiding generic `https://fodda.ai` homepage loops.
+  - **Timeline Date Validation**: Added `!isNaN(d.getTime())` guard in `activity_timeline` generator to prevent `NaN-QNaN` quarter periods.
+  - **Robust Momentum Computation (`src/enrichment.ts`)**: Enhanced `computeMomentum` with date parsing, lifecycle fallbacks, and multi-tier freshness checks, eliminating default `"slowing"` momentum across trends.
+- **Payload Streamlining & Recipe Conflict Resolution (`src/toolHandlers.ts`)**:
+  - Suppressed `FODDA_HOUSE_VISUAL_RECIPE_V2_2` trailing block in `brand_tracker` when pre-rendered `widget_html` is returned, preventing client visual generation confusion and reducing payload token size.
+
+## [1.46.45] - 2026-09-01
+
+### Added & Changed (Claude Web MCP Latency Optimization & Seamless Direct Routing)
+- **Elimination of Step A Pre-Search Ritual (`src/systemPrompt.ts`)**:
+  - Replaced mandatory two-turn `VirtualExpertConsultation` sequence (Step A `search_graph` pre-search followed by Step B `consult_human_agent` with pasted graph context) with a direct 1-step consultation invocation (`consult_human_agent` or `consult_analyst`).
+  - Passes clean query strings to backend, eliminating query embedding dilution and preventing polluted graph context bullets in Airtable Questions logs.
+  - Rewrote cross-expert referral rules referencing legacy `ANALYST ENTRIES` to use `list_analysts`.
+- **Seamless Bidirectional Routing & Wrong-Tool Bounce Elimination (`src/toolHandlers.ts`)**:
+  - Implemented proactive `graphSubType` inspection before firing API requests: if `consult_analyst` is invoked with a Human Agent (Digital Twin) ID, it routes internally to `/v1/human-agents/consult` without double-billing or discarding execution to bounce back to the client.
+  - If `consult_human_agent` is called with a Synthetic Analyst ID, it routes internally to `/v1/analysts/consult`.
+- **Gated Supplemental Fetches in `search_graph` (`src/toolHandlers.ts`)**:
+  - Gated automatic Google Trends and Census retail supplemental fetches so they only run on statistics-shaped queries (`statistic`, `numbers`, `percentages`, `market size`, `spending`, `revenue`) or thin coverage (< 2 results), saving 1–3s on standard qualitative trend searches.
+- **Context Payload & Tool Manifest Slimming (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Trimmed `begin_expert_onboarding` description from ~4,600 characters of redundant prompt text down to a concise, functional schema description (< 300 characters), reducing tools manifest size to 31.2KB (well under 45KB target).
+- **Persistent Cloud Logging Metrics (`src/telemetry.ts`)**:
+  - Instrumented `recordToolOutcome` to emit structured JSON metrics (`[MCP_METRICS]`) to `stdout` with `mcp_tool`, `duration_ms`, `success`, and timestamp for durable telemetry in Google Cloud Logging across deployments.
+- **Verification Suite & Coverage Replay Script (`src/test_coverage_replay.ts`)**:
+  - Created 10-query coverage replay script to verify `in`, `adjacent`, and `out` coverage classifications with clean query strings under non-billed identity.
+  - Manual & automated verification passed: `npm run build` exits 0, `tools-manifest.json` at 31,200 bytes, `grep -rn "ANALYST ENTRIES" src/` returns clean (0 occurrences).
+- **Cross-Repo API Brief (`briefs/Brief - Latency Optimization and Agentic Loop Tuning (API Agent).md`)**:
+  - Authored formal brief for `Fodda API` agent targeting sub-stage timers, Gemini Interactions managed agent loop optimization, `min-instances = 1` on `fodda-api-new` in `us-east4`, and 402 retry loop mitigation.
+
 ## [1.46.44] - 2026-09-01
 
 ### Added & Changed (5-Pillar Editorial & Network Synthesis for Report Intelligence)

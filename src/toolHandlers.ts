@@ -473,6 +473,31 @@ export async function createServer(
         instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId),
     });
 
+    // Automatically instrument and time every MCP tool handler execution
+    const originalServerTool = server.tool.bind(server);
+    (server as any).tool = (name: string, ...args: any[]) => {
+        const handlerIndex = args.length - 1;
+        const originalHandler = args[handlerIndex];
+        if (typeof originalHandler === 'function') {
+            args[handlerIndex] = async (...handlerArgs: any[]) => {
+                const start = Date.now();
+                try {
+                    const res = await originalHandler(...handlerArgs);
+                    const duration = Date.now() - start;
+                    const isError = Boolean(res && (res.isError || res.error));
+                    const errorMsg = isError ? (typeof res.error === 'string' ? res.error : (res.content?.[0]?.text || 'Tool Error')) : undefined;
+                    recordToolOutcome(name, !isError, duration, errorMsg);
+                    return res;
+                } catch (err: any) {
+                    const duration = Date.now() - start;
+                    recordToolOutcome(name, false, duration, err?.message || 'Exception');
+                    throw err;
+                }
+            };
+        }
+        return (originalServerTool as any)(name, ...args);
+    };
+
     // Register capabilities and citable fodda:// resource handlers
     server.server.registerCapabilities({
         resources: {
@@ -2232,8 +2257,10 @@ export async function createServer(
         for (const ev of uniqueEvidence) {
             if (ev.published_at) {
                 const d = new Date(ev.published_at);
-                const q = `${d.getFullYear()}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
-                quarterCounts[q] = (quarterCounts[q] || 0) + 1;
+                if (!isNaN(d.getTime())) {
+                    const q = `${d.getFullYear()}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+                    quarterCounts[q] = (quarterCounts[q] || 0) + 1;
+                }
             }
         }
         const activityTimeline = Object.entries(quarterCounts)
@@ -2504,19 +2531,25 @@ export async function createServer(
                 };
 
                 const content: Array<{ type: 'text'; text: string }> = [rawDataBlock];
-                if (EDITORIAL_INSTRUCTION) {
-                    const finalEditorial = closingBlockInstruction
-                        ? `${EDITORIAL_INSTRUCTION}\n\n${closingBlockInstruction}\n`
-                        : EDITORIAL_INSTRUCTION;
-                    content.push({ type: 'text' as const, text: finalEditorial });
-                    content.push(widgetBlock);
+                if (widget.widget_html) {
+                    if (EDITORIAL_INSTRUCTION) {
+                        const finalEditorial = closingBlockInstruction
+                            ? `${EDITORIAL_INSTRUCTION}\n\n${closingBlockInstruction}\n`
+                            : EDITORIAL_INSTRUCTION;
+                        content.push({ type: 'text' as const, text: finalEditorial });
+                        content.push(widgetBlock);
+                    } else {
+                        content.push(widgetBlock);
+                        if (closingBlockInstruction) {
+                            content.push({ type: 'text' as const, text: closingBlockInstruction });
+                        }
+                    }
                 } else {
-                    content.push(widgetBlock);
                     if (closingBlockInstruction) {
                         content.push({ type: 'text' as const, text: closingBlockInstruction });
                     }
+                    content.push({ type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
                 }
-                content.push({ type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
                 return { next_moves: brandNextMoves, content };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -4270,6 +4303,20 @@ export async function createServer(
         userId?: string | undefined;
     }
 
+    const isTwinAnalyst = (match: any): boolean => {
+        if (!match) return false;
+        if (match.is_human_agent === true || match.is_digital_twin === true || match.isVerifiedRealPerson === true) return true;
+        const subType = (match.graphSubType || match.graph_sub_type || match.subType || match.type || match.kind || match.agent_type || '').toString().trim();
+        return subType === 'Digital Twin' || subType === 'Classic Digital Twin' || /digital twin/i.test(subType) || subType === 'human_agent' || subType === 'human_twin' || subType === 'expert_twin';
+    };
+
+    const isSyntheticAnalyst = (match: any): boolean => {
+        if (!match) return false;
+        if (isTwinAnalyst(match)) return false;
+        const subType = (match.graphSubType || match.graph_sub_type || match.subType || match.type || match.kind || match.agent_type || '').toString().trim();
+        return subType === 'Synthetic Expert' || /synthetic/i.test(subType) || subType === 'synthetic' || subType === 'curated' || subType === 'domain';
+    };
+
     const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, userId: uid }: ConsultCoreParams) => {
         try {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
@@ -4522,23 +4569,6 @@ export async function createServer(
                 company: resolvedCompany,
                 session_id
             });
-            
-            // If API indicates target is a Human Agent, seamlessly route to human agent pipeline
-            const isTwinResult = result?.is_human_agent ||
-                result?.type === 'human_agent' ||
-                result?.type === 'human_twin' ||
-                result?.graphSubType === 'human_agent' ||
-                result?.graphSubType === 'expert_twin' ||
-                result?.graph_sub_type === 'human_agent' ||
-                result?.agent_type === 'human_twin' ||
-                result?.agent_type === 'human_agent' ||
-                result?.analyst?.agent_type === 'human_twin' ||
-                result?.analyst?.type === 'human_agent' ||
-                result?.analyst?.type === 'human_twin';
-
-            if (isTwinResult) {
-                return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
-            }
 
             const upstreamCoverage = result?.coverage;
 
@@ -4788,20 +4818,7 @@ export async function createServer(
                 const queryKey = resolvedAnalystId.toLowerCase().trim();
                 return idKey === queryKey || nameKey === queryKey;
             });
-            const isTwinMatch = match && (
-                match.type === 'human_agent' ||
-                match.type === 'human_twin' ||
-                match.graphSubType === 'human_agent' ||
-                match.graphSubType === 'expert_twin' ||
-                match.graph_sub_type === 'human_agent' ||
-                match.agent_type === 'human_twin' ||
-                match.agent_type === 'human_agent' ||
-                match.kind === 'human_agent' ||
-                match.kind === 'human_twin' ||
-                match.is_digital_twin === true ||
-                match.is_human_agent === true
-            );
-            if (isTwinMatch) {
+            if (isTwinAnalyst(match)) {
                 return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
             }
             return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
@@ -4831,13 +4848,7 @@ export async function createServer(
             });
 
             // Proactive routing: if target is explicitly a synthetic analyst, route directly before any API call
-            const isSyntheticMatch = match && (
-                match.type === 'synthetic' ||
-                match.agent_type === 'synthetic' ||
-                match.kind === 'synthetic' ||
-                (match.graphSubType === 'synthetic' || match.graphSubType === 'domain' || match.graphSubType === 'curated')
-            );
-            if (isSyntheticMatch) {
+            if (isSyntheticAnalyst(match)) {
                 return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
             }
             return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });

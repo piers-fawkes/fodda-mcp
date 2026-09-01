@@ -172,11 +172,21 @@ function gtY(value: number): number {
     return Math.round(88 - (value / 100 * 76));
 }
 
+function formatMonthYear(dStr: string): string {
+    if (!dStr) return '12m ago';
+    const d = new Date(dStr);
+    if (isNaN(d.getTime())) return '12m ago';
+    const mon = d.toLocaleString('en-US', { month: 'short' });
+    const yr = String(d.getFullYear()).slice(-2);
+    return `${mon} '${yr}`;
+}
+
 function buildGoogleTrendsSVG(gtData: any): {
     polyline: string; polygon: string;
     peakX: number; peakY: number; peakLabel: string;
     nowLabel: string; annX: number; annY: number; annText: string;
     description: string; caption: string;
+    startDateLabel: string;
     relatedQueriesHtml: string;
     comparisonBarsHtml: string;
 } {
@@ -185,6 +195,7 @@ function buildGoogleTrendsSVG(gtData: any): {
         peakX: 150, peakY: 88, peakLabel: '', nowLabel: '',
         annX: 297, annY: 84, annText: '', description: 'Google Trends',
         caption: 'Relative interest (0–100). Not absolute volume. Source: Google Trends.',
+        startDateLabel: '12m ago',
         relatedQueriesHtml: '',
         comparisonBarsHtml: '',
     };
@@ -219,6 +230,7 @@ function buildGoogleTrendsSVG(gtData: any): {
     const peakY = gtY(peakVal);
     const peakDate = points[peakIdx]?.date || '';
     const trend = lastVal > peakVal * 0.9 ? '↑ near peak' : lastVal > peakVal * 0.6 ? '↑ rising' : '→ moderate';
+    const startDateLabel = points[0]?.date ? formatMonthYear(points[0].date) : '12m ago';
 
     const relatedQueriesHtml = (gt.related_queries || [])
         .slice(0, 8)
@@ -241,6 +253,7 @@ function buildGoogleTrendsSVG(gtData: any): {
         annX: 297, annY: lastY - 4, annText: trend,
         description: `"${gt.query || 'brand'}", US, past 12 months`,
         caption: 'Relative interest (0–100). Not absolute volume. Source: Google Trends.',
+        startDateLabel,
         relatedQueriesHtml,
         comparisonBarsHtml,
     };
@@ -431,7 +444,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
                 : '';
 
             const priceHtml = priceStr
-                ? `<div style="font-size:12px;color:var(--color-text-primary);margin-bottom:8px;font-weight:500;">Stock Price: <span style="font-family:var(--font-mono);font-weight:600;">${priceStr}</span></div>`
+                ? `<div style="font-size:12px;color:var(--color-text-primary);margin-bottom:8px;font-weight:500;">Stock Price: <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600;">${priceStr}</span></div>`
                 : '';
 
             let quartersHtml = '';
@@ -446,10 +459,10 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
                     return `<div style="background:var(--color-background-secondary);border-radius:6px;padding:8px 10px;margin-top:6px;">
   <div style="font-size:11px;font-weight:600;color:var(--color-text-primary);margin-bottom:4px;">${esc(qPeriod)}</div>
   <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;font-size:11px;">
-    <div><span style="color:var(--color-text-secondary);">Revenue:</span> <strong style="font-family:var(--font-mono);">${rev}</strong></div>
-    <div><span style="color:var(--color-text-secondary);">Op. Income:</span> <strong style="font-family:var(--font-mono);">${opInc}</strong></div>
-    <div><span style="color:var(--color-text-secondary);">Net Income:</span> <strong style="font-family:var(--font-mono);">${netInc}</strong></div>
-    <div><span style="color:var(--color-text-secondary);">EPS:</span> <strong style="font-family:var(--font-mono);">${eps}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">Revenue:</span> <strong style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${rev}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">Op. Income:</span> <strong style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${opInc}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">Net Income:</span> <strong style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${netInc}</strong></div>
+    <div><span style="color:var(--color-text-secondary);">EPS:</span> <strong style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${eps}</strong></div>
   </div>
 </div>`;
                 }).join('\n');
@@ -491,8 +504,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
 
     // ── Trend cards (exclude weak signals to avoid duplication) ──
     const mainTrends = trends.filter((t: any) => !weakSignalNames.has(t.trend_name?.trim()));
-    const trendsHtml = mainTrends.map((t: any, i: number) => {
-        const spark = deriveSparklineShape(t);
+    const trendsHtml = mainTrends.map((t: any) => {
         const tName = (t.trend_name || '').trim();
         const badges = [
             `<span class="bdp">${esc(t.graphName)}</span>`,
@@ -540,8 +552,10 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
             const parsed = new Date(ev.published_at);
             date = isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
-        const titleHtml = ev.source_url
-            ? `<a href="${esc(ev.source_url)}">${esc(ev.title)}</a>`
+        const dateBadge = date ? `<span class="bd">${esc(date)}</span>` : '';
+        const hasRealUrl = ev.source_url && !ev.source_url.startsWith('https://fodda.ai') && !ev.source_url.startsWith('https://www.fodda.ai');
+        const titleHtml = hasRealUrl
+            ? `<a href="${esc(ev.source_url)}" target="_blank" rel="noopener noreferrer">${esc(ev.title)}</a>`
             : esc(ev.title);
         const speakerHtml = ev.speaker_name ? `<div style="font-size:11px;color:var(--color-text-secondary);margin-top:4px;font-style:italic;">${esc(ev.speaker_name)}${ev.speaker_title ? ', ' + esc(ev.speaker_title) : ''}</div>` : '';
         return `<div class="ec">
@@ -551,7 +565,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
   <div class="em">
     <span class="lb ${catClass(ev.category)} bd">${esc(ev.category)}</span>
     <span class="bdp">${esc(ev.graphName)}</span>
-    <span class="bd">${date}</span>
+    ${dateBadge}
     ${placeBadge}
   </div>
 </div>`;
@@ -572,26 +586,6 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
   </div>
 </div>`;
     }).join('\n');
-
-    // ── Network SVG ──
-    const topComps = competitors.slice(0, 5);
-    const networkNodesHtml = topComps.map((c: any, i: number) => {
-        const pos = ORBIT_POSITIONS[i] || { cx: 150, cy: 113 };
-        const pType = guessPressureType(i, c, brandGraphIds, domainGIds);
-        const colors = PRESSURE_COLORS[pType] || DEFAULT_PRESSURE;
-        return `<line x1="150" y1="113" x2="${pos.cx}" y2="${pos.cy}" stroke="${colors.color}" stroke-width="0.5" stroke-dasharray="3,3"/>
-        <circle cx="${pos.cx}" cy="${pos.cy}" r="18" fill="${colors.bg}" stroke="${colors.color}" stroke-width="1"/>
-        <text x="${pos.cx}" y="${pos.cy + 3}" class="svgt" font-size="7.5" text-anchor="middle" fill="${colors.color}">${esc(truncSvg(c.brand))}</text>`;
-    }).join('\n        ');
-
-    // Network legend — bottom-right (avoid overlapping left orbit node)
-    const legendTypes: string[] = [...new Set(topComps.map((c: any, i: number) => guessPressureType(i, c, brandGraphIds, domainGIds)))].slice(0, 5) as string[];
-    const networkLegendHtml = legendTypes.map((pType: string, i: number) => {
-        const colors = PRESSURE_COLORS[pType] || DEFAULT_PRESSURE;
-        const y = 190 + i * 11;
-        return `<rect x="200" y="${y}" width="6" height="6" rx="1" fill="${colors.bg}" stroke="${colors.color}" stroke-width=".5"/>
-        <text x="210" y="${y + 5}" class="svgt" font-size="6" fill="var(--color-text-secondary)">${pType}</text>`;
-    }).join('\n        ');
 
     // ── Compare buttons ──
     const compareButtonsHtml = competitors.slice(0, 4).map((c: any) =>
@@ -697,24 +691,24 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         'TRENDS_HTML': trendsHtml,
         'WEAK_SIGNALS_HTML': weakSignalsHtml,
         'EVIDENCE_HTML': evidenceHtml,
-        'COMPETITOR_LIST_HTML': competitorListHtml,
+        'COMPETITIVE_SECTION_HTML': competitors.length > 0 ? `<div class="sec">Competitive</div>\n${competitorListHtml}` : '',
         'GT_SECTION_HTML': hasGoogleTrendsData ? `<div class="sl2">${gt.description}</div>
     <svg viewBox="0 0 300 96" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:96px;margin-bottom:4px;">
       <defs>
         <linearGradient id="gtg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#663399" stop-opacity=".1"/>
-          <stop offset="100%" stop-color="#663399" stop-opacity="0"/>
+          <stop offset="0%" stop-color="var(--fodda-accent, #663399)" stop-opacity=".18"/>
+          <stop offset="100%" stop-color="var(--fodda-accent, #663399)" stop-opacity="0"/>
         </linearGradient>
       </defs>
       <polygon points="${gt.polygon}" fill="url(#gtg)"/>
-      <polyline points="${gt.polyline}" fill="none" stroke="#663399" stroke-width="1.5" stroke-linejoin="round"/>
+      <polyline points="${gt.polyline}" fill="none" stroke="var(--fodda-accent, #663399)" stroke-width="1.5" stroke-linejoin="round"/>
       <line x1="0" y1="88" x2="300" y2="88" stroke="var(--color-border-tertiary)" stroke-width=".5"/>
-      <text x="2" y="93" font-size="7" fill="var(--color-text-secondary)" font-family="monospace">Apr '25</text>
+      <text x="2" y="93" font-size="7" fill="var(--color-text-secondary)" font-family="monospace">${gt.startDateLabel}</text>
       <text x="150" y="93" font-size="7" fill="var(--color-text-secondary)" text-anchor="middle" font-family="monospace">${gt.peakLabel}</text>
       <text x="298" y="93" font-size="7" fill="var(--color-text-secondary)" text-anchor="end" font-family="monospace">${gt.nowLabel}</text>
-      <circle cx="${gt.peakX}" cy="${gt.peakY}" r="2" fill="#663399"/>
-      <circle cx="300" cy="${gt.annY}" r="2.5" fill="#663399"/>
-      <text x="${gt.annX}" y="${gt.annY}" font-size="7" fill="#663399" text-anchor="end" font-family="monospace">${gt.annText}</text>
+      <circle cx="${gt.peakX}" cy="${gt.peakY}" r="2" fill="var(--fodda-accent, #663399)"/>
+      <circle cx="300" cy="${gt.annY}" r="2.5" fill="var(--fodda-accent, #663399)"/>
+      <text x="${gt.annX}" y="${gt.annY}" font-size="7" fill="var(--fodda-accent, #663399)" text-anchor="end" font-family="monospace">${gt.annText}</text>
     </svg>
     <p class="note">{{GT_CAPTION}}</p>` : '',
         'GT_COMPARISON_SECTION_HTML': gt.comparisonBarsHtml ? `<div class="sl2">Search interest — brand vs competitors</div>
@@ -805,25 +799,66 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     return { widget_html: html, editorial_context: editorialContext, open_slots: [] };
 }
 
-// const TEMPLATE = `
 export const TEMPLATE = `
 <style>
-:root{--p:#663399;--pl:#F5F0FF;--pm:#9B72CC;--pl-on:#663399;}
-@media(prefers-color-scheme:dark){:root{--p:#9B72CC;--pl:rgba(155,114,204,0.14);--pm:#663399;--pl-on:#C4A7E8;}}
-.w{border:1px solid var(--p);border-top:3px solid var(--p);border-radius:6px;padding:1.25rem;font-family:var(--font-mono);}
+.fodda-brand-widget, .w {
+  --fodda-bg: #ffffff;
+  --fodda-bg-secondary: #f8fafc;
+  --fodda-text: #18181b;
+  --fodda-muted: #71717a;
+  --fodda-line: #e4e4e7;
+  --fodda-accent: #663399;
+  --fodda-accent-light: #f5f0ff;
+  --p: var(--fodda-accent);
+  --pl: var(--fodda-accent-light);
+  --pm: var(--fodda-line);
+  --pl-on: var(--fodda-accent);
+  --color-text-primary: var(--fodda-text);
+  --color-text-secondary: var(--fodda-muted);
+  --color-border-tertiary: var(--fodda-line);
+  --color-background-primary: var(--fodda-bg);
+  --color-background-secondary: var(--fodda-bg-secondary);
+  --color-text-info: #2563eb;
+  --color-text-success: #16a34a;
+  --color-text-warning: #d97706;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: var(--fodda-text);
+  background: var(--fodda-bg);
+  border: 1px solid var(--fodda-line);
+  border-top: 3px solid var(--fodda-accent);
+  border-radius: 6px;
+  padding: 1.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  .fodda-brand-widget, .w {
+    --fodda-bg: #18181b;
+    --fodda-bg-secondary: #27272a;
+    --fodda-text: #f4f4f5;
+    --fodda-muted: #a1a1aa;
+    --fodda-line: #3f3f46;
+    --fodda-accent: #9d65d4;
+    --fodda-accent-light: rgba(157, 101, 212, 0.15);
+    --p: var(--fodda-accent);
+    --pl: var(--fodda-accent-light);
+    --pm: var(--fodda-line);
+    --pl-on: #c4a7e8;
+    --color-text-info: #60a5fa;
+    --color-text-success: #4ade80;
+    --color-text-warning: #fbbf24;
+  }
+}
 .hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:.5px solid var(--color-border-tertiary);}
 .logo{display:flex;align-items:center;gap:10px;}
-.logo img{height:24px;width:auto;display:block;}
-.lt{font-size:13px;font-weight:500;}.ls{font-size:10px;color:var(--color-text-secondary);}
-.bfolio{font-family:var(--font-mono);font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:var(--color-text-secondary);}
+.lt{font-size:13px;font-weight:600;}.ls{font-size:10px;color:var(--color-text-secondary);}
+.bfolio{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:var(--color-text-secondary);}
 .bh{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem;}
-.bn{font-family:var(--font-serif);font-style:italic;font-weight:400;font-size:22px;letter-spacing:-0.01em;}
-.vc{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;font-family:var(--font-mono);}
+.bn{font-family:Georgia,serif;font-style:italic;font-weight:400;font-size:22px;letter-spacing:-0.01em;}
+.vc{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 .vc-up{color:var(--color-text-success);}
 .vc-build{color:var(--color-text-info);}
 .vc-steady{color:var(--color-text-secondary);}
 .vc-slow{color:var(--color-text-warning);}
-.pv{font-size:14px;font-family:var(--font-serif);font-style:italic;font-weight:400;line-height:1.65;padding:14px 16px;background:var(--pl);border:1px solid var(--p);border-left-width:3px;border-radius:4px;margin-bottom:1.25rem;color:var(--color-text-primary);}
+.pv{font-size:14px;font-family:Georgia,serif;font-style:italic;font-weight:400;line-height:1.65;padding:14px 16px;background:var(--pl);border:1px solid var(--p);border-left-width:3px;border-radius:4px;margin-bottom:1.25rem;color:var(--color-text-primary);}
 .lcb{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:.75rem;gap:2px;}
 .lcl{display:flex;gap:12px;margin-bottom:1.25rem;flex-wrap:wrap;}
 .lci{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--color-text-secondary);}
@@ -831,37 +866,37 @@ export const TEMPLATE = `
 .card{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:4px;padding:1rem 1.25rem;margin-bottom:8px;transition:border-color .15s,background .15s;}
 .card:hover{border-color:var(--p);background:var(--pl);}
 .th{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px;}
-.tn{font-size:13px;font-weight:500;}
+.tn{font-size:13px;font-weight:600;}
 .ta{display:flex;align-items:center;gap:4px;flex-shrink:0;}
 .td{font-size:12px;color:var(--color-text-secondary);margin-bottom:5px;line-height:1.5;}
-.lb{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;white-space:nowrap;font-family:var(--font-mono);background:transparent;}
+.lb{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:transparent;}
 .lb-b{color:var(--color-text-info);}
 .lb-e{color:var(--color-text-success);}
 .lb-m{color:var(--color-text-secondary);}
 .lb-f{color:var(--color-text-warning);}
-.bd{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;background:transparent;color:var(--color-text-secondary);font-family:var(--font-mono);}
-.bd-fast{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;background:transparent;color:#7A4000;font-family:var(--font-mono);}
-.bdp{font-size:10px;padding:2px 8px;border-radius:20px;background:var(--pl);color:var(--pl-on);font-family:var(--font-mono);}
+.bd{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;background:transparent;color:var(--color-text-secondary);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+.bd-fast{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;background:transparent;color:#7A4000;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+.bdp{font-size:10px;padding:2px 8px;border-radius:20px;background:var(--pl);color:var(--pl-on);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
 .brow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .wl{font-size:11px;color:var(--color-text-secondary);margin:1.25rem 0 8px;display:flex;align-items:center;gap:6px;}
 .wd{width:6px;height:6px;border-radius:50%;background:var(--color-text-warning);display:inline-block;}
 .ec{border:1px dashed var(--color-border-tertiary);border-radius:4px;margin-bottom:8px;padding:1rem 1.25rem;}
-.et a{color:var(--color-text-info);text-decoration:none;font-size:13px;font-weight:500;}.et a:hover{text-decoration:underline;}
+.et a{color:var(--color-text-info);text-decoration:none;font-size:13px;font-weight:600;}.et a:hover{text-decoration:underline;}
 .ex{font-size:12px;color:var(--color-text-secondary);line-height:1.5;margin:6px 0 8px;}
 .em{display:flex;gap:6px;flex-wrap:wrap;}
 .cit{font-size:10px;color:var(--color-text-secondary);margin-top:8px;padding-top:8px;border-top:.5px solid var(--color-border-tertiary);}
 .cit a{color:var(--color-text-info);text-decoration:none;}
-.cat-cs{background:var(--color-background-info);color:var(--color-text-info);}
+.cat-cs{background:var(--color-background-secondary);color:var(--color-text-info);}
 .cat-si{background:var(--pl);color:var(--p);}
-.cat-me{background:var(--color-background-success);color:var(--color-text-success);}
-.cat-qu{background:var(--color-background-warning);color:var(--color-text-warning);}
+.cat-me{background:var(--color-background-secondary);color:var(--color-text-success);}
+.cat-qu{background:var(--color-background-secondary);color:var(--color-text-warning);}
 .cat-in{background:var(--color-background-secondary);color:var(--color-text-secondary);}
 .cc{background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:4px;padding:.875rem 1.25rem;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;}
-.cn{font-size:13px;font-weight:500;margin-bottom:3px;}
+.cn{font-size:13px;font-weight:600;margin-bottom:3px;}
 .cd{font-size:11px;color:var(--color-text-secondary);}
 .ca{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
-.pb{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;font-family:var(--font-mono);background:transparent;}
-.sl2, .sec{font-size:13px;font-weight:500;color:var(--color-text-primary);margin:1.25rem 0 8px;}.sl2:first-child, .sec:first-child{margin-top:0;}
+.pb{font-size:9px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;padding:3px 8px;border:1px solid currentColor;border-radius:2px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:transparent;}
+.sl2, .sec{font-size:13px;font-weight:600;color:var(--color-text-primary);margin:1.25rem 0 8px;}.sl2:first-child, .sec:first-child{margin-top:0;}
 .br{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:12px;}
 .brl{width:120px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;}
 .brt{flex:1;height:4px;background:var(--color-background-secondary);border-radius:3px;overflow:hidden;}
@@ -870,38 +905,41 @@ export const TEMPLATE = `
 .sg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:1rem;}
 .sk{background:var(--color-background-secondary);border-radius:8px;padding:10px 12px;}
 .skl{font-size:10px;color:var(--color-text-secondary);margin-bottom:3px;}
-.skv{font-family:var(--font-serif);font-style:italic;font-size:22px;font-weight:400;}.sks{font-size:10px;color:var(--color-text-secondary);margin-top:2px;}
+.skv{font-family:Georgia,serif;font-style:italic;font-size:22px;font-weight:400;}.sks{font-size:10px;color:var(--color-text-secondary);margin-top:2px;}
 .rq{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:.75rem;}
 .rqp{font-size:10px;padding:3px 9px;border-radius:20px;background:var(--color-background-secondary);color:var(--color-text-secondary);border:.5px solid var(--color-border-tertiary);}
-.xb{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--color-background-secondary);border:.5px solid var(--color-border-tertiary);border-radius:8px;cursor:pointer;text-align:left;width:100%;margin-bottom:8px;font-family:var(--font-mono);transition:all .15s;}
+.xb{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--color-background-secondary);border:.5px solid var(--color-border-tertiary);border-radius:8px;cursor:pointer;text-align:left;width:100%;margin-bottom:8px;font-family:inherit;transition:all .15s;}
 .xb:hover{background:var(--pl);border-color:var(--pm);}
-.xi{font-size:11px;width:28px;font-weight:500;flex-shrink:0;color:var(--color-text-secondary);}
+.xi{font-size:11px;width:28px;font-weight:600;flex-shrink:0;color:var(--color-text-secondary);}
 .xd{font-size:11px;color:var(--color-text-secondary);margin-top:2px;}
-.xbl{font-weight:500;font-size:12px;}
+.xbl{font-weight:600;font-size:12px;}
 .gf{display:flex;gap:5px;flex-wrap:wrap;margin-top:1.5rem;padding-top:1rem;border-top:.5px solid var(--color-border-tertiary);align-items:center;}
 .gfl{font-size:10px;color:var(--color-text-secondary);margin-right:2px;}
 .gp{font-size:10px;padding:2px 9px;border-radius:20px;background:var(--pl);color:var(--pl-on);border:.5px solid var(--pm);}
 .ap{background:var(--color-background-secondary);border-radius:8px;margin-bottom:6px;padding:.75rem 1rem;display:flex;justify-content:space-between;align-items:center;}
-.an2{font-size:12px;font-weight:500;}
+.an2{font-size:12px;font-weight:600;}
 .am2{font-size:11px;color:var(--color-text-secondary);margin-top:2px;}
 .astar{font-size:11px;color:var(--p);}
 .note{font-size:10px;color:var(--color-text-secondary);margin-bottom:1.25rem;}
-.btn-out{font-size:9px;padding:2px 7px;cursor:pointer;border:.5px solid var(--pm);border-radius:20px;background:var(--pl);color:var(--pl-on);font-family:var(--font-mono);}
+.btn-out{font-size:9px;padding:2px 7px;cursor:pointer;border:.5px solid var(--pm);border-radius:20px;background:var(--pl);color:var(--pl-on);font-family:inherit;}
 .btn-out:hover{background:var(--p);color:#fff;border-color:var(--p);}
-.cp{font-size:11px;background:var(--pl);color:var(--pl-on);border:.5px solid var(--pm);border-radius:20px;padding:3px 10px;cursor:pointer;font-family:var(--font-mono);transition:all .15s;}
+.cp{font-size:11px;background:var(--pl);color:var(--pl-on);border:.5px solid var(--pm);border-radius:20px;padding:3px 10px;cursor:pointer;font-family:inherit;transition:all .15s;}
 .cp:hover{background:var(--p);color:#fff;}
-.cv{font-size:10px;background:var(--pl);color:var(--pl-on);border:.5px solid var(--pm);border-radius:20px;padding:2px 8px;cursor:pointer;font-family:var(--font-mono);transition:all .15s;}
+.cv{font-size:10px;background:var(--pl);color:var(--pl-on);border:.5px solid var(--pm);border-radius:20px;padding:2px 8px;cursor:pointer;font-family:inherit;transition:all .15s;}
 .cv:hover{background:var(--p);color:#fff;}
 .an{font-size:13px;line-height:1.7;color:var(--color-text-primary);}
 .an p{margin:0 0 .75rem;}
-.an strong{font-weight:500;}
+.an strong{font-weight:600;}
 .si{font-size:12px;line-height:1.65;color:var(--color-text-secondary);font-style:italic;margin:0 0 1rem;}
 </style>
 
-<div class="w">
+<div class="fodda-brand-widget w">
   <div class="hd">
     <div class="logo">
-      <img src="${FODDA_LOGO_URL}" alt="Fodda" style="height:24px;width:24px;"/>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style="height:24px;width:24px;flex-shrink:0;">
+        <rect width="24" height="24" rx="6" fill="var(--fodda-accent)"/>
+        <circle cx="12" cy="12" r="5" fill="#ffffff"/>
+      </svg>
       <div><div class="lt">Fodda</div><div class="ls">Brand Intelligence</div></div>
     </div>
     <div class="bfolio">{{FOLIO}}</div>
@@ -927,8 +965,7 @@ export const TEMPLATE = `
   {{TRENDS_HTML}}
   {{WEAK_SIGNALS_HTML}}
 
-  <div class="sec">Competitive</div>
-  {{COMPETITOR_LIST_HTML}}
+  {{COMPETITIVE_SECTION_HTML}}
 
   <div class="sec">Market data</div>
   {{MARKET_DATA_INTRO}}
@@ -968,4 +1005,5 @@ export const TEMPLATE = `
   <div class="gf">
     <span class="gfl">Sources:</span>
     {{SOURCE_PILLS_HTML}}
+  </div>
 </div>`;

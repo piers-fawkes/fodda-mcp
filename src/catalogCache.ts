@@ -122,7 +122,14 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         topics = undefined;
     }
 
+    const rawSubType = (a.graphSubType || a.graph_sub_type || a.subType || a.type || a.kind || a.agent_type || '').toString().trim();
     const is_human_agent = Boolean(
+        rawSubType === 'Digital Twin' ||
+        rawSubType === 'Classic Digital Twin' ||
+        /digital twin/i.test(rawSubType) ||
+        rawSubType === 'human_agent' ||
+        rawSubType === 'human_twin' ||
+        rawSubType === 'expert_twin' ||
         a.is_human_agent ||
         a.is_digital_twin ||
         a.isVerifiedRealPerson ||
