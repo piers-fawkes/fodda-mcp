@@ -5,6 +5,19 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.42] - 2026-09-01
+
+### Added & Changed (PSFK Trends Database Routing, Experiential/Format Query Expansions & Shelf Merchandising Fallback)
+- **Marketing, Experiential & Format Query Expansions (`src/catalogCache.ts`)**:
+  - Expanded `QUERY_EXPANSION_MAP` to map experiential and marketing tactics (`activation`, `activations`, `experiential`, `popup`, `popups`, `sampling`, `sponsorship`, `installation`, `flagship`, `immersive`, `stunt`, `showcase`, `marketing`, `campaign`, `advertising`, `promo`, `promotion`) to parent domain graphs (`retail`, `cpg`, `brand`, `experience`, `hospitality`, `culture`).
+  - Expanded pet sub-verticals (`pet`, `pets`, `dog`, `dogs`, `cat`, `cats`, `petfood`) to map to `cpg`, `retail`, `food`, and `wellness`.
+  - Added an experiential and activation tactic boost in `scoreClauseRelevance` so queries involving marketing formats and activations score relevant domain graphs (like `retail` and `cpg`) above the routing threshold.
+- **Shelf Merchandising Fallback (`src/coverageRelevance.ts`)**:
+  - Updated `generateConsultNextMoves` so when `shelfCandidateGraphs` has zero candidates but the analyst offers commissionable deliverables (`hasDeliverableOffering`), the deliverable offering is preserved in Sentence 2 (`"{Name} takes scoped briefs on this if you need a deliverable."`) instead of completely dropping the shelf line.
+- **Testing & Verification (`src/test_next_moves.ts`)**:
+  - Added Test 29 verifying queries for experiential activations in niche categories (e.g. pet food) expand and surface relevant trend databases (such as `Retail Strategy & Innovation`) on the shelf.
+  - Added Test 30 verifying zero shelf candidate graphs with deliverable offerings cleanly fall back to the deliverable offering sentence.
+
 ## [1.46.41] - 2026-08-29
 
 ### Added & Changed (Expert Onboarding Completion Warning & Pause Handling — `Brief MCP — Onboarding Completion Warning (No Draft Saving).md`)

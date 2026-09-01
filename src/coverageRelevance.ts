@@ -1512,8 +1512,11 @@ export function generateConsultNextMoves(
         } else {
             shelfSentence += `.`;
         }
+    } else if (hasDeliverableOffering) {
+        shelfSentence = `${expertDisplayName} takes scoped briefs on this if you need a deliverable.`;
+        nextMoves.shelf = undefined;
     } else {
-        // Empty candidate list — omit sentence 2 per Brief 1.46.29
+        // Empty candidate list and no deliverable offerings — omit sentence 2 per Brief 1.46.29
         shelfSentence = '';
         nextMoves.shelf = undefined;
     }

@@ -947,6 +947,93 @@ async function runTests() {
     console.log('✅ Test 28 Passed: Zero lane-fit query cleanly omitted specific.expert');
 }
 
+// Test 29: Experiential & Pet Food query expansions route to Retail Strategy shelf
+{
+    setCachedCatalogForTesting(
+        { version: '1.0', generated_at: new Date().toISOString(), graph_count: mockGraphs.length, graphs: mockGraphs as any },
+        mockAnalysts as any
+    );
+
+    const mockResult = {
+        coverage: 'adjacent',
+        report: 'Spectacle and myth-making for pet food activations.',
+        sources_used: [],
+        expert_thread: {
+            on_topic_total: 0,
+            cited_count: 0,
+            uncited_themes: [],
+            brands: [],
+            next_angle: null
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'i want to put on an experiential activation for a Pet Food company',
+        'josephine-baker',
+        {},
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.ok(nextMoves.consult_envelope.shelf_line, 'Shelf line must be populated for experiential activation query');
+    assert.ok(
+        nextMoves.consult_envelope.shelf_line.includes('Retail Strategy'),
+        `Shelf line must surface Retail Strategy graph for experiential activation, got: "${nextMoves.consult_envelope.shelf_line}"`
+    );
+    console.log('✅ Test 29 Passed: Experiential activation query expanded and surfaced Retail Strategy on shelf');
+}
+
+// Test 30: Zero shelf candidate graphs with deliverable offering falls back to deliverable line
+{
+    const analystsWithOffering: CatalogAnalyst[] = [
+        {
+            analyst_id: 'marketing-lead',
+            name: 'Marketing Lead',
+            status: 'Active',
+            topics: ['marketing'],
+            description: 'Marketing strategy',
+            offerings: [{ offering_key: 'marketing_plan', display_name: 'Marketing Plan' }]
+        }
+    ];
+
+    setCachedCatalogForTesting(
+        { version: '1.0', generated_at: new Date().toISOString(), graph_count: 0, graphs: [] },
+        analystsWithOffering as any
+    );
+
+    const mockResult = {
+        coverage: 'in',
+        report: 'Niche topic analysis.',
+        sources_used: [],
+        expert_thread: {
+            on_topic_total: 0,
+            cited_count: 0,
+            uncited_themes: [],
+            brands: [],
+            next_angle: null
+        }
+    };
+
+    const nextMoves = generateConsultNextMoves(
+        mockResult,
+        'superconducting quantum qubit coherence',
+        'marketing-lead',
+        {},
+        [], // No graphs
+        analystsWithOffering
+    );
+
+    assert.ok(nextMoves.consult_envelope, 'consult_envelope must be populated');
+    assert.strictEqual(
+        nextMoves.consult_envelope.shelf_line,
+        'Marketing Lead takes scoped briefs on this if you need a deliverable.',
+        'Must output deliverable line when shelf candidate graphs are empty'
+    );
+    console.log('✅ Test 30 Passed: Zero shelf candidate graphs cleanly fell back to deliverable offering line');
+}
+
 console.log('\nAll Next Moves unit tests passed successfully!');
 }
 

@@ -795,8 +795,30 @@ const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     // Pet & Animal Care
     pet: ['pet', 'cpg', 'food', 'wellness', 'retail'],
     pets: ['pet', 'cpg', 'food', 'wellness', 'retail'],
-    dog: ['pet', 'cpg', 'food', 'wellness'],
-    cat: ['pet', 'cpg', 'food', 'wellness'],
+    dog: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    dogs: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    cat: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    cats: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    petfood: ['pet', 'cpg', 'food', 'wellness', 'retail'],
+    // Marketing, Experiential & Activations
+    activation: ['retail', 'cpg', 'marketing', 'brand', 'experience', 'hospitality', 'culture'],
+    activations: ['retail', 'cpg', 'marketing', 'brand', 'experience', 'hospitality', 'culture'],
+    experiential: ['retail', 'cpg', 'marketing', 'brand', 'experience', 'hospitality', 'culture', 'design'],
+    popup: ['retail', 'cpg', 'fashion', 'experience', 'design'],
+    popups: ['retail', 'cpg', 'fashion', 'experience', 'design'],
+    sampling: ['cpg', 'retail', 'food', 'beverage', 'beauty', 'experience'],
+    sponsorship: ['marketing', 'brand', 'culture', 'retail', 'entertainment'],
+    installation: ['retail', 'design', 'art', 'experience', 'culture'],
+    flagship: ['retail', 'fashion', 'design', 'experience', 'brand'],
+    immersive: ['retail', 'experience', 'design', 'entertainment', 'technology'],
+    stunt: ['marketing', 'brand', 'culture', 'retail'],
+    showcase: ['retail', 'design', 'experience', 'marketing'],
+    marketing: ['retail', 'cpg', 'brand', 'strategy', 'advertising', 'culture'],
+    campaign: ['marketing', 'brand', 'advertising', 'retail', 'cpg'],
+    advertising: ['marketing', 'brand', 'media', 'retail', 'cpg'],
+    promo: ['marketing', 'retail', 'cpg', 'promotion'],
+    promotion: ['marketing', 'retail', 'cpg', 'promotion'],
+    hospitality: ['hospitality', 'hotel', 'dining', 'food', 'experience', 'leisure', 'culture'],
     // Tech, AI & SaaS
     ai: ['technology', 'ai', 'software', 'enterprise', 'innovation'],
     saas: ['technology', 'software', 'enterprise', 'b2b'],
@@ -903,6 +925,21 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
             finalScore += 0.20; // Specialist Category Boost
         } else if (isGenericAgency && directScore === 0) {
             finalScore = Math.min(finalScore, 0.40); // Cap generic agency floor
+        }
+    }
+
+    // Experiential & Activation Tactic Boost
+    const experientialTerms = new Set([
+        'activation', 'activations', 'experiential', 'popup', 'popups', 'sampling',
+        'installation', 'flagship', 'immersive', 'stunt', 'showcase'
+    ]);
+    const queryHasExperiential = terms.some(t => experientialTerms.has(t));
+    if (queryHasExperiential) {
+        const isExperienceGraph = /retail|cpg|brand|marketing|experience|culture|hospitality/i.test(
+            g.graph_id + ' ' + (g.domain || '') + ' ' + (g.topics || []).join(' ') + ' ' + (g.routing_keywords || []).join(' ')
+        );
+        if (isExperienceGraph || g.graph_id === 'retail') {
+            finalScore += 0.20; // Experiential Format Boost
         }
     }
 
