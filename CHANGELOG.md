@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Testing & Verification (`src/test_next_moves.ts`)**:
   - Added Test 29 verifying queries for experiential activations in niche categories (e.g. pet food) expand and surface relevant trend databases (such as `Retail Strategy & Innovation`) on the shelf.
   - Added Test 30 verifying zero shelf candidate graphs with deliverable offerings cleanly fall back to the deliverable offering sentence.
+- **Deployment & Production Verification**:
+  - Deployed to Google Cloud Run (`fodda-mcp`, revision `fodda-mcp-00486-sq6`, `us-east4`, 100% traffic).
+  - Verified live production health check on `https://mcp.fodda.ai/health` (HTTP 200 OK).
 
 ## [1.46.41] - 2026-08-29
 
