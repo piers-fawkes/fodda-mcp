@@ -5,6 +5,26 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.44] - 2026-09-01
+
+### Added & Changed (5-Pillar Editorial & Network Synthesis for Report Intelligence)
+- **5-Pillar Editorial Briefing Payload (`src/reportBriefing.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `get_report_intelligence` 5-pillar editorial briefing synthesis with `view: 'editorial' | 'data'` (default: `'editorial'`).
+  - **Pillar 1 (Core Tension / Topline Hook)**: Provocative strategic thesis highlighting core industry tension rather than dry bibliographic metadata.
+  - **Pillar 2 (Core Shifts & Dramatic Evidence)**: 3–5 structured structural shifts backed by concrete data points, metrics, and deduplicated evidence snippets.
+  - **Pillar 3 (Cross-Graph Network Signals)**: Surfaced 2–3 related data points from other industry report graphs in Fodda's network, with explicit provenance and relationship tags (`validates`, `contrasts`, `related`).
+  - **Pillar 4 (Human Expert Digital Twin Spotlight)**: Matched verified Human Expert Digital Twins (`is_human_agent: true`), surfacing expert stance quotes, why-matched explanations, and direct consultation links (`https://expert.fodda.ai/<slug>`).
+  - **Pillar 5 (Actionable Follow-Up Moves)**: Reshaped next moves into runnable tool calls (`tool`, `args`) and deep-links into Fodda.
+  - **Hybrid JSON + Markdown Output**: Returns dedicated structured JSON keys (`topline_hook`, `shifts`, `network_signals`, `expert_spotlight`, `follow_ups`) alongside a pre-rendered `briefing_markdown` analyst note.
+- **Single Fast Gemini LLM Hop & Fail-Safe Fallback (`src/editorialFill.ts`, `src/reportBriefing.ts`)**:
+  - Reused singleton Gemini client with 5s hard timeout for single-hop unified synthesis.
+  - Graceful fallback on timeout or error to mechanical extraction with `signal_type: 'related'` (never inventing contrasts mechanically).
+- **Trigger-Phrased Tool Description (`src/toolHandlers.ts`, `src/tools.ts`)**:
+  - Updated `get_report_intelligence` description with explicit trigger phrases (*"what does the X report say"*, *"latest findings from [Brand/Firm]"*, *"brief me on [Topic]"*).
+  - Bumped `get_report_intelligence` version to `1.1.0` in `src/tools.ts`.
+- **Unit Test Suite (`src/test_report_editorial_briefing.ts`)**:
+  - Added full test coverage for report graph resolution, primary vs network row partitioning, deduplication, human twin matching, 5-pillar structure verification, and pricing/SPT safety.
+
 ## [1.46.43] - 2026-09-01
 
 ### Added & Changed (MCP Visual House Style & Server SVG Template Hardening v2.2)

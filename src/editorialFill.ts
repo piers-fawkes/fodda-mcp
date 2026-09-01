@@ -13,7 +13,7 @@ import { GoogleGenAI, ServiceTier } from '@google/genai';
 // ---------------------------------------------------------------------------
 // Google AI Studio — Gemini (singleton SDK)
 // ---------------------------------------------------------------------------
-interface GeminiResponse {
+export interface GeminiResponse {
     text: string;
     error?: string;
 }
@@ -25,7 +25,7 @@ const genAI = process.env.GOOGLE_AI_API_KEY
 
 const GEMINI_TIMEOUT_MS = 5000; // 5s hard timeout to prevent widget-render hangs
 
-async function callGemini(prompt: string, modelName: string = 'gemini-2.0-flash', maxTokens: number = 2048): Promise<GeminiResponse> {
+export async function callGemini(prompt: string, modelName: string = 'gemini-2.0-flash', maxTokens: number = 2048): Promise<GeminiResponse> {
     if (!genAI) {
         return { text: '', error: 'GOOGLE_AI_API_KEY environment variable is not set.' };
     }

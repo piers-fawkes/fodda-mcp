@@ -212,7 +212,7 @@
       "kind": "tool",
       "bills_as": "report_intelligence",
       "category": "Intelligence",
-      "description": "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Delta, and specialist research firms. Returns structured findings with bundled evidence — not raw PDFs or summaries, but editorially extracted trend data with source attribution. No graph ID needed. Use for market sizing, competitive landscape analysis, and data-heavy research where published report intelligence is more authoritative than web search results."
+      "description": "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Unilever, Jack Morton, and specialist research firms. Use when asked 'what does the X report say', 'latest findings from [Brand/Firm]', 'brief me on [Topic]', or for data-heavy competitive research where published report intelligence is more authoritative than web search. Returns an executive 5-pillar analyst briefing by default with cross-graph validation and expert twin spotlight. No graph ID needed."
     },
     {
       "name": "get_supplemental_context",

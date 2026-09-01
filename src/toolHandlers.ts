@@ -32,6 +32,7 @@ import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
 import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
+import { buildReportEditorialBriefing } from './reportBriefing.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -2776,9 +2777,10 @@ export async function createServer(
     // Searches ALL industry report graphs in parallel.
     server.tool(
         'get_report_intelligence',
-        "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Delta, and specialist research firms. Returns structured findings with bundled evidence — not raw PDFs or summaries, but editorially extracted trend data with source attribution. No graph ID needed. Use for market sizing, competitive landscape analysis, and data-heavy research where published report intelligence is more authoritative than web search results.",
+        "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Unilever, Jack Morton, and specialist research firms. Use when asked 'what does the X report say', 'latest findings from [Brand/Firm]', 'brief me on [Topic]', or for data-heavy competitive research where published report intelligence is more authoritative than web search. Returns an executive 5-pillar analyst briefing by default with cross-graph validation and expert twin spotlight. No graph ID needed.",
         {
-            query: z.string().describe("Natural language search query (e.g., 'luxury resale market size', 'electric vehicle adoption rates')"),
+            query: z.string().describe("Natural language search query (e.g., 'luxury resale market size', 'electric vehicle adoption rates', 'Jack Morton fan experience')"),
+            view: z.enum(['editorial', 'data']).optional().default('editorial').describe("Format mode: 'editorial' (default) returns a 5-pillar executive analyst briefing with cross-graph validation and expert twin spotlight; 'data' returns raw structured trend records."),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
             include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
             max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
@@ -2786,7 +2788,7 @@ export async function createServer(
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
         { title: 'Search Report Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
+        async ({ query, view, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
             try {
                 const body: Record<string, any> = { query };
                 if (limit !== undefined) body.limit = limit;
@@ -2826,7 +2828,18 @@ export async function createServer(
                 if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
                     return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
                 }
-                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+
+                if (view === 'data') {
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+                }
+
+                const editorialPayload = await buildReportEditorialBriefing({
+                    data,
+                    query,
+                    searchedGraphs,
+                    annotatedData,
+                });
+                return { content: [{ type: 'text' as const, text: JSON.stringify(editorialPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
