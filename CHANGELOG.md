@@ -5,6 +5,31 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.48] - 2026-09-01
+
+### Added & Changed (Claude Web MCP Latency Optimization, Live Routing Fix & Telemetry Hook)
+- **Elimination of Step A Pre-Search Ritual (`src/systemPrompt.ts`)**:
+  - Replaced mandatory two-turn `VirtualExpertConsultation` sequence (Step A `search_graph` pre-search followed by Step B `consult_human_agent` with pasted graph context) with a direct 1-step consultation invocation (`consult_human_agent` or `consult_analyst`).
+  - Passes clean query strings to backend, eliminating query embedding dilution and preventing polluted graph context bullets in Airtable Questions logs.
+  - Rewrote cross-expert referral rules referencing legacy `ANALYST ENTRIES` to use `list_analysts`.
+- **Live String Routing Fix & Double Execution Elimination (`src/toolHandlers.ts`, `src/catalogCache.ts`)**:
+  - Aligned proactive routing helpers (`isTwinAnalyst`, `isSyntheticAnalyst`) and `normalizeAnalyst` with live API `graphSubType` strings: `"Digital Twin"`, `"Classic Digital Twin"`, and `"Synthetic Expert"`.
+  - Removed post-result rerouting in `executeConsultAnalystCore`, eliminating the double-execution penalty (12s + 24s) when an API response carries twin tags.
+  - Added repeatable routing test suite (`src/test_consult_routing.ts`) verifying all 4 dispatch paths (Digital Twin, Classic Digital Twin, Synthetic Analyst, cross-dispatch).
+- **Automatic MCP Tool Telemetry Hook (`src/toolHandlers.ts`)**:
+  - Wrapped `server.tool` inside `createServer` to automatically measure execution time for every tool handler and emit structured `[MCP_METRICS]` JSON to `stdout` via `recordToolOutcome(toolName, success, durationMs, error)`.
+- **Gated Supplemental Fetches in `search_graph` (`src/toolHandlers.ts`)**:
+  - Gated automatic Google Trends and Census retail supplemental fetches so they only run on statistics-shaped queries (`statistic`, `numbers`, `percentages`, `market size`, `spending`, `revenue`) or thin coverage (< 2 results), saving 1–3s on standard qualitative trend searches.
+- **Context Payload Sizing & Roster Status (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Trimmed `begin_expert_onboarding` description from ~4,600 characters down to a concise, functional schema description (< 300 characters).
+  - Deployed `tools/list` payload measured at 69,435 bytes (manifest at 31,200 bytes).
+  - Instructions payload currently at 73,953 characters; moving dynamic roster out of the prompt is explicitly tracked and deferred to Phase 2.
+- **Production-Executed Coverage Replay Suite (`src/test_coverage_replay.ts`)**:
+  - Executed 10-query coverage replay suite directly against production MCP (`https://mcp.fodda.ai/mcp`) using `Authorization: Bearer` auth headers and non-billed identity (`coverage-replay-suite@fodda.ai`).
+  - Result: 10/10 PASS across all active expert queries (`in`, `adjacent`, `out`) with 0 failures and zero client bounces.
+- **Cross-Repo API Brief (`briefs/Brief - Latency Optimization and Agentic Loop Tuning (API Agent).md`)**:
+  - Authored formal brief for `Fodda API` agent targeting sub-stage timers (`jsonPayload.message` structured logging), Gemini Interactions managed agent loop optimization, `min-instances = 1` on `fodda-api-new` in `us-east4`, and 402 retry loop mitigation.
+
 ## [1.46.47] - 2026-09-01
 
 ### Added & Changed (Brand Intelligence Headline Verdict Alignment & Calendar Quarter Accuracy)
@@ -40,27 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Payload Streamlining & Recipe Conflict Resolution (`src/toolHandlers.ts`)**:
   - Suppressed `FODDA_HOUSE_VISUAL_RECIPE_V2_2` trailing block in `brand_tracker` when pre-rendered `widget_html` is returned, preventing client visual generation confusion and reducing payload token size.
 
-## [1.46.45] - 2026-09-01
 
-### Added & Changed (Claude Web MCP Latency Optimization & Seamless Direct Routing)
-- **Elimination of Step A Pre-Search Ritual (`src/systemPrompt.ts`)**:
-  - Replaced mandatory two-turn `VirtualExpertConsultation` sequence (Step A `search_graph` pre-search followed by Step B `consult_human_agent` with pasted graph context) with a direct 1-step consultation invocation (`consult_human_agent` or `consult_analyst`).
-  - Passes clean query strings to backend, eliminating query embedding dilution and preventing polluted graph context bullets in Airtable Questions logs.
-  - Rewrote cross-expert referral rules referencing legacy `ANALYST ENTRIES` to use `list_analysts`.
-- **Seamless Bidirectional Routing & Wrong-Tool Bounce Elimination (`src/toolHandlers.ts`)**:
-  - Implemented proactive `graphSubType` inspection before firing API requests: if `consult_analyst` is invoked with a Human Agent (Digital Twin) ID, it routes internally to `/v1/human-agents/consult` without double-billing or discarding execution to bounce back to the client.
-  - If `consult_human_agent` is called with a Synthetic Analyst ID, it routes internally to `/v1/analysts/consult`.
-- **Gated Supplemental Fetches in `search_graph` (`src/toolHandlers.ts`)**:
-  - Gated automatic Google Trends and Census retail supplemental fetches so they only run on statistics-shaped queries (`statistic`, `numbers`, `percentages`, `market size`, `spending`, `revenue`) or thin coverage (< 2 results), saving 1–3s on standard qualitative trend searches.
-- **Context Payload & Tool Manifest Slimming (`src/toolHandlers.ts`, `tools-manifest.json`)**:
-  - Trimmed `begin_expert_onboarding` description from ~4,600 characters of redundant prompt text down to a concise, functional schema description (< 300 characters), reducing tools manifest size to 31.2KB (well under 45KB target).
-- **Persistent Cloud Logging Metrics (`src/telemetry.ts`)**:
-  - Instrumented `recordToolOutcome` to emit structured JSON metrics (`[MCP_METRICS]`) to `stdout` with `mcp_tool`, `duration_ms`, `success`, and timestamp for durable telemetry in Google Cloud Logging across deployments.
-- **Verification Suite & Coverage Replay Script (`src/test_coverage_replay.ts`)**:
-  - Created 10-query coverage replay script to verify `in`, `adjacent`, and `out` coverage classifications with clean query strings under non-billed identity.
-  - Manual & automated verification passed: `npm run build` exits 0, `tools-manifest.json` at 31,200 bytes, `grep -rn "ANALYST ENTRIES" src/` returns clean (0 occurrences).
-- **Cross-Repo API Brief (`briefs/Brief - Latency Optimization and Agentic Loop Tuning (API Agent).md`)**:
-  - Authored formal brief for `Fodda API` agent targeting sub-stage timers, Gemini Interactions managed agent loop optimization, `min-instances = 1` on `fodda-api-new` in `us-east4`, and 402 retry loop mitigation.
 
 ## [1.46.44] - 2026-09-01
 
