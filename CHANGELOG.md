@@ -18,9 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Flow Stepper Progress Note (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
   - Updated flow stepper framing across `begin_expert_onboarding`, `submit_basic_info`, `expert_onboarding_research`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `schedule_interview`, and `systemPrompt.ts` to include the one-line progress save note:
     *"Stages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live. (Note: Progress is only saved to Fodda after the final submit)."*
-- **Verification**:
+- **Verification & Deployment**:
   - Executed `npm run build` updating `tools-manifest.json` and compiling TypeScript without errors.
-  - Executed `npm test` verifying server health and version `1.46.41` on port 3099.
+  - Executed `npm test` verifying server health and version `1.46.41` on local port 3099.
+  - Deployed to Google Cloud Run service `fodda-mcp` (revision `fodda-mcp-00485-gbq`, 100% traffic).
+  - Verified live production health check on `https://mcp.fodda.ai/health` (HTTP 200 OK, version `1.46.41`).
 
 ## [1.46.40] - 2026-08-28
 
