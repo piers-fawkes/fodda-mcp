@@ -48,23 +48,37 @@ assert(shiftsSvg.includes('shape-rendering="crispEdges"'), 'cultural_shifts uses
 // 2. competitive_compass
 const compassSvg = renderCompetitiveCompass(
     [
-        { name: 'Brand A', x: 0.2, y: 0.8 },
-        { name: 'Brand B', x: 0.8, y: 0.3 },
-        { name: 'Brand C', x: 0.5, y: 0.5 },
+        { name: 'Nike', x: 0.7, y: 0.8, focus: true },
+        { name: 'Adidas', x: 0.3, y: 0.6 },
+        { name: 'Lululemon', x: 0.2, y: 0.85 },
+        { name: 'On Running', x: 0.8, y: 0.7 },
     ],
-    { left: 'Traditional', right: 'Innovative', top: 'Premium', bottom: 'Mass' }
+    { left: 'Performance', right: 'Lifestyle', top: 'Premium', bottom: 'Mass Market' }
 );
 assert(compassSvg.includes('class="fodda-viz"'), 'competitive_compass has class="fodda-viz"');
 assert(compassSvg.includes('.fodda-viz {'), 'competitive_compass styles scoped to .fodda-viz');
 assert(compassSvg.includes('width="100%"'), 'competitive_compass has width="100%"');
 assert(compassSvg.includes('shape-rendering="crispEdges"'), 'competitive_compass has crispEdges on 90° axis lines');
 assert(compassSvg.includes('stroke="var(--fodda-line)"'), 'competitive_compass uses var(--fodda-line)');
-assert(compassSvg.includes('fill="var(--fodda-accent)"'), 'competitive_compass highlights primary brand with var(--fodda-accent)');
+assert(!compassSvg.includes('stroke-dasharray="3 3"/>'), 'competitive_compass has NO artificial pairwise connector lines');
+assert(compassSvg.includes('text-anchor="start"'), 'competitive_compass anchors left label inward');
+assert(compassSvg.includes('text-anchor="end"'), 'competitive_compass anchors right label inward');
+assert(compassSvg.includes('fill="var(--fodda-accent)"'), 'competitive_compass highlights focal brand with var(--fodda-accent)');
+
+// Test competitive_compass neutral when no focus is given
+const neutralCompassSvg = renderCompetitiveCompass(
+    [
+        { name: 'Brand A', x: 0.2, y: 0.8 },
+        { name: 'Brand B', x: 0.8, y: 0.3 },
+    ],
+    { left: 'Traditional', right: 'Innovative', top: 'Premium', bottom: 'Mass' }
+);
+assert(!neutralCompassSvg.includes('fill="var(--fodda-accent)"'), 'competitive_compass renders all nodes neutral when no focus is specified');
 
 // 3. trend_constellation
 const constellationSvg = renderTrendConstellation(
     [
-        { name: 'Digital Identity', x: 0.2, y: 0.3 },
+        { name: 'Digital Identity', x: 0.2, y: 0.3, focus: true },
         { name: 'Synthetic Media', x: 0.7, y: 0.4 },
         { name: 'Autonomous Agents', x: 0.4, y: 0.8 },
     ],
@@ -76,6 +90,7 @@ const constellationSvg = renderTrendConstellation(
 assert(constellationSvg.includes('class="fodda-viz"'), 'trend_constellation has class="fodda-viz"');
 assert(constellationSvg.includes('width="100%"'), 'trend_constellation has width="100%"');
 assert(!constellationSvg.includes('shape-rendering="crispEdges"'), 'trend_constellation does NOT apply crispEdges to diagonal connectors');
+assert(constellationSvg.includes('fill="var(--fodda-accent)"'), 'trend_constellation highlights focal trend with accent');
 
 // 4. implication_ladder
 const ladderSvg = renderImplicationLadder({

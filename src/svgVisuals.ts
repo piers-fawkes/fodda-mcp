@@ -49,7 +49,7 @@ function watermark(width: number, height: number): string {
  * Cultural Shift Arrows — Bold "From → To" transitions.
  */
 export function renderCulturalShifts(shifts: Array<{ from: string; to: string }>): string {
-    const rowHeight = 52;
+    const rowHeight = 54;
     const padding = 20;
     const width = 500;
     const items = Array.isArray(shifts) ? shifts : [];
@@ -61,7 +61,7 @@ export function renderCulturalShifts(shifts: Array<{ from: string; to: string }>
         const isLast = i === items.length - 1;
 
         // Dumbbell / rung dot on left
-        rows += `<circle cx="${padding + 16}" cy="${y + 14}" r="4" fill="var(--fodda-muted)"/>`;
+        rows += `<circle cx="${padding + 16}" cy="${y + 14}" r="4.5" fill="var(--fodda-muted)"/>`;
         // From text
         rows += `<text x="${padding + 28}" y="${y + 18}" font-size="12" font-weight="500" fill="var(--fodda-muted)">${escapeXml(shift.from || '')}</text>`;
         // Arrow connector
@@ -69,7 +69,7 @@ export function renderCulturalShifts(shifts: Array<{ from: string; to: string }>
         // To text (highlighted)
         rows += `<text x="${width - padding - 28}" y="${y + 18}" font-size="12" font-weight="600" fill="currentColor" text-anchor="end">${escapeXml(shift.to || '')}</text>`;
         // Rung dot on right
-        rows += `<circle cx="${width - padding - 16}" cy="${y + 14}" r="4" fill="var(--fodda-accent)"/>`;
+        rows += `<circle cx="${width - padding - 16}" cy="${y + 14}" r="4.5" fill="var(--fodda-accent)"/>`;
 
         // Row divider hairline (except after last row)
         if (!isLast) {
@@ -88,53 +88,39 @@ export function renderCulturalShifts(shifts: Array<{ from: string; to: string }>
 
 /**
  * Competitive Positioning Compass — Brands plotted on two strategic axes.
+ * Pure points on 2 axes with no artificial connector lines.
  */
 export function renderCompetitiveCompass(
-    brands: Array<{ name: string; x: number; y: number }>,
+    brands: Array<{ name: string; x: number; y: number; focus?: boolean; is_focus?: boolean; highlight?: boolean }>,
     axisLabels: { left: string; right: string; top: string; bottom: string }
 ): string {
     const size = 460;
-    const margin = 55;
+    const margin = 50;
     const center = size / 2;
     const plotArea = size - margin * 2;
     const brandList = Array.isArray(brands) ? brands : [];
 
-    // Connect nearby brands with subtle dashed lines
-    let trails = '';
-    for (let i = 0; i < brandList.length; i++) {
-        for (let j = i + 1; j < brandList.length; j++) {
-            const b1 = brandList[i]!;
-            const b2 = brandList[j]!;
-            const dx = b1.x - b2.x;
-            const dy = b1.y - b2.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 0.45) {
-                const x1 = margin + b1.x * plotArea;
-                const y1 = margin + (1 - b1.y) * plotArea;
-                const x2 = margin + b2.x * plotArea;
-                const y2 = margin + (1 - b2.y) * plotArea;
-                trails += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3"/>`;
-            }
-        }
-    }
-
     let dots = '';
-    brandList.forEach((brand, i) => {
+    brandList.forEach((brand) => {
         // Clamp brand positions within plot area so labels don't clip
-        const rawX = typeof brand.x === 'number' ? Math.max(0.05, Math.min(0.95, brand.x)) : 0.5;
-        const rawY = typeof brand.y === 'number' ? Math.max(0.05, Math.min(0.95, brand.y)) : 0.5;
+        const rawX = typeof brand.x === 'number' ? Math.max(0.06, Math.min(0.94, brand.x)) : 0.5;
+        const rawY = typeof brand.y === 'number' ? Math.max(0.06, Math.min(0.94, brand.y)) : 0.5;
         const px = margin + rawX * plotArea;
         const py = margin + (1 - rawY) * plotArea;
-        const isPrimary = i === 0;
+        const isFocal = Boolean(brand.focus || brand.is_focus || brand.highlight);
 
-        const nodeFill = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
-        const nodeStroke = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-line)';
-        dots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${isPrimary ? 6 : 5}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        const nodeFill = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        const nodeR = isFocal ? 7 : 5.5;
+        dots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${nodeR}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
         
         // Offset label vertically based on Y position to prevent collision with axes/edges
-        const labelY = py > margin + 25 ? py - 9 : py + 16;
-        dots += `<text x="${px.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="10" font-weight="${isPrimary ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(brand.name || '')}</text>`;
+        const labelY = py > margin + 25 ? py - 9 : py + 18;
+        dots += `<text x="${px.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="11" font-weight="${isFocal ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(brand.name || '')}</text>`;
     });
+
+    const leftText = axisLabels?.left ? `← ${axisLabels.left}` : '';
+    const rightText = axisLabels?.right ? `${axisLabels.right} →` : '';
 
     return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="100%">
     ${svgThemeBlock()}
@@ -142,12 +128,11 @@ export function renderCompetitiveCompass(
     <!-- Rectilinear 90° Axis Lines -->
     <line x1="${margin}" y1="${center}" x2="${size - margin}" y2="${center}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
     <line x1="${center}" y1="${margin}" x2="${center}" y2="${size - margin}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
-    <!-- Axis Labels -->
-    <text x="${margin - 10}" y="${center + 4}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="end">${escapeXml(axisLabels?.left || '')}</text>
-    <text x="${size - margin + 10}" y="${center + 4}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="start">${escapeXml(axisLabels?.right || '')}</text>
+    <!-- Axis Labels anchored inward above horizontal axis to prevent side clipping -->
+    <text x="${margin + 6}" y="${center - 8}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="start">${escapeXml(leftText)}</text>
+    <text x="${size - margin - 6}" y="${center - 8}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="end">${escapeXml(rightText)}</text>
     <text x="${center}" y="${margin - 14}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(axisLabels?.top || '')}</text>
     <text x="${center}" y="${size - margin + 22}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(axisLabels?.bottom || '')}</text>
-    ${trails}
     ${dots}
     ${watermark(size, size)}
 </svg>`;
@@ -157,11 +142,11 @@ export function renderCompetitiveCompass(
  * Trend Constellation — Network diagram showing how trends relate.
  */
 export function renderTrendConstellation(
-    trends: Array<{ name: string; x: number; y: number }>,
+    trends: Array<{ name: string; x: number; y: number; focus?: boolean; is_focus?: boolean; highlight?: boolean }>,
     connections: Array<{ from: number; to: number; strength: number }>
 ): string {
     const size = 480;
-    const margin = 60;
+    const margin = 55;
     const plotArea = size - margin * 2;
     const trendList = Array.isArray(trends) ? trends : [];
     const connList = Array.isArray(connections) ? connections : [];
@@ -180,18 +165,18 @@ export function renderTrendConstellation(
     });
 
     let nodes = '';
-    trendList.forEach((trend, i) => {
+    trendList.forEach((trend) => {
         const rawX = typeof trend.x === 'number' ? Math.max(0.06, Math.min(0.94, trend.x)) : 0.5;
         const rawY = typeof trend.y === 'number' ? Math.max(0.06, Math.min(0.94, trend.y)) : 0.5;
         const px = margin + rawX * plotArea;
         const py = margin + rawY * plotArea;
-        const isPrimary = i === 0;
+        const isFocal = Boolean(trend.focus || trend.is_focus || trend.highlight);
 
-        const nodeFill = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
-        const nodeStroke = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-line)';
-        const r = isPrimary ? 7 : 5;
+        const nodeFill = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        const r = isFocal ? 7 : 5.5;
         nodes += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
-        nodes += `<text x="${px.toFixed(1)}" y="${(py + r + 12).toFixed(1)}" font-size="9" font-weight="${isPrimary ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(trend.name || '')}</text>`;
+        nodes += `<text x="${px.toFixed(1)}" y="${(py + r + 13).toFixed(1)}" font-size="11" font-weight="${isFocal ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(trend.name || '')}</text>`;
     });
 
     return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="100%">
@@ -223,7 +208,7 @@ export function renderImplicationLadder(steps: { signal: string; trend: string; 
         const isFinal = i === 3;
         const nodeFill = isFinal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
         const nodeStroke = isFinal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
-        const nodeR = isFinal ? 7 : 5;
+        const nodeR = isFinal ? 7 : 5.5;
 
         blocks += `<circle cx="${spineX}" cy="${y}" r="${nodeR}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
         blocks += `<text x="${spineX + 22}" y="${y - 4}" font-size="9" font-weight="700" fill="${isFinal ? 'var(--fodda-accent)' : 'var(--fodda-muted)'}" letter-spacing="1">${labels[i]!.toUpperCase()}</text>`;
@@ -266,7 +251,7 @@ export function renderInnovationPathway(stages: { now: string; near_term: string
 
         content += `<circle cx="${x}" cy="85" r="${nodeR}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
         content += `<text x="${x}" y="60" font-size="9" font-weight="700" fill="${isFinal ? 'var(--fodda-accent)' : 'var(--fodda-muted)'}" text-anchor="middle" letter-spacing="0.8">${labels[i]!.toUpperCase()}</text>`;
-        content += `<text x="${x}" y="116" font-size="10" font-weight="${isFinal ? '600' : '400'}" fill="currentColor" text-anchor="middle">${escapeXml(values[i]!.substring(0, 30))}${values[i]!.length > 30 ? '…' : ''}</text>`;
+        content += `<text x="${x}" y="116" font-size="11" font-weight="${isFinal ? '600' : '400'}" fill="currentColor" text-anchor="middle">${escapeXml(values[i]!.substring(0, 30))}${values[i]!.length > 30 ? '…' : ''}</text>`;
     }
 
     return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%">
@@ -282,7 +267,7 @@ export function renderInnovationPathway(stages: { now: string; near_term: string
  * Opportunity White Space Map — 2×2 quadrant for strategic assessment.
  */
 export function renderWhiteSpaceMap(
-    items: Array<{ name: string; consumer_desire: number; market_activity: number }>,
+    items: Array<{ name: string; consumer_desire: number; market_activity: number; focus?: boolean; is_focus?: boolean; highlight?: boolean }>,
     xLabel?: string,
     yLabel?: string
 ): string {
@@ -298,17 +283,18 @@ export function renderWhiteSpaceMap(
     <text x="${margin + quadSize / 2}" y="${margin + 18}" font-size="9" font-weight="700" fill="var(--fodda-accent)" text-anchor="middle" letter-spacing="0.5">★ BUILD HERE</text>`;
 
     let dots = '';
-    itemList.forEach((item, i) => {
+    itemList.forEach((item) => {
         const rawX = typeof item.market_activity === 'number' ? Math.max(0.06, Math.min(0.94, item.market_activity)) : 0.5;
         const rawY = typeof item.consumer_desire === 'number' ? Math.max(0.06, Math.min(0.94, item.consumer_desire)) : 0.5;
         const px = margin + rawX * plotArea;
         const py = margin + (1 - rawY) * plotArea;
-        const isPrimary = i === 0;
+        const isFocal = Boolean(item.focus || item.is_focus || item.highlight);
 
-        const nodeFill = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
-        const nodeStroke = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-line)';
-        dots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${isPrimary ? 6 : 5}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
-        dots += `<text x="${px.toFixed(1)}" y="${(py - 9).toFixed(1)}" font-size="9" font-weight="${isPrimary ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(item.name || '')}</text>`;
+        const nodeFill = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        const nodeR = isFocal ? 7 : 5.5;
+        dots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${nodeR}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        dots += `<text x="${px.toFixed(1)}" y="${(py - 9).toFixed(1)}" font-size="11" font-weight="${isFocal ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(item.name || '')}</text>`;
     });
 
     return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="100%">
@@ -320,8 +306,8 @@ export function renderWhiteSpaceMap(
     <line x1="${margin}" y1="${center}" x2="${size - margin}" y2="${center}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
     <line x1="${center}" y1="${margin}" x2="${center}" y2="${size - margin}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
     <!-- Axis Labels -->
-    <text x="${center}" y="${size - margin + 20}" font-size="9" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(xLabel || 'Market Activity →')}</text>
-    <text x="${margin - 12}" y="${center}" font-size="9" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle" transform="rotate(-90,${margin - 12},${center})">${escapeXml(yLabel || 'Consumer Desire →')}</text>
+    <text x="${center}" y="${size - margin + 20}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(xLabel || 'Market Activity →')}</text>
+    <text x="${margin - 12}" y="${center}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle" transform="rotate(-90,${margin - 12},${center})">${escapeXml(yLabel || 'Consumer Desire →')}</text>
     ${dots}
     ${watermark(size, size)}
 </svg>`;

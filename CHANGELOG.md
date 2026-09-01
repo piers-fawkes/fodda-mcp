@@ -8,13 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.46.43] - 2026-09-01
 
 ### Added & Changed (MCP Visual House Style & Server SVG Template Hardening v2.2)
-- **Server-Side SVG Templates Hardening (`src/svgVisuals.ts`)**:
+- **Server-Side SVG Templates Hardening (`src/svgVisuals.ts`, `src/toolHandlers.ts`)**:
   - Embedded scoped CSS styling for `.fodda-viz` across all 6 server-side SVG templates (`cultural_shifts`, `competitive_compass`, `trend_constellation`, `implication_ladder`, `innovation_pathway`, `opportunity_map`).
   - Added dark and light theme CSS variables (`--fodda-bg`, `--fodda-text`, `--fodda-muted`, `--fodda-line`, `--fodda-accent`) responsive to `@media (prefers-color-scheme: dark)` without `:root` style leakage into host chat containers.
   - Used `currentColor` for headings, titles, and primary labels so text naturally tracks the client's theme.
   - Replaced legacy watercolor displacement filters with clean, editorial density elements (crisp nodes, rungs, ticks, ledger grids, dumbbell connectors).
   - Applied `shape-rendering="crispEdges"` strictly to 90° rectilinear axis lines and orthogonal gridlines (leaving smooth anti-aliased rendering for curves, circles, and diagonal connectors).
-  - Adopted responsive `viewBox="0 0 ${width} ${height}" width="100%"` layout without hardcoded fixed pixel width/height attributes, ensuring clean scaling down to ~380px viewports without label collisions.
+  - Adopted responsive `viewBox="0 0 ${width} ${height}" width="100%"` layout without hardcoded fixed pixel width/height attributes, ensuring clean scaling down to ~380px viewports.
+  - **Competitive Compass Refinements**:
+    - Anchored horizontal axis labels inward (`text-anchor="start"` for left, `text-anchor="end"` for right) above the horizontal axis line with directional arrows (`← Performance`, `Lifestyle →`), preventing side text clipping on labels of any length.
+    - Removed artificial pairwise dashed connector lines, restoring the compass to a pure 2-axis strategic positioning map.
+    - Replaced index-0 bias with an explicit `focus: boolean` data field on brands and items (rendering all nodes neutral by default unless an item is explicitly marked as focal).
+    - Elevated brand and item label font sizes to 11px for crisp legibility in 380px chat columns.
 - **Client-Rendered Multi-Item Guidance (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
   - Exported `FODDA_HOUSE_VISUAL_RECIPE_V2_2` and `FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES` containing the standard visual house recipe.
   - Attached `[Fodda House Visual Recipe v2.2]` guidance to `brand_tracker` and `get_validated_trends` output payloads.
@@ -22,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserved token discipline: basic lookup tools (`search_graph`, `get_node`) do not attach the visual recipe.
 - **Tool Description Cleanup (`src/toolHandlers.ts`, `tools-manifest.json`)**:
   - Trimmed `confirm_themes` description to a concise, functional summary, removing obsolete inline `#663399 fill, #ffffff text` instructions and delegating visual guidance to the return payload recipe.
+  - Documented `focus?: boolean` in `generate_visual` tool data schema.
   - Regenerated and verified `tools-manifest.json`.
 - **Favicon Preservation**:
   - Preserved all `/favicon.ico` and `/favicon.svg` endpoints, root HTML `<link rel="icon">` tags, and `server.json` brand assets.
