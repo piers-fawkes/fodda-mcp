@@ -483,6 +483,23 @@ compliance: RFC-2119
 - RESTRICTIONS: Do NOT show evidence/trend/graph counts as standalone metrics, data warnings, or source names in badge rows.`;
 
 // ---------------------------------------------------------------------------
+// Client-rendered multi-item guidance recipe (v2.2)
+// ---------------------------------------------------------------------------
+export const FODDA_HOUSE_VISUAL_RECIPE_V2_2 = `[Fodda House Visual Recipe v2.2]
+
+When to render: Render a visual artifact for multi-item comparisons, signal timelines, ranked distributions, or explicit process/progress states (e.g. steppers). For single-value or lookup results, stay in prose.
+Rendering model: Static SVG or clean HTML/CSS only. No external scripts or CDNs. Use viewBox with width="100%" (designed to fit a 380px chat column).
+Theme & Palette: Use currentColor and host CSS variables where available; fallback to:
+Light mode: Bg #ffffff / #faf9f5, Text #18181b, Muted #71717a, Hairlines #e4e4e7, Accent #663399
+Dark mode: Bg #18181b, Text #f4f4f5, Muted #a1a1aa, Hairlines #27272a, Accent #9d65d4
+Brand Focal Accent: Use the active theme's accent (#663399 / #9d65d4) strictly for the top insight, active signal, current step, or key data point.
+Typography: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif, with font-variant-numeric: tabular-nums for data.
+SVG Hairlines: Apply shape-rendering="crispEdges" ONLY to rectilinear 1px gridlines and orthogonal axes.
+Aesthetic: Editorial density (dots, ticks, rungs, dumbbell bars, ledger grids).`;
+
+export const FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES = `${FODDA_HOUSE_VISUAL_RECIPE_V2_2}\nLayout hint: Horizontal progress stepper, active step marked with brand accent per theme.`;
+
+// ---------------------------------------------------------------------------
 // System prompt builder — injects dynamic graph catalog data + persona framing
 // ---------------------------------------------------------------------------
 

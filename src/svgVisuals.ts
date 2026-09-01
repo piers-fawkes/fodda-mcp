@@ -1,108 +1,44 @@
 /**
- * SVG Visual Generator for Fodda MCP
+ * SVG Visual Generator for Fodda MCP (v2.2 House Visual Style)
  * 
- * Style Guide: Watercolor purple nodes with fine specks and splatter drops.
- * Organic, editorial feel — not corporate charts. The nodes subtly evoke
- * knowledge graph connections without being literal.
- * 
- * Palette:
- *   Deep Purple:   #3D1A78
- *   Brand Purple:  #6C3CE1
- *   Medium Purple: #9B7AE8
- *   Light Lavender:#D4B8F0
- *   Faint Wash:    #EDE4F7
- *   Paper:         #F8F6F1
+ * Aesthetic: Editorial density (dots, ticks, rungs, dumbbell bars, ledger grids).
+ * Scoped styles: .fodda-viz with light/dark theme variables, currentColor text,
+ * responsive viewBox width="100%", and crisp rectilinear hairlines.
  */
-
-// ── Palette ──
-const DEEP = '#3D1A78';
-const BRAND = '#6C3CE1';
-const MEDIUM = '#9B7AE8';
-const LIGHT = '#D4B8F0';
-const WASH = '#EDE4F7';
-const PAPER = '#F8F6F1';
-const INK = '#2D1B4E';
-const GRAY = '#8892a4';
 
 function escapeXml(str: string): string {
     return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Seeded pseudo-random for deterministic speck placement */
-function seededRandom(seed: number): () => number {
-    let s = seed;
-    return () => {
-        s = (s * 16807 + 0) % 2147483647;
-        return s / 2147483647;
-    };
-}
-
-/** Shared SVG filter definitions for the watercolor aesthetic */
-function watercolorDefs(): string {
+/** Shared SVG theme style definitions scoped strictly to .fodda-viz */
+function svgThemeBlock(): string {
     return `<defs>
-    <!-- Paper grain texture -->
-    <filter id="paper-grain" x="0" y="0" width="100%" height="100%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" result="noise"/>
-        <feColorMatrix type="saturate" values="0" in="noise" result="gray"/>
-        <feBlend in="SourceGraphic" in2="gray" mode="multiply" result="blend"/>
-        <feComponentTransfer in="blend"><feFuncA type="linear" slope="0.97"/></feComponentTransfer>
-    </filter>
-    <!-- Watercolor blob softener — subtle organic edges, not watery -->
-    <filter id="wc-soft" x="-10%" y="-10%" width="120%" height="120%">
-        <feTurbulence type="fractalNoise" baseFrequency="0.06" numOctaves="2" seed="2" result="warp"/>
-        <feDisplacementMap in="SourceGraphic" in2="warp" scale="3" xChannelSelector="R" yChannelSelector="G"/>
-    </filter>
-    <!-- Gentle glow for nodes -->
-    <filter id="wc-glow" x="-40%" y="-40%" width="180%" height="180%">
-        <feGaussianBlur stdDeviation="4" result="blur"/>
-        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-    </filter>
-    <!-- Radial gradients for watercolor nodes -->
-    <radialGradient id="node-deep" cx="40%" cy="40%"><stop offset="0%" stop-color="${DEEP}" stop-opacity="0.92"/><stop offset="55%" stop-color="${BRAND}" stop-opacity="0.7"/><stop offset="85%" stop-color="${MEDIUM}" stop-opacity="0.4"/><stop offset="100%" stop-color="${LIGHT}" stop-opacity="0.12"/></radialGradient>
-    <radialGradient id="node-mid" cx="45%" cy="35%"><stop offset="0%" stop-color="${BRAND}" stop-opacity="0.85"/><stop offset="50%" stop-color="${MEDIUM}" stop-opacity="0.6"/><stop offset="85%" stop-color="${LIGHT}" stop-opacity="0.3"/><stop offset="100%" stop-color="${WASH}" stop-opacity="0.08"/></radialGradient>
-    <radialGradient id="node-faint" cx="50%" cy="50%"><stop offset="0%" stop-color="${MEDIUM}" stop-opacity="0.7"/><stop offset="60%" stop-color="${LIGHT}" stop-opacity="0.45"/><stop offset="100%" stop-color="${WASH}" stop-opacity="0.1"/></radialGradient>
-</defs>`;
-}
-
-/** Generate ambient purple specks scattered across the SVG */
-function renderSpecks(width: number, height: number, count: number, seed: number = 42): string {
-    const rng = seededRandom(seed);
-    const purples = [DEEP, BRAND, MEDIUM, LIGHT];
-    let specks = '';
-    for (let i = 0; i < count; i++) {
-        const x = rng() * width;
-        const y = rng() * height;
-        const r = 0.5 + rng() * 2;
-        const color = purples[Math.floor(rng() * purples.length)]!;
-        const opacity = 0.08 + rng() * 0.25;
-        specks += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${color}" opacity="${opacity.toFixed(2)}"/>`;
-    }
-    return specks;
-}
-
-/** Render a watercolor node blob — solid paint drop with subtle organic edges */
-function renderWcNode(cx: number, cy: number, r: number, variant: 'deep' | 'mid' | 'faint' = 'deep'): string {
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#node-${variant})" filter="url(#wc-soft)"/>`;
-}
-
-/** Render a dotted trail between two points (the speck-chain style) */
-function renderDotTrail(x1: number, y1: number, x2: number, y2: number, dots: number = 12, seed: number = 7): string {
-    const rng = seededRandom(seed);
-    let trail = '';
-    for (let i = 0; i <= dots; i++) {
-        const t = i / dots;
-        const x = x1 + (x2 - x1) * t + (rng() - 0.5) * 4;
-        const y = y1 + (y2 - y1) * t + (rng() - 0.5) * 4;
-        const r = 0.8 + rng() * 1.5;
-        const opacity = 0.15 + (1 - Math.abs(t - 0.5) * 2) * 0.35;
-        trail += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${MEDIUM}" opacity="${opacity.toFixed(2)}"/>`;
-    }
-    return trail;
+    <style>
+      .fodda-viz {
+        --fodda-bg: #ffffff;
+        --fodda-text: #18181b;
+        --fodda-muted: #71717a;
+        --fodda-line: #e4e4e7;
+        --fodda-accent: #663399;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-variant-numeric: tabular-nums;
+      }
+      @media (prefers-color-scheme: dark) {
+        .fodda-viz {
+          --fodda-bg: #18181b;
+          --fodda-text: #f4f4f5;
+          --fodda-muted: #a1a1aa;
+          --fodda-line: #27272a;
+          --fodda-accent: #9d65d4;
+        }
+      }
+    </style>
+  </defs>`;
 }
 
 /** Fodda watermark */
 function watermark(width: number, height: number): string {
-    return `<text x="${width - 12}" y="${height - 10}" font-family="Inter, system-ui, sans-serif" font-size="8" fill="${LIGHT}" text-anchor="end" opacity="0.6">Powered by Fodda</text>`;
+    return `<text x="${width - 16}" y="${height - 12}" font-size="9" fill="var(--fodda-muted)" text-anchor="end" opacity="0.6">Powered by Fodda</text>`;
 }
 
 // ════════════════════════════════════════════════
@@ -113,33 +49,38 @@ function watermark(width: number, height: number): string {
  * Cultural Shift Arrows — Bold "From → To" transitions.
  */
 export function renderCulturalShifts(shifts: Array<{ from: string; to: string }>): string {
-    const rowHeight = 68;
-    const padding = 24;
-    const width = 580;
-    const height = padding * 2 + shifts.length * rowHeight + 48;
+    const rowHeight = 52;
+    const padding = 20;
+    const width = 500;
+    const items = Array.isArray(shifts) ? shifts : [];
+    const height = Math.max(160, padding * 2 + items.length * rowHeight + 40);
 
     let rows = '';
-    const rng = seededRandom(99);
-    shifts.forEach((shift, i) => {
-        const y = padding + 48 + i * rowHeight;
-        const nodeR = 14 + rng() * 4;
-        // Left watercolor blob
-        rows += renderWcNode(padding + 28, y + 22, nodeR, i % 2 === 0 ? 'deep' : 'mid');
-        // Right watercolor blob
-        rows += renderWcNode(width - padding - 28, y + 22, nodeR * 0.9, i % 2 === 0 ? 'mid' : 'deep');
-        // Dot trail between them
-        rows += renderDotTrail(padding + 50, y + 22, width - padding - 50, y + 22, 18, i * 31 + 5);
-        // Labels
-        rows += `<text x="${padding + 58}" y="${y + 27}" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="600" fill="${INK}">${escapeXml(shift.from)}</text>`;
-        rows += `<text x="${width / 2}" y="${y + 27}" font-family="Inter, system-ui, sans-serif" font-size="16" fill="${BRAND}" text-anchor="middle" font-weight="700">→</text>`;
-        rows += `<text x="${width - padding - 58}" y="${y + 27}" font-family="Inter, system-ui, sans-serif" font-size="13" font-weight="600" fill="${DEEP}" text-anchor="end">${escapeXml(shift.to)}</text>`;
+    items.forEach((shift, i) => {
+        const y = padding + 40 + i * rowHeight;
+        const isLast = i === items.length - 1;
+
+        // Dumbbell / rung dot on left
+        rows += `<circle cx="${padding + 16}" cy="${y + 14}" r="4" fill="var(--fodda-muted)"/>`;
+        // From text
+        rows += `<text x="${padding + 28}" y="${y + 18}" font-size="12" font-weight="500" fill="var(--fodda-muted)">${escapeXml(shift.from || '')}</text>`;
+        // Arrow connector
+        rows += `<text x="${width / 2}" y="${y + 18}" font-size="14" font-weight="700" fill="var(--fodda-accent)" text-anchor="middle">→</text>`;
+        // To text (highlighted)
+        rows += `<text x="${width - padding - 28}" y="${y + 18}" font-size="12" font-weight="600" fill="currentColor" text-anchor="end">${escapeXml(shift.to || '')}</text>`;
+        // Rung dot on right
+        rows += `<circle cx="${width - padding - 16}" cy="${y + 14}" r="4" fill="var(--fodda-accent)"/>`;
+
+        // Row divider hairline (except after last row)
+        if (!isLast) {
+            rows += `<line x1="${padding + 12}" y1="${y + rowHeight - 6}" x2="${width - padding - 12}" y2="${y + rowHeight - 6}" stroke="var(--fodda-line)" stroke-width="1" shape-rendering="crispEdges"/>`;
+        }
     });
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-    ${watercolorDefs()}
-    <rect width="${width}" height="${height}" rx="12" fill="${PAPER}"/>
-    ${renderSpecks(width, height, 35, 77)}
-    <text x="${width / 2}" y="${padding + 24}" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="${INK}" text-anchor="middle" letter-spacing="0.5">Cultural Shifts</text>
+    return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%">
+    ${svgThemeBlock()}
+    <rect width="${width}" height="${height}" rx="12" fill="var(--fodda-bg)" stroke="var(--fodda-line)" stroke-width="1"/>
+    <text x="${width / 2}" y="${padding + 18}" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle" letter-spacing="0.5">Cultural Shifts</text>
     ${rows}
     ${watermark(width, height)}
 </svg>`;
@@ -152,51 +93,60 @@ export function renderCompetitiveCompass(
     brands: Array<{ name: string; x: number; y: number }>,
     axisLabels: { left: string; right: string; top: string; bottom: string }
 ): string {
-    const size = 500;
-    const margin = 65;
+    const size = 460;
+    const margin = 55;
     const center = size / 2;
     const plotArea = size - margin * 2;
+    const brandList = Array.isArray(brands) ? brands : [];
 
-    let dots = '';
-    const rng = seededRandom(42);
-    brands.forEach((brand, i) => {
-        const px = margin + brand.x * plotArea;
-        const py = margin + (1 - brand.y) * plotArea;
-        const r = 12 + rng() * 6;
-        const variant = (['deep', 'mid', 'faint'] as const)[i % 3]!;
-        dots += renderWcNode(px, py, r, variant);
-        dots += `<text x="${px}" y="${py + r + 14}" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="600" fill="${INK}" text-anchor="middle">${escapeXml(brand.name)}</text>`;
-    });
-
-    // Connect nearby brands with subtle dot trails
+    // Connect nearby brands with subtle dashed lines
     let trails = '';
-    for (let i = 0; i < brands.length; i++) {
-        for (let j = i + 1; j < brands.length; j++) {
-            const dx = brands[i]!.x - brands[j]!.x;
-            const dy = brands[i]!.y - brands[j]!.y;
+    for (let i = 0; i < brandList.length; i++) {
+        for (let j = i + 1; j < brandList.length; j++) {
+            const b1 = brandList[i]!;
+            const b2 = brandList[j]!;
+            const dx = b1.x - b2.x;
+            const dy = b1.y - b2.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < 0.45) {
-                const x1 = margin + brands[i]!.x * plotArea;
-                const y1 = margin + (1 - brands[i]!.y) * plotArea;
-                const x2 = margin + brands[j]!.x * plotArea;
-                const y2 = margin + (1 - brands[j]!.y) * plotArea;
-                trails += renderDotTrail(x1, y1, x2, y2, 10, i * 13 + j);
+                const x1 = margin + b1.x * plotArea;
+                const y1 = margin + (1 - b1.y) * plotArea;
+                const x2 = margin + b2.x * plotArea;
+                const y2 = margin + (1 - b2.y) * plotArea;
+                trails += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3"/>`;
             }
         }
     }
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-    ${watercolorDefs()}
-    <rect width="${size}" height="${size}" rx="12" fill="${PAPER}"/>
-    ${renderSpecks(size, size, 50, 33)}
-    <!-- Axis lines as faint dot trails -->
-    ${renderDotTrail(margin, center, size - margin, center, 30, 1)}
-    ${renderDotTrail(center, margin, center, size - margin, 30, 2)}
-    <!-- Axis labels -->
-    <text x="${margin - 8}" y="${center - 6}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${MEDIUM}" text-anchor="end">${escapeXml(axisLabels.left)}</text>
-    <text x="${size - margin + 8}" y="${center - 6}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${MEDIUM}">${escapeXml(axisLabels.right)}</text>
-    <text x="${center}" y="${margin - 12}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${MEDIUM}" text-anchor="middle">${escapeXml(axisLabels.top)}</text>
-    <text x="${center}" y="${size - margin + 18}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${MEDIUM}" text-anchor="middle">${escapeXml(axisLabels.bottom)}</text>
+    let dots = '';
+    brandList.forEach((brand, i) => {
+        // Clamp brand positions within plot area so labels don't clip
+        const rawX = typeof brand.x === 'number' ? Math.max(0.05, Math.min(0.95, brand.x)) : 0.5;
+        const rawY = typeof brand.y === 'number' ? Math.max(0.05, Math.min(0.95, brand.y)) : 0.5;
+        const px = margin + rawX * plotArea;
+        const py = margin + (1 - rawY) * plotArea;
+        const isPrimary = i === 0;
+
+        const nodeFill = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        dots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${isPrimary ? 6 : 5}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        
+        // Offset label vertically based on Y position to prevent collision with axes/edges
+        const labelY = py > margin + 25 ? py - 9 : py + 16;
+        dots += `<text x="${px.toFixed(1)}" y="${labelY.toFixed(1)}" font-size="10" font-weight="${isPrimary ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(brand.name || '')}</text>`;
+    });
+
+    return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="100%">
+    ${svgThemeBlock()}
+    <rect width="${size}" height="${size}" rx="12" fill="var(--fodda-bg)" stroke="var(--fodda-line)" stroke-width="1"/>
+    <!-- Rectilinear 90° Axis Lines -->
+    <line x1="${margin}" y1="${center}" x2="${size - margin}" y2="${center}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
+    <line x1="${center}" y1="${margin}" x2="${center}" y2="${size - margin}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
+    <!-- Axis Labels -->
+    <text x="${margin - 10}" y="${center + 4}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="end">${escapeXml(axisLabels?.left || '')}</text>
+    <text x="${size - margin + 10}" y="${center + 4}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="start">${escapeXml(axisLabels?.right || '')}</text>
+    <text x="${center}" y="${margin - 14}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(axisLabels?.top || '')}</text>
+    <text x="${center}" y="${size - margin + 22}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(axisLabels?.bottom || '')}</text>
     ${trails}
     ${dots}
     ${watermark(size, size)}
@@ -205,43 +155,49 @@ export function renderCompetitiveCompass(
 
 /**
  * Trend Constellation — Network diagram showing how trends relate.
- * Dark background with glowing watercolor nodes and speck trails.
  */
 export function renderTrendConstellation(
     trends: Array<{ name: string; x: number; y: number }>,
     connections: Array<{ from: number; to: number; strength: number }>
 ): string {
-    const size = 520;
-    const margin = 70;
+    const size = 480;
+    const margin = 60;
     const plotArea = size - margin * 2;
+    const trendList = Array.isArray(trends) ? trends : [];
+    const connList = Array.isArray(connections) ? connections : [];
 
     let lines = '';
-    connections.forEach(conn => {
-        const from = trends[conn.from];
-        const to = trends[conn.to];
+    connList.forEach(conn => {
+        const from = trendList[conn.from];
+        const to = trendList[conn.to];
         if (!from || !to) return;
-        const x1 = margin + from.x * plotArea;
-        const y1 = margin + from.y * plotArea;
-        const x2 = margin + to.x * plotArea;
-        const y2 = margin + to.y * plotArea;
-        lines += renderDotTrail(x1, y1, x2, y2, Math.round(8 + conn.strength * 12), conn.from * 7 + conn.to);
+        const x1 = margin + (from.x || 0) * plotArea;
+        const y1 = margin + (from.y || 0) * plotArea;
+        const x2 = margin + (to.x || 0) * plotArea;
+        const y2 = margin + (to.y || 0) * plotArea;
+        const strokeW = Math.max(1, Math.min(3, Math.round((conn.strength || 0.5) * 2.5)));
+        lines += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="var(--fodda-line)" stroke-width="${strokeW}" opacity="0.8"/>`;
     });
 
     let nodes = '';
-    trends.forEach((trend, i) => {
-        const px = margin + trend.x * plotArea;
-        const py = margin + trend.y * plotArea;
-        const r = 14 + (i % 3) * 4;
-        const variant = (['deep', 'mid', 'faint'] as const)[i % 3]!;
-        nodes += renderWcNode(px, py, r, variant);
-        nodes += `<text x="${px}" y="${py + r + 14}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${INK}" text-anchor="middle">${escapeXml(trend.name)}</text>`;
+    trendList.forEach((trend, i) => {
+        const rawX = typeof trend.x === 'number' ? Math.max(0.06, Math.min(0.94, trend.x)) : 0.5;
+        const rawY = typeof trend.y === 'number' ? Math.max(0.06, Math.min(0.94, trend.y)) : 0.5;
+        const px = margin + rawX * plotArea;
+        const py = margin + rawY * plotArea;
+        const isPrimary = i === 0;
+
+        const nodeFill = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        const r = isPrimary ? 7 : 5;
+        nodes += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        nodes += `<text x="${px.toFixed(1)}" y="${(py + r + 12).toFixed(1)}" font-size="9" font-weight="${isPrimary ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(trend.name || '')}</text>`;
     });
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-    ${watercolorDefs()}
-    <rect width="${size}" height="${size}" rx="12" fill="${PAPER}"/>
-    ${renderSpecks(size, size, 60, 88)}
-    <text x="${size / 2}" y="32" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="${INK}" text-anchor="middle" letter-spacing="0.5">Trend Constellation</text>
+    return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="100%">
+    ${svgThemeBlock()}
+    <rect width="${size}" height="${size}" rx="12" fill="var(--fodda-bg)" stroke="var(--fodda-line)" stroke-width="1"/>
+    <text x="${size / 2}" y="32" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle" letter-spacing="0.5">Trend Constellation</text>
     ${lines}
     ${nodes}
     ${watermark(size, size)}
@@ -250,33 +206,38 @@ export function renderTrendConstellation(
 
 /**
  * Strategic Implication Ladder — Signal → Trend → So What → Do What.
- * Vertical flow with watercolor nodes at each rung.
  */
 export function renderImplicationLadder(steps: { signal: string; trend: string; so_what: string; do_what: string }): string {
-    const width = 480;
-    const height = 380;
+    const width = 460;
+    const height = 360;
     const labels = ['Signal', 'Trend', 'So What', 'Do What'];
-    const values = [steps.signal, steps.trend, steps.so_what, steps.do_what];
-    const variants: ('faint' | 'mid' | 'mid' | 'deep')[] = ['faint', 'mid', 'mid', 'deep'];
+    const values = [steps?.signal || '', steps?.trend || '', steps?.so_what || '', steps?.do_what || ''];
 
     let blocks = '';
-    const cx = 50;
+    const spineX = 40;
+    // Vertical spine line
+    blocks += `<line x1="${spineX}" y1="65" x2="${spineX}" y2="295" stroke="var(--fodda-line)" stroke-width="2" shape-rendering="crispEdges"/>`;
+
     for (let i = 0; i < 4; i++) {
-        const y = 60 + i * 78;
-        const r = 12 + i * 3; // Grows deeper and larger as you descend
-        blocks += renderWcNode(cx, y, r, variants[i]!);
-        blocks += `<text x="${cx + 30}" y="${y - 6}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="700" fill="${MEDIUM}" letter-spacing="1">${labels[i]!.toUpperCase()}</text>`;
-        blocks += `<text x="${cx + 30}" y="${y + 10}" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="${INK}">${escapeXml(values[i]!.substring(0, 60))}${values[i]!.length > 60 ? '…' : ''}</text>`;
+        const y = 65 + i * 76;
+        const isFinal = i === 3;
+        const nodeFill = isFinal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isFinal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        const nodeR = isFinal ? 7 : 5;
+
+        blocks += `<circle cx="${spineX}" cy="${y}" r="${nodeR}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        blocks += `<text x="${spineX + 22}" y="${y - 4}" font-size="9" font-weight="700" fill="${isFinal ? 'var(--fodda-accent)' : 'var(--fodda-muted)'}" letter-spacing="1">${labels[i]!.toUpperCase()}</text>`;
+        blocks += `<text x="${spineX + 22}" y="${y + 14}" font-size="11" font-weight="${isFinal ? '600' : '400'}" fill="currentColor">${escapeXml(values[i]!.substring(0, 65))}${values[i]!.length > 65 ? '…' : ''}</text>`;
+
         if (i < 3) {
-            blocks += renderDotTrail(cx, y + r + 4, cx, y + 78 - r - 4, 8, i * 17);
+            blocks += `<line x1="${spineX + 22}" y1="${y + 40}" x2="${width - 24}" y2="${y + 40}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="2 2" shape-rendering="crispEdges"/>`;
         }
     }
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-    ${watercolorDefs()}
-    <rect width="${width}" height="${height}" rx="12" fill="${PAPER}"/>
-    ${renderSpecks(width, height, 30, 55)}
-    <text x="${width / 2}" y="36" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="${INK}" text-anchor="middle" letter-spacing="0.5">Strategic Implication</text>
+    return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%">
+    ${svgThemeBlock()}
+    <rect width="${width}" height="${height}" rx="12" fill="var(--fodda-bg)" stroke="var(--fodda-line)" stroke-width="1"/>
+    <text x="${width / 2}" y="32" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle" letter-spacing="0.5">Strategic Implication</text>
     ${blocks}
     ${watermark(width, height)}
 </svg>`;
@@ -284,33 +245,34 @@ export function renderImplicationLadder(steps: { signal: string; trend: string; 
 
 /**
  * Innovation Pathway — Now → Near-Term → Future Vision.
- * Three watercolor nodes connected by speck trails.
  */
 export function renderInnovationPathway(stages: { now: string; near_term: string; future: string }): string {
-    const width = 600;
-    const height = 200;
+    const width = 520;
+    const height = 180;
     const labels = ['Now', 'Near-Term Shift', 'Future Vision'];
-    const values = [stages.now, stages.near_term, stages.future];
-    const variants: ('faint' | 'mid' | 'deep')[] = ['faint', 'mid', 'deep'];
-    const positions = [100, 300, 500];
+    const values = [stages?.now || '', stages?.near_term || '', stages?.future || ''];
+    const positions = [85, 260, 435];
 
     let content = '';
+    // Horizontal spine connecting nodes
+    content += `<line x1="${positions[0]}" y1="85" x2="${positions[2]}" y2="85" stroke="var(--fodda-line)" stroke-width="2" shape-rendering="crispEdges"/>`;
+
     for (let i = 0; i < 3; i++) {
         const x = positions[i]!;
-        const r = 22 + i * 5;
-        content += renderWcNode(x, 90, r, variants[i]!);
-        content += `<text x="${x}" y="${90 + r + 18}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="700" fill="${MEDIUM}" text-anchor="middle" letter-spacing="0.8">${labels[i]!.toUpperCase()}</text>`;
-        content += `<text x="${x}" y="${90 + r + 32}" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="${INK}" text-anchor="middle">${escapeXml(values[i]!.substring(0, 35))}${values[i]!.length > 35 ? '…' : ''}</text>`;
-        if (i < 2) {
-            content += renderDotTrail(x + r + 8, 90, positions[i + 1]! - (22 + (i + 1) * 5) - 8, 90, 14, i * 23);
-        }
+        const isFinal = i === 2;
+        const nodeFill = isFinal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isFinal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        const nodeR = isFinal ? 8 : 6;
+
+        content += `<circle cx="${x}" cy="85" r="${nodeR}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        content += `<text x="${x}" y="60" font-size="9" font-weight="700" fill="${isFinal ? 'var(--fodda-accent)' : 'var(--fodda-muted)'}" text-anchor="middle" letter-spacing="0.8">${labels[i]!.toUpperCase()}</text>`;
+        content += `<text x="${x}" y="116" font-size="10" font-weight="${isFinal ? '600' : '400'}" fill="currentColor" text-anchor="middle">${escapeXml(values[i]!.substring(0, 30))}${values[i]!.length > 30 ? '…' : ''}</text>`;
     }
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">
-    ${watercolorDefs()}
-    <rect width="${width}" height="${height}" rx="12" fill="${PAPER}"/>
-    ${renderSpecks(width, height, 25, 44)}
-    <text x="${width / 2}" y="30" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="${INK}" text-anchor="middle" letter-spacing="0.5">Innovation Pathway</text>
+    return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="100%">
+    ${svgThemeBlock()}
+    <rect width="${width}" height="${height}" rx="12" fill="var(--fodda-bg)" stroke="var(--fodda-line)" stroke-width="1"/>
+    <text x="${width / 2}" y="28" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle" letter-spacing="0.5">Innovation Pathway</text>
     ${content}
     ${watermark(width, height)}
 </svg>`;
@@ -318,43 +280,48 @@ export function renderInnovationPathway(stages: { now: string; near_term: string
 
 /**
  * Opportunity White Space Map — 2×2 quadrant for strategic assessment.
- * Watercolor nodes positioned in the quadrant space.
  */
 export function renderWhiteSpaceMap(
     items: Array<{ name: string; consumer_desire: number; market_activity: number }>,
     xLabel?: string,
     yLabel?: string
 ): string {
-    const size = 480;
-    const margin = 70;
+    const size = 460;
+    const margin = 55;
     const center = size / 2;
     const plotArea = size - margin * 2;
+    const itemList = Array.isArray(items) ? items : [];
 
-    // Light watercolor wash in the "build here" quadrant (high desire, low activity = top-left)
-    const goldZone = `<circle cx="${margin + plotArea * 0.25}" cy="${margin + plotArea * 0.25}" r="${plotArea * 0.22}" fill="${WASH}" opacity="0.4" filter="url(#wc-soft)"/>
-    <text x="${margin + plotArea * 0.25}" y="${margin + 20}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="700" fill="${BRAND}" text-anchor="middle" opacity="0.5">★ BUILD HERE</text>`;
+    // "BUILD HERE" quadrant highlight (high desire, low activity = top-left quadrant)
+    const quadSize = plotArea / 2;
+    const goldZone = `<rect x="${margin}" y="${margin}" width="${quadSize}" height="${quadSize}" rx="6" fill="var(--fodda-accent)" fill-opacity="0.08" stroke="var(--fodda-accent)" stroke-opacity="0.25" stroke-dasharray="3 3"/>
+    <text x="${margin + quadSize / 2}" y="${margin + 18}" font-size="9" font-weight="700" fill="var(--fodda-accent)" text-anchor="middle" letter-spacing="0.5">★ BUILD HERE</text>`;
 
     let dots = '';
-    items.forEach((item, i) => {
-        const px = margin + item.market_activity * plotArea;
-        const py = margin + (1 - item.consumer_desire) * plotArea;
-        const r = 13 + (i % 3) * 3;
-        const variant = (['deep', 'mid', 'faint'] as const)[i % 3]!;
-        dots += renderWcNode(px, py, r, variant);
-        dots += `<text x="${px}" y="${py - r - 4}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${INK}" text-anchor="middle">${escapeXml(item.name)}</text>`;
+    itemList.forEach((item, i) => {
+        const rawX = typeof item.market_activity === 'number' ? Math.max(0.06, Math.min(0.94, item.market_activity)) : 0.5;
+        const rawY = typeof item.consumer_desire === 'number' ? Math.max(0.06, Math.min(0.94, item.consumer_desire)) : 0.5;
+        const px = margin + rawX * plotArea;
+        const py = margin + (1 - rawY) * plotArea;
+        const isPrimary = i === 0;
+
+        const nodeFill = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
+        const nodeStroke = isPrimary ? 'var(--fodda-accent)' : 'var(--fodda-line)';
+        dots += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${isPrimary ? 6 : 5}" fill="${nodeFill}" stroke="${nodeStroke}" stroke-width="2"/>`;
+        dots += `<text x="${px.toFixed(1)}" y="${(py - 9).toFixed(1)}" font-size="9" font-weight="${isPrimary ? '700' : '600'}" fill="currentColor" text-anchor="middle">${escapeXml(item.name || '')}</text>`;
     });
 
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
-    ${watercolorDefs()}
-    <rect width="${size}" height="${size}" rx="12" fill="${PAPER}"/>
-    ${renderSpecks(size, size, 45, 66)}
-    <text x="${size / 2}" y="30" font-family="Inter, system-ui, sans-serif" font-size="15" font-weight="700" fill="${INK}" text-anchor="middle" letter-spacing="0.5">Opportunity Map</text>
+    return `<svg class="fodda-viz" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="100%">
+    ${svgThemeBlock()}
+    <rect width="${size}" height="${size}" rx="12" fill="var(--fodda-bg)" stroke="var(--fodda-line)" stroke-width="1"/>
+    <text x="${size / 2}" y="28" font-size="14" font-weight="700" fill="currentColor" text-anchor="middle" letter-spacing="0.5">Opportunity Map</text>
     ${goldZone}
-    <!-- Axis trails -->
-    ${renderDotTrail(margin, center, size - margin, center, 25, 3)}
-    ${renderDotTrail(center, margin, center, size - margin, 25, 4)}
-    <text x="${center}" y="${size - margin + 18}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${MEDIUM}" text-anchor="middle">${escapeXml(xLabel || 'Market Activity →')}</text>
-    <text x="${margin - 12}" y="${center}" font-family="Inter, system-ui, sans-serif" font-size="9" font-weight="600" fill="${MEDIUM}" text-anchor="middle" transform="rotate(-90,${margin - 12},${center})">${escapeXml(yLabel || 'Consumer Desire →')}</text>
+    <!-- Rectilinear 90° Axis Lines -->
+    <line x1="${margin}" y1="${center}" x2="${size - margin}" y2="${center}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
+    <line x1="${center}" y1="${margin}" x2="${center}" y2="${size - margin}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
+    <!-- Axis Labels -->
+    <text x="${center}" y="${size - margin + 20}" font-size="9" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(xLabel || 'Market Activity →')}</text>
+    <text x="${margin - 12}" y="${center}" font-size="9" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle" transform="rotate(-90,${margin - 12},${center})">${escapeXml(yLabel || 'Consumer Desire →')}</text>
     ${dots}
     ${watermark(size, size)}
 </svg>`;

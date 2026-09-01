@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.43] - 2026-09-01
+
+### Added & Changed (MCP Visual House Style & Server SVG Template Hardening v2.2)
+- **Server-Side SVG Templates Hardening (`src/svgVisuals.ts`)**:
+  - Embedded scoped CSS styling for `.fodda-viz` across all 6 server-side SVG templates (`cultural_shifts`, `competitive_compass`, `trend_constellation`, `implication_ladder`, `innovation_pathway`, `opportunity_map`).
+  - Added dark and light theme CSS variables (`--fodda-bg`, `--fodda-text`, `--fodda-muted`, `--fodda-line`, `--fodda-accent`) responsive to `@media (prefers-color-scheme: dark)` without `:root` style leakage into host chat containers.
+  - Used `currentColor` for headings, titles, and primary labels so text naturally tracks the client's theme.
+  - Replaced legacy watercolor displacement filters with clean, editorial density elements (crisp nodes, rungs, ticks, ledger grids, dumbbell connectors).
+  - Applied `shape-rendering="crispEdges"` strictly to 90° rectilinear axis lines and orthogonal gridlines (leaving smooth anti-aliased rendering for curves, circles, and diagonal connectors).
+  - Adopted responsive `viewBox="0 0 ${width} ${height}" width="100%"` layout without hardcoded fixed pixel width/height attributes, ensuring clean scaling down to ~380px viewports without label collisions.
+- **Client-Rendered Multi-Item Guidance (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Exported `FODDA_HOUSE_VISUAL_RECIPE_V2_2` and `FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES` containing the standard visual house recipe.
+  - Attached `[Fodda House Visual Recipe v2.2]` guidance to `brand_tracker` and `get_validated_trends` output payloads.
+  - Attached `[Fodda House Visual Recipe v2.2]` with horizontal progress stepper layout hint to `confirm_themes` output payload.
+  - Preserved token discipline: basic lookup tools (`search_graph`, `get_node`) do not attach the visual recipe.
+- **Tool Description Cleanup (`src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Trimmed `confirm_themes` description to a concise, functional summary, removing obsolete inline `#663399 fill, #ffffff text` instructions and delegating visual guidance to the return payload recipe.
+  - Regenerated and verified `tools-manifest.json`.
+- **Favicon Preservation**:
+  - Preserved all `/favicon.ico` and `/favicon.svg` endpoints, root HTML `<link rel="icon">` tags, and `server.json` brand assets.
+
 ## [1.46.42] - 2026-09-01
 
 ### Added & Changed (PSFK Trends Database Routing, Experiential/Format Query Expansions & Shelf Merchandising Fallback)

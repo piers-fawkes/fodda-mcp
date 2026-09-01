@@ -19,7 +19,7 @@ import { renderBrandWidget } from './brandTemplate.js';
 import { renderSearchWidget } from './searchTemplate.js';
 import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
 import { MCP_SERVER_VERSION } from './tools.js';
-import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF } from './systemPrompt.js';
+import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
 import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
@@ -2512,6 +2512,7 @@ export async function createServer(
                         content.push({ type: 'text' as const, text: closingBlockInstruction });
                     }
                 }
+                content.push({ type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
                 return { next_moves: brandNextMoves, content };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -3339,7 +3340,12 @@ export async function createServer(
                 const withheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || ticker || sector || 'validated_trends' }, 'get_validated_trends');
                 if (withheld) return withheld;
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                return {
+                    content: [
+                        { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+                        { type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 },
+                    ]
+                };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
@@ -5011,7 +5017,7 @@ export async function createServer(
 
     server.tool(
         'confirm_themes',
-        'Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for their live deep-dive interview. [FLOW VISUALIZATION - REQUIRED IF SUPPORTED]: You MUST render the onboarding path as a visual horizontal stepper using your client\'s diagram, SVG, or HTML rendering tool (marking stage 6 "Expertise Deep-Dive (Audio)" as "You are here", #663399 fill, #ffffff text, with a note that progress is only saved to Fodda after the final submit). Present the 8-question interview questionnaire arc and instruct the expert to schedule their expertise deep-dive audio interview using the schedule_interview tool. Never expose developer meta-text to the expert.',
+        'Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for their live deep-dive audio interview. Presents the questionnaire arc and guides the expert to schedule their interview using schedule_interview.',
         {
             themes: z.array(z.string()).describe("Array of confirmed theme names"),
             userId: z.string().optional().describe('Optional user identifier.')
@@ -5037,7 +5043,12 @@ export async function createServer(
                     next: 'schedule_interview',
                     message: 'The Expertise Deep-Dive (Audio) interview is your next step — please schedule it by calling the schedule_interview tool.'
                 };
-                return { content: [{ type: 'text' as const, text: JSON.stringify(extendedResult, null, 2) }] };
+                return {
+                    content: [
+                        { type: 'text' as const, text: JSON.stringify(extendedResult, null, 2) },
+                        { type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES },
+                    ]
+                };
             } catch (err: any) {
                 return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
             }
