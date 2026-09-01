@@ -69,7 +69,91 @@ export interface ReportBriefingPayload {
     follow_ups: FollowUpMove[];
     briefing_markdown: string;
     coverage?: any;
-    next_moves?: any;
+}
+
+export interface ExtractedEvidence {
+    stats: string[];
+    snippets: string[];
+    caseStudies: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Evidence Extraction (handles object & array forms from live API)
+// ---------------------------------------------------------------------------
+
+export function extractEvidenceFromRow(row: any): ExtractedEvidence {
+    const stats: string[] = [];
+    const snippets: string[] = [];
+    const caseStudies: string[] = [];
+
+    if (!row) return { stats: [], snippets: [], caseStudies: [] };
+
+    // 1. Object form: evidence: { statistics: [...], case_studies: [...], quotes: [...] }
+    if (row.evidence && typeof row.evidence === 'object' && !Array.isArray(row.evidence)) {
+        if (Array.isArray(row.evidence.statistics)) {
+            for (const s of row.evidence.statistics) {
+                const statText = s.stat || s.percentage || s.metric || s.number || (typeof s === 'string' ? s : s.text);
+                if (statText) stats.push(String(statText).trim());
+                const snip = s.snippet || s.description || s.title || (typeof s === 'string' ? s : '');
+                if (snip) snippets.push(String(snip).trim());
+            }
+        }
+        if (Array.isArray(row.evidence.case_studies)) {
+            for (const cs of row.evidence.case_studies) {
+                const csTitle = cs.title || cs.name || cs.brand || (typeof cs === 'string' ? cs : '');
+                const csSnip = cs.snippet || cs.description || cs.summary || (typeof cs === 'string' ? cs : '');
+                if (csTitle || csSnip) {
+                    const fullCs = [csTitle, csSnip].filter(Boolean).join(': ');
+                    caseStudies.push(fullCs);
+                    snippets.push(fullCs);
+                }
+            }
+        }
+        if (Array.isArray(row.evidence.quotes)) {
+            for (const q of row.evidence.quotes) {
+                const snip = q.snippet || q.text || q.quote || (typeof q === 'string' ? q : '');
+                if (snip) snippets.push(String(snip).trim());
+            }
+        }
+        if (Array.isArray(row.evidence.items)) {
+            for (const item of row.evidence.items) {
+                const snip = typeof item === 'string' ? item : (item.snippet || item.title || '');
+                if (snip) snippets.push(String(snip).trim());
+            }
+        }
+    } else if (Array.isArray(row.evidence)) {
+        // Array form: evidence: [{ title, snippet, stat, percentage }]
+        for (const e of row.evidence) {
+            const statText = e.stat || e.percentage || e.metric || e.number;
+            if (statText) stats.push(String(statText).trim());
+            const snip = typeof e === 'string' ? e : (e.snippet || e.title || e.description || '');
+            if (snip) snippets.push(String(snip).trim());
+        }
+    }
+
+    // 2. Direct top-level fields
+    if (row.stat || row.percentage) stats.push(String(row.stat || row.percentage).trim());
+    if (Array.isArray(row.metrics)) {
+        for (const m of row.metrics) stats.push(String(m).trim());
+    }
+    if (Array.isArray(row.statistics)) {
+        for (const s of row.statistics) {
+            const st = typeof s === 'string' ? s : (s.stat || s.text || s.snippet);
+            if (st) stats.push(String(st).trim());
+        }
+    }
+    if (Array.isArray(row.case_studies)) {
+        for (const cs of row.case_studies) {
+            const csText = typeof cs === 'string' ? cs : [cs.title || cs.name, cs.snippet || cs.summary].filter(Boolean).join(': ');
+            if (csText) caseStudies.push(csText);
+        }
+    }
+
+    return {
+        stats: Array.from(new Set(stats)).filter(Boolean),
+        snippets: Array.from(new Set(snippets)).filter(Boolean),
+        caseStudies: Array.from(new Set(caseStudies)).filter(Boolean),
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +168,8 @@ function normalizeText(text: string): string {
  * Resolve primary report graph from query string and result rows.
  */
 export function resolvePrimaryReportGraph(query: string, resultRows: any[] = []): CatalogGraph | undefined {
-    const reportGraphs = getLiveGraphs().filter(g => g.graph_type === 'industry report');
+    const allGraphs = getLiveGraphs().length > 0 ? getLiveGraphs() : getGraphs();
+    const reportGraphs = allGraphs.filter(g => g.graph_type === 'industry report' || g.graph_type === 'report');
     if (reportGraphs.length === 0) return undefined;
 
     const normQuery = normalizeText(query);
@@ -131,7 +216,8 @@ export function resolvePrimaryReportGraph(query: string, resultRows: any[] = [])
             if (!gid) continue;
             const existing = graphCounts.get(gid) || { count: 0, totalScore: 0 };
             existing.count += 1;
-            existing.totalScore += Number(row.score || 0.5);
+            const rawScore = Number(row.relevance_score ?? row.score ?? 0.5);
+            existing.totalScore += rawScore;
             graphCounts.set(gid, existing);
         }
 
@@ -156,12 +242,14 @@ export function resolvePrimaryReportGraph(query: string, resultRows: any[] = [])
 
 /**
  * Filter and match human expert digital twin.
+ * Returns undefined if no genuine topical overlap exists (no arbitrary fallback).
  */
 export function matchHumanExpertTwin(query: string, primaryGraph?: CatalogGraph | undefined): CatalogAnalyst | undefined {
     const allAnalysts = getAnalysts();
     const humanTwins = allAnalysts.filter(a => {
         return a.is_human_agent === true ||
             a.is_digital_twin === true ||
+            a.isVerifiedRealPerson === true ||
             a.kind === 'human_agent' ||
             a.kind === 'human_twin' ||
             a.type === 'human_agent' ||
@@ -176,7 +264,7 @@ export function matchHumanExpertTwin(query: string, primaryGraph?: CatalogGraph 
     const tokens = normQuery.split(/\s+/).filter(t => t.length > 3);
 
     let bestExpert: CatalogAnalyst | undefined;
-    let maxOverlap = -1;
+    let maxOverlap = 0;
 
     for (const expert of humanTwins) {
         let score = 0;
@@ -192,7 +280,8 @@ export function matchHumanExpertTwin(query: string, primaryGraph?: CatalogGraph 
         }
     }
 
-    return bestExpert || humanTwins[0];
+    // Strict: only match when there is positive evidence of topical overlap
+    return maxOverlap > 0 ? bestExpert : undefined;
 }
 
 /**
@@ -211,12 +300,9 @@ export function partitionReportResults(resultRows: any[], primaryGraphId?: strin
         if (primaryGraphId && gid === primaryGraphId) {
             primaryRows.push(row);
             seenPrimaryText.add(normalizeText(rowText));
-            if (Array.isArray(row.evidence)) {
-                for (const e of row.evidence) {
-                    const eText = typeof e === 'string' ? e : `${e.title || ''} ${e.snippet || ''}`;
-                    seenPrimaryText.add(normalizeText(eText));
-                }
-            }
+            const ev = extractEvidenceFromRow(row);
+            for (const s of ev.snippets) seenPrimaryText.add(normalizeText(s));
+            for (const cs of ev.caseStudies) seenPrimaryText.add(normalizeText(cs));
         } else {
             networkRows.push(row);
         }
@@ -230,12 +316,9 @@ export function partitionReportResults(resultRows: any[], primaryGraphId?: strin
             if (gid === topGid) {
                 primaryRows.push(row);
                 seenPrimaryText.add(normalizeText(`${row.name || row.trend_name || ''} ${row.summary || row.description || ''}`));
-                if (Array.isArray(row.evidence)) {
-                    for (const e of row.evidence) {
-                        const eText = typeof e === 'string' ? e : `${e.title || ''} ${e.snippet || ''}`;
-                        seenPrimaryText.add(normalizeText(eText));
-                    }
-                }
+                const ev = extractEvidenceFromRow(row);
+                for (const s of ev.snippets) seenPrimaryText.add(normalizeText(s));
+                for (const cs of ev.caseStudies) seenPrimaryText.add(normalizeText(cs));
             } else {
                 networkRows.push(row);
             }
@@ -246,9 +329,15 @@ export function partitionReportResults(resultRows: any[], primaryGraphId?: strin
     const dedupedNetworkRows = networkRows.filter(nr => {
         const nrTitle = normalizeText(nr.name || nr.trend_name || '');
         const nrText = normalizeText(`${nr.name || nr.trend_name || ''} ${nr.summary || nr.description || ''}`);
+        const nrEv = extractEvidenceFromRow(nr);
+        const nrAllTexts = [nrTitle, nrText, ...nrEv.snippets, ...nrEv.caseStudies].map(normalizeText);
+
         for (const pText of seenPrimaryText) {
-            if (nrTitle.length > 10 && pText.includes(nrTitle)) return false;
-            if (nrText.length > 20 && (pText.includes(nrText.slice(0, 30)) || nrText.includes(pText.slice(0, 30)))) return false;
+            for (const text of nrAllTexts) {
+                if (text.length > 15 && (pText.includes(text) || (text.length > 25 && pText.includes(text.slice(0, 25))))) {
+                    return false;
+                }
+            }
         }
         return true;
     });
@@ -269,6 +358,7 @@ interface GeminiSynthesisOutput {
         title?: string;
         narrative?: string;
         stats?: string[];
+        evidence?: string[];
     }>;
     network_signals?: Array<{
         graph_id?: string;
@@ -288,19 +378,22 @@ async function runGeminiSynthesis(params: {
     const primarySummary = params.primaryRows.slice(0, 5).map((r, i) => {
         const name = r.name || r.trend_name || `Shift ${i + 1}`;
         const desc = r.summary || r.description || '';
-        const ev = Array.isArray(r.evidence)
-            ? r.evidence.map((e: any) => typeof e === 'string' ? e : (e.snippet || e.title || '')).filter(Boolean).slice(0, 2).join('; ')
-            : '';
-        return `[Shift ${i + 1}] "${name}": ${desc} | Evidence: ${ev}`;
+        const ev = extractEvidenceFromRow(r);
+        const statsStr = ev.stats.slice(0, 3).join(', ');
+        const snipsStr = ev.snippets.slice(0, 2).join('; ');
+        return `[Shift ${i + 1}] "${name}": ${desc}\n  - Stats: ${statsStr || 'None'}\n  - Evidence: ${snipsStr || 'None'}`;
     }).join('\n');
 
     const networkSummary = params.networkRows.slice(0, 4).map((r, i) => {
         const gid = r.graph_id || r.graphId || `graph-${i}`;
+        const matchedGraph = getLiveGraphs().find(g => g.graph_id === gid) || getGraphs().find(g => g.graph_id === gid);
+        const gName = matchedGraph?.name || r.graph_name || r.graphName || gid;
+        const curator = matchedGraph?.curator || matchedGraph?.company || r.curator || r.organization || 'Research Partner';
         const name = r.name || r.trend_name || 'Signal';
-        const gName = r.graph_name || r.graphName || gid;
-        const curator = r.curator || r.organization || 'Research Partner';
         const desc = r.summary || r.description || '';
-        return `[Signal ${i + 1}] GraphID: "${gid}" | Report: "${gName}" by ${curator} | Finding: "${name}" - ${desc}`;
+        const ev = extractEvidenceFromRow(r);
+        const evSnippet = ev.snippets[0] || desc;
+        return `[Signal ${i + 1}] GraphID: "${gid}" | Report: "${gName}" by ${curator} | Finding: "${name}" - ${evSnippet}`;
     }).join('\n');
 
     const expertContext = params.expert
@@ -333,11 +426,12 @@ Produce a single JSON object with these exact keys:
    - "title": Sharp, evocative shift title.
    - "narrative": 1-2 sentences explaining why this shift matters.
    - "stats": Array of 1-3 concrete data points, metrics, or percentages extracted from the evidence.
+   - "evidence": Array of 1-2 concrete proof points or case study mentions.
 3. "network_signals": Array of 2-3 cross-graph connections. For each signal:
    - "graph_id": The exact GraphID provided in the input.
    - "signal_type": MUST be either "validates", "contrasts", or "related".
    - "connection": 1 crisp sentence explaining how this other report supports or contrasts the primary finding.
-4. "expert_stance": A 1-sentence analytical perspective in the voice/philosophy of the matched expert twin regarding this topic.
+4. "expert_stance": ${params.expert ? 'A 1-sentence analytical perspective in the voice/philosophy of the matched expert twin regarding this topic.' : 'null'}
 
 STRICT RULE: Do NOT mention tokens, shared payment tokens, SPT, or pricing mechanics.`;
 
@@ -392,6 +486,12 @@ function renderBriefingMarkdown(payload: {
             lines.push('');
             for (const stat of shift.stats) {
                 lines.push(`  - **Key Metric:** ${stat}`);
+            }
+        }
+        if (shift.evidence.length > 0) {
+            lines.push('');
+            for (const ev of shift.evidence) {
+                lines.push(`  - **Evidence:** ${ev}`);
             }
         }
         lines.push('');
@@ -480,7 +580,7 @@ export async function buildReportEditorialBriefing(params: {
     });
 
     // 4. Construct Topline Hook (Pillar 1)
-    let toplineHookText = geminiOutput?.topline_hook;
+    let toplineHookText = geminiOutput?.topline_hook?.slice(0, 350);
     let isHookGenerated = true;
 
     if (!toplineHookText) {
@@ -491,29 +591,32 @@ export async function buildReportEditorialBriefing(params: {
             const sum = topRow?.summary || topRow?.description || 'key strategic shifts across the sector';
             toplineHookText = `Findings from ${reportTitle} indicate that ${name} is driving ${sum}.`;
         } else {
-            toplineHookText = `Cross-report intelligence indicates critical shifts across ${query}, connecting multiple industry research perspectives.`;
+            toplineHookText = `No published report intelligence was found specifically matching "${query}". Exploring adjacent domain signals or consulting a specialist analyst can help bridge this gap.`;
         }
     }
 
     // 5. Construct Structural Shifts (Pillar 2)
     const shifts: ReportShift[] = [];
     if (geminiOutput?.shifts && Array.isArray(geminiOutput.shifts) && geminiOutput.shifts.length > 0) {
-        for (let i = 0; i < geminiOutput.shifts.length; i++) {
+        for (let i = 0; i < Math.min(geminiOutput.shifts.length, 4); i++) {
             const s = geminiOutput.shifts[i];
             if (!s) continue;
             const matchingRow = primaryRows[i] || primaryRows[0];
-            const evList: string[] = [];
-            if (matchingRow && Array.isArray(matchingRow.evidence)) {
-                for (const e of matchingRow.evidence) {
-                    const snip = typeof e === 'string' ? e : (e.snippet || e.title || '');
-                    if (snip) evList.push(snip);
-                }
-            }
+            const rowEv = matchingRow ? extractEvidenceFromRow(matchingRow) : { stats: [], snippets: [], caseStudies: [] };
+
+            const finalStats = Array.isArray(s.stats) && s.stats.length > 0
+                ? s.stats.slice(0, 3)
+                : rowEv.stats.slice(0, 3);
+
+            const finalEvidence = Array.isArray(s.evidence) && s.evidence.length > 0
+                ? s.evidence.slice(0, 2)
+                : rowEv.snippets.slice(0, 2);
+
             shifts.push({
-                title: s.title || `Shift ${i + 1}`,
-                narrative: s.narrative || '',
-                stats: Array.isArray(s.stats) ? s.stats : [],
-                evidence: evList.slice(0, 3),
+                title: (s.title || `Shift ${i + 1}`).slice(0, 100),
+                narrative: (s.narrative || '').slice(0, 300),
+                stats: finalStats,
+                evidence: finalEvidence,
                 generated: true,
             });
         }
@@ -522,25 +625,15 @@ export async function buildReportEditorialBriefing(params: {
         const fallbackRows = (primaryRows.length > 0 ? primaryRows : rawRows).slice(0, 4);
         for (let i = 0; i < fallbackRows.length; i++) {
             const row = fallbackRows[i];
-            const title = row?.name || row?.trend_name || `Shift ${i + 1}`;
-            const narrative = row?.summary || row?.description || 'Structural shift identified in report data.';
-            const stats: string[] = [];
-            if (row?.percentage || row?.stat) stats.push(`${row?.stat || row?.percentage}`);
-            if (Array.isArray(row?.metrics)) stats.push(...row.metrics);
-
-            const evList: string[] = [];
-            if (Array.isArray(row?.evidence)) {
-                for (const e of row.evidence) {
-                    const snip = typeof e === 'string' ? e : (e.snippet || e.title || '');
-                    if (snip) evList.push(snip);
-                }
-            }
+            const title = (row?.name || row?.trend_name || `Shift ${i + 1}`).slice(0, 100);
+            const narrative = (row?.summary || row?.description || 'Structural shift identified in report data.').slice(0, 300);
+            const ev = extractEvidenceFromRow(row);
 
             shifts.push({
                 title,
                 narrative,
-                stats: stats.slice(0, 2),
-                evidence: evList.slice(0, 2),
+                stats: ev.stats.slice(0, 3),
+                evidence: ev.snippets.slice(0, 2),
                 generated: false,
             });
         }
@@ -553,13 +646,16 @@ export async function buildReportEditorialBriefing(params: {
     for (let i = 0; i < candidateNetRows.length; i++) {
         const nr = candidateNetRows[i];
         const gid = nr?.graph_id || nr?.graphId || '';
-        const sourceReport = nr?.graph_name || nr?.graphName || gid || 'Industry Report';
-        const curator = nr?.curator || nr?.organization;
+        const matchedGraph = getLiveGraphs().find(g => g.graph_id === gid) || getGraphs().find(g => g.graph_id === gid);
+        const sourceReport = matchedGraph?.name || nr?.graph_name || nr?.graphName || gid || 'Industry Report';
+        const curator = matchedGraph?.curator || matchedGraph?.company || nr?.curator || nr?.organization || 'Research Partner';
 
         // Match LLM signal classification if available
-        const matchedGeminiSig = geminiOutput?.network_signals?.find(s => s.graph_id === gid || s.graph_id === nr?.graph_name);
+        const matchedGeminiSig = geminiOutput?.network_signals?.find(s => s.graph_id === gid || s.graph_id === sourceReport);
         const signalType = matchedGeminiSig?.signal_type || 'related';
-        const snippet = matchedGeminiSig?.connection || nr?.summary || nr?.description || (nr?.name || nr?.trend_name || '');
+        const ev = extractEvidenceFromRow(nr);
+        const snippet = (matchedGeminiSig?.connection || ev.snippets[0] || nr?.summary || nr?.description || nr?.name || nr?.trend_name || '').slice(0, 250);
+        const rawScore = Number(nr?.relevance_score ?? nr?.score);
 
         networkSignals.push({
             title: nr?.name || nr?.trend_name || `Signal from ${sourceReport}`,
@@ -568,19 +664,19 @@ export async function buildReportEditorialBriefing(params: {
             curator: curator ? String(curator) : undefined,
             signal_type: signalType,
             snippet,
-            score: typeof nr?.score === 'number' ? nr.score : undefined,
-            url: `https://app.fodda.ai?graph=${encodeURIComponent(gid)}`,
+            score: !isNaN(rawScore) ? rawScore : undefined,
+            url: matchedGraph?.webpage_url || `https://app.fodda.ai/graphs/${encodeURIComponent(gid)}`,
         });
     }
 
     // 7. Construct Expert Spotlight (Pillar 4)
     let expertSpotlight: ExpertSpotlight | undefined;
     if (matchedExpert) {
-        const rawSlug = matchedExpert.analyst_id || (matchedExpert as any).id || (matchedExpert as any).slug || '';
+        const rawSlug = matchedExpert.slug || matchedExpert.expertSlug || matchedExpert.analyst_id || '';
         const isCleanSlug = /^[a-z0-9-]+$/.test(rawSlug);
         const consultUrl = isCleanSlug ? `https://expert.fodda.ai/${rawSlug}` : undefined;
 
-        const position = geminiOutput?.expert_stance || matchedExpert.what_they_offer || `Offers strategic advisory on ${matchedExpert.expert_in || 'market shifts'}.`;
+        const position = (geminiOutput?.expert_stance || matchedExpert.what_they_offer || `Offers strategic advisory on ${matchedExpert.expert_in || 'market shifts'}.`).slice(0, 250);
         const whyMatched = `Specializes in ${matchedExpert.expert_in || matchedExpert.name}'s strategic domain`;
 
         expertSpotlight = {
@@ -598,7 +694,7 @@ export async function buildReportEditorialBriefing(params: {
     // 8. Reshape Follow-Ups (Pillar 5)
     const followUps: FollowUpMove[] = [];
 
-    // Follow-up 1: Explore top primary shift
+    // Follow-up 1: Deep dive on top shift or primary report
     if (shifts.length > 0 && shifts[0]) {
         const topShift = shifts[0];
         followUps.push({
@@ -606,8 +702,8 @@ export async function buildReportEditorialBriefing(params: {
             tool: 'get_report_intelligence',
             args: { query: `${reportTitle} ${topShift.title}` },
             app_url: primaryGraphId
-                ? `https://app.fodda.ai?graph=${encodeURIComponent(primaryGraphId)}&q=${encodeURIComponent(topShift.title)}`
-                : `https://app.fodda.ai?q=${encodeURIComponent(topShift.title)}`,
+                ? `https://app.fodda.ai/graphs/${encodeURIComponent(primaryGraphId)}`
+                : `https://app.fodda.ai`,
         });
     }
 
@@ -635,6 +731,21 @@ export async function buildReportEditorialBriefing(params: {
         });
     }
 
+    // If fewer than 3 follow-ups generated, pull from annotatedData.next_moves candidates if available
+    if (followUps.length < 3 && annotatedData?.next_moves?.candidates && Array.isArray(annotatedData.next_moves.candidates)) {
+        for (const c of annotatedData.next_moves.candidates) {
+            if (followUps.length >= 3) break;
+            if (c.tool && c.prompt) {
+                followUps.push({
+                    prompt: c.prompt,
+                    tool: c.tool,
+                    args: c.args || {},
+                    app_url: 'https://app.fodda.ai',
+                });
+            }
+        }
+    }
+
     // 9. Pre-Render Markdown
     const briefingMarkdown = renderBriefingMarkdown({
         reportTitle,
@@ -660,6 +771,5 @@ export async function buildReportEditorialBriefing(params: {
         follow_ups: followUps,
         briefing_markdown: briefingMarkdown,
         coverage: annotatedData?.coverage || data?.coverage,
-        next_moves: annotatedData?.next_moves,
     };
 }

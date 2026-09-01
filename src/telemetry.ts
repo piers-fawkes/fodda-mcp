@@ -67,6 +67,21 @@ export function recordToolOutcome(
     toolExecutionHistory.push(record);
     if (toolExecutionHistory.length > 2000) toolExecutionHistory.shift();
 
+    // Cloud Logging structured telemetry line
+    try {
+        console.log(JSON.stringify({
+            severity: success ? 'INFO' : 'WARNING',
+            message: `[MCP_METRICS] ${toolName} finished in ${durationMs}ms`,
+            mcp_tool: toolName,
+            duration_ms: durationMs,
+            success,
+            error: error || null,
+            timestamp: new Date(now).toISOString()
+        }));
+    } catch {
+        // Safe fallback - avoid crashing on serialization edge cases
+    }
+
     let stats = toolStatsMap.get(toolName);
     if (!stats) {
         stats = {

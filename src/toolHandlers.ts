@@ -1453,10 +1453,13 @@ export async function createServer(
                 // ── Low-credit warning for all users — utilizes dynamic Stripe links from API ──
                 appendUsageWarning(data, resolveUserId(userId));
 
-                // ── Supplemental data — macro context for all queries with results ──
+                // ── Supplemental data — macro context for queries with stats intent or thin coverage ──
                 let supplemental: { google_trends: any; census_retail: any } = { google_trends: null, census_retail: null };
                 const resultCount = (data?.rows || []).length;
-                if (resultCount >= 1) {  // Was ≥3 — thin queries need macro context most
+                const isStatsShaped = /\b(statistic|statistics|stats|percent|percentage|%|number|numbers|market size|market share|spending|spend|revenue|growth|volume|cpi|gdp|index|data point|share of wallet|\$)\b/i.test(query);
+                const isThinCoverage = resultCount < 2 || data?.coverage?.status === 'thin';
+
+                if (resultCount >= 1 && (isStatsShaped || isThinCoverage)) {
                     const [googleTrendsResult, censusResult] = await Promise.allSettled([
                         foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(query)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
                         foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid)),
@@ -1466,7 +1469,7 @@ export async function createServer(
                         census_retail: censusResult.status === 'fulfilled' ? censusResult.value : null,
                     };
                 } else {
-                    console.error(`[search_graph] Skipping supplemental fetch — only ${resultCount} results (threshold: 3)`);
+                    // Skipped for general qualitative trend queries with healthy coverage to eliminate 1-3s latency
                 }
 
                 // ── Skill post-processing — call enabled output skills via Core API ──
@@ -4259,6 +4262,510 @@ export async function createServer(
         }
     );
 
+    interface ConsultCoreParams {
+        analyst_id: string;
+        query: string;
+        company?: string | undefined;
+        session_id?: string | undefined;
+        userId?: string | undefined;
+    }
+
+    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, userId: uid }: ConsultCoreParams) => {
+        try {
+            const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+
+            const match = getAnalysts().find((a: any) => {
+                const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                const nameKey = (a.name || '').toLowerCase().trim();
+                const queryKey = resolvedAnalystId.toLowerCase().trim();
+                return idKey === queryKey || nameKey === queryKey;
+            });
+
+            logUserQuery(query, 'consult_human_agent');
+
+            const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), {
+                analyst_id: resolvedAnalystId,
+                query,
+                company: resolvedCompany,
+                session_id
+            });
+            
+            const upstreamCoverage = result?.coverage;
+
+            const reportText = typeof result.result === 'string'
+                ? result.result
+                : (typeof result.report === 'string' ? result.report : (typeof result.response === 'string' ? result.response : JSON.stringify(result, null, 2)));
+
+            // 1. Capture initial raw sources returned by upstream API
+            const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
+            const seenUrls = new Set<string>();
+
+            for (const s of rawSources) {
+                if (typeof s === 'object' && s?.url) {
+                    seenUrls.add(s.url.trim());
+                } else if (typeof s === 'string') {
+                    seenUrls.add(s.trim());
+                }
+            }
+
+            // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
+            const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+            const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
+            let mMatch: RegExpExecArray | null;
+            while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
+                const rawTitle = mMatch[1];
+                const rawUrl = mMatch[2];
+                if (rawTitle && rawUrl) {
+                    const title = rawTitle.trim();
+                    const url = rawUrl.trim();
+                    if (url && !seenUrls.has(url)) {
+                        seenUrls.add(url);
+                        extractedSources.push({ title, url, origin: 'prose', type: 'web' });
+                    }
+                }
+            }
+
+            const mergedSources = [...rawSources, ...extractedSources];
+
+            // 3. Fallback profile source if 0 sources exist
+            if (mergedSources.length === 0) {
+                const expertObj = result.expert || result.analyst || match || {};
+                const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
+                const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
+                const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
+                const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
+
+                mergedSources.push({
+                    title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                    url: `https://www.fodda.ai/experts/${expertSlug}`,
+                    origin: 'profile',
+                    type: 'web'
+                });
+            }
+
+            result.sources_used = mergedSources;
+
+            // 4. Source Tiering & Verbatim Upstream Coverage
+            const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
+                if (typeof s === 'string') {
+                    if (s.includes('/experts/')) return 'web';
+                    if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                    return rawSources.includes(s) ? 'graph' : 'web';
+                }
+                const origin = (s.origin || '').toLowerCase();
+                const type = (s.type || s.kind || '').toLowerCase();
+                const url = (s.url || '').toLowerCase();
+
+                if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
+                if (origin === 'prose' || origin === 'profile') return 'web';
+                if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                if (url) return 'web';
+                return 'graph';
+            };
+
+            const execQuoteSources = result.sources_used.filter((s: any) => classifyTier(s) === 'exec_quote');
+            const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
+            const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
+            const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
+
+            // Render explicit upstream coverage verbatim if present; fall back to graphSources check only if absent
+            if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
+                result.coverage = upstreamCoverage;
+            } else {
+                result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
+            }
+
+            const parts: string[] = [reportText];
+
+            if (result.timing_ms != null) {
+                parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+            }
+
+            if (result.coverage) {
+                parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
+            }
+
+            const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
+            if (isPartialOrThin && graphSources.length === 0 && execQuoteSources.length === 0) {
+                parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
+            }
+
+            if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
+                const formatLine = (s: any) => {
+                    if (typeof s === 'string') return `- ${s}`;
+                    const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
+                    return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
+                };
+
+                const sourceSections: string[] = ['--- SOURCES USED ---'];
+                if (graphSources.length > 0) {
+                    sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                }
+                if (execQuoteSources.length > 0) {
+                    sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
+                }
+                if (suppSources.length > 0) {
+                    sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
+                }
+                if (webSources.length > 0) {
+                    sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
+                }
+                parts.push(sourceSections.join('\n\n'));
+            }
+            if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
+                const activeAnalysts = getAnalysts();
+                const coverageLower = (result.coverage || 'ok').toLowerCase().trim();
+                const isFullCoverage = coverageLower === 'in' || coverageLower === 'full';
+                const qTokens = specificQueryTokens(query);
+
+                const activeReferrals = result.referrals.filter((r: any) => {
+                    const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
+                    const found = activeAnalysts.find((a: any) => {
+                        const aId = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+                        return aId === refId || (a.name && a.name.toLowerCase().trim() === refId);
+                    });
+                    if (found) {
+                        const st = (found.status || (found as any).Status || '').toLowerCase().trim();
+                        if (st && st !== 'active') return false;
+                    }
+                    const rStatus = (r.status || r.Status || '').toLowerCase().trim();
+                    if (rStatus && rStatus !== 'active') return false;
+
+                    // Referral gating per §2.A.4: on FULL coverage, suppress unless reason shares content token with query
+                    if (isFullCoverage) {
+                        const reasonText = `${r.reason || ''} ${r.topics?.join(' ') || ''}`.toLowerCase();
+                        const sharesToken = qTokens.some(t => t.length >= 3 && reasonText.includes(t));
+                        if (!sharesToken) return false;
+                    }
+
+                    return true;
+                });
+
+                if (activeReferrals.length > 0) {
+                    const refLines = activeReferrals.map((r: any, i: number) =>
+                        `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
+                    );
+                    parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                }
+            }
+            if (result.speaker_note) {
+                parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
+            }
+
+            if (result.book_a_call) {
+                const callText = result.book_a_call.rate_display
+                    ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
+                    : (result.book_a_call.url || '');
+                parts.push(`--- BOOK A CALL: ${callText} ---`);
+            }
+
+            if (result.partial_credit_warning || result.credit_note) {
+                parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
+            }
+            const humanAgentNextMoves = generateConsultNextMoves(
+                result,
+                query,
+                resolvedAnalystId || analyst_id,
+                {
+                    currentAnalystId: resolvedAnalystId || analyst_id,
+                    knownBrand: resolvedCompany || getKnownBrand(),
+                },
+                getGraphs(),
+                getAnalysts()
+            );
+            sessionTracker.recordNextMoves(humanAgentNextMoves, query);
+
+            const consultClosing = renderConsultClosingEnvelope(humanAgentNextMoves);
+            if (consultClosing.text) {
+                parts.push(`\n\n${consultClosing.text}`);
+            }
+
+            const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
+            if (consultWithheld) return consultWithheld;
+            return {
+                coverage: result.coverage,
+                next_moves: humanAgentNextMoves,
+                sources_used: result.sources_used,
+                ...(result.analyst ? { analyst: result.analyst } : {}),
+                book_a_call: result.book_a_call ?? null,
+                content: [{ type: 'text' as const, text: parts.join('\n') }]
+            };
+        } catch (err: any) {
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            if (trialResult) return trialResult;
+            if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
+                    error: `Human Agent consultation timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
+                    analyst_id,
+                    timeout: true
+                }) }] };
+            }
+            const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+            return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+        }
+    };
+
+    const executeConsultAnalystCore = async ({ analyst_id, query, company, session_id, userId: uid }: ConsultCoreParams) => {
+        try {
+            const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+
+            // Log query to Questions table (fire-and-forget, before cache)
+            logUserQuery(query, 'consult_analyst');
+
+            const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), {
+                analyst_id: resolvedAnalystId,
+                query,
+                company: resolvedCompany,
+                session_id
+            });
+            
+            // If API indicates target is a Human Agent, seamlessly route to human agent pipeline
+            const isTwinResult = result?.is_human_agent ||
+                result?.type === 'human_agent' ||
+                result?.type === 'human_twin' ||
+                result?.graphSubType === 'human_agent' ||
+                result?.graphSubType === 'expert_twin' ||
+                result?.graph_sub_type === 'human_agent' ||
+                result?.agent_type === 'human_twin' ||
+                result?.agent_type === 'human_agent' ||
+                result?.analyst?.agent_type === 'human_twin' ||
+                result?.analyst?.type === 'human_agent' ||
+                result?.analyst?.type === 'human_twin';
+
+            if (isTwinResult) {
+                return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
+            }
+
+            const upstreamCoverage = result?.coverage;
+
+            // Extract the expert's answer text (legacy-compatible)
+            const reportText = typeof result.result === 'string'
+                ? result.result
+                : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
+
+            // 1. Capture initial raw sources returned by upstream API
+            const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
+            const seenUrls = new Set<string>();
+
+            for (const s of rawSources) {
+                if (typeof s === 'object' && s?.url) {
+                    seenUrls.add(s.url.trim());
+                } else if (typeof s === 'string') {
+                    seenUrls.add(s.trim());
+                }
+            }
+
+            // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
+            const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+            const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
+            let mMatch: RegExpExecArray | null;
+            while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
+                const rawTitle = mMatch[1];
+                const rawUrl = mMatch[2];
+                if (rawTitle && rawUrl) {
+                    const title = rawTitle.trim();
+                    const url = rawUrl.trim();
+                    if (url && !seenUrls.has(url)) {
+                        seenUrls.add(url);
+                        extractedSources.push({ title, url, origin: 'prose', type: 'web' });
+                    }
+                }
+            }
+
+            const mergedSources = [...rawSources, ...extractedSources];
+
+            // 3. Fallback profile source if 0 sources exist
+            if (mergedSources.length === 0) {
+                const expertObj = result.expert || result.analyst || {};
+                const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
+                const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
+                const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
+                const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
+
+                mergedSources.push({
+                    title: `${cleanName} Synthetic Analyst — Official Profile`,
+                    url: `https://www.fodda.ai/experts/${expertSlug}`,
+                    origin: 'profile',
+                    type: 'web'
+                });
+            }
+
+            result.sources_used = mergedSources;
+
+            const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
+                if (typeof s === 'string') {
+                    if (s.includes('/experts/')) return 'web';
+                    if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                    return rawSources.includes(s) ? 'graph' : 'web';
+                }
+                const origin = (s.origin || '').toLowerCase();
+                const type = (s.type || s.kind || '').toLowerCase();
+                const url = (s.url || '').toLowerCase();
+
+                if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
+                if (origin === 'prose' || origin === 'profile') return 'web';
+                if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                if (url) return 'web';
+                return 'graph';
+            };
+
+            const execQuoteSources = result.sources_used.filter((s: any) => classifyTier(s) === 'exec_quote');
+            const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
+            const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
+            const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
+
+            if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
+                result.coverage = upstreamCoverage;
+            } else {
+                result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
+            }
+
+            const parts: string[] = [reportText];
+
+            if (result.timing_ms != null) {
+                parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
+            }
+
+            if (result.coverage) {
+                parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
+            }
+
+            const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
+            if (isPartialOrThin && graphSources.length === 0 && execQuoteSources.length === 0) {
+                parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Synthetic Analyst doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
+            }
+
+            if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
+                const formatLine = (s: any) => {
+                    if (typeof s === 'string') return `- ${s}`;
+                    const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
+                    return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
+                };
+
+                const sourceSections: string[] = ['--- SOURCES USED ---'];
+                if (graphSources.length > 0) {
+                    sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
+                }
+                if (execQuoteSources.length > 0) {
+                    sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
+                }
+                if (suppSources.length > 0) {
+                    sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
+                }
+                if (webSources.length > 0) {
+                    sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
+                }
+                parts.push(sourceSections.join('\n\n'));
+            }
+            if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
+                const activeAnalysts = getAnalysts();
+                const coverageLower = (result.coverage || 'ok').toLowerCase().trim();
+                const isFullCoverage = coverageLower === 'in' || coverageLower === 'full';
+                const qTokens = specificQueryTokens(query);
+
+                const activeReferrals = result.referrals.filter((r: any) => {
+                    const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
+                    const found = activeAnalysts.find((a: any) => {
+                        const aId = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+                        return aId === refId || (a.name && a.name.toLowerCase().trim() === refId);
+                    });
+                    if (found) {
+                        const st = (found.status || (found as any).Status || '').toLowerCase().trim();
+                        if (st && st !== 'active') return false;
+                    }
+                    const rStatus = (r.status || r.Status || '').toLowerCase().trim();
+                    if (rStatus && rStatus !== 'active') return false;
+
+                    if (isFullCoverage) {
+                        const reasonText = `${r.reason || ''} ${r.topics?.join(' ') || ''}`.toLowerCase();
+                        const sharesToken = qTokens.some(t => t.length >= 3 && reasonText.includes(t));
+                        if (!sharesToken) return false;
+                    }
+
+                    return true;
+                });
+
+                if (activeReferrals.length > 0) {
+                    const refLines = activeReferrals.map((r: any, i: number) =>
+                        `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
+                    );
+                    parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
+                }
+            }
+            if (result.speaker_note) {
+                parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
+            }
+
+            if (result.book_a_call) {
+                const callText = result.book_a_call.rate_display
+                    ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
+                    : (result.book_a_call.url || '');
+                parts.push(`--- BOOK A CALL: ${callText} ---`);
+            }
+
+            if (result.partial_credit_warning || result.credit_note) {
+                parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
+            }
+
+            const analystNextMoves = generateConsultNextMoves(
+                result,
+                query,
+                resolvedAnalystId || analyst_id,
+                {
+                    currentAnalystId: resolvedAnalystId || analyst_id,
+                    knownBrand: resolvedCompany || getKnownBrand(),
+                },
+                getGraphs(),
+                getAnalysts()
+            );
+            sessionTracker.recordNextMoves(analystNextMoves, query);
+
+            const consultClosing = renderConsultClosingEnvelope(analystNextMoves);
+            if (consultClosing.text) {
+                parts.push(`\n\n${consultClosing.text}`);
+            }
+
+            const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
+            if (consultWithheld) return consultWithheld;
+            return {
+                coverage: result.coverage,
+                next_moves: analystNextMoves,
+                sources_used: result.sources_used,
+                content: [{ type: 'text' as const, text: parts.join('\n') }]
+            };
+        } catch (err: any) {
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            if (trialResult) return trialResult;
+            const errData = err.response?.data;
+            const isTwinError = errData?.is_human_agent ||
+                errData?.error?.is_human_agent ||
+                errData?.agent_type === 'human_twin' ||
+                errData?.type === 'human_twin' ||
+                errData?.type === 'human_agent' ||
+                errData?.error?.agent_type === 'human_twin';
+            if (isTwinError) {
+                return await executeConsultHumanAgentCore({ analyst_id, query, company, session_id, userId: uid });
+            }
+            if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
+                    error: `Analyst consultation timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
+                    analyst_id,
+                    timeout: true
+                }) }] };
+            }
+            const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+            return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+        }
+    };
+
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
@@ -4272,295 +4779,32 @@ export async function createServer(
         },
         { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, userId: uid }) => {
-            try {
-                // Resolve potential alias IDs (e.g., "Nike CMO" -> analyst_id: "brand-cmo", company: "Nike")
-                const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+            const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
-                // Proactive check: if analyst is known to be a Human Agent (Digital Twin), return referral
-                const match = getAnalysts().find((a: any) => {
-                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
-                    const nameKey = (a.name || '').toLowerCase().trim();
-                    const queryKey = resolvedAnalystId.toLowerCase().trim();
-                    return idKey === queryKey || nameKey === queryKey;
-                });
-                const isTwinMatch = match && (
-                    match.type === 'human_agent' ||
-                    match.type === 'human_twin' ||
-                    match.agent_type === 'human_twin' ||
-                    match.agent_type === 'human_agent' ||
-                    match.kind === 'human_agent' ||
-                    match.kind === 'human_twin' ||
-                    match.is_digital_twin === true ||
-                    match.is_human_agent === true
-                );
-                if (isTwinMatch) {
-                    const analystName = match.name || resolvedAnalystId;
-                    return {
-                        content: [{
-                            type: 'text' as const,
-                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please call consult_human_agent with analyst_id "${resolvedAnalystId}". (Internal guidance: analyst_id is an internal tool parameter — refer to the expert strictly as "${analystName}" in any user-facing output; do NOT output or highlight raw technical IDs/slugs).`
-                        }]
-                    };
-                }
-
-                // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(query, 'consult_analyst');
-
-                const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), {
-                    analyst_id: resolvedAnalystId,
-                    query,
-                    company: resolvedCompany,
-                    session_id
-                });
-                
-                // If API indicates target is a Human Agent, return referral
-                const isTwinResult = result?.is_human_agent ||
-                    result?.type === 'human_agent' ||
-                    result?.type === 'human_twin' ||
-                    result?.agent_type === 'human_twin' ||
-                    result?.agent_type === 'human_agent' ||
-                    result?.analyst?.agent_type === 'human_twin' ||
-                    result?.analyst?.type === 'human_agent' ||
-                    result?.analyst?.type === 'human_twin';
-
-                if (isTwinResult) {
-                    const analystName = result.analyst_name || result.analyst?.name || result.name || resolvedAnalystId;
-                    return {
-                        content: [{
-                            type: 'text' as const,
-                            text: `${analystName} is a Human Agent (Digital Twin). To consult this expert, please call consult_human_agent with analyst_id "${resolvedAnalystId}". (Internal guidance: analyst_id is an internal tool parameter — refer to the expert strictly as "${analystName}" in any user-facing output; do NOT output or highlight raw technical IDs/slugs).`
-                        }]
-                    };
-                }
-
-                const upstreamCoverage = result?.coverage;
-
-                // Extract the expert's answer text (legacy-compatible)
-                const reportText = typeof result.result === 'string'
-                    ? result.result
-                    : (typeof result.report === 'string' ? result.report : JSON.stringify(result, null, 2));
-
-                // 1. Capture initial raw sources returned by upstream API
-                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
-                const seenUrls = new Set<string>();
-
-                for (const s of rawSources) {
-                    if (typeof s === 'object' && s?.url) {
-                        seenUrls.add(s.url.trim());
-                    } else if (typeof s === 'string') {
-                        seenUrls.add(s.trim());
-                    }
-                }
-
-                // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
-                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
-                let mMatch: RegExpExecArray | null;
-                while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
-                    const rawTitle = mMatch[1];
-                    const rawUrl = mMatch[2];
-                    if (rawTitle && rawUrl) {
-                        const title = rawTitle.trim();
-                        const url = rawUrl.trim();
-                        if (url && !seenUrls.has(url)) {
-                            seenUrls.add(url);
-                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
-                        }
-                    }
-                }
-
-                const mergedSources = [...rawSources, ...extractedSources];
-
-                // 3. Fallback profile source if 0 sources exist
-                if (mergedSources.length === 0) {
-                    const expertObj = result.expert || result.analyst || match || {};
-                    const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
-                    const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
-                    const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
-                    const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
-
-                    mergedSources.push({
-                        title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
-                        url: `https://www.fodda.ai/experts/${expertSlug}`,
-                        origin: 'profile',
-                        type: 'web'
-                    });
-                }
-
-                result.sources_used = mergedSources;
-
-                // 4. Source Tiering & Verbatim Upstream Coverage
-                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
-                    if (typeof s === 'string') {
-                        if (s.includes('/experts/')) return 'web';
-                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
-                        return rawSources.includes(s) ? 'graph' : 'web';
-                    }
-                    const origin = (s.origin || '').toLowerCase();
-                    const type = (s.type || s.kind || '').toLowerCase();
-                    const url = (s.url || '').toLowerCase();
-
-                    if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
-                    if (origin === 'prose' || origin === 'profile') return 'web';
-                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
-                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
-                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
-
-                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
-                    if (url) return 'web';
-                    return 'graph';
-                };
-
-                const execQuoteSources = result.sources_used.filter((s: any) => classifyTier(s) === 'exec_quote');
-                const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
-                const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
-                const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
-
-                // Render explicit upstream coverage verbatim if present; fall back to graphSources check only if absent
-                if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
-                    result.coverage = upstreamCoverage;
-                } else {
-                    result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
-                }
-
-                const parts: string[] = [reportText];
-
-                // Surface server-side timing for observability
-                if (result.timing_ms != null) {
-                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
-                }
-
-                // --- Structured envelope fields (Phase 2 Digital Twin) ---
-                if (result.coverage) {
-                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
-                }
-
-                const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
-                if (isPartialOrThin && graphSources.length === 0 && execQuoteSources.length === 0) {
-                    parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
-                }
-
-                if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const formatLine = (s: any) => {
-                        if (typeof s === 'string') return `- ${s}`;
-                        const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
-                        return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
-                    };
-
-                    const sourceSections: string[] = ['--- SOURCES USED ---'];
-                    if (graphSources.length > 0) {
-                        sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
-                    }
-                    if (execQuoteSources.length > 0) {
-                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
-                    }
-                    if (suppSources.length > 0) {
-                        sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
-                    }
-                    if (webSources.length > 0) {
-                        sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
-                    }
-                    parts.push(sourceSections.join('\n\n'));
-                }
-                if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
-                    const activeAnalysts = getAnalysts();
-                    const coverageLower = (result.coverage || 'ok').toLowerCase().trim();
-                    const isFullCoverage = coverageLower === 'in' || coverageLower === 'full';
-                    const qTokens = specificQueryTokens(query);
-
-                    const activeReferrals = result.referrals.filter((r: any) => {
-                        const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
-                        const found = activeAnalysts.find((a: any) => {
-                            const aId = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
-                            return aId === refId || (a.name && a.name.toLowerCase().trim() === refId);
-                        });
-                        if (found) {
-                            const st = (found.status || (found as any).Status || '').toLowerCase().trim();
-                            if (st && st !== 'active') return false;
-                        }
-                        const rStatus = (r.status || r.Status || '').toLowerCase().trim();
-                        if (rStatus && rStatus !== 'active') return false;
-
-                        // Referral gating per §2.A.4: on FULL coverage, suppress unless reason shares content token with query
-                        if (isFullCoverage) {
-                            const reasonText = `${r.reason || ''} ${r.topics?.join(' ') || ''}`.toLowerCase();
-                            const sharesToken = qTokens.some(t => t.length >= 3 && reasonText.includes(t));
-                            if (!sharesToken) return false;
-                        }
-
-                        return true;
-                    });
-
-                    if (activeReferrals.length > 0) {
-                        const refLines = activeReferrals.map((r: any, i: number) =>
-                            `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
-                        );
-                        parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
-                    }
-                }
-                if (result.speaker_note) {
-                    parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
-                }
-
-                // --- Engagement continuation (Agentic Analysts Phase B) ---
-                if (result.partial_credit_warning || result.credit_note) {
-                    parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
-                }
-                const analystNextMoves = generateConsultNextMoves(
-                    result,
-                    query,
-                    resolvedAnalystId || analyst_id,
-                    {
-                        currentAnalystId: resolvedAnalystId || analyst_id,
-                        knownBrand: resolvedCompany || getKnownBrand(),
-                    },
-                    getGraphs(),
-                    getAnalysts()
-                );
-                sessionTracker.recordNextMoves(analystNextMoves, query);
-
-                const consultClosing = renderConsultClosingEnvelope(analystNextMoves);
-                if (consultClosing.text) {
-                    parts.push(`\n\n${consultClosing.text}`);
-                }
-
-                const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
-                if (consultWithheld) return consultWithheld;
-                return {
-                    coverage: result.coverage,
-                    next_moves: analystNextMoves,
-                    sources_used: result.sources_used,
-                    content: [{ type: 'text' as const, text: parts.join('\n') }]
-                };
-            } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
-                if (trialResult) return trialResult;
-                const errData = err.response?.data;
-                const isTwinError = errData?.is_human_agent ||
-                    errData?.error?.is_human_agent ||
-                    errData?.agent_type === 'human_twin' ||
-                    errData?.type === 'human_twin' ||
-                    errData?.type === 'human_agent' ||
-                    errData?.error?.agent_type === 'human_twin';
-                if (isTwinError) {
-                    return {
-                        content: [{
-                            type: 'text' as const,
-                            text: `${analyst_id} is a Human Agent (Digital Twin). To consult this expert, please call consult_human_agent with analyst_id "${analyst_id}". (Internal guidance: analyst_id is an internal tool parameter — refer to the expert by display name in any user-facing output; do NOT output or highlight raw technical IDs/slugs).`
-                        }]
-                    };
-                }
-                // Surface timeout explicitly so clients get actionable guidance
-                if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
-                        error: `Analyst consultation timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
-                        analyst_id,
-                        timeout: true
-                    }) }] };
-                }
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            // Proactive routing: if analyst is known to be a Human Agent (Digital Twin), route directly before any API call
+            const match = getAnalysts().find((a: any) => {
+                const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                const nameKey = (a.name || '').toLowerCase().trim();
+                const queryKey = resolvedAnalystId.toLowerCase().trim();
+                return idKey === queryKey || nameKey === queryKey;
+            });
+            const isTwinMatch = match && (
+                match.type === 'human_agent' ||
+                match.type === 'human_twin' ||
+                match.graphSubType === 'human_agent' ||
+                match.graphSubType === 'expert_twin' ||
+                match.graph_sub_type === 'human_agent' ||
+                match.agent_type === 'human_twin' ||
+                match.agent_type === 'human_agent' ||
+                match.kind === 'human_agent' ||
+                match.kind === 'human_twin' ||
+                match.is_digital_twin === true ||
+                match.is_human_agent === true
+            );
+            if (isTwinMatch) {
+                return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
             }
+            return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
         }
     );
 
@@ -4577,242 +4821,26 @@ export async function createServer(
         },
         { title: 'Consult Human Agent (Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, userId: uid }) => {
-            try {
-                const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+            const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
-                const match = getAnalysts().find((a: any) => {
-                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
-                    const nameKey = (a.name || '').toLowerCase().trim();
-                    const queryKey = resolvedAnalystId.toLowerCase().trim();
-                    return idKey === queryKey || nameKey === queryKey;
-                });
+            const match = getAnalysts().find((a: any) => {
+                const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                const nameKey = (a.name || '').toLowerCase().trim();
+                const queryKey = resolvedAnalystId.toLowerCase().trim();
+                return idKey === queryKey || nameKey === queryKey;
+            });
 
-                logUserQuery(query, 'consult_human_agent');
-
-                const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), {
-                    analyst_id: resolvedAnalystId,
-                    query,
-                    company: resolvedCompany,
-                    session_id
-                });
-                
-                const upstreamCoverage = result?.coverage;
-
-                const reportText = typeof result.result === 'string'
-                    ? result.result
-                    : (typeof result.report === 'string' ? result.report : (typeof result.response === 'string' ? result.response : JSON.stringify(result, null, 2)));
-
-                // 1. Capture initial raw sources returned by upstream API
-                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
-                const seenUrls = new Set<string>();
-
-                for (const s of rawSources) {
-                    if (typeof s === 'object' && s?.url) {
-                        seenUrls.add(s.url.trim());
-                    } else if (typeof s === 'string') {
-                        seenUrls.add(s.trim());
-                    }
-                }
-
-                // 2. Extract markdown links [Title](https://url) from response prose text and tag with origin: 'prose', type: 'web'
-                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
-                let mMatch: RegExpExecArray | null;
-                while ((mMatch = markdownLinkRegex.exec(reportText)) !== null) {
-                    const rawTitle = mMatch[1];
-                    const rawUrl = mMatch[2];
-                    if (rawTitle && rawUrl) {
-                        const title = rawTitle.trim();
-                        const url = rawUrl.trim();
-                        if (url && !seenUrls.has(url)) {
-                            seenUrls.add(url);
-                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
-                        }
-                    }
-                }
-
-                const mergedSources = [...rawSources, ...extractedSources];
-
-                // 3. Fallback profile source if 0 sources exist
-                if (mergedSources.length === 0) {
-                    const expertObj = result.expert || result.analyst || match || {};
-                    const expertName = expertObj.name || result.analyst_name || result.name || resolvedAnalystId;
-                    const cleanName = (expertName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
-                    const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || resolvedAnalystId;
-                    const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
-
-                    mergedSources.push({
-                        title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
-                        url: `https://www.fodda.ai/experts/${expertSlug}`,
-                        origin: 'profile',
-                        type: 'web'
-                    });
-                }
-
-                result.sources_used = mergedSources;
-
-                // 4. Source Tiering & Verbatim Upstream Coverage
-                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
-                    if (typeof s === 'string') {
-                        if (s.includes('/experts/')) return 'web';
-                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
-                        return rawSources.includes(s) ? 'graph' : 'web';
-                    }
-                    const origin = (s.origin || '').toLowerCase();
-                    const type = (s.type || s.kind || '').toLowerCase();
-                    const url = (s.url || '').toLowerCase();
-
-                    if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
-                    if (origin === 'prose' || origin === 'profile') return 'web';
-                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
-                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
-                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
-
-                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
-                    if (url) return 'web';
-                    return 'graph';
-                };
-
-                const execQuoteSources = result.sources_used.filter((s: any) => classifyTier(s) === 'exec_quote');
-                const graphSources = result.sources_used.filter((s: any) => classifyTier(s) === 'graph');
-                const suppSources = result.sources_used.filter((s: any) => classifyTier(s) === 'supplemental');
-                const webSources = result.sources_used.filter((s: any) => classifyTier(s) === 'web');
-
-                // Render explicit upstream coverage verbatim if present; fall back to graphSources check only if absent
-                if (upstreamCoverage != null && typeof upstreamCoverage === 'string' && upstreamCoverage.trim() !== '') {
-                    result.coverage = upstreamCoverage;
-                } else {
-                    result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
-                }
-
-                const parts: string[] = [reportText];
-
-                if (result.timing_ms != null) {
-                    parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
-                }
-
-                if (result.coverage) {
-                    parts.push(`\n--- COVERAGE: ${result.coverage} ---`);
-                }
-
-                const isPartialOrThin = (result.coverage || '').toUpperCase() === 'PARTIAL' || (result.coverage || '').toLowerCase() === 'thin' || (result.coverage || '').toLowerCase() === 'out';
-                if (isPartialOrThin && graphSources.length === 0 && execQuoteSources.length === 0) {
-                    parts.push(`--- PLATFORM NOTE (Deliver in third-person platform voice) ---\nThis Human Agent doesn't have a lot of information to respond to that request — and we didn't find a lot of new insights from the Fodda database.`);
-                }
-
-                if (result.sources_used && Array.isArray(result.sources_used) && result.sources_used.length > 0) {
-                    const formatLine = (s: any) => {
-                        if (typeof s === 'string') return `- ${s}`;
-                        const name = s.title || s.label || s.name || s.id || s.slug || 'Source';
-                        return s.url ? `- ${name}: ${s.url}` : `- ${name}`;
-                    };
-
-                    const sourceSections: string[] = ['--- SOURCES USED ---'];
-                    if (graphSources.length > 0) {
-                        sourceSections.push(`[Graph Sources]\n${graphSources.map(formatLine).join('\n')}`);
-                    }
-                    if (execQuoteSources.length > 0) {
-                        sourceSections.push(`[Executive Quotes]\n${execQuoteSources.map(formatLine).join('\n')}`);
-                    }
-                    if (suppSources.length > 0) {
-                        sourceSections.push(`[Supplemental Data]\n${suppSources.map(formatLine).join('\n')}`);
-                    }
-                    if (webSources.length > 0) {
-                        sourceSections.push(`[Web Sources]\n${webSources.map(formatLine).join('\n')}`);
-                    }
-                    parts.push(sourceSections.join('\n\n'));
-                }
-                if (result.referrals && Array.isArray(result.referrals) && result.referrals.length > 0) {
-                    const activeAnalysts = getAnalysts();
-                    const coverageLower = (result.coverage || 'ok').toLowerCase().trim();
-                    const isFullCoverage = coverageLower === 'in' || coverageLower === 'full';
-                    const qTokens = specificQueryTokens(query);
-
-                    const activeReferrals = result.referrals.filter((r: any) => {
-                        const refId = (r.id || r.analyst_id || r.slug || r.name || '').toLowerCase().trim();
-                        const found = activeAnalysts.find((a: any) => {
-                            const aId = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
-                            return aId === refId || (a.name && a.name.toLowerCase().trim() === refId);
-                        });
-                        if (found) {
-                            const st = (found.status || (found as any).Status || '').toLowerCase().trim();
-                            if (st && st !== 'active') return false;
-                        }
-                        const rStatus = (r.status || r.Status || '').toLowerCase().trim();
-                        if (rStatus && rStatus !== 'active') return false;
-
-                        // Referral gating per §2.A.4: on FULL coverage, suppress unless reason shares content token with query
-                        if (isFullCoverage) {
-                            const reasonText = `${r.reason || ''} ${r.topics?.join(' ') || ''}`.toLowerCase();
-                            const sharesToken = qTokens.some(t => t.length >= 3 && reasonText.includes(t));
-                            if (!sharesToken) return false;
-                        }
-
-                        return true;
-                    });
-
-                    if (activeReferrals.length > 0) {
-                        const refLines = activeReferrals.map((r: any, i: number) =>
-                            `${i + 1}. ${r.name} by ${r.curator || 'unknown'} — ${r.reason || 'related expertise'}`
-                        );
-                        parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
-                    }
-                }
-                if (result.speaker_note) {
-                    parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
-                }
-
-                if (result.book_a_call) {
-                    const callText = result.book_a_call.rate_display
-                        ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
-                        : (result.book_a_call.url || '');
-                    parts.push(`--- BOOK A CALL: ${callText} ---`);
-                }
-
-                if (result.partial_credit_warning || result.credit_note) {
-                    parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
-                }
-                const humanAgentNextMoves = generateConsultNextMoves(
-                    result,
-                    query,
-                    resolvedAnalystId || analyst_id,
-                    {
-                        currentAnalystId: resolvedAnalystId || analyst_id,
-                        knownBrand: resolvedCompany || getKnownBrand(),
-                    },
-                    getGraphs(),
-                    getAnalysts()
-                );
-                sessionTracker.recordNextMoves(humanAgentNextMoves, query);
-
-                const consultClosing = renderConsultClosingEnvelope(humanAgentNextMoves);
-                if (consultClosing.text) {
-                    parts.push(`\n\n${consultClosing.text}`);
-                }
-
-                const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
-                if (consultWithheld) return consultWithheld;
-                return {
-                    coverage: result.coverage,
-                    next_moves: humanAgentNextMoves,
-                    sources_used: result.sources_used,
-                    ...(result.analyst ? { analyst: result.analyst } : {}),
-                    book_a_call: result.book_a_call ?? null,
-                    content: [{ type: 'text' as const, text: parts.join('\n') }]
-                };
-            } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
-                if (trialResult) return trialResult;
-                if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
-                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
-                        error: `Human Agent consultation timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment, or use search_graph / get_expert_intelligence for faster results.`,
-                        analyst_id,
-                        timeout: true
-                    }) }] };
-                }
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            // Proactive routing: if target is explicitly a synthetic analyst, route directly before any API call
+            const isSyntheticMatch = match && (
+                match.type === 'synthetic' ||
+                match.agent_type === 'synthetic' ||
+                match.kind === 'synthetic' ||
+                (match.graphSubType === 'synthetic' || match.graphSubType === 'domain' || match.graphSubType === 'curated')
+            );
+            if (isSyntheticMatch) {
+                return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
             }
+            return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
         }
     );
 
@@ -4895,7 +4923,7 @@ export async function createServer(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process. Checks for connected Fodda credentials and provides the direct sign-in link (https://www.fodda.ai/join-experts) if unlinked. Instruct the agent/LLM to manage expectations immediately. When asking the expert for their topic focus first and then their recency window, explicitly explain the flow: "Second, here\'s the flow: you provide answers in this chat session, then we\'ll run a background research project on your public work, then we run an AI probe of your expertise and reasoning style, and finally schedule a 15–20 minute audio interview to explore your forward-looking predictions, contrarian views, and practical problem-solving — filling the gaps that chat history alone cannot capture. You\'ll get to review everything before anything is submitted. One important thing before we start: nothing is saved to Fodda until you complete all the steps and submit at the end. Your work so far lives only in this chat — if you stop partway, come back to **this same conversation** to continue. If you start a fresh chat, we\'ll have to redo the analysis (and your answers here will probably be lost)." When indexing or analyzing expert data, reassure them: "And remember, nothing gets sent to the Fodda servers without your sign off. One important thing before we start: nothing is saved to Fodda until you complete all the steps and submit at the end. Your work so far lives only in this chat — if you stop partway, come back to **this same conversation** to continue. If you start a fresh chat, we\'ll have to redo the analysis (and your answers here will probably be lost)." If the expert says they need to stop, pause, or come back later at ANY stage before the final submit, the agent MUST remind them: "No problem — just make sure you return to this same chat. Nothing is saved on Fodda\'s side yet; a new conversation would start over." Do not announce "I\'ll read back through your conversation history" until you actually begin the analysis. Display the expertise map (Prompt B) before the voice study (Prompt A). When presenting the expertise map JSON to the expert, label it "Expertise Review - Step 1" and introduce it with: "This JSON file contains our analysis of your expertise - and is a file format that we use to help AI get to answers quicker. The details reflect the themes above. If you are not happy about something I have included, just provide the feedback and I will run the exercise again to update the document." Never use the title "Iteration Feedback Invitation". Prepend the briefs with: "We\'ll use these to set up your Human Agent." After showing the briefs, you MUST present both consent links inline BEFORE asking for acceptance: Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy). Only after the expert has been shown these links, tell them exactly what to type: Reply "reviewed - I accept the terms". Never solicit or record consent before the links have been shown in the conversation.\n\n[INTERACTIVE PROMPTS - REQUIRED IF SUPPORTED]\nDo not ask for topic focus and recency window as open prose questions. If your client exposes an interactive selection or option-chip tool, you MUST use it to present both questions as tappable options, asked in a single pass rather than sequentially.\nQ1 - Topic focus (single select, max 4 options): derive 3 candidate focus areas from what you already know of this expert\'s work, plus a final option "Analyze broadly across all of it". Options must be specific to this expert. Never use generic placeholder categories.\nQ2 - Recency window (single select): "90 days", "120 days (default)", "12 months", "All time". Do not state or output any framing about older material being demoted to legacy canon.\nQ3 - Preferred 1-hour consultation rate (single select): "If a Fodda client wishes to book a 1-on-1 video call with you, what is your preferred hourly fee? (Options: No Calls, 250 USD/hr, 500 USD/hr, 750 USD/hr, 1,000 USD/hr, 2,000 USD/hr)". Record this value under callPrice in submit_basic_info.\nIf no interactive tool is available, fall back to a numbered list of the same options and ask the expert to reply with numbers.\n\n[FLOW VISUALIZATION - REQUIRED IF SUPPORTED]\nBefore asking the two questions, show the expert the full onboarding path. If your client has a diagram, SVG, or HTML rendering tool, render it as a horizontal stepper with the current stage marked "You are here". Use Fodda\'s brand accent color #663399 for the active stage, highlights, and connectors. The "You are here" label and Stage 5 theme cards MUST stay legible on any page background (this often renders on a dark/black page): give the "You are here" label a solid #663399 fill with #ffffff text - do NOT use a pale #f5f0ff pill with light-grey text, which vanishes on dark backgrounds. FOR THEME-SELECTION CARDS (STAGE 5): Never pair a hard-coded light fill (#f5f0ff) with theme-inherited foreground text (which flips to white/near-white in dark mode). Either (1) use native client surface and text tokens for card backgrounds and body text so light/dark mode auto-adjusts, reserving #663399 for borders, checkboxes, and active dots; or (2) if prescribing exact hexes, ALWAYS pin foreground and background together — a #f5f0ff fill MUST carry dark-purple text (#3C3489 or #26215C), never inherited or theme-default text.\nStages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live. (Note: Progress is only saved to Fodda after the final submit).\nRestate the stepper at the start of each subsequent stage so the expert always knows where they are and what remains. If no rendering tool is available, output it as a text ladder with a marker on the current stage.',
+        'Begin the Fodda expert onboarding process to create an authorized Human Agent (Digital Twin). Verifies credentials, fetches onboarding prompts, and presents the step-by-step onboarding flow. If credentials are missing, returns the direct linking URL (https://www.fodda.ai/join-experts).',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },

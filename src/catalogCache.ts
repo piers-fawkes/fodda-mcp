@@ -122,11 +122,27 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         topics = undefined;
     }
 
+    const is_human_agent = Boolean(
+        a.is_human_agent ||
+        a.is_digital_twin ||
+        a.isVerifiedRealPerson ||
+        a.is_verified_real_person ||
+        a.type === 'human_agent' ||
+        a.type === 'human_twin' ||
+        a.kind === 'human_agent' ||
+        a.kind === 'human_twin' ||
+        a.agent_type === 'human_agent' ||
+        a.agent_type === 'human_twin'
+    );
+    const slug = a.expertSlug || a.expert_slug || a.slug || a.analyst_id || (is_human_agent ? a.id : undefined);
+
     return {
         ...a,
         analyst_id,
         name,
         description,
+        is_human_agent,
+        slug: slug ? String(slug).trim() : undefined,
         ...(expert_in ? { expert_in } : {}),
         ...(outside_their_lane ? { outside_their_lane } : {}),
         ...(topics ? { topics } : {}),
