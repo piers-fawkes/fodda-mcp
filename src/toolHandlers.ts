@@ -3885,16 +3885,17 @@ export async function createServer(
     // --- generate_visual ---
     server.tool(
         'generate_visual',
-        'Create a presentation-ready data visualization from research findings. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat.',
+        'Create a presentation-ready data visualization from research findings. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. Highlight focal entity using top-level "focus":"Name" or per-item "focus":true.',
         {
             chart_type: z.enum(['cultural_shifts', 'competitive_compass', 'trend_constellation', 'implication_ladder', 'innovation_pathway', 'opportunity_map']).describe('The type of visualization to generate'),
-            data: z.string().describe('JSON string containing the chart data. Structure depends on chart_type. cultural_shifts: {shifts:[{from,to}]}. competitive_compass: {brands:[{name,x,y,focus?:boolean}], axes:{left,right,top,bottom}}. trend_constellation: {trends:[{name,x,y,focus?:boolean}], connections:[{from,to,strength}]}. implication_ladder: {signal,trend,so_what,do_what}. innovation_pathway: {now,near_term,future}. opportunity_map: {items:[{name,consumer_desire,market_activity,focus?:boolean}], x_label?:string, y_label?:string}'),
+            data: z.string().describe('JSON string containing chart data. Optional top-level "focus":"Name" or per-item "focus":true highlights key entity in brand accent. cultural_shifts: {shifts:[{from,to}]}. competitive_compass: {brands:[{name,x,y,focus?:boolean}], axes:{left,right,top,bottom}, focus?:string}. trend_constellation: {trends:[{name,x,y,focus?:boolean}], connections:[{from,to,strength}], focus?:string}. implication_ladder: {signal,trend,so_what,do_what}. innovation_pathway: {now,near_term,future}. opportunity_map: {items:[{name,consumer_desire,market_activity,focus?:boolean}], x_label?:string, y_label?:string, focus?:string}'),
         },
         { title: 'Generate Visual', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ chart_type, data }) => {
             try {
                 const { renderCulturalShifts, renderCompetitiveCompass, renderTrendConstellation, renderImplicationLadder, renderInnovationPathway, renderWhiteSpaceMap } = await import('./svgVisuals.js');
                 const parsed = JSON.parse(data);
+                const focusTarget = typeof parsed.focus === 'string' ? parsed.focus : parsed.focal_brand || parsed.focal_item || parsed.focal_trend || parsed.focus_brand;
                 let svg = '';
 
                 switch (chart_type) {
@@ -3902,10 +3903,10 @@ export async function createServer(
                         svg = renderCulturalShifts(parsed.shifts || parsed);
                         break;
                     case 'competitive_compass':
-                        svg = renderCompetitiveCompass(parsed.brands || parsed, parsed.axes || { left: 'Traditional', right: 'Innovative', top: 'Premium', bottom: 'Mass' });
+                        svg = renderCompetitiveCompass(parsed.brands || parsed, parsed.axes || { left: 'Traditional', right: 'Innovative', top: 'Premium', bottom: 'Mass' }, focusTarget);
                         break;
                     case 'trend_constellation':
-                        svg = renderTrendConstellation(parsed.trends || parsed, parsed.connections || []);
+                        svg = renderTrendConstellation(parsed.trends || parsed, parsed.connections || [], focusTarget);
                         break;
                     case 'implication_ladder':
                         svg = renderImplicationLadder(parsed);
@@ -3914,7 +3915,7 @@ export async function createServer(
                         svg = renderInnovationPathway(parsed);
                         break;
                     case 'opportunity_map':
-                        svg = renderWhiteSpaceMap(parsed.items || parsed, parsed.x_label, parsed.y_label);
+                        svg = renderWhiteSpaceMap(parsed.items || parsed, parsed.x_label, parsed.y_label, focusTarget);
                         break;
                 }
 

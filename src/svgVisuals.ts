@@ -92,7 +92,8 @@ export function renderCulturalShifts(shifts: Array<{ from: string; to: string }>
  */
 export function renderCompetitiveCompass(
     brands: Array<{ name: string; x: number; y: number; focus?: boolean; is_focus?: boolean; highlight?: boolean }>,
-    axisLabels: { left: string; right: string; top: string; bottom: string }
+    axisLabels: { left: string; right: string; top: string; bottom: string },
+    focusBrand?: string
 ): string {
     const size = 460;
     const margin = 50;
@@ -107,7 +108,12 @@ export function renderCompetitiveCompass(
         const rawY = typeof brand.y === 'number' ? Math.max(0.06, Math.min(0.94, brand.y)) : 0.5;
         const px = margin + rawX * plotArea;
         const py = margin + (1 - rawY) * plotArea;
-        const isFocal = Boolean(brand.focus || brand.is_focus || brand.highlight);
+        const isFocal = Boolean(
+            brand.focus ||
+            brand.is_focus ||
+            brand.highlight ||
+            (focusBrand && brand.name?.trim().toLowerCase() === focusBrand.trim().toLowerCase())
+        );
 
         const nodeFill = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
         const nodeStroke = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
@@ -128,9 +134,9 @@ export function renderCompetitiveCompass(
     <!-- Rectilinear 90° Axis Lines -->
     <line x1="${margin}" y1="${center}" x2="${size - margin}" y2="${center}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
     <line x1="${center}" y1="${margin}" x2="${center}" y2="${size - margin}" stroke="var(--fodda-line)" stroke-width="1" stroke-dasharray="3 3" shape-rendering="crispEdges"/>
-    <!-- Axis Labels anchored inward above horizontal axis to prevent side clipping -->
-    <text x="${margin + 6}" y="${center - 8}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="start">${escapeXml(leftText)}</text>
-    <text x="${size - margin - 6}" y="${center - 8}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="end">${escapeXml(rightText)}</text>
+    <!-- Axis Labels anchored inward below horizontal axis line to prevent baseline collision with brand labels -->
+    <text x="${margin + 6}" y="${center + 14}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="start">${escapeXml(leftText)}</text>
+    <text x="${size - margin - 6}" y="${center + 14}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="end">${escapeXml(rightText)}</text>
     <text x="${center}" y="${margin - 14}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(axisLabels?.top || '')}</text>
     <text x="${center}" y="${size - margin + 22}" font-size="10" font-weight="600" fill="var(--fodda-muted)" text-anchor="middle">${escapeXml(axisLabels?.bottom || '')}</text>
     ${dots}
@@ -143,7 +149,8 @@ export function renderCompetitiveCompass(
  */
 export function renderTrendConstellation(
     trends: Array<{ name: string; x: number; y: number; focus?: boolean; is_focus?: boolean; highlight?: boolean }>,
-    connections: Array<{ from: number; to: number; strength: number }>
+    connections: Array<{ from: number; to: number; strength: number }>,
+    focusTrend?: string
 ): string {
     const size = 480;
     const margin = 55;
@@ -170,7 +177,12 @@ export function renderTrendConstellation(
         const rawY = typeof trend.y === 'number' ? Math.max(0.06, Math.min(0.94, trend.y)) : 0.5;
         const px = margin + rawX * plotArea;
         const py = margin + rawY * plotArea;
-        const isFocal = Boolean(trend.focus || trend.is_focus || trend.highlight);
+        const isFocal = Boolean(
+            trend.focus ||
+            trend.is_focus ||
+            trend.highlight ||
+            (focusTrend && trend.name?.trim().toLowerCase() === focusTrend.trim().toLowerCase())
+        );
 
         const nodeFill = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
         const nodeStroke = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-line)';
@@ -269,7 +281,8 @@ export function renderInnovationPathway(stages: { now: string; near_term: string
 export function renderWhiteSpaceMap(
     items: Array<{ name: string; consumer_desire: number; market_activity: number; focus?: boolean; is_focus?: boolean; highlight?: boolean }>,
     xLabel?: string,
-    yLabel?: string
+    yLabel?: string,
+    focusItem?: string
 ): string {
     const size = 460;
     const margin = 55;
@@ -288,7 +301,12 @@ export function renderWhiteSpaceMap(
         const rawY = typeof item.consumer_desire === 'number' ? Math.max(0.06, Math.min(0.94, item.consumer_desire)) : 0.5;
         const px = margin + rawX * plotArea;
         const py = margin + (1 - rawY) * plotArea;
-        const isFocal = Boolean(item.focus || item.is_focus || item.highlight);
+        const isFocal = Boolean(
+            item.focus ||
+            item.is_focus ||
+            item.highlight ||
+            (focusItem && item.name?.trim().toLowerCase() === focusItem.trim().toLowerCase())
+        );
 
         const nodeFill = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-bg)';
         const nodeStroke = isFocal ? 'var(--fodda-accent)' : 'var(--fodda-line)';

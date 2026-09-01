@@ -63,7 +63,20 @@ assert(compassSvg.includes('stroke="var(--fodda-line)"'), 'competitive_compass u
 assert(!compassSvg.includes('stroke-dasharray="3 3"/>'), 'competitive_compass has NO artificial pairwise connector lines');
 assert(compassSvg.includes('text-anchor="start"'), 'competitive_compass anchors left label inward');
 assert(compassSvg.includes('text-anchor="end"'), 'competitive_compass anchors right label inward');
+assert(compassSvg.includes('y="244"'), 'competitive_compass places horizontal axis labels below axis line at y=244');
 assert(compassSvg.includes('fill="var(--fodda-accent)"'), 'competitive_compass highlights focal brand with var(--fodda-accent)');
+
+// Test top-level focus string parameter (e.g. focus: "On")
+const topLevelFocusCompass = renderCompetitiveCompass(
+    [
+        { name: 'Nike', x: 0.7, y: 0.8 },
+        { name: 'On', x: 0.8, y: 0.7 },
+        { name: 'New Balance', x: 0.3, y: 0.5 },
+    ],
+    { left: 'Performance', right: 'Lifestyle', top: 'Premium', bottom: 'Mass Market' },
+    'On'
+);
+assert(topLevelFocusCompass.includes('fill="var(--fodda-accent)"'), 'competitive_compass highlights focal brand passed via top-level focus string');
 
 // Test competitive_compass neutral when no focus is given
 const neutralCompassSvg = renderCompetitiveCompass(

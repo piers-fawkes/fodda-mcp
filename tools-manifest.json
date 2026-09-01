@@ -107,7 +107,7 @@
       "kind": "tool",
       "bills_as": "free",
       "category": "Visual",
-      "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat."
+      "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. Highlight focal entity using top-level \"focus\":\"Name\" or per-item \"focus\":true."
     },
     {
       "name": "get_capabilities",
