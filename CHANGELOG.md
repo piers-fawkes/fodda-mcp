@@ -5,6 +5,23 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.41] - 2026-08-29
+
+### Added & Changed (Expert Onboarding Completion Warning & Pause Handling — `Brief MCP — Onboarding Completion Warning (No Draft Saving).md`)
+- **Onboarding Completion Warning (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Added clear expectation-setting warning up front in `begin_expert_onboarding` (both tool description, runtime `identityWarning` prompt, and `sanitizeOnboardingPrompts` regex replacements) informing the expert:
+    *"One important thing before we start: nothing is saved to Fodda until you complete all the steps and submit at the end. Your work so far lives only in this chat — if you stop partway, come back to **this same conversation** to continue. If you start a fresh chat, we'll have to redo the analysis (and your answers here will probably be lost)."*
+  - Positioned privacy reassurance (*"And remember, nothing gets sent to the Fodda servers without your sign off"*) and completion warning adjacent to reinforce privacy without misleading on persistence.
+- **Mid-Flow Pause / Interruption Handling (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Added instructions requiring the agent to remind experts if they need to pause, stop, or return later before final submit:
+    *"No problem — just make sure you return to this same chat. Nothing is saved on Fodda's side yet; a new conversation would start over."*
+- **Flow Stepper Progress Note (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Updated flow stepper framing across `begin_expert_onboarding`, `submit_basic_info`, `expert_onboarding_research`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `schedule_interview`, and `systemPrompt.ts` to include the one-line progress save note:
+    *"Stages: 1. Focus and window -> 2. Background research on your public work -> 3. Expertise map and voice study (you review) -> 4. Terms and consent -> 5. Choose your themes -> 6. Expertise Deep-Dive (Audio) -> Human Agent live. (Note: Progress is only saved to Fodda after the final submit)."*
+- **Verification**:
+  - Executed `npm run build` updating `tools-manifest.json` and compiling TypeScript without errors.
+  - Executed `npm test` verifying server health and version `1.46.41` on port 3099.
+
 ## [1.46.40] - 2026-08-28
 
 ### Added & Fixed (Zero-Retention Alert Suppression & Query Privacy — `briefs/brief_mcp_zero_retention_alert_suppression.md`)
