@@ -50,6 +50,7 @@ export function computeMomentum(row: any, now?: number): string {
         return 'slowing';
     }
     // Fallback based on lifecycle or evidence count
+    if (row.lifecycle === 'fading') return 'slowing';
     if (row.lifecycle === 'emerging' || row.lifecycle === 'building') return 'steady';
     if ((row.evidence_count || row.evidenceCount || 0) >= 5) return 'steady';
     return 'steady';

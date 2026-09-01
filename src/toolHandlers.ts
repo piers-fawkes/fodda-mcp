@@ -2280,11 +2280,35 @@ export async function createServer(
             lifecycleDist[t.lifecycle] = (lifecycleDist[t.lifecycle] || 0) + 1;
         }
 
-        // Evidence velocity
-        const sortedTimeline = [...activityTimeline].sort((a, b) => b.period.localeCompare(a.period));
-        const currentQ = sortedTimeline[0]?.count || 0;
-        const prevQ = sortedTimeline[1]?.count || 0;
-        const velocityTrend = currentQ > prevQ ? 'accelerating' : currentQ === prevQ ? 'stable' : 'decelerating';
+        // Evidence velocity — calendar aligned quarters
+        const now = new Date();
+        const curYear = now.getFullYear();
+        const curQNum = Math.ceil((now.getMonth() + 1) / 3);
+        const curQKey = `${curYear}-Q${curQNum}`;
+
+        const prevQNum = curQNum === 1 ? 4 : curQNum - 1;
+        const prevQYear = curQNum === 1 ? curYear - 1 : curYear;
+        const prevQKey = `${prevQYear}-Q${prevQNum}`;
+
+        const twoQNum = prevQNum === 1 ? 4 : prevQNum - 1;
+        const twoQYear = prevQNum === 1 ? prevQYear - 1 : prevQYear;
+        const twoQKey = `${twoQYear}-Q${twoQNum}`;
+
+        const threeQNum = twoQNum === 1 ? 4 : twoQNum - 1;
+        const threeQYear = twoQNum === 1 ? twoQYear - 1 : twoQYear;
+        const threeQKey = `${threeQYear}-Q${threeQNum}`;
+
+        const currentQ = quarterCounts[curQKey] || 0;
+        const prevQ = quarterCounts[prevQKey] || 0;
+
+        // Compare recent two quarters vs previous two quarters for stable velocity trend
+        const recentQCount = currentQ + prevQ;
+        const priorQCount = (quarterCounts[twoQKey] || 0) + (quarterCounts[threeQKey] || 0);
+
+        let velocityTrend = 'stable';
+        if (recentQCount > priorQCount) velocityTrend = 'accelerating';
+        else if (recentQCount < priorQCount && priorQCount > 0) velocityTrend = 'decelerating';
+        else velocityTrend = 'stable';
 
         // Build profile
         const profile = {
@@ -2297,6 +2321,8 @@ export async function createServer(
                 evidence_velocity: {
                     current_quarter: currentQ,
                     previous_quarter: prevQ,
+                    current_quarter_period: curQKey,
+                    previous_quarter_period: prevQKey,
                     trend: velocityTrend,
                 },
                 evidence_by_type: evidenceByType,

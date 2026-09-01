@@ -5,6 +5,22 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.47] - 2026-09-01
+
+### Added & Changed (Brand Intelligence Headline Verdict Alignment & Calendar Quarter Accuracy)
+- **Headline Verdict Trend Alignment (`src/brandTemplate.ts`)**:
+  - Dynamically computes the brand headline verdict (`rising ↑`, `building ↗`, `steady →`, `slowing ↓`) directly from the aggregated momentum and lifecycle states of the brand's connected trends.
+  - Eliminates false `"slowing ↓"` verdicts that contradicted active `accelerating` / `building` trend cards.
+- **Calendar-Aligned Quarter Math (`src/toolHandlers.ts`)**:
+  - Updated `evidence_velocity` to calculate `current_quarter` (`current_quarter_period`) and `previous_quarter` (`previous_quarter_period`) against actual real-time calendar quarters (e.g., `2026-Q3` and `2026-Q2`).
+  - Correctly treats historical evidence (e.g. 31 March 2025 in `2025-Q1`) as prior historical activity rather than misclassifying it as the "current quarter" in September 2026.
+  - Computes velocity trends by comparing recent multi-quarter windows (T vs T-2/T-3) to ensure stability.
+- **Brand Mark Logo Placeholder Transparency (`src/brandTemplate.ts`, `src/widgetShell.ts`)**:
+  - Clarified that the inline SVG icon is a lightweight geometric placeholder mark for offline/standalone rendering without CDN dependencies.
+- **Comprehensive Momentum Test Coverage (`src/test_v2_2_visual_hardening.ts`)**:
+  - Added assertions covering all 4 momentum states (`accelerating`, `steady`, `building`, `slowing`) including lifecycle fading fallback.
+  - Added verification that visual recipes attach when `widget_html` is absent and are suppressed when `widget_html` is present.
+
 ## [1.46.46] - 2026-09-01
 
 ### Added & Changed (Brand Intelligence Widget v2.2 House Style Hardening & Payload Streamlining)

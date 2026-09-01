@@ -321,10 +321,51 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const lcDist = profile.summary?.lifecycle_distribution || {};
     const buildingCount = (lcDist.building || 0) + (lcDist.emerging || 0);
     const fadingCount = (lcDist.fading || 0) + (lcDist.mature || 0);
-    let rawVelocityTrend = profile.summary?.evidence_velocity?.trend || 'stable';
-    if (fadingCount > buildingCount && rawVelocityTrend === 'accelerating') {
-        rawVelocityTrend = 'decelerating';
+
+    // Enrich trends with lifecycle if missing
+    trends.forEach((t: any) => {
+        if (!t.lifecycle || t.lifecycle === 'unknown') {
+            t.lifecycle = computeLifecycle(t);
+        }
+    });
+
+    // Derive headline verdict from per-trend momentums and lifecycle distribution
+    let accCount = 0;
+    let bldCount = 0;
+    let stdCount = 0;
+    let slowCount = 0;
+
+    trends.forEach((t: any) => {
+        const m = typeof t.momentum === 'string' ? t.momentum : (t.momentum?.trend || t.momentum?.state || '');
+        if (m === 'accelerating' || t.momentum?.fastMover) accCount++;
+        else if (m === 'building') bldCount++;
+        else if (m === 'slowing' || m === 'fading') slowCount++;
+        else if (m === 'steady') stdCount++;
+        else {
+            // fallback to lifecycle if momentum not explicitly set
+            if (t.lifecycle === 'emerging') accCount++;
+            else if (t.lifecycle === 'building') bldCount++;
+            else if (t.lifecycle === 'fading') slowCount++;
+            else stdCount++;
+        }
+    });
+
+    let rawVelocityTrend = 'stable';
+    const totalWithMomentum = accCount + bldCount + stdCount + slowCount;
+    if (totalWithMomentum > 0) {
+        if ((accCount + bldCount) > slowCount && accCount >= bldCount && accCount > 0) {
+            rawVelocityTrend = 'accelerating';
+        } else if ((accCount + bldCount) > slowCount && bldCount > 0) {
+            rawVelocityTrend = 'building';
+        } else if (slowCount > (accCount + bldCount) && slowCount > stdCount) {
+            rawVelocityTrend = 'decelerating';
+        } else {
+            rawVelocityTrend = 'stable';
+        }
+    } else {
+        rawVelocityTrend = profile.summary?.evidence_velocity?.trend || 'stable';
     }
+
     const velocity = velocityClass(rawVelocityTrend);
     const timeline = profile.activity_timeline || [];
 

@@ -54,6 +54,16 @@ export interface CatalogGraph {
     skill_tool_name?: string; // The specific tool to call on the skill server
     // Graph page URL on fodda.ai (populated from Airtable webpageURL field)
     webpage_url?: string | null;
+    // Ingestion-time 5-pillar editorial metadata (v1.46.44)
+    core_tension?: string | null | undefined;
+    matched_human_twin_slug?: string | null | undefined;
+    expert_stance_quote?: string | null | undefined;
+    cross_graph_signals?: Array<{
+        graph_id: string;
+        signal_type: 'validates' | 'contrasts';
+        connection_summary: string;
+        source_case_study?: string | undefined;
+    }> | undefined;
 }
 
 export interface CatalogResponse {

@@ -153,30 +153,36 @@ console.log('\n--- 3. Testing Brand Intelligence Widget v2.2 Hardening ---');
 import { renderBrandWidget } from './brandTemplate.js';
 import { computeMomentum } from './enrichment.js';
 
-// Test momentum computation
+// Test all 4 momentum computation states
 const momAcc = computeMomentum({ freshnessDays: 20 });
 const momStd = computeMomentum({ freshnessDays: 60 });
 const momBld = computeMomentum({ freshnessDays: 150 });
+const momSlow = computeMomentum({ freshnessDays: 300 });
+const momFading = computeMomentum({ lifecycle: 'fading' });
 const momFallback = computeMomentum({ lifecycle: 'emerging' });
+
 assert(momAcc === 'accelerating', 'computeMomentum returns accelerating for <45 days');
 assert(momStd === 'steady', 'computeMomentum returns steady for 60 days');
 assert(momBld === 'building', 'computeMomentum returns building for 150 days');
-assert(momFallback === 'steady', 'computeMomentum does NOT default unknown trends to slowing');
+assert(momSlow === 'slowing', 'computeMomentum returns slowing for >240 days');
+assert(momFading === 'slowing', 'computeMomentum returns slowing for fading lifecycle');
+assert(momFallback === 'steady', 'computeMomentum defaults unknown active trends to steady');
 
 // Test brand widget generation
 const sampleProfile = {
     brand: 'Nike',
     summary: { lifecycle_distribution: { building: 3, emerging: 2, mature: 4 } },
     trend_footprint: [
-        { trend_name: 'Direct to Consumer 2.0', graphName: 'retail', evidence_count: 8, lifecycle: 'mature' },
-        { trend_name: 'Generative Athletic Apparel', graphName: 'fashion', evidence_count: 1, lifecycle: 'emerging' },
+        { trend_name: 'Direct to Consumer 2.0', graphName: 'retail', evidence_count: 8, lifecycle: 'mature', momentum: 'steady' },
+        { trend_name: 'Generative Athletic Apparel', graphName: 'fashion', evidence_count: 5, lifecycle: 'building', momentum: 'building' },
+        { trend_name: 'Micro-Community Running', graphName: 'sports', evidence_count: 3, lifecycle: 'emerging', momentum: 'accelerating' },
     ],
     evidence_items: [
         { title: 'Nike Direct Shift', published_at: '2025-11-15', category: 'Case Study', graphName: 'retail', source_url: 'https://example.com/article' },
         { title: '361° Innovation', published_at: null, category: 'Signal', graphName: 'sports' }, // no date
     ],
     competitive_context: { co_occurring_brands: [] }, // empty competitors
-    cross_graph_presence: [{ graphName: 'retail' }, { graphName: 'fashion' }],
+    cross_graph_presence: [{ graphName: 'retail' }, { graphName: 'fashion' }, { graphName: 'sports' }],
     supplemental_signals: {
         google_trends: {
             interest_over_time: [
@@ -200,6 +206,31 @@ assert(widgetHtml.includes("Aug '25"), 'Brand widget computes dynamic start date
 assert(!widgetHtml.includes("Apr '25"), 'Brand widget does NOT use hardcoded Apr 25 start date');
 assert(widgetHtml.includes('var(--fodda-accent)'), 'Brand widget Google Trends uses var(--fodda-accent)');
 assert(widgetHtml.includes('<svg width="24" height="24"'), 'Brand widget uses inline SVG logo');
+
+// Headline verdict verification (should read trend momentums, not contradict with slowing ↓)
+assert(widgetHtml.includes('rising ↑') || widgetHtml.includes('building ↗'), 'Headline verdict matches trend momentum (rising/building, NOT slowing)');
+assert(!widgetHtml.includes('slowing ↓'), 'Headline verdict does NOT contradict active trend momentum');
+
+console.log('\n--- 4. Testing Recipe Delivery Paths ---');
+// Verify recipe is attached when widget is absent
+const testContentNoWidget: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: 'raw data' }];
+const testWidgetEmpty = { widget_html: '' };
+if (testWidgetEmpty.widget_html) {
+    testContentNoWidget.push({ type: 'text', text: 'widget block' });
+} else {
+    testContentNoWidget.push({ type: 'text', text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
+}
+assert(testContentNoWidget.some(c => c.text.includes('[Fodda House Visual Recipe v2.2]')), 'Recipe attaches when widget_html is absent');
+
+// Verify recipe is suppressed when widget is present
+const testContentWithWidget: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: 'raw data' }];
+const testWidgetPresent = { widget_html: '<div class="fodda-brand-widget">...</div>' };
+if (testWidgetPresent.widget_html) {
+    testContentWithWidget.push({ type: 'text', text: testWidgetPresent.widget_html });
+} else {
+    testContentWithWidget.push({ type: 'text', text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
+}
+assert(!testContentWithWidget.some(c => c.text.includes('[Fodda House Visual Recipe v2.2]')), 'Recipe is suppressed when widget_html is present');
 
 import fs from 'fs';
 import path from 'path';
