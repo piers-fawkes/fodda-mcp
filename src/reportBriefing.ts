@@ -567,21 +567,35 @@ export async function buildReportEditorialBriefing(params: {
 
     const { primaryRows, networkRows } = partitionReportResults(rawRows, primaryGraphId);
 
-    // 2. Match Human Expert Digital Twin
-    const matchedExpert = matchHumanExpertTwin(query, primaryGraph);
+    // 2. Pre-computed Ingestion-Time 5-Pillar Metadata (from CE / API)
+    const graphEditorial = (primaryGraphId && data?.graph_editorial?.[primaryGraphId]) || {};
+    const precomputedCoreTension = primaryGraph?.core_tension || graphEditorial.core_tension || rawRows[0]?.core_tension;
+    const precomputedSignals = primaryGraph?.cross_graph_signals || graphEditorial.cross_graph_signals || rawRows[0]?.cross_graph_signals;
+    const precomputedTwinSlug = primaryGraph?.matched_human_twin_slug || graphEditorial.matched_human_twin_slug || rawRows[0]?.matched_human_twin_slug;
+    const precomputedExpertQuote = primaryGraph?.expert_stance_quote || graphEditorial.expert_stance_quote || rawRows[0]?.expert_stance_quote;
 
-    // 3. Single Unified Gemini Synthesis Call
-    const geminiOutput = await runGeminiSynthesis({
+    // 3. Match Human Expert Digital Twin (Prefer pre-computed twin slug if available)
+    let matchedExpert: CatalogAnalyst | undefined;
+    if (precomputedTwinSlug) {
+        matchedExpert = getAnalysts().find(a => (a.slug || a.expertSlug || a.analyst_id) === precomputedTwinSlug);
+    }
+    if (!matchedExpert) {
+        matchedExpert = matchHumanExpertTwin(query, primaryGraph);
+    }
+
+    // 4. Single Unified Gemini Synthesis Call (if any fields need LLM fill)
+    const needsGemini = !precomputedCoreTension || !precomputedSignals || precomputedSignals.length === 0;
+    const geminiOutput = needsGemini ? await runGeminiSynthesis({
         query,
         reportName: reportTitle,
         primaryRows,
         networkRows,
         expert: matchedExpert,
-    });
+    }) : null;
 
-    // 4. Construct Topline Hook (Pillar 1)
-    let toplineHookText = geminiOutput?.topline_hook?.slice(0, 350);
-    let isHookGenerated = true;
+    // 5. Construct Topline Hook (Pillar 1)
+    let toplineHookText = precomputedCoreTension || geminiOutput?.topline_hook?.slice(0, 350);
+    let isHookGenerated = !precomputedCoreTension && Boolean(geminiOutput?.topline_hook);
 
     if (!toplineHookText) {
         isHookGenerated = false;
@@ -641,32 +655,50 @@ export async function buildReportEditorialBriefing(params: {
 
     // 6. Construct Network Signals (Pillar 3)
     const networkSignals: NetworkSignal[] = [];
-    const candidateNetRows = networkRows.slice(0, 3);
 
-    for (let i = 0; i < candidateNetRows.length; i++) {
-        const nr = candidateNetRows[i];
-        const gid = nr?.graph_id || nr?.graphId || '';
-        const matchedGraph = getLiveGraphs().find(g => g.graph_id === gid) || getGraphs().find(g => g.graph_id === gid);
-        const sourceReport = matchedGraph?.name || nr?.graph_name || nr?.graphName || gid || 'Industry Report';
-        const curator = matchedGraph?.curator || matchedGraph?.company || nr?.curator || nr?.organization || 'Research Partner';
+    if (precomputedSignals && Array.isArray(precomputedSignals) && precomputedSignals.length > 0) {
+        for (const sig of precomputedSignals.slice(0, 3)) {
+            const gid = sig.graph_id || '';
+            const matchedGraph = getLiveGraphs().find(g => g.graph_id === gid) || getGraphs().find(g => g.graph_id === gid);
+            const sourceReport = matchedGraph?.name || gid || 'Industry Report';
+            const curator = matchedGraph?.curator || matchedGraph?.company || 'Research Partner';
+            networkSignals.push({
+                title: sig.source_case_study || `Signal from ${sourceReport}`,
+                source_report: sourceReport,
+                graph_id: gid,
+                curator: curator ? String(curator) : undefined,
+                signal_type: sig.signal_type || 'validates',
+                snippet: (sig.connection_summary || sig.source_case_study || '').slice(0, 250),
+                url: matchedGraph?.webpage_url || `https://app.fodda.ai/graphs/${encodeURIComponent(gid)}`,
+            });
+        }
+    } else {
+        const candidateNetRows = networkRows.slice(0, 3);
+        for (let i = 0; i < candidateNetRows.length; i++) {
+            const nr = candidateNetRows[i];
+            const gid = nr?.graph_id || nr?.graphId || '';
+            const matchedGraph = getLiveGraphs().find(g => g.graph_id === gid) || getGraphs().find(g => g.graph_id === gid);
+            const sourceReport = matchedGraph?.name || nr?.graph_name || nr?.graphName || gid || 'Industry Report';
+            const curator = matchedGraph?.curator || matchedGraph?.company || nr?.curator || nr?.organization || 'Research Partner';
 
-        // Match LLM signal classification if available
-        const matchedGeminiSig = geminiOutput?.network_signals?.find(s => s.graph_id === gid || s.graph_id === sourceReport);
-        const signalType = matchedGeminiSig?.signal_type || 'related';
-        const ev = extractEvidenceFromRow(nr);
-        const snippet = (matchedGeminiSig?.connection || ev.snippets[0] || nr?.summary || nr?.description || nr?.name || nr?.trend_name || '').slice(0, 250);
-        const rawScore = Number(nr?.relevance_score ?? nr?.score);
+            // Match LLM signal classification if available
+            const matchedGeminiSig = geminiOutput?.network_signals?.find(s => s.graph_id === gid || s.graph_id === sourceReport);
+            const signalType = matchedGeminiSig?.signal_type || 'related';
+            const ev = extractEvidenceFromRow(nr);
+            const snippet = (matchedGeminiSig?.connection || ev.snippets[0] || nr?.summary || nr?.description || nr?.name || nr?.trend_name || '').slice(0, 250);
+            const rawScore = Number(nr?.relevance_score ?? nr?.score);
 
-        networkSignals.push({
-            title: nr?.name || nr?.trend_name || `Signal from ${sourceReport}`,
-            source_report: sourceReport,
-            graph_id: gid,
-            curator: curator ? String(curator) : undefined,
-            signal_type: signalType,
-            snippet,
-            score: !isNaN(rawScore) ? rawScore : undefined,
-            url: matchedGraph?.webpage_url || `https://app.fodda.ai/graphs/${encodeURIComponent(gid)}`,
-        });
+            networkSignals.push({
+                title: nr?.name || nr?.trend_name || `Signal from ${sourceReport}`,
+                source_report: sourceReport,
+                graph_id: gid,
+                curator: curator ? String(curator) : undefined,
+                signal_type: signalType,
+                snippet,
+                score: !isNaN(rawScore) ? rawScore : undefined,
+                url: matchedGraph?.webpage_url || `https://app.fodda.ai/graphs/${encodeURIComponent(gid)}`,
+            });
+        }
     }
 
     // 7. Construct Expert Spotlight (Pillar 4)
@@ -676,7 +708,7 @@ export async function buildReportEditorialBriefing(params: {
         const isCleanSlug = /^[a-z0-9-]+$/.test(rawSlug);
         const consultUrl = isCleanSlug ? `https://expert.fodda.ai/${rawSlug}` : undefined;
 
-        const position = (geminiOutput?.expert_stance || matchedExpert.what_they_offer || `Offers strategic advisory on ${matchedExpert.expert_in || 'market shifts'}.`).slice(0, 250);
+        const position = (precomputedExpertQuote || geminiOutput?.expert_stance || matchedExpert.what_they_offer || `Offers strategic advisory on ${matchedExpert.expert_in || 'market shifts'}.`).slice(0, 250);
         const whyMatched = `Specializes in ${matchedExpert.expert_in || matchedExpert.name}'s strategic domain`;
 
         expertSpotlight = {
@@ -687,7 +719,7 @@ export async function buildReportEditorialBriefing(params: {
             position,
             consult_url: consultUrl,
             consult_tool: 'consult_human_agent',
-            generated: Boolean(geminiOutput?.expert_stance),
+            generated: !precomputedExpertQuote && Boolean(geminiOutput?.expert_stance),
         };
     }
 
