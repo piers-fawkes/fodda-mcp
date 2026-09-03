@@ -83,6 +83,14 @@ console.log(resp.output_text);
 
 > **Legacy:** If you're using `chat.completions.create()` with function calling, define a custom function that calls the Fodda REST API. See [fodda.ai/connect](https://app.fodda.ai) for details.
 
+### Connect from ChatGPT (ChatGPT Apps Directory)
+
+To connect Fodda to ChatGPT via custom action / apps integration:
+- Server URL: `https://mcp.fodda.ai/chatgpt`
+- Authentication: OAuth 2.0 via Clerk (`https://app.fodda.ai`)
+- Resource metadata discovery: `https://mcp.fodda.ai/.well-known/oauth-protected-resource/chatgpt`
+- Curated tool profile: 24 tools covering trends, brand tracking, earnings intelligence, expert intelligence, and visual generation.
+
 ### Generic Streamable HTTP Client
 
 Connect to the `/mcp` endpoint using HTTP `POST` (Streamable HTTP) with `Authorization: Bearer YOUR_API_KEY`:

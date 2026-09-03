@@ -63,6 +63,23 @@ const unquote = (s) => {
   return b;
 };
 
+const indexPath = path.resolve(__dirname, '../src/index.ts');
+const indexSrc = fs.readFileSync(indexPath, 'utf8');
+
+// Parse OFFERING_SCOPED_TOOLS from src/index.ts
+const offeringScopedTools = {};
+const scopedToolsMatch = indexSrc.match(/export const OFFERING_SCOPED_TOOLS:\s*Record<string,\s*string\[\]>\s*=\s*\{([\s\S]*?)\n\};/);
+if (scopedToolsMatch) {
+  const block = scopedToolsMatch[1];
+  const profileMatches = block.split(/(?:^|\n)\s*'([a-z0-9-]+)':\s*\[/g).slice(1);
+  for (let i = 0; i < profileMatches.length; i += 2) {
+    const slug = profileMatches[i];
+    const toolsStr = profileMatches[i + 1] ? profileMatches[i + 1].split('],')[0] : '';
+    const toolNames = [...toolsStr.matchAll(/'([a-z0-9_]+)'/g)].map(m => m[1]);
+    offeringScopedTools[slug] = toolNames;
+  }
+}
+
 const tools = [];
 for (const seg of src.split('server.tool(').slice(1)) {
   const found = seg.match(STR);
@@ -70,11 +87,21 @@ for (const seg of src.split('server.tool(').slice(1)) {
   const name = unquote(found[0]);
   if (!/^[a-z0-9_]+$/.test(name)) continue;
   const description = unquote(found[1]).replace(/\s+/g, ' ').trim();
+
+  // Determine which profiles expose this tool: 'mcp' (all tools) + offering profiles
+  const profiles = ['mcp'];
+  for (const [slug, scopedList] of Object.entries(offeringScopedTools)) {
+    if (scopedList.includes(name)) {
+      profiles.push(slug);
+    }
+  }
+
   tools.push({
     name,
     kind: 'tool',
     bills_as: BILLS_AS[name] || 'free',
     category: CATEGORY[name] || 'Other',
+    profiles,
     description,
   });
 }

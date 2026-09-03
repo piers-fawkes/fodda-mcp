@@ -63,7 +63,7 @@ app.use((req, res, next) => {
 
 // Deprecation middleware for legacy URL parameters (?api_key=... / ?user_id=...)
 const LEGACY_DEPRECATION_PATHS = [
-    '/sse', '/mcp', '/messages', '/copilot',
+    '/sse', '/mcp', '/messages', '/copilot', '/chatgpt',
     '/brand-intelligence', '/topic-research', '/deep-research',
     '/earnings-intelligence', '/expert-consult'
 ];
@@ -99,17 +99,19 @@ app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
 // ensuring RFC 8414 issuer matching and RFC 9207 callback iss validation succeed end-to-end.
 const CLERK_ISSUER = process.env.CLERK_ISSUER_URL || 'https://clerk.fodda.ai';
 
-app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+app.get(['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/:slug'], (req, res) => {
+    const slug = req.params.slug;
+    const resourceUrl = slug ? `${getServiceUrl()}/${slug}` : getServiceUrl();
     res.status(200).json({
-        resource: getServiceUrl(),
+        resource: resourceUrl,
         authorization_servers: [CLERK_ISSUER],
     });
 });
-app.get('/.well-known/oauth-protected-resource/mcp', (_req, res) => {
-    res.status(200).json({
-        resource: `${getServiceUrl()}/mcp`,
-        authorization_servers: [CLERK_ISSUER],
-    });
+
+app.get('/.well-known/openai-apps-challenge', (_req, res) => {
+    const challenge = process.env.OPENAI_APPS_CHALLENGE || '';
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.status(200).send(challenge);
 });
 
 // ---------------------------------------------------------------------------
@@ -216,6 +218,32 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'get_supplemental_context',
         'check_supplemental_status',
     ],
+    'chatgpt': [
+        'get_capabilities',
+        'search_graph',
+        'search_statistics',
+        'search_insights',
+        'get_validated_trends',
+        'brand_tracker',
+        'get_company_earnings',
+        'get_earnings_intelligence',
+        'get_earnings_divergence',
+        'deep_research_topic',
+        'check_research_status',
+        'consult_analyst',
+        'consult_human_agent',
+        'list_analysts',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'get_my_account',
+        'read_url',
+        'get_supplemental_context',
+        'check_supplemental_status',
+        'generate_visual',
+    ],
 };
 
 const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; description: string }> = {
@@ -249,6 +277,11 @@ const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; desc
         title: 'Fodda Copilot Market Intelligence',
         description: 'Curated market intelligence, trend insights & expert evidence for Microsoft Copilot Studio agents.',
     },
+    'chatgpt': {
+        name: 'ai.fodda/chatgpt',
+        title: 'Fodda Market Intelligence for ChatGPT',
+        description: 'Expert-curated knowledge, brand, research & earnings intelligence across PSFK expert graphs.',
+    },
 };
 
 app.get([
@@ -259,6 +292,7 @@ app.get([
     '/.well-known/earnings-intelligence', '/.well-known/earnings-intelligence.json',
     '/.well-known/expert-consult', '/.well-known/expert-consult.json',
     '/.well-known/copilot', '/.well-known/copilot.json',
+    '/.well-known/chatgpt', '/.well-known/chatgpt.json',
 ], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const matchedOffering = Object.keys(OFFERING_CARD_METADATA).find(slug => req.path.includes(slug));
@@ -979,7 +1013,7 @@ export async function resolveMcpToken(token: string, websiteBaseUrl: string): Pr
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/c/:token'], async (req, res) => {
+app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
@@ -1084,12 +1118,13 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         } else if (!sessionId && req.method === 'POST') {
             const body = req.body;
             if (body?.method === 'initialize') {
-                // Directory connector policy: /mcp requires authentication — Clerk OAuth,
+                // Directory connector policy: All offering routes require authentication — Clerk OAuth,
                 // an API key, or a /c/<token> connection URL. An anonymous handshake gets
                 // 401 + WWW-Authenticate (RFC 9728) so MCP clients auto-start the OAuth
                 // flow. Set MCP_ALLOW_ANONYMOUS=true to re-open the anonymous trial lane.
-                if ((offeringSlug === 'mcp' || offeringSlug === 'copilot') && !isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
-                    res.setHeader('WWW-Authenticate', 'Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp"');
+                if (!isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
+                    const metadataSlug = offeringSlug || 'mcp';
+                    res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/${metadataSlug}"`);
                     return res.status(401).json({
                         jsonrpc: '2.0',
                         error: { code: -32000, message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.' },

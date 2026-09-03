@@ -105,7 +105,7 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
  * GRAPH_DISABLED → mention it so the user knows they opted out
  * CREDITS → trial-aware handling (auto-upgrade or prompt for email)
  */
-export async function handleAccessError(err: any, toolName: string, userId?: string, apiKey?: string): Promise<{ isError: boolean; content: { type: 'text'; text: string }[] }> {
+export async function handleAccessError(err: any, toolName: string, userId?: string, apiKey?: string, source?: string): Promise<{ isError: boolean; content: { type: 'text'; text: string }[] }> {
     const accessType = classifyAccessError(err);
     if (accessType === 'forbidden') {
         // Silent skip — return empty result, NOT an error, so the LLM moves on
@@ -121,6 +121,20 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
         return { isError: false, content: [{ type: 'text' as const, text: JSON.stringify({ status: 'LEGACY_TRIAL_RETIRED', message: errorMsg, signupUrl }) }] };
     }
     if (accessType === 'credits') {
+        if (source === 'chatgpt') {
+            return {
+                isError: true,
+                content: [{
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                        error: 'QUOTA_EXHAUSTED',
+                        message: 'Monthly limit reached. Manage your Fodda account at https://app.fodda.ai/account.',
+                        manage_url: 'https://app.fodda.ai/account'
+                    }, null, 2)
+                }]
+            };
+        }
+
         const isUnauthenticated = (!apiKey || apiKey === '') && (!userId || userId === 'anonymous' || userId === 'spt_agent');
         if (isUnauthenticated) {
             return {

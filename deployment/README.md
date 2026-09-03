@@ -35,3 +35,4 @@ All deployments require the following environment variables:
 - `FODDA_API_URL`: URL to the Fodda API (e.g., `https://api.fodda.ai`)
 - `FODDA_MCP_SECRET`: Shared secret for HMAC signing (must match Fodda API config).
 - `PORT`: Server port (default 8080).
+- `OPENAI_APPS_CHALLENGE`: Optional token served at `/.well-known/openai-apps-challenge` for ChatGPT Apps Directory domain verification.

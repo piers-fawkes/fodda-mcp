@@ -123,13 +123,49 @@ function buildRenderInstructions(opts: {
 }
 
 /**
+ * Response hygiene filter for ChatGPT Apps Directory submission.
+ * Drops internal keys:
+ * - starting with `_` (e.g. `_account`, `_raw`, `_upstream_usage`)
+ * - `record_id`, `airtable_*` / keys matching airtable
+ * - `debug`, `trace`, `internal`
+ * - values matching `^rec[A-Za-z0-9]{14}$` (Airtable record IDs)
+ * Preserves all chainable IDs: analyst_id, graph_id, node_id, job_id, trend_id, id, session_id.
+ */
+export function sanitizePayloadForChatGpt(obj: any): any {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+        return obj
+            .filter(item => !(typeof item === 'string' && /^rec[A-Za-z0-9]{14}$/.test(item)))
+            .map(sanitizePayloadForChatGpt);
+    }
+    if (typeof obj === 'object') {
+        const cleaned: Record<string, any> = {};
+        for (const [key, value] of Object.entries(obj)) {
+            // Drop internal keys
+            if (/^(_|record_id$|airtable|debug|trace|internal)/i.test(key)) {
+                continue;
+            }
+            // Drop Airtable record ID string values
+            if (typeof value === 'string' && /^rec[A-Za-z0-9]{14}$/.test(value)) {
+                continue;
+            }
+            cleaned[key] = sanitizePayloadForChatGpt(value);
+        }
+        return cleaned;
+    }
+    return obj;
+}
+
+/**
  * Append a low-credit warning to the response data if API calls are running low.
  * Utilizes new dynamic Stripe links and upsell data provided by the Fodda API.
  *
  * Also surfaces upstream X-Usage-* header warnings (approaching-limit, overage-active)
  * injected by foddaRequest() as _upstream_usage.
  */
-function appendUsageWarning(data: any, userEmail?: string) {
+function appendUsageWarning(data: any, userEmail?: string, sessionSource?: string) {
+    if (sessionSource === 'chatgpt') return;
+
     // ── Upstream header-based warnings (X-Usage-Warning / X-Usage-Percent / X-Usage-Overage-Tokens) ──
     if (data?._upstream_usage) {
         const u = data._upstream_usage;
@@ -657,6 +693,7 @@ export async function createServer(
                 );
                 sessionTracker.setZeroQueryRetention(isZero);
 
+                const isChatGpt = sessionSource === 'chatgpt';
                 const status: Record<string, any> = {
                     plan: account.plan || 'Unknown',
                     queryRetention: account.query_retention || (isZero ? 'zero (contract)' : 'standard'),
@@ -666,8 +703,10 @@ export async function createServer(
                 // Flag overage status when tokens_remaining is negative (overage billing active)
                 if (typeof status.api_calls_remaining === 'number' && status.api_calls_remaining < 0) {
                     status.overage_active = true;
-                    status.overage_tokens = Math.abs(status.api_calls_remaining);
-                    status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.50/API call.`;
+                    if (!isChatGpt) {
+                        status.overage_tokens = Math.abs(status.api_calls_remaining);
+                        status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.50/API call.`;
+                    }
                 }
                 if (account.tokens_used !== undefined) status.api_calls_used = account.tokens_used;
                 if (account.reset_date) status.reset_date = account.reset_date;
@@ -683,14 +722,16 @@ export async function createServer(
                     if (account.profile.jobTitle) status.profile.job_title = account.profile.jobTitle;
                 }
                 status.manage_url = 'https://app.fodda.ai/account';
-                if (account.stripe_link) status.stripe_link = account.stripe_link;
-                if (account.upsell && account.upsell.plan && account.upsell.price > 0) {
-                    status.upgrade_offer = {
-                        target: account.upsell.plan,
-                        price: `$${account.upsell.price}`,
-                        link: account.upsell.link,
-                        action: `Upgrade to ${account.upsell.plan}`
-                    };
+                if (!isChatGpt) {
+                    if (account.stripe_link) status.stripe_link = account.stripe_link;
+                    if (account.upsell && account.upsell.plan && account.upsell.price > 0) {
+                        status.upgrade_offer = {
+                            target: account.upsell.plan,
+                            price: `$${account.upsell.price}`,
+                            link: account.upsell.link,
+                            action: `Upgrade to ${account.upsell.plan}`
+                        };
+                    }
                 }
                 status.graphs_url = 'https://app.fodda.ai/graphs';
                 // Surface per-tool costs so the agent can explain spend before running queries
@@ -707,6 +748,19 @@ export async function createServer(
                 const status = err.response?.status;
                 const errData = err.response?.data?.error || err.response?.data || {};
                 if (status === 402 || errData.code === 'CREDITS_EXHAUSTED' || errData.status === 'CREDITS_EXHAUSTED') {
+                    if (sessionSource === 'chatgpt') {
+                        return {
+                            content: [{
+                                type: 'text' as const,
+                                text: JSON.stringify({
+                                    error: 'QUOTA_EXHAUSTED',
+                                    api_calls_remaining: 0,
+                                    message: 'Monthly limit reached. Manage your Fodda account at https://app.fodda.ai/account.',
+                                    manage_url: 'https://app.fodda.ai/account',
+                                }, null, 2)
+                            }]
+                        };
+                    }
                     return {
                         content: [{
                             type: 'text' as const,
@@ -1284,7 +1338,7 @@ export async function createServer(
                     if (allRows.length === 0 && creditRejection) {
                         const trialResult = await handleTrialCreditExhaustion(creditRejection, apiKey, userId);
                         if (trialResult) return trialResult;
-                        return await handleAccessError(creditRejection, 'search_graph', userId, apiKey);
+                        return await handleAccessError(creditRejection, 'search_graph', userId, apiKey, sessionSource);
                     }
                     const fanoutTotal = results.filter(r => r.status === 'fulfilled').reduce((sum, r: any) => sum + (r.value?.total || r.value?.rows?.length || (Array.isArray(r.value) ? r.value.length : 0)), 0);
                     const fanoutOnTopicTotal = results.filter(r => r.status === 'fulfilled').reduce((sum, r: any) => sum + (r.value?.on_topic_total || r.value?.total_count || r.value?.total || r.value?.rows?.length || (Array.isArray(r.value) ? r.value.length : 0)), 0);
@@ -1476,7 +1530,7 @@ export async function createServer(
                 }
 
                 // ── Low-credit warning for all users — utilizes dynamic Stripe links from API ──
-                appendUsageWarning(data, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId), sessionSource);
 
                 // ── Supplemental data — macro context for queries with stats intent or thin coverage ──
                 let supplemental: { google_trends: any; census_retail: any } = { google_trends: null, census_retail: null };
@@ -1628,7 +1682,7 @@ export async function createServer(
                 // returned as structured fields, not baked into a raw message string.)
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'search_graph', userId, apiKey);
+                return await handleAccessError(err, 'search_graph', userId, apiKey, sessionSource);
             }
         }
     );
@@ -1658,7 +1712,7 @@ export async function createServer(
                 if (direction) body.direction = direction;
                 let data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/neighbors`, apiKey, resolveUserId(userId, uid), body);
 
-                appendUsageWarning(data, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1688,7 +1742,7 @@ export async function createServer(
                 data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/evidence`, apiKey, resolveUserId(userId, uid), body);
                 // Enrich evidence with pre-formatted citations
                 if (data?.evidence) data.evidence = enrichEvidence(data.evidence);
-                appendUsageWarning(data, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 const withheld = await settleOrWithhold({ queryTypeCode: 'standalone_evidence', apiKey, userId: resolveUserId(userId, uid), query: for_node_id }, 'get_evidence');
                 if (withheld) return withheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
@@ -1719,7 +1773,7 @@ export async function createServer(
                 if (data && typeof data === 'object') {
                     data.theme = getFoddaTheme(graphId);
                 }
-                appendUsageWarning(data, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -1790,7 +1844,7 @@ export async function createServer(
                 });
                 sessionTracker.recordNextMoves(data?.next_moves, trend_id);
 
-                appendUsageWarning(data, resolveUserId(userId));
+                appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
                 if (adjacentWithheld) return adjacentWithheld;
 
@@ -2648,7 +2702,8 @@ export async function createServer(
                             data.next_moves = nextMoves;
                         }
 
-                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(data, null, 2), nextMoves, query });
+                        const supplementalPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(supplementalPayload, null, 2), nextMoves, query });
                     } catch (err: any) {
                         const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Unknown error';
                         activeSupplementalJobs.set(jobId, { status: 'FAILED', error: errMsg });
@@ -2664,7 +2719,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -2767,7 +2822,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -2830,7 +2885,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -2905,7 +2960,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3018,7 +3073,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3081,7 +3136,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3136,7 +3191,7 @@ export async function createServer(
                 };
                 const trialResult = await handleTrialCreditExhaustion(err.causeErr, apiKey, userId);
                 if (trialResult) return { ...trialResult, content: [refusal, ...trialResult.content] };
-                const accessResult = await handleAccessError(err.causeErr, toolName, userId, apiKey);
+                const accessResult = await handleAccessError(err.causeErr, toolName, userId, apiKey, sessionSource);
                 return { ...accessResult, content: [refusal, ...accessResult.content] };
             }
             const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
@@ -3229,11 +3284,12 @@ export async function createServer(
                 const earningsWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || brand || ticker || sector || '' }, 'get_earnings_intelligence');
                 if (earningsWithheld) return earningsWithheld;
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3278,11 +3334,12 @@ export async function createServer(
                 const divergenceWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || sector || industry || 'divergence' }, 'get_earnings_divergence');
                 if (divergenceWithheld) return divergenceWithheld;
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                const divergencePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                return { content: [{ type: 'text' as const, text: JSON.stringify(divergencePayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3359,7 +3416,8 @@ export async function createServer(
                     case 'coverage': {
                         // Free endpoint — no billing
                         const data = await foddaRequest('GET', '/v1/earnings/coverage', apiKey, resolveUserId(userId, uid));
-                        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                        const coveragePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(coveragePayload, null, 2) }] };
                     }
                     default:
                         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'INVALID_VIEW', message: `Unknown view "${view}". Valid views: snapshot, history, qa, compare, guidance, coverage.` }) }] };
@@ -3376,11 +3434,12 @@ export async function createServer(
                 const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: ticker || tickers || sector || view }, 'get_company_earnings');
                 if (withheld) return withheld;
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3424,7 +3483,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey);
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
         }
     );
@@ -4562,9 +4621,9 @@ export async function createServer(
             return {
                 coverage: result.coverage,
                 next_moves: humanAgentNextMoves,
-                sources_used: result.sources_used,
-                ...(result.analyst ? { analyst: result.analyst } : {}),
-                book_a_call: result.book_a_call ?? null,
+                sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
+                ...(result.analyst ? { analyst: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
+                book_a_call: sessionSource === 'chatgpt' ? (result.book_a_call ? sanitizePayloadForChatGpt(result.book_a_call) : null) : (result.book_a_call ?? null),
                 content: [{ type: 'text' as const, text: parts.join('\n') }]
             };
         } catch (err: any) {
@@ -4794,7 +4853,7 @@ export async function createServer(
             return {
                 coverage: result.coverage,
                 next_moves: analystNextMoves,
-                sources_used: result.sources_used,
+                sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 content: [{ type: 'text' as const, text: parts.join('\n') }]
             };
         } catch (err: any) {

@@ -7,10 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed (Discovery-card pricing wording)
-- **`.well-known` discovery cards no longer mention SPT (`src/index.ts:282`, `:311`, `public/.well-known/mcp-server.json`)**:
-  - Replaced `pricingTier.tokenModel` text "Canonical token costs defined in API metering.ts ($0.50 via SPT / API credits)" with "Metered per API call — see https://fodda.ai/pricing". The field is not part of the MCP `server.json` schema and has no consumer in any Fodda repo; it was human-readable SPT/token wording on a public URL (house rule: SPT is machine-only).
-  - *Verification:* `grep -rn "via SPT" src public` → 0 matches after change; string-literal change only, no logic touched.
+## [1.46.49] - 2026-09-03
+
+### Added & Changed (ChatGPT Apps Directory Profile, Dynamic RFC 9728 Discovery & Universal 401 Gate)
+- **Dedicated `/chatgpt` Profile Route (`src/index.ts`)**:
+  - Mounted `/chatgpt` streamable HTTP endpoint scoped to the approved 24-tool profile for ChatGPT Apps Directory submission.
+  - Added discovery card metadata (`/.well-known/chatgpt`, `/.well-known/chatgpt.json`) and legacy query param deprecation gate (`/chatgpt?api_key=...` returns 401).
+- **Universal 401 Gate on Unauthenticated Initialize (`src/index.ts`)**:
+  - Enforced RFC 9728 authentication gate across ALL 8 offering routes (`/mcp`, `/copilot`, `/chatgpt`, `/brand-intelligence`, `/topic-research`, `/deep-research`, `/earnings-intelligence`, `/expert-consult`).
+  - Unauthenticated `initialize` requests return HTTP 401 with JSON-RPC error `-32000` and `WWW-Authenticate: Bearer resource_metadata="${serviceUrl}/.well-known/oauth-protected-resource/${metadataSlug}"`.
+- **Generalized RFC 9728 Discovery Endpoint (`src/index.ts`)**:
+  - Implemented dynamic `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/:slug` routes returning RFC 9728 resource metadata with `authorization_servers: [CLERK_ISSUER]`.
+- **OpenAI Apps Challenge Verification Endpoint (`src/index.ts`)**:
+  - Added `/.well-known/openai-apps-challenge` serving `process.env.OPENAI_APPS_CHALLENGE` with `Content-Type: text/plain; charset=utf-8`.
+  - Documented variable in `deployment/README.md` and `.env.example`.
+- **Response Hygiene & Sanitization (`src/toolHandlers.ts`)**:
+  - Added and exported `sanitizePayloadForChatGpt()` dropping keys starting with `_`, `record_id`, `airtable_*`, `debug`, `trace`, `internal`, and Airtable `rec*` strings.
+  - Strictly preserves all chainable IDs: `analyst_id`, `node_id`, `job_id`, `trend_id`, `id`, `session_id`.
+  - Sanitizes raw payloads on `chatgpt` sessions for `consult_analyst`, `consult_human_agent`, `get_company_earnings`, `get_earnings_intelligence`, `get_earnings_divergence`, `get_supplemental_context`, and `check_supplemental_status`.
+- **Commerce Silence on ChatGPT Session Source (`src/errorHandling.ts`, `src/toolHandlers.ts`)**:
+  - Gated `appendUsageWarning` to suppress `$0.50/API call` overage notes and credit warnings when `sessionSource === 'chatgpt'`.
+  - Updated `handleAccessError`: on credit exhaustion with `source === 'chatgpt'`, returns clean `{ error: 'QUOTA_EXHAUSTED', message: 'Monthly limit reached. Manage your Fodda account at https://app.fodda.ai/account.', manage_url: 'https://app.fodda.ai/account' }` with no Stripe URLs, top-up links, or upgrade buttons.
+  - Updated `get_my_account`: suppresses `stripe_link`, `upgrade_offer`, `overage_note`, and `overage_tokens` when `sessionSource === 'chatgpt'`.
+- **Tools Manifest & Documentation (`scripts/generate-tools-manifest.mjs`, `tools-manifest.json`, `README.md`, `docs/chatgpt-submission.md`)**:
+  - Added `profiles` column to `tools-manifest.json` mapping each tool to its exposed offering profiles (exactly 24 tools in `chatgpt`).
+  - Added ChatGPT connection section to `README.md`.
+  - Authored submission manifest and pre-submission checklist in `docs/chatgpt-submission.md`.
+- **Live Verification Suite (`scripts/test_chatgpt_live.mjs`)**:
+  - Built and executed comprehensive verification suite against live server instance on port 8999 testing challenge token, discovery endpoints, legacy deprecation, sanitizer rules, commerce silence, and unauthenticated initialize on all 8 routes.
+  - **Live Curl 401 Matrix:**
+    | Route | HTTP Status | WWW-Authenticate Header | JSON-RPC Error |
+    |---|---|---|---|
+    | `/mcp` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/mcp"` | `-32000` |
+    | `/copilot` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/copilot"` | `-32000` |
+    | `/chatgpt` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/chatgpt"` | `-32000` |
+    | `/brand-intelligence` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/brand-intelligence"` | `-32000` |
+    | `/topic-research` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/topic-research"` | `-32000` |
+    | `/deep-research` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/deep-research"` | `-32000` |
+    | `/earnings-intelligence` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/earnings-intelligence"` | `-32000` |
+    | `/expert-consult` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/expert-consult"` | `-32000` |
 
 ## [1.46.48] - 2026-09-01
 
