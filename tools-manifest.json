@@ -497,7 +497,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading), each with cited evidence and source attribution. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence."
+      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading). If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence."
     },
     {
       "name": "search_insights",
