@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [Unreleased]
+
+### Changed (Tool description review hygiene for directory listings)
+- **Removed web-search disparagement from tool descriptions (`src/toolHandlers.ts`)** — OpenAI/Anthropic directory content rules disallow disparaging other services. `search_graph`, `get_neighbors`, `search_insights`, `brand_tracker`, `consult_analyst`, `consult_human_agent` no longer claim to "outperform web search" / do what "web search cannot provide"; they state Fodda's curated, cited value directly.
+- **Removed commerce phrasing on the commerce-free surface** — `consult_analyst`/`consult_human_agent` `session_id` no longer says "follow-ups cost less" (now "keeps context across the session").
+- **Softened model-behavior directives** — "Never display raw IDs…" on analyst_id params is now factual ("This is an internal identifier; the expert's display name is in the response"); "Referrals MUST be presented…" is now descriptive. Kept legitimate node-id input-usage guidance ("do NOT guess or invent IDs").
+- **Airtable Offerings source-of-truth updated to match** (`tbl93DJ627r81zKVP`): records `recFtEJxNvJntS2Y7` (search_graph) and `recx1gIdBiHi16E5r` (get_neighbors) description fields patched so a future keyed build stays clean. Full 77-row scan: 0 rows contain any flagged phrase.
+- *Verification:* `npm run build` clean (Cost Silence Guard passed); phrase grep over `src/toolHandlers.ts` and Airtable both return 0.
+
 ## [1.46.49] - 2026-09-03
 
 ### Added & Changed (ChatGPT Apps Directory Profile, Dynamic RFC 9728 Discovery & Universal 401 Gate)

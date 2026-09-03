@@ -1044,7 +1044,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading) — not generic web summaries. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where curated expert intelligence outperforms web search.',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading). If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -1690,7 +1690,7 @@ export async function createServer(
     // --- get_neighbors ---
     server.tool(
         'get_neighbors',
-        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links that search alone wouldn\'t surface. Returns curated editorial connections between trends that web search cannot provide. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result.',
+        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
@@ -2466,7 +2466,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates intelligence that would require dozens of separate web searches to assemble.',
+        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates cited, cross-graph intelligence into a single brand profile.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -3081,7 +3081,7 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth that web search cannot provide.",
+        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth with source attribution.",
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
@@ -4884,12 +4884,12 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens that produces insights distinct from generic search or standard graph queries. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph.',
+        'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens with a curated evidence base. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Any referrals to other expert graphs are returned in third-person platform voice with an offer to query the referred graph.',
         {
-            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
+            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the synthetic analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
-            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context and follow-ups cost less. Omit for a one-off question."),
+            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context across the session. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -4913,12 +4913,12 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens distinct from generic search or standard graph queries. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Referrals MUST be presented in third-person platform voice (not the expert\'s voice) with an offer to query the referred graph. Response may include `book_a_call` (URL + a pre-written booking sentence shown verbatim) for booking time with the real person — surface it when the user wants to hire or speak to the expert.',
+        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Any referrals to other expert graphs are returned in third-person platform voice with an offer to query the referred graph. Response may include `book_a_call` (URL + a pre-written booking sentence shown verbatim) for booking time with the real person — surface it when the user wants to hire or speak to the expert.',
         {
-            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
+            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
-            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context and follow-ups cost less. Omit for a one-off question."),
+            session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context across the session. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Consult Human Agent (Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -4945,7 +4945,7 @@ export async function createServer(
         'request_deliverable',
         'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, 50k budget, 90-day horizon."',
         {
-            analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). Never display raw IDs or slugs, internal field names, or tool names to the user — refer to the expert by display name."),
+            analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
             brief: z.string().describe("2–5 sentences: audience, goal, constraints. Agents imitate the example in the tool description — be concrete."),
             attachments: z.array(z.object({ content: z.string() })).optional().describe("Optional supporting text files mounted into the analyst's workspace (max 5)."),
