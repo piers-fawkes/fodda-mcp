@@ -138,3 +138,24 @@ OpenAI requires a login **and password** that completes sign-in with no MFA, SMS
 ## 9. Release notes (for the submission form)
 
 v1.46.49 — First ChatGPT Apps Directory build. Dedicated `/chatgpt` profile (24 read-mostly research tools), OAuth 2.1 with dynamic client registration via `clerk.fodda.ai`, RFC 9728 discovery on every route, domain verification at `/.well-known/openai-apps-challenge`. No purchase, sign-up, or scheduling actions are exposed; account management stays at app.fodda.ai. Setup: connect the app, sign in with your Fodda account, then ask a research question.
+
+---
+
+## 10. Demo recording script (film once reviewer sign-in works)
+
+Record a screen capture (~60-90s, 1080p, no audio needed) inside ChatGPT with the Fodda plugin connected. Do the whole thing signed in as the reviewer account so the flow matches what OpenAI's reviewer will see.
+
+Prerequisites (both must be true before filming):
+- App/Clerk password lane is live, and `chatgpt-review@fodda.ai` can sign in with email + password (no code).
+- The plugin is connected in your ChatGPT developer-mode session.
+
+Shot list:
+1. **Connect + auth (0:00-0:20)** — Open ChatGPT plugin/connector settings, add the Fodda plugin, click Connect. Show the Clerk sign-in page, enter `chatgpt-review@fodda.ai` + password, land back in ChatGPT connected. Do not show the password characters.
+2. **Trend research (0:20-0:40)** — Prompt: `What are the emerging trends in luxury retail resale?` Let it call `search_graph`; show the answer with cited evidence and the named expert graph it came from.
+3. **Earnings (0:40-1:00)** — Prompt: `Compare Nike and Lululemon's latest quarterly commentary on inventory and direct-to-consumer.` Show `get_company_earnings` / divergence output with source attribution.
+4. **Brand + evidence (1:00-1:20)** — Prompt: `Track Patagonia's brand footprint across retail and sustainability graphs.` Show `brand_tracker` result; click or expand one evidence citation to show it traces to a source.
+5. **Close (1:20-1:30)** — Brief still frame on a cited result so a paused thumbnail shows real, attributed data.
+
+Do NOT film: any purchase/upgrade/checkout screen (there are none on this profile), account credentials in plain text, or the app's internal tool names ("Human Agent", token/SPT wording).
+
+Host the file somewhere with a stable public URL (Loom unlisted, or a GCS public object) and paste that into the "Demo Recording URL" field.
