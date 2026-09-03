@@ -20,7 +20,7 @@
   "pricingTier": {
     "structure": "free",
     "substance": "metered",
-    "tokenModel": "Canonical token costs defined in API metering.ts ($0.50 via SPT / API credits)"
+    "tokenModel": "Metered per API call — see https://fodda.ai/pricing"
   },
   "resourceSchemes": [
     "fodda://expert/{slug}/insight/{id}",

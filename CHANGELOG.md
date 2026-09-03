@@ -5,6 +5,13 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed (Discovery-card pricing wording)
+- **`.well-known` discovery cards no longer mention SPT (`src/index.ts:282`, `:311`, `public/.well-known/mcp-server.json`)**:
+  - Replaced `pricingTier.tokenModel` text "Canonical token costs defined in API metering.ts ($0.50 via SPT / API credits)" with "Metered per API call — see https://fodda.ai/pricing". The field is not part of the MCP `server.json` schema and has no consumer in any Fodda repo; it was human-readable SPT/token wording on a public URL (house rule: SPT is machine-only).
+  - *Verification:* `grep -rn "via SPT" src public` → 0 matches after change; string-literal change only, no logic touched.
+
 ## [1.46.48] - 2026-09-01
 
 ### Added & Changed (Claude Web MCP Latency Optimization, Live Routing Fix & Telemetry Hook)
