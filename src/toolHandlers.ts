@@ -3258,7 +3258,7 @@ export async function createServer(
             limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
-        { title: 'Query Earnings Call Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Query Earnings Call Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ ticker, brand, industry, sector, search, dateFrom, dateTo, limit, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -3310,7 +3310,7 @@ export async function createServer(
             limit: z.number().int().optional().describe('Max results to return (default 10, max 25)'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
-        { title: 'Detect Earnings Call Divergence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Detect Earnings Call Divergence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ sector, industry, search, dateFrom, dateTo, limit, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -3361,7 +3361,7 @@ export async function createServer(
             sector: z.string().optional().describe("Sector filter for guidance view."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
-        { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         async ({ mode, view, ticker, tickers, period, metrics, analyst, sector, userId: uid }) => {
             const effectiveView = mode || view || 'snapshot';
             try {

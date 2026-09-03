@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Tool annotation accuracy — openWorldHint)
+- **`get_company_earnings`, `get_earnings_intelligence`, `get_earnings_divergence` → `openWorldHint: true`** (`src/toolHandlers.ts`). These were `false` but reach the open web: `get_company_earnings` web-backfills uncovered tickers; the other two call `/v1/supplemental/earnings/*` (the same external-fanout namespace as `get_supplemental_context`) and surface `web_supplemental` provenance. `false` would misrepresent them in the directory annotation review. `get_validated_trends` stays `false` (curated `/v1/earnings/validated-trends`, no web).
+- *Verification:* `npm run build` clean; requires MCP redeploy for the directory editor to re-scan annotations.
+
+
+
 ## [Unreleased]
 
 ### Changed (Tool description review hygiene for directory listings)
