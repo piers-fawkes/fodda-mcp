@@ -85,9 +85,9 @@ console.log(resp.output_text);
 
 ### Connect from ChatGPT (ChatGPT Apps Directory)
 
-To connect Fodda to ChatGPT via custom action / apps integration:
+To connect Fodda to ChatGPT (Apps Directory listing or a custom MCP connection):
 - Server URL: `https://mcp.fodda.ai/chatgpt`
-- Authentication: OAuth 2.0 via Clerk (`https://app.fodda.ai`)
+- Authentication: OAuth 2.1 (PKCE S256, Dynamic Client Registration) — authorization server `https://clerk.fodda.ai` (metadata at `https://clerk.fodda.ai/.well-known/oauth-authorization-server`)
 - Resource metadata discovery: `https://mcp.fodda.ai/.well-known/oauth-protected-resource/chatgpt`
 - Curated tool profile: 24 tools covering trends, brand tracking, earnings intelligence, expert intelligence, and visual generation.
 

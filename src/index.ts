@@ -1226,7 +1226,16 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
 
 // Legacy SSE transport
 app.get('/sse', async (req, res) => {
-    const apiKey = (req.query.api_key as string) || '';
+    const rawSseAuth = (req.headers['authorization'] as string) || '';
+    const apiKey = (req.headers['x-api-key'] as string)
+        || (/^Bearer\s+/i.test(rawSseAuth) ? rawSseAuth.replace(/^Bearer\s+/i, '').trim() : '')
+        || (req.query.api_key as string) || '';
+    // No anonymous use of any offering (Piers, 2026-09-02): the legacy SSE lane
+    // gets the same gate as the Streamable HTTP routes.
+    if (!apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
+        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/mcp"`);
+        return res.status(401).json({ error: 'Authentication required. Use https://mcp.fodda.ai/mcp with OAuth, or your personal connection URL or API key from https://app.fodda.ai.' });
+    }
     const entryId = (req.query.id as string) || '';
     const isEmailId = entryId.includes('@') && entryId.includes('.');
     const userId = (req.query.user_id as string)

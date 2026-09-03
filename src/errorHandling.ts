@@ -145,7 +145,9 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
                         status: 'AUTHENTICATION_REQUIRED',
                         error_code: 'unauthenticated',
                         message: 'No Fodda account credentials or OAuth token detected for this session. Re-authentication required.',
-                        instructions: 'To authenticate with Claude: (1) Re-authenticate or click "Connect" via Clerk OAuth in your connector settings, (2) Or use your personal connection token from https://app.fodda.ai/settings (e.g. https://mcp.fodda.ai/c/<token>), or (3) Add an Authorization header (Bearer sk_live_...).',
+                        instructions: source === 'chatgpt'
+                            ? 'Reconnect Fodda from ChatGPT\'s connected-apps settings to sign in again.'
+                            : 'To authenticate with Claude: (1) Re-authenticate or click "Connect" via Clerk OAuth in your connector settings, (2) Or use your personal connection token from https://app.fodda.ai/settings (e.g. https://mcp.fodda.ai/c/<token>), or (3) Add an Authorization header (Bearer sk_live_...).',
                         reauth_url: 'https://app.fodda.ai/connect',
                         manage_url: 'https://app.fodda.ai/settings'
                     }, null, 2)

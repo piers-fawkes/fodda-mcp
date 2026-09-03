@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     | `/earnings-intelligence` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/earnings-intelligence"` | `-32000` |
     | `/expert-consult` | `401` | `Bearer resource_metadata="http://localhost:8999/.well-known/oauth-protected-resource/expert-consult"` | `-32000` |
 
+- **Post-review fixes (Claude Code walkthrough of 552bf23, 2026-09-03)**:
+  - `/sse` legacy transport now enforces the same no-anonymous gate as the Streamable HTTP routes (`src/index.ts`): honours `X-API-Key` / `Authorization: Bearer` / `?api_key`, otherwise 401 + `WWW-Authenticate` (RFC 9728). Before this fix an unauthenticated `GET /sse` opened an `anonymous` session (verified HTTP 200 `text/event-stream` on the 552bf23 build; HTTP 401 after).
+  - `handleAccessError` unauthenticated branch (`src/errorHandling.ts`): ChatGPT sessions get a ChatGPT re-connect instruction instead of the Claude-connector text.
+  - `README.md` ChatGPT section: authorization server is `https://clerk.fodda.ai` (OAuth 2.1, PKCE S256, DCR), not `app.fodda.ai`.
+  - `docs/chatgpt-submission.md`: corrected OAuth endpoints to the live Clerk metadata (`/oauth/authorize`, `/oauth/token`, `/oauth/register` on `clerk.fodda.ai`); added negative prompts, per-tool annotation justifications, reviewer-account section, release notes; publisher entity marked "confirm".
+  - *Verification:* `npm run build` clean (Cost Silence Guard passed); `scripts/test_chatgpt_live.mjs` all PASS on the rebuilt server; local probe `GET /sse` without credentials → HTTP 401. **Not yet deployed** — production rev `fodda-mcp-00495-nhx` (project `fodda-mcp`, us-east4) is 552bf23 and still serves `/sse` anonymously until the next `deploy_cloud_run.sh` run.
+
 ## [1.46.48] - 2026-09-01
 
 ### Added & Changed (Claude Web MCP Latency Optimization, Live Routing Fix & Telemetry Hook)
