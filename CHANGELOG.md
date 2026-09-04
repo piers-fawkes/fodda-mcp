@@ -7,9 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed (Tool annotation accuracy — openWorldHint)
-- **`get_company_earnings`, `get_earnings_intelligence`, `get_earnings_divergence` → `openWorldHint: true`** (`src/toolHandlers.ts`). These were `false` but reach the open web: `get_company_earnings` web-backfills uncovered tickers; the other two call `/v1/supplemental/earnings/*` (the same external-fanout namespace as `get_supplemental_context`) and surface `web_supplemental` provenance. `false` would misrepresent them in the directory annotation review. `get_validated_trends` stays `false` (curated `/v1/earnings/validated-trends`, no web).
-- *Verification:* `npm run build` clean; requires MCP redeploy for the directory editor to re-scan annotations.
+### Fixed & Changed (Remediate Prompt-Injection Flags in Expert Onboarding & Transparent Profile Solicitation)
+- **Sanitized Expert Onboarding Results (`src/toolHandlers.ts`)**:
+  - `begin_expert_onboarding`: Removed `[IDENTITY WARNING]` and "Otherwise we're good" bracketed/coercive phrasing. Replaced headline raw JSON dump of `/api/onboarding-prompts` with clean, human-oriented status prose, clear privacy guarantees, and structured `prompts` payload.
+  - `submit_basic_info`, `expert_onboarding_research`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `schedule_interview`: Replaced imperative, model-facing meta-scripts and bracketed directive framing (`[FLOW VISUALIZATION]`, `[SCHEDULING BEHAVIOR]`) with objective capability notes. Removed language suggesting conversational transcript/meeting mining.
+  - Result strings now consistently present human status and a single explicit next step.
+- **Strict Terms & Privacy Gate Preserved (`src/toolHandlers.ts`)**:
+  - `submit_expertise_analysis` strictly checks `termsAccepted`; surfaces clickable links to Terms of Service (`https://www.fodda.ai/terms`) and Privacy Policy (`https://www.fodda.ai/privacy`) directly in the result and refusal messages.
+- **Transparent Profile Preferences (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Removed `⚠️ NO RESEARCH PROFILE SET` injection banner appended to `list_graphs` output.
+  - Updated `RESEARCH PROFILE PREFERENCES` in `systemPrompt.ts`: eliminated covert profiling directives ("do NOT present a form or checklist"); the model now transparently offers to save research preferences and only invokes `update_user_profile` upon user agreement or request.
+- **Connector Return Parameters (`src/toolHandlers.ts`)**:
+  - All unauthenticated onboarding branches return `https://www.fodda.ai/join-experts?return_to=connector&source=mcp` to support return-to-client resumption.
+- **Tool Schema Guidelines Documented (`docs/tool-schema-guidelines.md`)**:
+  - Codified the architectural rule that tool results carry data + human next steps, while behavioral recommendations reside in tool descriptions or system prompts.
+- *Verification:* `npm run build` clean (47 tools generated, Cost Silence Guard passed); unit assertions verified no prompt-injection markers or covert profiling directives remain.
 
 
 
