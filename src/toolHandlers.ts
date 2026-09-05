@@ -3489,7 +3489,7 @@ export async function createServer(
             userContext: z.string().describe('Behavioral framing instructions for this person. Format: one sentence of identity, then numbered FRAMING INSTRUCTIONS. Example: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists." Max 2000 chars.'),
             accountContext: z.string().optional().describe('Description of their company: industry, size, key markets, competitive position, mission. Shared across all users on this account. Max 2000 chars.'),
         },
-        { title: 'Update Research Profile', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        { title: 'Update Research Profile', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userContext, accountContext }) => {
             try {
                 const body: Record<string, string> = {};
@@ -3536,7 +3536,7 @@ export async function createServer(
             enabled: z.boolean().describe('true to enable (turn on), false to disable (turn off).'),
             user_email: z.string().optional().describe('Optional. Use ONLY when operating as an Admin on behalf of another user to specify their email.')
         },
-        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ target_id, enabled, user_email }) => {
             try {
                 const body: any = { target_id, enabled };
@@ -4083,7 +4083,7 @@ export async function createServer(
             brands: z.array(z.string()).optional()
                 .describe('For brand_intelligence: brand names to track (e.g., ["Nike", "Patagonia"])'),
         },
-        { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+        { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
             try {
                 if (action === 'create') {

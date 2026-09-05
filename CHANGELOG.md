@@ -5,6 +5,13 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.51] - 2026-09-04
+
+### Changed (Directory Readiness: Mark Profile & Preferences Non-Destructive)
+- **Annotation Tuning (`src/toolHandlers.ts`)**:
+  - `update_user_profile`, `toggle_graph_preference`, and `manage_scheduled_reports`: Updated `destructiveHint` from `true` to `false`. These tools perform profile upserts, preference toggling, and briefing schedule management rather than irrecoverable data deletions, eliminating intrusive confirmation warnings in Claude Connectors.
+- *Verification:* `npm run build` clean (47 tools generated, Cost Silence Guard passed); confirmed zero remaining tools with `destructiveHint: true`.
+
 ## [1.46.50] - 2026-09-04
 
 ### Fixed & Changed (Remediate Prompt-Injection Flags in Expert Onboarding & Transparent Profile Solicitation)
