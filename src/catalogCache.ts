@@ -249,14 +249,102 @@ async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
 }
 
 /**
+ * Bridges active individual analysts into the searchable graph catalog.
+ * Solves the "two-store indexing gap" where an analyst exists in the Analysts table
+ * with a backing Neo4j graph, but has no dedicated record in Airtable's Graph List.
+ */
+function bridgeAnalystGraphs(catalog: CatalogResponse, analysts: CatalogAnalyst[]): CatalogResponse {
+    if (!catalog?.graphs) return catalog;
+    const existingIds = new Set(catalog.graphs.map(g => (g.graph_id || '').toLowerCase().trim()));
+    const bridged: CatalogGraph[] = [...catalog.graphs];
+
+    for (const a of analysts) {
+        const id = (a.analyst_id || (a as any).id || '').toLowerCase().trim();
+        const status = (a.status || (a as any).Status || '').toLowerCase().trim();
+        if (!id || (status && status !== 'active')) continue;
+
+        // Skip synthetic C-suite leads that already span all graphs
+        if (a.is_c_suite_agent || /brand-(cmo|ceo|cfo|analyst)/i.test(id)) continue;
+
+        // Determine target graph IDs for this analyst:
+        // Check backingGraphs first (e.g. 'postpals-expert-graph', 'sic', '2026-macro-trend-graph')
+        const candidateGraphIds = new Set<string>();
+        const backingList = Array.isArray(a.backingGraphs) ? a.backingGraphs : [];
+        for (const rawBg of backingList) {
+            const bg = (rawBg || '').toLowerCase().trim();
+            if (bg && bg !== '*' && !existingIds.has(bg)) {
+                candidateGraphIds.add(bg);
+            }
+        }
+
+        // If no un-registered backingGraph found, use the analyst ID itself (e.g. 'peter-abraham-bicycles-cycling')
+        if (candidateGraphIds.size === 0 && !existingIds.has(id) && !backingList.includes('*')) {
+            candidateGraphIds.add(id);
+        }
+
+        if (candidateGraphIds.size === 0) continue;
+
+        const topics = Array.isArray(a.topics) ? a.topics : [];
+        const expertIn = typeof a.expert_in === 'string' ? a.expert_in : '';
+        const desc = a.description || a.what_they_offer || expertIn || `${a.name} expert knowledge graph`;
+
+        for (const targetGraphId of candidateGraphIds) {
+            bridged.push({
+                graph_id: targetGraphId,
+                name: a.name,
+                description: desc,
+                curator: a.name,
+                graph_type: 'analyst',
+                status: 'live',
+                trend_count: 5,
+                topics: topics.length > 0 ? topics : [targetGraphId],
+                company: a.company || '',
+                headline: a.askLine || expertIn || desc,
+                subhead: expertIn || '',
+                geography: 'Global',
+                icon_url: '',
+                source_url: '',
+                available_as: 'API, MCP',
+                is_playground: false,
+                last_updated: new Date().toISOString(),
+                published_date: null,
+                example_queries: Array.isArray(a.example_questions) ? a.example_questions : [],
+                portrait_url: a.portrait_url || '',
+                by_the_numbers: '',
+                what_it_does: desc,
+                key_features: '',
+                for_teams_like: '',
+                how_to_access: '',
+                what_contains: '',
+                owner_email: null,
+                owner_account_id: null,
+                report_analysis: null,
+                core_tension: null,
+                matched_human_twin_slug: id,
+                expert_stance_quote: null,
+                cross_graph_signals: []
+            });
+            existingIds.add(targetGraphId);
+        }
+    }
+
+    return {
+        ...catalog,
+        graph_count: bridged.length,
+        graphs: bridged
+    };
+}
+
+/**
  * Initialize the catalog cache. Call once at server startup.
  * Fetches immediately, then sets up hourly refresh.
  */
 export async function initCatalogCache(): Promise<void> {
     try {
         cacheClear();
-        cachedCatalog = await fetchCatalog();
+        const rawCatalog = await fetchCatalog();
         cachedAnalysts = await fetchAnalysts();
+        cachedCatalog = bridgeAnalystGraphs(rawCatalog, cachedAnalysts);
         lastFetchedAt = Date.now();
         rebuildSearchIndex();
         console.error(`[catalogCache] Loaded ${cachedCatalog.graph_count} graphs from catalog (search index: ${graphSearchTexts.size} entries)`);
@@ -269,8 +357,9 @@ export async function initCatalogCache(): Promise<void> {
     if (refreshInterval) clearInterval(refreshInterval);
     refreshInterval = setInterval(async () => {
         try {
-            cachedCatalog = await fetchCatalog();
+            const rawCatalog = await fetchCatalog();
             cachedAnalysts = await fetchAnalysts();
+            cachedCatalog = bridgeAnalystGraphs(rawCatalog, cachedAnalysts);
             lastFetchedAt = Date.now();
             rebuildSearchIndex();
             console.error(`[catalogCache] Refreshed catalog — ${cachedCatalog.graph_count} graphs (search index rebuilt) and ${cachedAnalysts.length} analysts`);
@@ -281,8 +370,8 @@ export async function initCatalogCache(): Promise<void> {
 }
 
 export function setCachedCatalogForTesting(catalog: CatalogResponse, analysts?: any[]): void {
-    cachedCatalog = catalog;
     if (analysts) cachedAnalysts = analysts.map(normalizeAnalyst);
+    cachedCatalog = bridgeAnalystGraphs(catalog, cachedAnalysts);
     lastFetchedAt = Date.now();
     rebuildSearchIndex();
 }

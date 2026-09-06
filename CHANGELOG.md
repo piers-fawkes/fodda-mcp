@@ -5,6 +5,20 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.57] - 2026-09-06
+
+### Added & Changed (Two-Store Indexing Bridge & DAILY_LIMIT_EXCEEDED Error Classification)
+- **Two-Store Indexing Gap Bridge (`src/catalogCache.ts`)**:
+  - Implemented `bridgeAnalystGraphs()`: dynamically bridges active analysts from `GET /v1/analysts` (the Airtable `Analysts` table) into `cachedCatalog.graphs` when they have a backing Neo4j graph but lack a dedicated record in Airtable's `Graph List` (`tblf8OPpi0F16ofAX`).
+  - Resolves routing for Human Agents like Peter Abraham (`peter-abraham-bicycles-cycling`): queries on "cycling" or "bicycles" now score Peter Abraham at `1.00 (static_expert)` and route directly to `POST /v1/graphs/peter-abraham-bicycles-cycling/search`, retrieving Peter's 4 Neo4j cycling trends (*"eventization of the weekly ride"*, etc.).
+  - Multi-HA Backing Graph Alignment: checks `a.backingGraphs` first. Preserves existing catalog entries (e.g. Ben Dietz's `sic` graph is not duplicated), bridges un-registered backing graphs (e.g. Jeremy Bergstein's `postpals-expert-graph`), falls back to analyst ID when appropriate, and safely ignores wildcard `*` synthetic leads.
+- **Accurate Rate Limit Classification (`src/errorHandling.ts`)**:
+  - Updated `classifyAccessError()`: added support for `DAILY_LIMIT_EXCEEDED`, `limit_exceeded`, and `50-call`, classifying them under `'credits'` instead of falling through to `'forbidden'`.
+  - Updated `handleAccessError()`: eliminated the misleading `"This data source is not included in the user's current plan"` note when free-tier users or test accounts hit the 50-call/day burst cap. Returns structured `status: 'DAILY_LIMIT_EXCEEDED'` with clear guidance to add a payment card to remove daily burst limits.
+- *Verification:*
+  - All 8 tests in `src/test_search_graph_quality.ts` passed (including Test 8 covering `DAILY_LIMIT_EXCEEDED` classification and multi-HA backing graph bridging).
+  - Production deployment to Cloud Run launched via `./deploy_cloud_run.sh`.
+
 ## [1.46.56] - 2026-09-06
 
 ### Added & Changed (Place Reconciliation, Placeholder Stripping & Unambiguous Evidence Counts)

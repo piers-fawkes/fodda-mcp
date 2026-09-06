@@ -72,8 +72,11 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
     const status = err.response?.status;
     if (status !== 403 && status !== 402) return null;
 
-    const code = (err.response?.data?.error?.code || err.response?.data?.code || '').toString().toUpperCase();
-    const msg = (err.response?.data?.error?.message || err.response?.data?.error || err.response?.data?.message || err.message || '').toString().toLowerCase();
+    const rawCode = typeof err.response?.data?.error === 'string'
+        ? err.response.data.error
+        : (err.response?.data?.error?.code || err.response?.data?.code || '');
+    const code = rawCode.toString().toUpperCase();
+    const msg = (err.response?.data?.message || err.response?.data?.error?.message || (typeof err.response?.data?.error === 'string' ? err.response.data.error : '') || err.message || '').toString().toLowerCase();
 
     // 402 Payment Required is always a credits/limit issue
     if (status === 402) return 'credits';
@@ -85,11 +88,15 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
         code === 'CREDITS_EXHAUSTED' ||
         code === 'INSUFFICIENT_CREDITS' ||
         code === 'LIMIT_EXCEEDED' ||
+        code === 'DAILY_LIMIT_EXCEEDED' ||
         code === 'PLAN_LIMIT_EXCEEDED' ||
         code === 'TRIAL_EXHAUSTED' ||
         msg.includes('credit') ||
         msg.includes('limit reached') ||
         msg.includes('limit exceeded') ||
+        msg.includes('limit_exceeded') ||
+        msg.includes('daily limit') ||
+        msg.includes('50-call') ||
         msg.includes('trial limit')
     ) return 'credits';
     return 'forbidden'; // FORBIDDEN — plan doesn't cover this source
@@ -160,6 +167,31 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
         // string that gets fed to the model, and lets the client decide how/whether
         // to surface a payment CTA. (Do not echo the API's raw URL-laden message.)
         const data = err.response?.data || {};
+        const rawCode = typeof data.error === 'string' ? data.error : (data.error?.code || data.code || '');
+        const code = rawCode.toString().toUpperCase();
+        const msg = (data.message || data.error?.message || (typeof data.error === 'string' ? data.error : '') || err.message || '').toString().toLowerCase();
+        const isDailyLimit = code === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call');
+
+        if (isDailyLimit) {
+            const setupUrl = data.setupUrl || null;
+            const upgradeUrl = data.upgradeUrl || 'https://app.fodda.ai/billing';
+            return {
+                isError: true,
+                content: [{
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                        status: 'DAILY_LIMIT_EXCEEDED',
+                        error_code: 'daily_limit',
+                        message: 'Daily call limit reached on free Base tier (50 calls/day). Add a payment card to remove daily burst limits and continue querying without interruption.',
+                        setup_url: setupUrl,
+                        upgrade_url: upgradeUrl,
+                        action: setupUrl ? 'SETUP_CARD' : 'UPGRADE_REQUIRED',
+                        note: 'Card setup link is in setup_url. Adding a card removes daily burst limits.'
+                    }, null, 2)
+                }]
+            };
+        }
+
         const errorData = (data.error && typeof data.error === 'object') ? data.error : {};
         const usage = data.usage || null;
         const payg = data.payg || null;

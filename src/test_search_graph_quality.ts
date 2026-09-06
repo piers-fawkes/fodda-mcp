@@ -13,6 +13,8 @@ import {
 } from './enrichment.js';
 import { computeTierFit } from './coverageRelevance.js';
 import { sanitizePayloadForChatGpt } from './toolHandlers.js';
+import { classifyAccessError } from './errorHandling.js';
+import { setCachedCatalogForTesting, getRelevantGraphs, getGraphs } from './catalogCache.js';
 
 console.log('--- Running search_graph Quality, Freshness & Payload Slimming Suite ---\n');
 
@@ -323,4 +325,99 @@ assert.strictEqual(diorItem.place, 'Tokyo, Japan', 'Dior Harajuku place should b
 assert.strictEqual(hermesItem.place, 'Milan, Italy', 'Hermès place should be Milan, Italy');
 console.log('✅ Test 7 Passed: Evidence count semantics unambiguous (linked: 4, returned: 0, count: 0 for filtered trend)');
 
-console.log('\nAll search_graph quality, freshness, and payload slimming tests passed!');
+// ---------------------------------------------------------------------------
+// Test 8: Two-Store Indexing Gap & Daily Limit Error Classification
+// ---------------------------------------------------------------------------
+console.log('\nTest 8: Two-Store Indexing Gap Bridge & DAILY_LIMIT_EXCEEDED Classification');
+
+// 8a. Verify 403 DAILY_LIMIT_EXCEEDED is classified as 'credits' instead of 'forbidden'
+const dailyLimitErr = {
+    response: {
+        status: 403,
+        data: {
+            error: 'DAILY_LIMIT_EXCEEDED',
+            code: 'DAILY_LIMIT_EXCEEDED',
+            message: 'Daily 50-call limit reached on free Base tier. Add a payment card to remove daily burst limits and continue querying without interruption at 50¢ per API call.'
+        }
+    }
+};
+assert.strictEqual(classifyAccessError(dailyLimitErr), 'credits', 'DAILY_LIMIT_EXCEEDED must be classified as credits, not forbidden');
+
+// 8b. Verify active analyst graph (Peter Abraham) is bridged into catalog and routed for cycling
+const baseCatalog: any = {
+    graph_count: 2,
+    graphs: [
+        {
+            graph_id: 'retail',
+            name: 'Retail Living Graph',
+            curator: 'PSFK',
+            graph_type: 'domain',
+            status: 'live',
+            trend_count: 100,
+            topics: ['retail', 'shopping']
+        },
+        {
+            graph_id: 'sic',
+            name: 'SIC Cultural Intelligence',
+            curator: 'Ben Dietz',
+            graph_type: 'expert',
+            status: 'live',
+            trend_count: 97,
+            topics: ['culture', 'youth', 'streetwear']
+        }
+    ]
+};
+const mockAnalysts: any[] = [
+    {
+        analyst_id: 'peter-abraham-bicycles-cycling',
+        name: 'Peter Abraham',
+        status: 'Active',
+        topics: ['sports', 'cycling'],
+        expert_in: 'bicycles, sports & active lifestyle',
+        description: 'Sports, outdoor, cycling, and active lifestyle market analyst.'
+    },
+    {
+        analyst_id: 'ben-dietz-sic',
+        name: 'Ben Dietz',
+        status: 'Active',
+        backingGraphs: ['sic'],
+        topics: ['culture', 'streetwear'],
+        expert_in: 'culture, music, streetwear',
+        description: 'Cultural strategist and writer.'
+    },
+    {
+        analyst_id: 'jeremy-bergstein-science-education-innovation',
+        name: 'Jeremy Bergstein',
+        status: 'Active',
+        backingGraphs: ['postpals-expert-graph'],
+        topics: ['science', 'education'],
+        expert_in: 'science and education innovation',
+        description: 'Educational innovation lead.'
+    }
+];
+
+setCachedCatalogForTesting(baseCatalog, mockAnalysts);
+const allCatalogGraphs = getGraphs();
+
+// (1) Peter Abraham bridged via ID fallback
+const bridgedPeter = allCatalogGraphs.find(g => g.graph_id === 'peter-abraham-bicycles-cycling');
+assert.ok(bridgedPeter, 'Peter Abraham must be bridged into catalog graphs');
+assert.strictEqual(bridgedPeter?.graph_type, 'analyst', 'Bridged graph must have graph_type analyst');
+
+// (2) Ben Dietz does NOT duplicate existing 'sic' graph
+const sicGraphs = allCatalogGraphs.filter(g => g.graph_id === 'sic');
+assert.strictEqual(sicGraphs.length, 1, 'SIC graph must not be duplicated when Ben Dietz is mapped to it');
+
+// (3) Jeremy Bergstein bridges 'postpals-expert-graph' from backingGraphs
+const bridgedJeremy = allCatalogGraphs.find(g => g.graph_id === 'postpals-expert-graph');
+assert.ok(bridgedJeremy, 'postpals-expert-graph must be bridged from backingGraphs');
+assert.strictEqual(bridgedJeremy?.graph_type, 'analyst', 'Bridged graph must have graph_type analyst');
+
+const cyclingRouting = getRelevantGraphs('cycling');
+const peterRouted = cyclingRouting.find(r => r.graph.graph_id === 'peter-abraham-bicycles-cycling');
+assert.ok(peterRouted, 'peter-abraham-bicycles-cycling must be routed for query "cycling"');
+assert.ok(peterRouted!.score >= 0.80, `peter score should be high (>=0.80), got ${peterRouted!.score}`);
+console.log('✅ Test 8 Passed: DAILY_LIMIT_EXCEEDED classified cleanly & multi-HA backingGraphs bridged accurately');
+
+console.log('\nAll search_graph quality, freshness, payload slimming, and routing bridge tests passed!');
+
