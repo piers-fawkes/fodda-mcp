@@ -35,6 +35,7 @@
 import { getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getAnalysts } from './catalogCache.js';
 import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
 import type { FoddaRequestFn } from './types.js';
+import { LUXURY_KEYWORDS, LUXURY_BRANDS, MASS_BUDGET_KEYWORDS, MASS_BUDGET_BRANDS } from './enrichment.js';
 
 /** Nominal on-topic relevance-score scale per graph tier (observed in QA:
  *  domain composites ~2.0, report vector scores ~0.8; expert sits between). */
@@ -211,6 +212,51 @@ export function isRowBrandEligible(row: any): boolean {
         }
     }
     return true;
+}
+
+/**
+ * Evaluates whether a result row matches category/market tier qualifiers in the query
+ * (e.g. "luxury" vs "budget"). Returns a positive score boost for matching tiers,
+ * or a penalty for conflicting tiers.
+ */
+export function computeTierFit(row: any, query: string): number {
+    if (!query || !row) return 0;
+    const qLower = query.toLowerCase();
+    const isLuxuryQuery = [...LUXURY_KEYWORDS].some(k => qLower.includes(k));
+    const isBudgetQuery = [...MASS_BUDGET_KEYWORDS].some(k => qLower.includes(k));
+
+    if (!isLuxuryQuery && !isBudgetQuery) return 0;
+
+    const rowText = [
+        row.trendName, row.title, row.label, row.name,
+        row.summary, row.description, row.trendDescription,
+        Array.isArray(row.brandNames) ? row.brandNames.join(' ') : String(row.brandNames || ''),
+        Array.isArray(row.sectors) ? row.sectors.join(' ') : String(row.sectors || ''),
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (isLuxuryQuery) {
+        const hasLuxuryBrand = [...LUXURY_BRANDS].some(b => rowText.includes(b));
+        const hasLuxuryWord = [...LUXURY_KEYWORDS].some(k => rowText.includes(k));
+        const hasBudgetBrand = [...MASS_BUDGET_BRANDS].some(b => rowText.includes(b));
+
+        let boost = 0;
+        if (hasLuxuryBrand) boost += 0.25;
+        if (hasLuxuryWord) boost += 0.20;
+        // Demote mega-trends or generic trends dominated by budget/mass brands without explicit luxury focus
+        if (hasBudgetBrand && !hasLuxuryWord) boost -= 0.30;
+        return boost;
+    }
+
+    if (isBudgetQuery) {
+        const hasBudgetBrand = [...MASS_BUDGET_BRANDS].some(b => rowText.includes(b));
+        const hasBudgetWord = [...MASS_BUDGET_KEYWORDS].some(k => rowText.includes(k));
+        let boost = 0;
+        if (hasBudgetBrand) boost += 0.25;
+        if (hasBudgetWord) boost += 0.20;
+        return boost;
+    }
+
+    return 0;
 }
 
 /** Normalize brand string for deduplication / comparison. */

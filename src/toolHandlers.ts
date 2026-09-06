@@ -21,7 +21,7 @@ import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
 import { MCP_SERVER_VERSION } from './tools.js';
 import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
-import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme } from './enrichment.js';
+import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
 import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier } from './coverageRelevance.js';
+import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit } from './coverageRelevance.js';
 import { buildReportEditorialBriefing } from './reportBriefing.js';
 
 // ---------------------------------------------------------------------------
@@ -1127,6 +1127,8 @@ export async function createServer(
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
+            graph: z.string().optional().describe("Alias for graphId."),
+            graph_id: z.string().optional().describe("Alias for graphId."),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
@@ -1135,10 +1137,11 @@ export async function createServer(
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ mode, graphs, graphId, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }) => {
+        async ({ mode, graphs, graphId, graph, graph_id, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }: any) => {
             try {
+                const targetGraphId = graphId || graph || graph_id;
                 // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(query, 'search', graphId);
+                logUserQuery(query, 'search', targetGraphId);
 
                 const effectiveLimit = Math.min(limit || 10, 50);
                 const body: Record<string, any> = {
@@ -1199,8 +1202,8 @@ export async function createServer(
                     scopedGraphs = available;
                 }
 
-                // If explicit scope, or no graphId / deprecated 'psfk', use fan-out
-                if (scopedGraphs || !graphId || graphId === 'psfk') {
+                // If explicit scope, or no targetGraphId / deprecated 'psfk', use fan-out
+                if (scopedGraphs || !targetGraphId || targetGraphId === 'psfk') {
                     // Step 1: explicit scope searches exactly those graphs; otherwise
                     // score query against graph metadata to find relevant graphs
                     const relevantGraphs = scopedGraphs
@@ -1290,12 +1293,17 @@ export async function createServer(
                         (rowScore(row) >= 0.75 * (TIER_NOMINAL_SCORE[resolveRowTier(row, searchedGraphs, catalog)] ?? 0.8));
 
                     allRows.sort((a, b) => {
-                        // 1. Direct niche token match tier (ranks direct keyword/sector matches above mega-trends)
+                        // 1. Category/market tier fit (e.g. luxury vs budget)
+                        const tierFitA = computeTierFit(a, query);
+                        const tierFitB = computeTierFit(b, query);
+                        if (Math.abs(tierFitB - tierFitA) > 0.15) return tierFitB - tierFitA;
+
+                        // 2. Direct niche token match tier (ranks direct keyword/sector matches above mega-trends)
                         const directA = isRowDirectMatch(a) ? 1 : 0;
                         const directB = isRowDirectMatch(b) ? 1 : 0;
                         if (directA !== directB) return directB - directA;
 
-                        // 2. On-topic tier
+                        // 3. On-topic tier
                         const onTopicA = isRowOnTopic(a) ? 1 : 0;
                         const onTopicB = isRowOnTopic(b) ? 1 : 0;
                         if (onTopicA !== onTopicB) return onTopicB - onTopicA;
@@ -1305,8 +1313,8 @@ export async function createServer(
                         // Primary: relevance score (includes evidence + freshness from API)
                         if (Math.abs(relB - relA) > 0.05) return relB - relA;
                         // Tiebreaker: prefer more recent content
-                        const daysA = a.freshnessDays || 999;
-                        const daysB = b.freshnessDays || 999;
+                        const daysA = reconcileFreshnessDays(a) ?? 999;
+                        const daysB = reconcileFreshnessDays(b) ?? 999;
                         if (daysA !== daysB) return daysA - daysB;
                         return (b.signal_score || 0) - (a.signal_score || 0);
                     });
@@ -1423,15 +1431,15 @@ export async function createServer(
                     data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs, total: fanoutTotal, on_topic_total: fanoutOnTopicTotal };
                     if (unavailableGraphs.length > 0) data.unavailable_graphs = unavailableGraphs;
                 } else {
-                    const matchedGraph = getGraphs().find(g => g.graph_id === graphId);
+                    const matchedGraph = getGraphs().find(g => g.graph_id === targetGraphId);
                     if (matchedGraph) {
                         searchedGraphs = [matchedGraph];
                     }
-                    data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/search`, apiKey, resolveUserId(userId, uid), body);
+                    data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(targetGraphId)}/search`, apiKey, resolveUserId(userId, uid), body);
                 }
 
                 // ── Track search for frustration detection ──
-                const effectiveTrackGraphId = graphId || (data?.rows?.[0]?._use_this_graphId) || 'all';
+                const effectiveTrackGraphId = targetGraphId || (data?.rows?.[0]?._use_this_graphId) || 'all';
                 const trackResultCount = Array.isArray(data) ? data.length : (data?.rows?.length || 0);
                 sessionTracker.trackSearch(query, effectiveTrackGraphId, trackResultCount);
 
@@ -1449,13 +1457,13 @@ export async function createServer(
                     const enrichNow = Date.now(); // compute once for all rows
                     data.rows = data.rows.map((row: any) => {
                         const trimmed = { ...row };
-                        trimmed._use_this_graphId = row.graphId || graphId;
+                        trimmed._use_this_graphId = row.graphId || targetGraphId;
                         if (!trimmed.node_id) trimmed.node_id = trimmed.trendId || trimmed.id || trimmed.nodeId || trimmed._id || trimmed.uuid || null;
                         if (!trimmed.title) trimmed.title = trimmed.trendName || trimmed.display || trimmed.name || null;
                         // P0 Item 3: Populate canonical summary from source fields (raw rows have no summary)
                         if (!trimmed.summary) trimmed.summary = trimmed.description || trimmed.trendDescription || null;
                         if (!trimmed.relevance_score) trimmed.relevance_score = trimmed.semantic_score || trimmed._score || trimmed.score || null;
-                        const resolvedId = LEGACY_ALIASES[trimmed._use_this_graphId || ''] || trimmed._use_this_graphId || graphId || '';
+                        const resolvedId = LEGACY_ALIASES[trimmed._use_this_graphId || ''] || trimmed._use_this_graphId || targetGraphId || '';
                         trimmed.graphName = graphNameMap.get(resolvedId) || resolvedId;
                         // P0 Item 3: Convert brandNames from pipe-delimited string to capped array
                         const rawBrands = typeof trimmed.brandNames === 'string'
@@ -1470,10 +1478,13 @@ export async function createServer(
                         trimmed.place = rawPlaces.slice(0, 10);
                         trimmed.place_count = rawPlaces.length;
                         if (trimmed.whyNow?.length > 200) trimmed.whyNow = trimmed.whyNow.substring(0, 200) + '...';
-                        // P0 Item 4 + Round-2: cap at top-3 BY RELEVANCE (API order), not recency
+                        // Reconcile freshnessDays against substantive dates (overrides DB updated_at sync timestamps)
+                        trimmed.freshnessDays = reconcileFreshnessDays(trimmed, enrichNow);
+                        // Filter & rank evidence to prioritize relevant proofs and tier-consistent items
                         if (trimmed.evidence?.length > 0) {
                             trimmed.evidence_count = trimmed.evidence.length;        // total before cap
-                            trimmed.evidence = enrichEvidence(trimmed.evidence.slice(0, 3));
+                            const ranked = rankAndFilterEvidence(trimmed.evidence, query, trimmed, { maxItems: 3 });
+                            trimmed.evidence = enrichEvidence(ranked);
                         } else {
                             trimmed.evidence_count = trimmed.evidence_count || trimmed.evidenceCount || 0;
                             if ((include_evidence ?? true) && trimmed.evidence_count > 0) {
@@ -1481,12 +1492,12 @@ export async function createServer(
                             }
                         }
                         const drillTrendName = trimmed.title || trimmed.trendName || 'this trend';
-                        const drillGraphId = trimmed._use_this_graphId || graphId || '';
+                        const drillGraphId = trimmed._use_this_graphId || targetGraphId || '';
                         trimmed.suggested_drill_down = `Tell me more about "${drillTrendName}" from the ${trimmed.graphName || drillGraphId} graph. What is driving this and what are the key signals?`;
                         trimmed.trendLifecycle = computeLifecycle(trimmed, enrichNow);
                         trimmed.momentum = computeMomentum(trimmed, enrichNow);
                         trimmed.fastMover = isFastMover(trimmed, enrichNow);
-                        trimmed.graphBadge = GRAPH_BADGES[trimmed._use_this_graphId || graphId || ''] || '○';
+                        trimmed.graphBadge = GRAPH_BADGES[trimmed._use_this_graphId || targetGraphId || ''] || '○';
                         return trimmed;
                     });
                     // P0 Item 6: Filter out deprecated graph rows
@@ -1494,13 +1505,29 @@ export async function createServer(
                         const gid = r._use_this_graphId || r.graphId || '';
                         return !DEPRECATED_GRAPH_IDS.has(gid);
                     });
+                    // Quality & tier-fit sorting: rank results respecting explicit category/market qualifiers (e.g. luxury vs budget)
+                    data.rows.sort((a: any, b: any) => {
+                        const tierFitA = computeTierFit(a, query);
+                        const tierFitB = computeTierFit(b, query);
+                        if (Math.abs(tierFitB - tierFitA) > 0.15) return tierFitB - tierFitA;
+
+                        const relA = a.relevance_score || a.semantic_score || a._score || 0;
+                        const relB = b.relevance_score || b.semantic_score || b._score || 0;
+                        if (Math.abs(relB - relA) > 0.05) return relB - relA;
+
+                        const daysA = a.freshnessDays ?? 999;
+                        const daysB = b.freshnessDays ?? 999;
+                        if (daysA !== daysB) return daysA - daysB;
+
+                        return (b.signal_score || 0) - (a.signal_score || 0);
+                    });
                 }
                 if (data?.rows) {
                     data.results = data.rows;
                     if (data.total === undefined) data.total = data.rows.length;
                 }
                 // When graphId was omitted (all-graph search), use first result's graph or 'retail'
-                const effectiveGraphId = graphId || (data?.rows?.[0]?._use_this_graphId) || (data?.rows?.[0]?.graphId) || 'retail';
+                const effectiveGraphId = targetGraphId || (data?.rows?.[0]?._use_this_graphId) || (data?.rows?.[0]?.graphId) || 'retail';
                 data.theme = getFoddaTheme(effectiveGraphId);
 
                 const primaryCatalogEntry = getGraphs().find(g => g.graph_id === effectiveGraphId);
@@ -1659,6 +1686,10 @@ export async function createServer(
                     const liteData = { ...data };
                     delete liteData.results;       // exact copy of rows
                     delete liteData.weak_signals;  // subset of rows
+                    delete liteData.theme;         // CSS color tokens are for HTML widgets, not LLM reasoning
+                    delete liteData.queryTimeline;
+                    delete liteData.geoBias;
+                    delete liteData.mainstream;
                     liteData.rows = (data.rows || []).map((r: any) => {
                         const out = { ...r };
                         // ID aliases → keep node_id
@@ -1672,8 +1703,32 @@ export async function createServer(
                         // Drop adjacentPossibilities and evidenceCount (canonical is evidence_count)
                         delete out.adjacentPossibilities;
                         delete out.evidenceCount;
+                        delete out.suggested_drill_down;
+                        delete out.graphBadge;
+                        delete out.brand_count;
+                        delete out.place_count;
+                        if (Array.isArray(out.place) && out.place.length === 0) delete out.place;
+                        if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
                         return out;
                     });
+
+                    // ChatGPT clients cannot render arbitrary HTML widgets and get bloated by design briefs
+                    if (sessionSource === 'chatgpt') {
+                        const cleanData = sanitizePayloadForChatGpt(liteData);
+                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
+                            .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                        return {
+                            content: [
+                                { type: 'text' as const, text: JSON.stringify(cleanData, null, 2) },
+                                ...skillResults
+                                    .filter(r => r.success && r.output)
+                                    .map(r => ({
+                                        type: 'text' as const,
+                                        text: `── SKILL: ${r.skillName} ──\n${r.output}\n── END SKILL: ${r.skillName} ──`,
+                                    }))
+                            ]
+                        };
+                    }
 
                     // Size check: if total payload exceeds ~30KB, skip widget to avoid context overflow
                     const jsonPayload = JSON.stringify(liteData, null, 2);
@@ -1717,6 +1772,10 @@ export async function createServer(
                 const fallbackData = { ...data };
                 delete fallbackData.results;
                 delete fallbackData.weak_signals;
+                delete fallbackData.theme;
+                delete fallbackData.queryTimeline;
+                delete fallbackData.geoBias;
+                delete fallbackData.mainstream;
                 fallbackData.rows = (data.rows || []).map((r: any) => {
                     const out = { ...r };
                     delete out.trendId; delete out.nodeId; delete out.uuid;
@@ -1726,8 +1785,31 @@ export async function createServer(
                     delete out.description; delete out.trendDescription;
                     delete out.adjacentPossibilities;
                     delete out.evidenceCount;
+                    delete out.suggested_drill_down;
+                    delete out.graphBadge;
+                    delete out.brand_count;
+                    delete out.place_count;
+                    if (Array.isArray(out.place) && out.place.length === 0) delete out.place;
+                    if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
                     return out;
                 });
+
+                if (sessionSource === 'chatgpt') {
+                    const cleanData = sanitizePayloadForChatGpt(fallbackData);
+                    chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
+                        .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                    return {
+                        content: [
+                            { type: 'text' as const, text: JSON.stringify(cleanData, null, 2) },
+                            ...skillResults
+                                .filter(r => r.success && r.output)
+                                .map(r => ({
+                                    type: 'text' as const,
+                                    text: `── SKILL: ${r.skillName} ──\n${r.output}\n── END SKILL: ${r.skillName} ──`,
+                                }))
+                        ]
+                    };
+                }
 
                 // ── Query-level billing (fallback path) ──
                 chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })

@@ -5,6 +5,38 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.54] - 2026-09-06
+
+### Added & Changed (Evidence Ranking, Freshness Precedence, Market Tier Fit & Payload Slimming)
+- **Evidence Relevance Ranking & Counter-Tier Suppression (`src/enrichment.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `rankAndFilterEvidence()`: scores and orders evidence by direct query overlap, trend context overlap, content type, and recency.
+  - Automatically suppresses or demotes corporate quarterly earnings transcripts and generic financial metrics for qualitative/trend-seeking queries (resolving the issue where UBS Mexico earnings Q&A and Miniso revenue appeared under "Pop Ups As Test Labs").
+  - Filters out counter-tier brands (e.g., mass-market budget retail like Miniso, KFC, Taco Bell) when the user query specifies market-tier constraints like *luxury*, prioritizing relevant high-tier activations (Dior, Hennessy, Bloomingdale's, Ralph Lauren).
+- **Substantive Freshness Date Reconciliation (`src/enrichment.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `reconcileFreshnessDays()`: overrides database migration/sync timestamps (`updated_at`) by prioritizing substantive editorial dates (`freshnessDate`, `lastSeen`, `published_date`, or evidence `publishedAt`).
+  - Fixed false `freshnessDays: 16` bug caused by August 22 DB migrations, correctly restoring substantive editorial age (~169–215 days for February/March 2026 signals).
+  - Integrated `reconcileFreshnessDays()` into `computeMomentum()`, preventing older trends from falsely claiming `accelerating` momentum due to sync timestamps.
+- **Market Tier & Category Qualifier Fit (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `computeTierFit()`: applies market tier boosts (+0.25 for luxury keywords/brands) and demotions (-0.30 for mass/budget brands) when qualitative tier qualifiers are present in the search query.
+  - Integrated `computeTierFit` as primary sort tier in both single-graph searches and multi-graph parallel fan-outs.
+- **Evidence Null & Empty Field Stripping (`src/enrichment.ts`)**:
+  - `enrichEvidence()` now cleans dead null or empty fields (`imageUrl: null`, `speakerName: null`, `speakerTitle: null`, `publication: null`, `place: ""`, duplicate `id`, empty `brandNames: []`) from evidence citations, eliminating JSON context bloat.
+- **ChatGPT Payload Slimming & Sanitization (`src/toolHandlers.ts`, `src/index.ts`)**:
+  - Automatically detects ChatGPT / OpenAI user-agents and handles `sessionSource === 'chatgpt'`.
+  - Strips raw HTML widget strings (`searchWidget.widget_html`), widget design briefs, redundant 50-line CSS hex color palettes (`theme`), and duplicated arrays (`results`, `mainstream`, `weak_signals`, `suggested_drill_down`).
+  - Cuts response size from ~700 lines down to 274–498 lines of clean, structured JSON.
+- **Parameter Aliases: `graph` & `graph_id` (`src/toolHandlers.ts`)**:
+  - Added `graph` and `graph_id` as optional aliases for `graphId` in `search_graph` schema and destructuring, preventing LLM calls passing `graph: "retail"` from falling back to un-scoped multi-graph search.
+- **Cross-Repo Handoff to Fodda API**:
+  - Delivered `Brief - Evidence Ordering, Freshness Precedence & Category Weighting (API Agent).md` to `~/Documents/Fodda API/briefs/` specifying Cypher evidence vector ranking, `v1Router.ts` freshness precedence, and node 6683 auto-linker cleanup.
+- *Verification:*
+  - All 5 tests in `src/test_search_graph_quality.ts` passed.
+  - All 33 unit tests in `src/test_next_moves.ts` passed.
+  - All tests in `src/test_specialist_and_analyst_tiers.ts` passed.
+  - Live end-to-end execution against `https://api.fodda.ai` verified clean, properly ordered luxury activations (Dior, Hennessy, Bloomingdale's, Ralph Lauren), 0 Miniso/KFC citations, substantive freshness days (~169-215d), and ~33KB clean JSON payload without widget HTML.
+  - `npm run build` passed (50 tools generated, Cost Silence Guard passed).
+  - `npm test` verified health 200 response on port 3099.
+
 ## [1.46.53] - 2026-09-06
 
 ### Added & Changed (Research Routing, Specialist Graph Isolation & 4-Tier Agent Taxonomy)

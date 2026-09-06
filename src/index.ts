@@ -1111,7 +1111,10 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || 'customer';
         const isInternalTest = sessionKind === 'internal-test';
         const defaultSource = isInternalTest ? 'mcp-internal-test' : ((offeringSlug !== 'mcp' && allowedTools !== undefined) ? offeringSlug : (isSpt ? 'spt' : ''));
-        const source = isInternalTest ? 'mcp-internal-test' : ((req.headers['x-fodda-source'] as string) || (req.query.source as string) || defaultSource);
+        const rawSource = (req.headers['x-fodda-source'] as string) || (req.query.source as string) || '';
+        const userAgent = (req.headers['user-agent'] || '').toString().toLowerCase();
+        const isChatGptUa = userAgent.includes('chatgpt') || userAgent.includes('chatgpt-user') || userAgent.includes('openai');
+        const source = isInternalTest ? 'mcp-internal-test' : (rawSource || (isChatGptUa ? 'chatgpt' : defaultSource));
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;

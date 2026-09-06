@@ -34,14 +34,34 @@ export function computeLifecycle(row: any, now?: number): string {
     return 'building';
 }
 
+export function reconcileFreshnessDays(row: any, now?: number): number | null {
+    const ts = now || Date.now();
+    const substantiveDateStr = row.freshnessDate || row.published_date || row.lastSeen || (Array.isArray(row.evidence) && row.evidence[0]?.publishedAt) || null;
+    if (substantiveDateStr) {
+        const subTime = new Date(substantiveDateStr).getTime();
+        if (!isNaN(subTime) && subTime > 0) {
+            const calculatedDays = Math.max(0, Math.floor((ts - subTime) / 86400000));
+            // If the API returned a freshnessDays that is derived from DB updated_at
+            // (e.g. freshnessDays is 16 from DB updated_at while substantive date is 190 days ago),
+            // prefer the substantive calculation.
+            if (row.freshnessDays !== undefined && row.freshnessDays !== null) {
+                if (Math.abs(calculatedDays - row.freshnessDays) > 30 && calculatedDays > row.freshnessDays) {
+                    return calculatedDays;
+                }
+                return row.freshnessDays;
+            }
+            return calculatedDays;
+        }
+    }
+    if (row.freshnessDays !== undefined && row.freshnessDays !== null) {
+        return row.freshnessDays;
+    }
+    return null;
+}
+
 export function computeMomentum(row: any, now?: number): string {
     const ts = now || Date.now();
-    const last = row.lastSeen
-        ? new Date(row.lastSeen).getTime()
-        : (row.lastSeenDate ? new Date(row.lastSeenDate).getTime() : (row.published_at ? new Date(row.published_at).getTime() : 0));
-    const freshnessDays = (row.freshnessDays !== undefined && row.freshnessDays !== null)
-        ? row.freshnessDays
-        : (last && !isNaN(last) ? (ts - last) / (1000 * 60 * 60 * 24) : null);
+    const freshnessDays = reconcileFreshnessDays(row, ts);
 
     if (freshnessDays !== null) {
         if (freshnessDays < 45) return 'accelerating';
@@ -104,14 +124,16 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
         });
     }
     return items.map(item => {
+        const cleanItem: Record<string, any> = { ...item };
+
         // Assign editorial role based on content type — but don't stamp unknown
         // contentTypes as 'proof' (that mislabels everything as standalone evidence).
-        const ct = (item.contentType || '').toLowerCase();
+        const ct = (cleanItem.contentType || '').toLowerCase();
         const mappedRole = EVIDENCE_ROLES[ct];
-        if (mappedRole) item.role = mappedRole;
+        if (mappedRole) cleanItem.role = mappedRole;
 
-        const url = item.sourceUrl?.trim();
-        const rawPubName = item.publication?.trim() || item.sourceName?.trim() || (url ? extractCleanDomain(url) : 'Source');
+        const url = cleanItem.sourceUrl?.trim();
+        const rawPubName = cleanItem.publication?.trim() || cleanItem.sourceName?.trim() || (url ? extractCleanDomain(url) : 'Source');
         // Clean RSS feed labels (e.g. "Fast Casual | Latest Media" -> "Fast Casual", "NYT > Top Stories" -> "NYT")
         let cleanPub = rawPubName.split('|')[0].trim().split('>')[0].trim().split(' - ')[0].trim().split(':')[0].trim();
         if (cleanPub.endsWith(' RSS') || cleanPub.endsWith(' Feed')) {
@@ -130,31 +152,192 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
 
         const isInternalFoddaUrl = url ? /fodda\.ai/i.test(url) : true;
         const finalPubLabel = cleanPub.startsWith('via ') ? cleanPub : `via ${cleanPub}`;
-        item.short_citation = (url && !isInternalFoddaUrl) ? `[${finalPubLabel}](${url})` : finalPubLabel;
+        cleanItem.short_citation = (url && !isInternalFoddaUrl) ? `[${finalPubLabel}](${url})` : finalPubLabel;
 
-        if (item.formatted_citation) return item; // already enriched
+        if (!cleanItem.formatted_citation) {
+            const title = cleanItem.title?.trim();
 
-        const title = item.title?.trim();
-
-        // Enhanced citation for quotes with speaker attribution
-        if (item.role === 'voice' && item.speakerName) {
-            const speaker = item.speakerName;
-            const titleSuffix = item.speakerTitle ? `, ${item.speakerTitle}` : '';
-            const pub = item.publication || 'Source';
-            if (url) {
-                item.formatted_citation = `"${title || 'Quote'}" — ${speaker}${titleSuffix} ([${pub}](${url}))`;
-            } else {
-                item.formatted_citation = `"${title || 'Quote'}" — ${speaker}${titleSuffix} (${pub})`;
+            // Enhanced citation for quotes with speaker attribution
+            if (cleanItem.role === 'voice' && cleanItem.speakerName) {
+                const speaker = cleanItem.speakerName;
+                const titleSuffix = cleanItem.speakerTitle ? `, ${cleanItem.speakerTitle}` : '';
+                const pub = cleanItem.publication || 'Source';
+                if (url) {
+                    cleanItem.formatted_citation = `"${title || 'Quote'}" — ${speaker}${titleSuffix} ([${pub}](${url}))`;
+                } else {
+                    cleanItem.formatted_citation = `"${title || 'Quote'}" — ${speaker}${titleSuffix} (${pub})`;
+                }
+            } else if (title && url) {
+                cleanItem.formatted_citation = `[${title}](${url})`;
+            } else if (title) {
+                cleanItem.formatted_citation = `${title} (no link available)`;
+            } else if (url) {
+                cleanItem.formatted_citation = `[Source](${url})`;
             }
-        } else if (title && url) {
-            item.formatted_citation = `[${title}](${url})`;
-        } else if (title) {
-            item.formatted_citation = `${title} (no link available)`;
-        } else if (url) {
-            item.formatted_citation = `[Source](${url})`;
         }
-        return item;
+
+        // Clean dead / null / empty fields to prevent LLM context bloat
+        for (const k of ['imageUrl', 'speakerName', 'speakerTitle', 'publication', 'place']) {
+            if (cleanItem[k] === null || cleanItem[k] === undefined || cleanItem[k] === '') {
+                delete cleanItem[k];
+            }
+        }
+        if (cleanItem.id && cleanItem.node_id && String(cleanItem.id) === String(cleanItem.node_id)) {
+            delete cleanItem.id;
+        }
+        if (Array.isArray(cleanItem.brandNames) && cleanItem.brandNames.length === 0) {
+            delete cleanItem.brandNames;
+        }
+
+        return cleanItem;
     });
+}
+
+// ---------------------------------------------------------------------------
+// Market Tier & Category Vocabularies
+// ---------------------------------------------------------------------------
+
+export const LUXURY_KEYWORDS = new Set(['luxury', 'haute', 'couture', 'prestige', 'high-end', 'designer']);
+export const LUXURY_BRANDS = new Set([
+    'dior', 'louis vuitton', 'chanel', 'gucci', 'hermès', 'hermes', 'prada', 'cartier',
+    'tiffany', 'saint laurent', 'balenciaga', 'bottega veneta', 'burberry', 'moncler',
+    'loewe', 'celine', 'fendi', 'versace', 'ferragamo', 'valentino', 'rolex', 'harrods',
+    'maison margiela', 'the macallan', 'hennessy', 'rh', 'nordstrom', 'saks', 'bergdorf',
+    'kering', 'lvmh', 'richemont', 'bulgari', 'bvlgari', 'chopard', 'patek philippe', 'audemars piguet'
+]);
+
+export const MASS_BUDGET_KEYWORDS = new Set(['budget', 'discount', 'mass-market', 'value', 'cheap', 'fast-food', 'low-cost']);
+export const MASS_BUDGET_BRANDS = new Set([
+    'miniso', 'kfc', 'mcdonald\'s', 'mcdonalds', 'taco bell', 'burger king', 'dollar general',
+    'dollar tree', 'five below', 'primark', 'shein', 'temu', 'walmart', 'popeyes', 'domino\'s'
+]);
+
+const GENERIC_QUERY_STOPWORDS = new Set([
+    'a', 'an', 'the', 'and', 'or', 'of', 'in', 'on', 'for', 'to', 'with', 'from', 'by', 'at',
+    'as', 'is', 'are', 'was', 'be', 'how', 'what', 'trend', 'trends', 'market', 'emerging',
+    'retail', 'consumer', 'report', 'insights', 'data'
+]);
+
+/**
+ * Filter and rank evidence items against query qualifiers and trend context.
+ * Prevents off-topic earnings transcripts or unrelated corporate items from surfacing
+ * under creative/consumer trends just because of loose graph connectivity.
+ */
+export function rankAndFilterEvidence(
+    items: any[],
+    query: string,
+    trendContext?: any,
+    opts: { maxItems?: number } = {}
+): any[] {
+    if (!Array.isArray(items) || items.length === 0) return items;
+    const maxItems = opts.maxItems ?? 3;
+
+    const qLower = (query || '').toLowerCase();
+    const qWords = qLower.split(/[^a-z0-9]+/).filter(w => w.length > 2 && !GENERIC_QUERY_STOPWORDS.has(w));
+    const isFinancialQuery = /\b(revenue|ebitda|gross margin|earnings|quarterly|q[1-4]|financial|valuation|guidance|stock|dividend|probes)\b/i.test(qLower);
+
+    const hasLuxuryQuery = [...LUXURY_KEYWORDS].some(k => qLower.includes(k));
+    const hasBudgetQuery = [...MASS_BUDGET_KEYWORDS].some(k => qLower.includes(k));
+
+    const trendTitle = (trendContext?.trendName || trendContext?.title || trendContext?.label || '').toLowerCase();
+    const trendWords = trendTitle.split(/[^a-z0-9]+/).filter((w: string) => w.length > 2 && !GENERIC_QUERY_STOPWORDS.has(w));
+
+    const scored = items.map((item, idx) => {
+        let score = 0;
+        const title = (item.title || '').toLowerCase();
+        const summary = (item.summary || item.excerpt || '').toLowerCase();
+        const contentType = (item.contentType || '').toLowerCase();
+        const brands = Array.isArray(item.brandNames)
+            ? item.brandNames.map((b: string) => String(b).toLowerCase())
+            : (typeof item.brandNames === 'string' ? item.brandNames.toLowerCase().split('|') : []);
+
+        const fullText = `${title} ${summary} ${brands.join(' ')}`;
+
+        // 1. Demote financial / earnings transcripts for qualitative queries
+        const isEarningsOrFinancial =
+            /\b(revenue|ebitda|gross margin|earnings|quarterly|q[1-4]|probes|consolidated revenue|adjusted ebitda)\b/i.test(title) ||
+            /\b(investor relations|q[1-4] 202[0-9]|earnings call|quarterly results)\b/i.test(fullText);
+
+        if (isEarningsOrFinancial && !isFinancialQuery) {
+            score -= 20.0;
+        }
+
+        // 2. Category tier matching
+        if (hasLuxuryQuery) {
+            const mentionsLuxuryBrand = brands.some((b: string) => LUXURY_BRANDS.has(b)) ||
+                [...LUXURY_BRANDS].some(b => fullText.includes(b));
+            const mentionsLuxuryKeyword = [...LUXURY_KEYWORDS].some(k => fullText.includes(k));
+
+            if (mentionsLuxuryBrand || mentionsLuxuryKeyword) {
+                score += 15.0;
+            }
+
+            const mentionsMassBrand = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
+                [...MASS_BUDGET_BRANDS].some(b => fullText.includes(b));
+            if (mentionsMassBrand) {
+                score -= 25.0; // Demote mass-market/fast-food when query asked for luxury
+            }
+        } else if (hasBudgetQuery) {
+            const mentionsMassBrand = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
+                [...MASS_BUDGET_BRANDS].some(b => fullText.includes(b));
+            if (mentionsMassBrand) score += 15.0;
+        }
+
+        // 3. Query term overlap
+        for (const word of qWords) {
+            if (title.includes(word)) score += 4.0;
+            else if (summary.includes(word)) score += 2.0;
+            if (brands.some((b: string) => b.includes(word))) score += 3.0;
+        }
+
+        // 4. Trend topic overlap
+        for (const word of trendWords) {
+            if (title.includes(word)) score += 2.5;
+            else if (summary.includes(word)) score += 1.0;
+        }
+
+        // 5. Content type preference (prioritize tangible proof/case studies)
+        if (contentType === 'signal' || contentType === 'case study' || contentType === 'case_study') {
+            score += 3.0;
+        } else if (contentType === 'interpretation' || contentType === 'analysis') {
+            score += 1.5;
+        }
+
+        // 6. Recency bonus
+        if (item.publishedAt) {
+            const daysAgo = (Date.now() - new Date(item.publishedAt).getTime()) / 864e5;
+            if (!isNaN(daysAgo) && daysAgo < 180) score += 1.0;
+        }
+
+        return { item, score, originalIdx: idx };
+    });
+
+    scored.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.originalIdx - b.originalIdx;
+    });
+
+    // Filter out counter-tier items (e.g. mass/fast-food when query is explicitly luxury)
+    // and exclude negative-scoring items unless no positive candidates exist.
+    const eligible = scored.filter(s => {
+        if (hasLuxuryQuery) {
+            const brands = Array.isArray(s.item.brandNames)
+                ? s.item.brandNames.map((b: string) => String(b).toLowerCase())
+                : (typeof s.item.brandNames === 'string' ? s.item.brandNames.toLowerCase().split('|') : []);
+            const title = (s.item.title || '').toLowerCase();
+            const summary = (s.item.summary || '').toLowerCase();
+            const text = `${title} ${summary} ${brands.join(' ')}`;
+            const mentionsMass = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
+                [...MASS_BUDGET_BRANDS].some(b => text.includes(b));
+            if (mentionsMass) return false;
+        }
+        return true;
+    });
+
+    const positiveEligible = eligible.filter(s => s.score > 0);
+    const pool = positiveEligible.length > 0 ? positiveEligible : eligible;
+
+    return pool.slice(0, maxItems).map(s => s.item);
 }
 
 function extractCleanDomain(urlStr: string): string {
