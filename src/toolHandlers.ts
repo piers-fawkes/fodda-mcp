@@ -866,24 +866,26 @@ export async function createServer(
                             },
                             {
                                 id: 'topic_research',
-                                name: 'Topic Research',
-                                value: 'Multi-graph topic search + evidence + stats across expert knowledge graphs.',
-                                tools: ['search_graph', 'search_statistics', 'search_insights'],
+                                name: 'Topic & Library Intelligence',
+                                value: 'Multi-graph library search across domain libraries (get_domain_intelligence), published reports (get_report_intelligence), specialist strategist graphs (get_specialist_intelligence), and validated trends (get_validated_trends).',
+                                tools: ['get_domain_intelligence', 'get_report_intelligence', 'get_specialist_intelligence', 'search_graph', 'get_validated_trends'],
                                 audience: 'Researchers, planners, innovation teams',
                                 example_prompts: [
                                     'Pressure-test our sustainability strategy against Fodda\'s packaging trends.',
-                                    'Search statistics for resale market growth rates.'
+                                    'Search specialist graphs for youth culture and underground streetwear signals.',
+                                    'Pull verified trends from recent earnings calls.'
                                 ]
                             },
                             {
                                 id: 'expert_consult',
-                                name: 'Expert Consult & Deliverables',
-                                value: 'Direct chat with named synthetic experts & commissioned finished deliverables.',
-                                tools: ['consult_analyst', 'list_analysts', 'request_deliverable'],
-                                audience: 'Teams seeking specialized domain perspectives or marketing plans',
+                                name: 'Agent Consultation & Deliverables',
+                                value: 'Direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
+                                tools: ['consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable'],
+                                audience: 'Teams seeking verified practitioner perspectives, executive strategy, or custom deliverables',
                                 example_prompts: [
                                     'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
-                                    'List available synthetic experts and their domain focus.'
+                                    'Consult Brand CMO on Nike\'s direct-to-consumer strategy.',
+                                    'List available Human Agents and C-Suite analysts.'
                                 ]
                             }
                         ],
@@ -944,10 +946,14 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Lists available human agents and synthetic analysts (e.g. brand-cmo, brand-ceo, brand-cfo, human experts like Anu Lingala). To query a company-specific synthetic expert (e.g., "Nike CMO", "Apple CMO", "Adidas CEO"), consult brand-cmo (or relevant role ID) and supply the target company name in the company parameter (e.g. company: "Nike").',
-        { userId: z.string().optional().describe('Optional user identifier.') },
-        { title: 'List Human Agents & Synthetic Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
+        'Lists available agents across 4 categories: human_agent (Expert Digital Twins of living industry figures e.g. Ben Dietz, Anu Lingala), c_suite_agent (corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), classic_agent (Classic Digital Twins of historical thinkers e.g. John Ruskin), and synthetic_agent (synthetic domain specialists). Filter by category or pass a query to match expert lanes.',
+        {
+            category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Expert Digital Twin), 'c_suite_agent', 'classic_agent' (Classic Digital Twin), 'synthetic_agent', or 'all' (default)."),
+            query: z.string().optional().describe("Optional natural language search query to filter analysts by lane, domain, expertise, or topics (e.g. 'streetwear', 'earnings', 'marketing')."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'List Human Agents, C-Suite & Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ category, query, userId: uid }) => {
             try {
                 const targetUserId = resolveUserId(userId, uid);
                 const [data, bookACallMap] = await Promise.all([
@@ -968,9 +974,52 @@ export async function createServer(
                     for (const a of analystsList) {
                         const key = (a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
                         if (!key) continue;
-                        const isHumanAgent = a.type === 'human_agent' || a.type === 'human_twin' || a.agent_type === 'human_twin' || a.agent_type === 'human_agent' || a.kind === 'human_agent' || a.kind === 'human_twin' || a.is_digital_twin === true || a.is_human_agent === true;
-                        const type = isHumanAgent ? 'human_agent' : (a.type || 'synthetic_analyst');
-                        const consult_tool = isHumanAgent ? 'consult_human_agent' : 'consult_analyst';
+
+                        const rawSubType = (a.graphSubType || a.graph_sub_type || a.subType || a.type || a.kind || a.agent_type || '').toString().trim();
+                        const cleanId = String(a.analyst_id || a.id || a.slug || a.name || '').toLowerCase().trim();
+
+                        // ── 4-Tier Agent Taxonomy ──
+                        const is_c_suite = cleanId === 'brand-cmo' || cleanId === 'brand-ceo' || cleanId === 'brand-cfo' ||
+                            /brand-(cmo|ceo|cfo)/i.test(cleanId) || /c-suite|executive/i.test(rawSubType);
+
+                        const is_classic = !is_c_suite && (
+                            rawSubType === 'Classic Digital Twin' ||
+                            /classic digital twin/i.test(rawSubType) ||
+                            a.is_classic_agent === true ||
+                            a.category === 'classic_agent'
+                        );
+
+                        const is_human = !is_c_suite && !is_classic && Boolean(
+                            rawSubType === 'Digital Twin' ||
+                            rawSubType === 'human_agent' ||
+                            rawSubType === 'human_twin' ||
+                            rawSubType === 'expert_twin' ||
+                            a.is_human_agent ||
+                            a.is_digital_twin ||
+                            a.isVerifiedRealPerson ||
+                            a.is_verified_real_person ||
+                            a.type === 'human_agent' ||
+                            a.type === 'human_twin' ||
+                            a.kind === 'human_agent' ||
+                            a.kind === 'human_twin' ||
+                            a.agent_type === 'human_agent' ||
+                            a.agent_type === 'human_twin'
+                        );
+
+                        let agentCategory: 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent' = 'synthetic_agent';
+                        let categoryLabel = 'Synthetic Analyst';
+                        if (is_human) {
+                            agentCategory = 'human_agent';
+                            categoryLabel = 'Expert Digital Twin';
+                        } else if (is_classic) {
+                            agentCategory = 'classic_agent';
+                            categoryLabel = 'Classic Digital Twin';
+                        } else if (is_c_suite) {
+                            agentCategory = 'c_suite_agent';
+                            categoryLabel = 'C-Suite Agent';
+                        }
+
+                        const consult_tool = is_human ? 'consult_human_agent' : 'consult_analyst';
                         const hasOfferings = Array.isArray(a.offerings) && a.offerings.length > 0;
                         const sanitizedOfferings = hasOfferings ? a.offerings.map((o: any) => ({
                             key: o.key,
@@ -980,7 +1029,7 @@ export async function createServer(
                             ...(o.description ? { description: o.description } : {}),
                         })) : [];
                         const nameKey = (a.name || '').toLowerCase().trim();
-                        const book_a_call = a.book_a_call !== undefined ? a.book_a_call : (bookACallMap.get(key) ?? (nameKey ? bookACallMap.get(nameKey) : null) ?? (isHumanAgent ? null : undefined));
+                        const book_a_call = a.book_a_call !== undefined ? a.book_a_call : (bookACallMap.get(key) ?? (nameKey ? bookACallMap.get(nameKey) : null) ?? (is_human ? null : undefined));
 
                         const credentials = (a.roleTitle || a.yearsExperience != null || a.pastEmployers || a.role_title || a.years_experience != null || a.past_employers) ? {
                             roleTitle: a.roleTitle || a.role_title || undefined,
@@ -991,15 +1040,20 @@ export async function createServer(
                         const enriched = {
                             analyst_id: a.analyst_id || a.id || a.slug || a.name || '',
                             name: a.name,
-                            type,
+                            category: agentCategory,
+                            category_label: categoryLabel,
+                            type: agentCategory,
                             consult_tool,
+                            is_verified_real_person: is_human,
+                            is_human_agent: is_human,
+                            is_classic_agent: is_classic,
+                            is_c_suite_agent: is_c_suite,
                             ...(a.expertIn || a.expert_in || a.topic ? { expert_in: a.expertIn || a.expert_in || a.topic } : {}),
                             ...(a.description ? { description: a.description } : {}),
                             ...(a.askLine || a.what_they_offer || a.whatTheyOffer ? { what_they_offer: a.askLine || a.what_they_offer || a.whatTheyOffer } : {}),
                             ...(a.exampleQueries || a.example_questions ? { example_questions: a.exampleQueries || a.example_questions } : {}),
                             ...(a.blindSpots || a.outside_their_lane || a.outsideTheirLane ? { outside_their_lane: a.blindSpots || a.outside_their_lane || a.outsideTheirLane } : {}),
                             ...(credentials ? { credentials } : {}),
-                            is_verified_real_person: Boolean(a.isVerifiedRealPerson || a.is_verified_real_person || isHumanAgent),
                             ...(book_a_call !== undefined ? { book_a_call } : {}),
                             offerings: sanitizedOfferings,
                             commissionable: hasOfferings,
@@ -1014,7 +1068,34 @@ export async function createServer(
                             }
                         }
                     }
-                    const deduplicated = Array.from(seen.values());
+                    let deduplicated = Array.from(seen.values());
+
+                    // Filter by category if requested
+                    if (category && category !== 'all') {
+                        deduplicated = deduplicated.filter(a => a.category === category);
+                    }
+
+                    // Filter / rank by natural query if supplied
+                    if (typeof query === 'string' && query.trim().length > 0) {
+                        const qTokens = specificQueryTokens(query);
+                        if (qTokens.length > 0) {
+                            const scored = deduplicated.map(a => {
+                                const corpus = [
+                                    a.name, a.analyst_id, a.expert_in, a.description, a.what_they_offer, a.outside_their_lane
+                                ].filter(Boolean).join(' ').toLowerCase();
+                                let matchCount = 0;
+                                for (const t of qTokens) {
+                                    if (corpus.includes(t)) matchCount++;
+                                }
+                                return { analyst: a, matchCount };
+                            });
+                            deduplicated = scored
+                                .filter(s => s.matchCount > 0)
+                                .sort((x, y) => y.matchCount - x.matchCount)
+                                .map(s => s.analyst);
+                        }
+                    }
+
                     const result = {
                         company_query_guide,
                         analysts: deduplicated
@@ -2820,67 +2901,84 @@ export async function createServer(
         }
     );
 
-    // --- get_expert_intelligence ---
-    // Searches ALL expert specialist graphs in parallel.
+    // --- get_specialist_intelligence ---
+    // Searches specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios in parallel.
+    const handleSpecialistIntelligenceSearch = async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }: any) => {
+        try {
+            const body: Record<string, any> = { query };
+            if (limit !== undefined) body.limit = limit;
+            if (include_evidence !== undefined) body.include_evidence = include_evidence;
+            if (max_evidence_per_trend !== undefined) body.max_evidence_per_trend = max_evidence_per_trend;
+            if (min_score !== undefined) body.min_score = min_score;
+
+            // Log query to Questions table (fire-and-forget, before cache)
+            logUserQuery(query, 'specialist_intelligence');
+
+            // Start supplemental suggest in parallel with specialist search
+            const suggestPromise = fetchSupplementalSuggest(query, {
+                foddaRequest,
+                apiKey,
+                userId: resolveUserId(userId, uid),
+                sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+            });
+
+            const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
+            const specialistWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_specialist_intelligence');
+            if (specialistWithheld) return specialistWithheld;
+
+            const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report' || g.graph_type === 'analyst');
+            const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                total: data?.total,
+                onTopicTotal: data?.on_topic_total,
+                knownBrand: getKnownBrand(),
+                foddaRequest,
+                apiKey,
+                userId: resolveUserId(userId, uid),
+                sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                sessionTracker,
+                suggestPromise,
+            });
+            sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_specialist_intelligence', query, annotatedData?.coverage);
+            logQueryResult(query, 'specialist_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
+            if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+            }
+            return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
+        } catch (err: any) {
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            if (trialResult) return trialResult;
+            return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+        }
+    };
+
     server.tool(
-        'get_expert_intelligence',
-        "Search specialist knowledge graphs built by named strategists and industry leaders — contains proprietary analysis, expert interviews, and high-density statistics not available via web search. No graph ID needed — searches all expert graphs in parallel. Use when the query requires specialist depth, named-expert perspectives, or strategic frameworks beyond mainstream coverage. Expert graphs cover domains like macro strategy, wayfinding, design innovation, SXSW insights, and sector-specific research reports.",
+        'get_specialist_intelligence',
+        "Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel. Use when the query requires specialist depth or strategic practitioner perspectives.",
         {
-            query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'future of work')"),
+            query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'streetwear subcultures')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
             include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
             max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
             min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
-        { title: 'Search Expert Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
-            try {
-                const body: Record<string, any> = { query };
-                if (limit !== undefined) body.limit = limit;
-                if (include_evidence !== undefined) body.include_evidence = include_evidence;
-                if (max_evidence_per_trend !== undefined) body.max_evidence_per_trend = max_evidence_per_trend;
-                if (min_score !== undefined) body.min_score = min_score;
+        { title: 'Search Specialist Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        handleSpecialistIntelligenceSearch
+    );
 
-                // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(query, 'expert_intelligence');
-
-                // Start supplemental suggest in parallel with expert search
-                const suggestPromise = fetchSupplementalSuggest(query, {
-                    foddaRequest,
-                    apiKey,
-                    userId: resolveUserId(userId, uid),
-                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
-                });
-
-                const data = await foddaRequest('POST', '/v1/search/expert', apiKey, resolveUserId(userId, uid), body);
-                const expertWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_expert_intelligence');
-                if (expertWithheld) return expertWithheld;
-
-                const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report' || g.graph_type === 'analyst');
-                const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
-                    total: data?.total,
-                    onTopicTotal: data?.on_topic_total,
-                    knownBrand: getKnownBrand(),
-                    foddaRequest,
-                    apiKey,
-                    userId: resolveUserId(userId, uid),
-                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
-                    sessionTracker,
-                    suggestPromise,
-                });
-                sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'get_expert_intelligence', query, annotatedData?.coverage);
-                logQueryResult(query, 'expert_intelligence', annotatedData?.coverage, searchedGraphs, annotatedData?.next_moves);
-                if (annotatedData?.coverage?.status === 'error' || annotatedData?.error) {
-                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
-                }
-                return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
-            } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
-                if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
-            }
-        }
+    server.tool(
+        'get_expert_intelligence',
+        "(Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios.",
+        {
+            query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'streetwear subcultures')"),
+            limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
+            include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
+            max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
+            min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
+            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+        },
+        { title: 'Search Specialist Intelligence (Legacy Alias)', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        handleSpecialistIntelligenceSearch
     );
 
     // --- get_report_intelligence ---
@@ -4378,6 +4476,7 @@ export async function createServer(
         query: string;
         company?: string | undefined;
         session_id?: string | undefined;
+        deep?: boolean | undefined;
         userId?: string | undefined;
     }
 
@@ -4395,7 +4494,7 @@ export async function createServer(
         return subType === 'Synthetic Expert' || /synthetic/i.test(subType) || subType === 'synthetic' || subType === 'curated' || subType === 'domain';
     };
 
-    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, userId: uid }: ConsultCoreParams) => {
+    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
         try {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
@@ -4408,12 +4507,20 @@ export async function createServer(
 
             logUserQuery(query, 'consult_human_agent');
 
-            const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), {
+            // Detect deep / homework intent from parameter or natural language query
+            const isDeep = Boolean(deep || /do (your |the )?homework|deep dive|go deeper|detailed evidence|comprehensive breakdown|verify with data|substantiate|rigorous breakdown/i.test(query));
+
+            const requestPayload: Record<string, any> = {
                 analyst_id: resolvedAnalystId,
                 query,
                 company: resolvedCompany,
                 session_id
-            });
+            };
+            if (isDeep) {
+                requestPayload.deep = true;
+            }
+
+            const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), requestPayload);
             
             const upstreamCoverage = result?.coverage;
 
@@ -4461,7 +4568,7 @@ export async function createServer(
                 const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : resolvedAnalystId;
 
                 mergedSources.push({
-                    title: `${cleanName} Human Agent — Official and Verified Digital Twin`,
+                    title: `${cleanName} Human Agent — Official and Verified Profile`,
                     url: `https://www.fodda.ai/experts/${expertSlug}`,
                     origin: 'profile',
                     type: 'web'
@@ -4906,16 +5013,17 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Any referrals to other expert graphs are returned in third-person platform voice with an offer to query the referred graph. Response may include `book_a_call` (URL + a pre-written booking sentence shown verbatim) for booking time with the real person — surface it when the user wants to hire or speak to the expert.',
+        'Consult an authorized Human Agent (Expert Digital Twin) created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person.',
         {
             analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context across the session. Omit for a one-off question."),
+            deep: z.boolean().optional().describe("Set true to have the human agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Human Agent (Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, query, company, session_id, userId: uid }) => {
+        { title: 'Consult Human Agent (Expert Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
             const match = getAnalysts().find((a: any) => {
@@ -4929,7 +5037,7 @@ export async function createServer(
             if (isSyntheticAnalyst(match)) {
                 return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
             }
-            return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
+            return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
         }
     );
 
@@ -5012,17 +5120,18 @@ export async function createServer(
 
     server.tool(
         'begin_expert_onboarding',
-        'Begin the Fodda expert onboarding process to create an authorized Human Agent (Digital Twin). Verifies credentials, retrieves onboarding steps, and guides the expert through profile creation.',
+        'Begin the Fodda expert onboarding process to create an authorized Human Agent. Verifies credentials, retrieves onboarding steps, and guides the expert through profile creation.',
         {
+            byoMcp: z.boolean().optional().describe('Set to true if the expert explicitly confirmed they have their own live MCP endpoint to use as their knowledge base. Defaults to false (standard knowledge-graph onboarding).'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ userId: uid }) => {
+        async ({ byoMcp, userId: uid }) => {
             if (!apiKey) {
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your digital twin directly inside Claude, your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
+                        text: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your Human Agent directly inside Claude, your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
                     }]
                 };
             }
@@ -5033,8 +5142,42 @@ export async function createServer(
                     return {
                         content: [{
                             type: 'text' as const,
-                            text: `Your expert profile is already active on Fodda.\n\n${result.message || ''}\n\n👉 **Next Step:** You can consult your digital twin using \`consult_human_agent\` or check your earnings using \`get_my_earnings\`.`
+                            text: `Your expert profile is already active on Fodda.\n\n${result.message || ''}\n\n👉 **Next Step:** You can consult your Human Agent using \`consult_human_agent\` or check your earnings using \`get_my_earnings\`.`
                         }]
+                    };
+                }
+
+                if (byoMcp) {
+                    const introText = [
+                        `Welcome to Fodda Human Agent Onboarding (Bring-Your-Own-MCP).`,
+                        ``,
+                        `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
+                        `• Process: Connect your live MCP endpoint to ground your agent directly in your live tools and data (skipping background research and interview). Each step is saved as you go; your MCP URL is recorded when you connect it, and your Human Agent goes live after review.`,
+                        `• Fallback: If you encounter issues connecting your MCP endpoint, you can switch back to the standard onboarding path at any time.`,
+                        ``,
+                        `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (or call \`submit_basic_info\` directly). Next, you'll provide your MCP endpoint URL for verification.`
+                    ].join('\n');
+
+                    const payload = {
+                        status: 'ready_byo_mcp',
+                        branch: 'byo_mcp',
+                        linked_account: userEmail,
+                        next_step: 'submit_basic_info',
+                        steps: [
+                            '1. Basic Information (submit_basic_info)',
+                            '2. Connect your MCP (submit_mcp_source)',
+                            '3. Confirm expertise topics (derived from MCP scan)',
+                            '4. (optional) Tone of voice',
+                            '5. Review & submit (finalize_byo_mcp_onboarding)'
+                        ],
+                        onboarding_prompts: result
+                    };
+
+                    return {
+                        content: [
+                            { type: 'text' as const, text: introText },
+                            { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
+                        ]
                     };
                 }
 
@@ -5043,6 +5186,7 @@ export async function createServer(
                     ``,
                     `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
                     `• Process: You will share your core domain details in this chat, we will analyze your public work and domain insights, and you'll review and confirm detected themes before scheduling a short deep-dive interview.`,
+                    `• Knowledge Base: Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer **No / I don't know** — most experts don't have one, and we'll set you up the standard way.`,
                     `• Privacy & Control: Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your progress lives only in this conversation.`,
                     ``,
                     `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (e.g. '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', '$2,000/hr', or 'No Calls'), or call \`submit_basic_info\` directly.`
@@ -5059,6 +5203,10 @@ export async function createServer(
                         '4. Theme Confirmation (get_detected_themes, confirm_themes)',
                         '5. Audio Interview (schedule_interview)'
                     ],
+                    byo_mcp_option: {
+                        available: true,
+                        description: "Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer No / I don't know — most experts don't have one, and we'll set you up the standard way."
+                    },
                     onboarding_prompts: result
                 };
 
@@ -5076,35 +5224,239 @@ export async function createServer(
 
     server.tool(
         'submit_basic_info',
-        'Submit basic expert details (name, role, knowledge area, consultation call rate) to initialize the Human Agent onboarding session.',
+        'Submit basic expert details (name, role, knowledge area, consultation call rate, and optional bio/headshot) to initialize the Human Agent onboarding session.',
         {
             name: z.string().describe("The expert's full name"),
             role: z.string().describe("The expert's current role or title"),
             knowledgeArea: z.string().describe("The expert's primary knowledge area"),
             callPrice: z.string().optional().describe("The expert's preferred 1-hour video/telephone consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Recorded under callPrice."),
+            bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
+            description: z.string().optional().describe("Optional comprehensive description of the expert's background and domain focus."),
+            headshotUrl: z.string().optional().describe("Optional public HTTPS URL to the expert's profile headshot image (URL only, no file uploads)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ name, role, knowledgeArea, callPrice, userId: uid }) => {
+        async ({ name, role, knowledgeArea, callPrice, bio, description, headshotUrl, userId: uid }) => {
             if (!apiKey) {
                 return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
             }
             try {
-                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { action: 'basic_info', name, role, knowledgeArea, callPrice });
-                const statusText = `Basic info registered for **${name}** (${role} — ${knowledgeArea}). Progress is held in this chat session until final submit.\n\n👉 **Next Step:** Run \`expert_onboarding_research\` to begin background research on public work and publications.`;
+                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), {
+                    action: 'basic_info',
+                    name,
+                    role,
+                    knowledgeArea,
+                    callPrice,
+                    ...(bio ? { bio } : {}),
+                    ...(description ? { description } : {}),
+                    ...(headshotUrl ? { headshotUrl } : {})
+                });
+                const statusText = `Basic info registered for **${name}** (${role} — ${knowledgeArea}). Progress is held in this chat session until final submit.\n\n👉 **Next Step:** Run \`expert_onboarding_research\` to begin background research on public work and publications (or \`submit_mcp_source\` if onboarding via BYO-MCP).`;
                 const payload = {
                     status: 'basic_info_saved',
                     name,
                     role,
                     knowledgeArea,
                     callPrice: callPrice || 'No Calls',
+                    bio,
+                    description,
+                    headshotUrl,
                     next_step: 'expert_onboarding_research',
+                    next_step_byo_mcp: 'submit_mcp_source',
                     result
                 };
                 return {
                     content: [
                         { type: 'text' as const, text: statusText },
                         { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
+                    ]
+                };
+            } catch (err: any) {
+                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+            }
+        }
+    );
+
+    server.tool(
+        'submit_mcp_source',
+        'Connect and probe a Bring-Your-Own-MCP (BYO-MCP) endpoint for expert live grounding. Discovers available tools and derives topic coverage for profile modeling.',
+        {
+            mcpUrl: z.string().describe("The HTTPS URL of the expert's public MCP endpoint (e.g. 'https://games.thisisdelightful.com/mcp')"),
+            mcpAuthType: z.enum(['none', 'bearer', 'header']).optional().describe("Authentication type for the MCP endpoint. Phase 1 supports 'none' (public/open endpoints) only. Defaults to 'none'."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'the BYO-MCP endpoint connection step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        async ({ mcpUrl, mcpAuthType, userId: uid }) => {
+            const authType = mcpAuthType || 'none';
+            if (authType !== 'none') {
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: `Authenticated MCP endpoints ('${authType}') are coming soon. Phase 1 supports open/public MCP endpoints with authType: 'none' only. Please provide a public MCP endpoint URL, or you can switch back to the standard onboarding path.`
+                    }]
+                };
+            }
+
+            const trimmedUrl = mcpUrl.trim();
+            if (!/^https:\/\//i.test(trimmedUrl)) {
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: 'Invalid MCP URL: Only secure HTTPS endpoints (e.g., https://...) are supported for external MCP grounding.'
+                    }]
+                };
+            }
+
+            if (!apiKey) {
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+            }
+
+            try {
+                const userEmail = resolveUserId(userId, uid);
+                const probeResult = await foddaRequest('POST', '/api/probe-mcp', apiKey, userEmail, {
+                    url: trimmedUrl,
+                    scan: true
+                });
+
+                if (!probeResult || probeResult.error || probeResult.success === false) {
+                    const errMsg = probeResult?.error || 'Endpoint probe did not succeed';
+                    return {
+                        isError: true,
+                        content: [{
+                            type: 'text' as const,
+                            text: `MCP Endpoint Probe Failed: ${errMsg}.\n\nPlease ensure the endpoint is online, publicly accessible, and responds to JSON-RPC tools/list. If you do not have a working MCP endpoint right now, you can switch to the standard onboarding path at any time without losing your basic info.`
+                        }]
+                    };
+                }
+
+                const toolsCount = probeResult.toolsCount || (Array.isArray(probeResult.tools) ? probeResult.tools.length : 0);
+                const toolNames: string[] = probeResult.toolNames || (Array.isArray(probeResult.tools) ? probeResult.tools.map((t: any) => t.name) : []);
+                const derivedTopics: string[] = probeResult.topics || probeResult.expertTopics || probeResult.derivedTopics || [];
+                const exampleQueries: string[] = probeResult.exampleQueries || [];
+
+                const statusText = [
+                    `✅ **MCP Endpoint Connected & Verified**: \`${trimmedUrl}\``,
+                    `• **Discovered Tools (${toolsCount})**: ${toolNames.length > 0 ? toolNames.join(', ') : 'None listed'}`,
+                    derivedTopics.length > 0
+                        ? `• **Discovered Expertise Topics**: ${derivedTopics.join(', ')}`
+                        : `• **Topics**: No automated topics could be extracted from tool schemas. Please summarize 3-5 core expertise topics covering your domain.`,
+                    ``,
+                    `👉 **Next Step:** Confirm the expertise topics with the expert. You may refine or add topics, explore optional tone of voice, and then call \`finalize_byo_mcp_onboarding\` to complete onboarding.`
+                ].join('\n');
+
+                const payload = {
+                    status: 'mcp_connected',
+                    mcpUrl: trimmedUrl,
+                    mcpAuthType: 'none',
+                    toolsCount,
+                    toolNames,
+                    derivedTopics,
+                    exampleQueries,
+                    next_step: 'finalize_byo_mcp_onboarding'
+                };
+
+                return {
+                    content: [
+                        { type: 'text' as const, text: statusText },
+                        { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
+                    ]
+                };
+            } catch (err: any) {
+                const errMsg = parseWebsiteError(err);
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: `Failed to probe MCP endpoint: ${errMsg}. Progression is blocked until the endpoint is reachable. If this URL cannot be reached, you can fall back to the standard onboarding path without losing your basic info.`
+                    }]
+                };
+            }
+        }
+    );
+
+    server.tool(
+        'finalize_byo_mcp_onboarding',
+        'Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding.',
+        {
+            name: z.string().describe("The expert's full name"),
+            role: z.string().describe("The expert's current role or title"),
+            knowledgeArea: z.string().describe("The expert's primary knowledge area"),
+            mcpUrl: z.string().describe("The verified HTTPS URL of the expert's public MCP endpoint"),
+            callPrice: z.string().optional().describe("The expert's preferred 1-hour consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Defaults to 'No Calls'."),
+            expertTopicsRaw: z.string().describe("Confirmed JSON string or text summary of the expert's domain topics (derived from MCP scan and confirmed by the expert). Powers the profile expertise map and suggested queries."),
+            voiceStudyRaw: z.string().optional().describe("Optional light voice study or tone-of-voice persona derived from conversation or public writing."),
+            bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
+            description: z.string().optional().describe("Optional comprehensive description of the expert's background."),
+            headshotUrl: z.string().optional().describe("Optional public HTTPS URL to the expert's headshot photo (URL only, no file upload)."),
+            termsAccepted: z.boolean().describe("Must be true. The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'the BYO-MCP onboarding final submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ name, role, knowledgeArea, mcpUrl, callPrice, expertTopicsRaw, voiceStudyRaw, bio, description, headshotUrl, termsAccepted, userId: uid }) => {
+            if (!termsAccepted) {
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance, then call finalize_byo_mcp_onboarding with termsAccepted: true.'
+                    }]
+                };
+            }
+
+            if (!apiKey) {
+                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+            }
+
+            try {
+                const userEmail = resolveUserId(userId, uid);
+                const payload = {
+                    byo_mcp: true,
+                    mcpUrl: mcpUrl.trim(),
+                    mcpAuthType: 'none',
+                    name,
+                    role,
+                    knowledgeArea,
+                    callPrice: callPrice || 'No Calls',
+                    expertTopicsRaw,
+                    voiceStudyRaw: voiceStudyRaw || undefined,
+                    bio: bio || undefined,
+                    description: description || undefined,
+                    headshotUrl: headshotUrl || undefined,
+                    onboardingMode: 'mcp_conversational',
+                    intakeSource: 'mcp_conversational',
+                    productionMode: true
+                };
+
+                const result = await foddaRequest('POST', '/api/onboard-expert', apiKey, userEmail, payload);
+
+                const statusText = [
+                    `🎉 **Human Agent Submission Received!**`,
+                    ``,
+                    `Your Human Agent profile for **${name}** (${role} — ${knowledgeArea}) has been successfully submitted with live MCP grounding to \`${mcpUrl.trim()}\`.`,
+                    ``,
+                    `• **Current Status**: Pending review. Our team will verify endpoint responsiveness and domain alignment.`,
+                    `• **Next Steps**: You will receive a confirmation email at **${userEmail}**. Once approved, your Human Agent will be live on the Fodda platform and callable directly via Claude, Copilot, or the Fodda web directory.`,
+                    `• **Live Consultations**: When active, inquiries will consult your MCP server in real time with attribution to your source material.`
+                ].join('\n');
+
+                const responseData = {
+                    status: 'submitted_for_review',
+                    analystId: result?.analystId,
+                    name,
+                    role,
+                    mcpUrl: mcpUrl.trim(),
+                    callPrice: callPrice || 'No Calls',
+                    retrievalSource: 'external_mcp',
+                    graphSubType: 'Digital Twin',
+                    result
+                };
+
+                return {
+                    content: [
+                        { type: 'text' as const, text: statusText },
+                        { type: 'text' as const, text: JSON.stringify(responseData, null, 2) }
                     ]
                 };
             } catch (err: any) {

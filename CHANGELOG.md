@@ -5,6 +5,74 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.53] - 2026-09-06
+
+### Added & Changed (Research Routing, Specialist Graph Isolation & 4-Tier Agent Taxonomy)
+- **Eliminated Pacific Islands Hallucination (`src/coverageRelevance.ts`)**:
+  - Deleted the blind `catalog.find(g => !searchedGraphIds.has(g.graph_id))` fallback on thin and empty searches that previously picked the first unsearched catalog entry (`pdh_pacific`).
+  - When no unsearched graph meets the relevance floor (`score >= 0.10`), `nextMoves.thread` now cleanly preserves `honest_thin` with `text: "That's what Fodda holds on this right now."` and omits the hallucinated adjacent room entirely.
+- **Scored Intent-Aware Expert Routing & Stopworded Bio Matching (`src/coverageRelevance.ts`)**:
+  - Stopworded generic research vocabulary (`trends`, `consumer`, `market`) from query matching words, preventing false matches on general bios.
+  - Implemented 4-tier category intent weighting:
+    - Corporate & Earnings queries: +6.0 boost to C-Suite Agents (`brand-cmo`, `brand-ceo`, `brand-cfo`).
+    - Contemporary industry/culture queries: +3.0 boost to verified living Human Agents (`human_agent`).
+    - Philosophical, aesthetic, and art criticism queries: +5.0 boost to Classic Agents (`john-ruskin`, `alain-locke`); otherwise demoted by -10.0 so historical thinkers never outrank living figures on business topics.
+  - Required explicit lane/topic match (`hasExplicitMatch`) and minimum fit score floor (>= 6.0), cleanly suppressing false expert recommendations (e.g. Piers Fawkes on beauty & skincare).
+  - Enriched `specific.expert` with `category` and `consult_tool`.
+- **Primary Tool: `get_specialist_intelligence` (`src/toolHandlers.ts`, `src/tools.ts`, `tools-manifest.json`)**:
+  - Added `get_specialist_intelligence` as the primary tool for searching specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (culture, media, commerce, youth trends).
+  - Maintained `get_expert_intelligence` as a backward-compatible legacy alias pointing to the exact same handler.
+  - Aligned tool nomenclature with the strict rule: "expert" is reserved strictly for consulting or finding personas/people, while database search tools use library/specialist nomenclature.
+- **Enhanced `list_analysts` with Category & Natural Query Filtering (`src/toolHandlers.ts`)**:
+  - Added `category?: 'all' | 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent'` parameter.
+  - Added `query?: string` parameter for lane-matching using `specificQueryTokens`.
+  - Emitted `category`, `is_verified_real_person`, `is_human_agent`, `is_classic_agent`, `is_c_suite_agent`, and `consult_tool` in output objects. Classic agents are explicitly marked `is_verified_real_person: false`.
+- **Multi-Turn Homework Mode (`src/toolHandlers.ts`)**:
+  - Added optional `deep?: boolean` parameter to `consult_human_agent`.
+  - Added natural language homework detection for queries like "do your homework", "deep dive", "find concrete data", "verify with data", "rigorous breakdown". Automatically sets `deep: true` in the upstream consult request.
+- **Platform Capabilities Triad (`src/toolHandlers.ts`)**:
+  - Updated `get_capabilities`: organized research libraries around the approved triad (`get_domain_intelligence`, `get_report_intelligence`, `get_specialist_intelligence`, `search_graph`, `get_validated_trends`) and agents around 4 categories (`consult_human_agent`, `consult_analyst`, `list_analysts`).
+- **Nomenclature Alignment ("Human Agent (Expert Digital Twin)") (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Aligned user- and maker-facing titles and descriptions to "Human Agent (Expert Digital Twin)" for living experts and "Classic Digital Twin" for historical thinkers across tool titles, descriptions, and catalog normalization.
+- *Verification:*
+  - All 33 unit tests in `src/test_next_moves.ts` passed (including Test 31 Pacific Islands regression, Test 32 Beauty suppression, Test 33 4-tier routing).
+  - All 4 tests in `src/test_consult_routing.ts` passed.
+  - All tests in `src/test_specialist_and_analyst_tiers.ts` passed.
+  - `npm run build` passed (50 tools generated, Cost Silence Guard passed).
+  - `npm test` verified clean startup and /health 200 response on port 3099.
+
+## [1.46.52] - 2026-09-05
+
+### Added & Changed (BYO-MCP Conversational Onboarding)
+- **Non-Technical Gate & BYO-MCP Branch (`src/toolHandlers.ts`)**:
+  - `begin_expert_onboarding`: Added non-technical gate with an easy out ("Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer No / I don't know..."). Defaults cleanly to the standard path on anything that isn't a confident yes. Added `byoMcp` optional parameter returning the dedicated 5-step BYO-MCP sequence.
+- **Parity Parameters on Basic Info (`src/toolHandlers.ts`)**:
+  - `submit_basic_info`: Added optional, backward-compatible `bio`, `description`, and `headshotUrl` fields forwarded to `/api/prepare-voice-interview`.
+- **New Tool: `submit_mcp_source` (`src/toolHandlers.ts`)**:
+  - Connects and probes external MCP endpoints via `POST /api/probe-mcp` with `{ url, scan: true }`.
+  - Blocks progression on endpoint probe failure with guidance to fix or fall back to standard onboarding.
+  - Enforces Phase 1 `authType: 'none'` only; declines `bearer` and `header` with a friendly "authenticated MCPs coming soon" notice.
+  - Returns discovered tools count/names, seeded topics, and sample queries.
+- **New Tool: `finalize_byo_mcp_onboarding` (`src/toolHandlers.ts`)**:
+  - Single write path proxying directly to `POST /api/onboard-expert` with `{ byo_mcp: true, mcpUrl, mcpAuthType: 'none', expertTopicsRaw, ... }`.
+  - Enforces explicit `termsAccepted: true` check with clickable links to Terms of Service and Privacy Policy.
+  - Bypasses background deep research, audio interview scheduling, and the 400 provenance gate.
+  - Returns honest next-step status (submission received -> pending administrative review).
+- **Tool Versioning & Manifest (`src/tools.ts`, `scripts/generate-tools-manifest.mjs`)**:
+  - Added version constants to `TOOL_VERSIONS` for all onboarding tools.
+  - Added onboarding tools to `CATEGORY` map in manifest generator.
+- **System Prompt & Persistence Copy (`src/systemPrompt.ts`)**:
+  - Added flow guidelines and non-technical gate instructions for Claude.
+  - Updated persistence copy scoped to BYO-MCP branch: progress is saved as you go, MCP URL is recorded upon connection, and Human Agent goes live after review. Standard flow persistence copy preserved untouched.
+- **Agent Bible Documentation (`docs/bibles/product_and_system_reference.md`)**:
+  - Updated section 8b documenting the conversational BYO-MCP onboarding pipeline.
+- **Cross-Repo Handoff Brief**:
+  - Created `Brief - BYO-MCP Probe Auth & Topic Scan (Website Agent).md` in `Fodda Website/briefs/` and `Fodda API/briefs/` to wire HMAC auth and topic scanning on `POST /api/probe-mcp`.
+- *Verification:*
+  - Unit assertions in `scratch/test_byo_mcp_units.ts` passed (schema checks, authType gate, HTTPS validation, terms gate).
+  - `npm run build` passed cleanly (49 tools generated, Cost Silence Guard passed).
+  - `npm test` verified clean server startup and /health response.
+
 ## [1.46.51] - 2026-09-04
 
 ### Changed (Directory Readiness: Mark Profile & Preferences Non-Destructive)

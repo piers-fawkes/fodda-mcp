@@ -1034,6 +1034,150 @@ async function runTests() {
     console.log('✅ Test 30 Passed: Zero shelf candidate graphs cleanly fell back to deliverable offering line');
 }
 
+// Test 31: Pacific Islands regression guard (catalog[0] is never blindly grabbed on thin/empty query)
+{
+    const catalogWithPacific = [
+        {
+            graph_id: 'pdh_pacific',
+            name: 'Pacific Islands Data Hub',
+            graph_type: 'domain',
+            status: 'live',
+            topics: ['pacific', 'fiji', 'oceania'],
+            trend_count: 50,
+            evidence_count: 200,
+        },
+        ...mockGraphs,
+    ];
+
+    const nextMoves = await generateNextMoves(
+        [],
+        'enterprise cloud computing security',
+        ['retail'],
+        'empty',
+        undefined,
+        undefined,
+        catalogWithPacific as any,
+        mockAnalysts
+    );
+
+    assert.ok(nextMoves, 'nextMoves must be defined');
+    assert.notStrictEqual(nextMoves.thread?.adjacent?.graph_id, 'pdh_pacific', 'Must NEVER fall back to pdh_pacific on unrelated query');
+    assert.strictEqual(nextMoves.thread?.adjacent, undefined, 'No adjacent room should be hallucinated without relevance');
+    assert.strictEqual(nextMoves.thread?.kind, 'honest_thin');
+    console.log('✅ Test 31 Passed: Pacific Islands blind fallback suppressed on unrelated query');
+}
+
+// Test 32: Beauty & Skincare query cleanly omits Piers Fawkes (no false expert recommendation)
+{
+    const rosterWithPiers: CatalogAnalyst[] = [
+        {
+            analyst_id: 'piers-fawkes-psfk',
+            name: 'Piers Fawkes',
+            status: 'active',
+            category: 'human_agent',
+            is_human_agent: true,
+            topics: ['retail innovation', 'consumer trends', 'customer experience'],
+            description: 'Founder & CEO of PSFK, retail innovation and consumer trend expert',
+            expert_in: 'retail innovation, store design, future of retail',
+            outside_their_lane: 'deep learning architecture, financial engineering',
+        }
+    ];
+
+    const nextMoves = await generateNextMoves(
+        [],
+        'beauty and skincare trends',
+        ['beauty'],
+        'empty',
+        undefined,
+        undefined,
+        mockGraphs,
+        rosterWithPiers
+    );
+
+    assert.strictEqual(nextMoves.specific?.expert, undefined, 'Piers Fawkes must NOT be recommended on beauty and skincare query');
+    console.log('✅ Test 32 Passed: Piers Fawkes suppressed on beauty and skincare query (no explicit topic match)');
+}
+
+// Test 33: 4-tier agent intent prioritization
+{
+    const tieredRoster: CatalogAnalyst[] = [
+        {
+            analyst_id: 'brand-cmo',
+            name: 'Brand CMO',
+            status: 'active',
+            category: 'c_suite_agent',
+            is_c_suite_agent: true,
+            topics: ['marketing strategy', 'brand governance', 'enterprise marketing'],
+            description: 'Corporate CMO lens grounded in SEC filings and earnings transcripts',
+            expert_in: 'brand strategy, corporate earnings, executive marketing decisions',
+        },
+        {
+            analyst_id: 'john-ruskin',
+            name: 'John Ruskin',
+            status: 'active',
+            category: 'classic_agent',
+            is_classic_agent: true,
+            topics: ['art criticism', 'architectural theory', 'craftsmanship', 'aesthetic philosophy'],
+            description: 'Victorian art critic and social thinker',
+            expert_in: 'craftsmanship, aesthetic philosophy, moral critique of industrialism',
+        },
+        {
+            analyst_id: 'ben-dietz-sic',
+            name: 'Ben Dietz',
+            status: 'active',
+            category: 'human_agent',
+            is_human_agent: true,
+            topics: ['streetwear', 'youth culture', 'music', 'subcultures'],
+            description: 'Cultural strategist and host of [SIC] Weekly',
+            expert_in: 'streetwear culture, underground movements, youth trends',
+        }
+    ];
+
+    // Case A: Corporate / earnings query picks C-Suite Agent
+    const corporateMoves = await generateNextMoves(
+        [],
+        'quarterly brand marketing earnings review',
+        ['retail'],
+        'thin',
+        undefined,
+        undefined,
+        mockGraphs,
+        tieredRoster
+    );
+    assert.strictEqual(corporateMoves.specific?.expert?.analyst_id, 'brand-cmo', 'Must pick Brand CMO for corporate marketing earnings');
+    assert.strictEqual(corporateMoves.specific?.expert?.category, 'c_suite_agent');
+
+    // Case B: Aesthetics & art criticism picks Classic Agent
+    const aestheticMoves = await generateNextMoves(
+        [],
+        'moral philosophy of art and craftsmanship in design',
+        ['retail'],
+        'thin',
+        undefined,
+        undefined,
+        mockGraphs,
+        tieredRoster
+    );
+    assert.strictEqual(aestheticMoves.specific?.expert?.analyst_id, 'john-ruskin', 'Must pick John Ruskin for craftsmanship and aesthetic philosophy');
+    assert.strictEqual(aestheticMoves.specific?.expert?.category, 'classic_agent');
+
+    // Case C: Contemporary culture & streetwear picks living Human Agent
+    const cultureMoves = await generateNextMoves(
+        [],
+        'streetwear youth subcultures and underground music',
+        ['retail'],
+        'thin',
+        undefined,
+        undefined,
+        mockGraphs,
+        tieredRoster
+    );
+    assert.strictEqual(cultureMoves.specific?.expert?.analyst_id, 'ben-dietz-sic', 'Must pick Ben Dietz for streetwear and youth culture');
+    assert.strictEqual(cultureMoves.specific?.expert?.category, 'human_agent');
+
+    console.log('✅ Test 33 Passed: 4-tier agent intent prioritization correctly routed C-Suite, Classic, and Human agents');
+}
+
 console.log('\nAll Next Moves unit tests passed successfully!');
 }
 

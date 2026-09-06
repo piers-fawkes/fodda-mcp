@@ -31,6 +31,7 @@ const BILLS_AS = {
   search_statistics: 'standalone_statistics',
   search_insights: 'standalone_insights',
   get_domain_intelligence: 'domain_intelligence',
+  get_specialist_intelligence: 'specialist_intelligence',
   get_expert_intelligence: 'expert_intelligence',
   get_report_intelligence: 'report_intelligence',
   get_company_earnings: 'earnings_company',
@@ -44,7 +45,8 @@ const CATEGORY = {
   get_evidence: 'Graph', get_node: 'Graph', get_neighbors: 'Graph', get_label_values: 'Graph',
   get_supplemental_context: 'Supplemental',
   get_earnings_intelligence: 'Financial', get_earnings_divergence: 'Financial', get_company_earnings: 'Financial',
-  consult_analyst: 'Expert', consult_human_agent: 'Expert', list_analysts: 'Expert', get_expert_intelligence: 'Expert',
+  consult_analyst: 'Expert', consult_human_agent: 'Expert', list_analysts: 'Expert',
+  get_specialist_intelligence: 'Intelligence', get_expert_intelligence: 'Intelligence',
   request_deliverable: 'Expert', check_deliverable_status: 'Status',
   brainstorm_topic: 'Ideation', discover_adjacent_trends: 'Ideation',
   read_url: 'Web', get_domain_intelligence: 'Intelligence', get_report_intelligence: 'Intelligence',
@@ -53,7 +55,12 @@ const CATEGORY = {
   list_graphs: 'Account', get_my_account: 'Account', sign_up_free_account: 'Account',
   update_user_profile: 'Account', toggle_graph_preference: 'Account', send_feedback: 'Account',
   manage_scheduled_reports: 'Account', check_research_status: 'Status', check_supplemental_status: 'Status',
+  begin_expert_onboarding: 'Onboarding', submit_basic_info: 'Onboarding', submit_mcp_source: 'Onboarding',
+  finalize_byo_mcp_onboarding: 'Onboarding', expert_onboarding_research: 'Onboarding',
+  submit_expertise_analysis: 'Onboarding', get_detected_themes: 'Onboarding', confirm_themes: 'Onboarding',
+  get_onboarding_status: 'Onboarding', schedule_interview: 'Onboarding',
 };
+
 
 const STR = /'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g;
 const unquote = (s) => {

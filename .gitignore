@@ -19,3 +19,4 @@ deploy_cloud_run.sh
 # Agent infra — scratch is local-only, everything else is tracked
 .agent/
 .agents/scratch/
+scratch/

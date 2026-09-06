@@ -470,7 +470,7 @@ export function createSessionTracker(options?: { zeroQueryRetention?: boolean })
                     return 'shelf';
                 }
                 if (
-                    (currentTool === 'search_graph' || currentTool === 'get_domain_intelligence' || currentTool === 'get_report_intelligence') &&
+                    (currentTool === 'search_graph' || currentTool === 'get_domain_intelligence' || currentTool === 'get_report_intelligence' || currentTool === 'get_specialist_intelligence' || currentTool === 'get_expert_intelligence') &&
                     sgId && q.includes(sgId)
                 ) {
                     return 'shelf';

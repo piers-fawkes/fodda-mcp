@@ -73,15 +73,21 @@ export interface CatalogResponse {
     graphs: CatalogGraph[];
 }
 
+export type AgentCategory = 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent';
+
 export interface CatalogAnalyst {
     analyst_id: string;
     name: string;
     description: string;
+    category?: AgentCategory;
+    category_label?: string;
     type?: string;
     agent_type?: string;
     kind?: string;
     is_digital_twin?: boolean;
     is_human_agent?: boolean;
+    is_classic_agent?: boolean;
+    is_c_suite_agent?: boolean;
     consult_tool?: string;
     price?: string;
     offerings?: any[];
@@ -133,10 +139,24 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
     }
 
     const rawSubType = (a.graphSubType || a.graph_sub_type || a.subType || a.type || a.kind || a.agent_type || '').toString().trim();
-    const is_human_agent = Boolean(
-        rawSubType === 'Digital Twin' ||
+    const cleanId = String(analyst_id).toLowerCase().trim();
+
+    // ── 4-Tier Agent Taxonomy ──
+    // 1. C-Suite Agents: brand executives grounded in corporate earnings and disclosures
+    const is_c_suite = cleanId === 'brand-cmo' || cleanId === 'brand-ceo' || cleanId === 'brand-cfo' ||
+        /brand-(cmo|ceo|cfo)/i.test(cleanId) || /c-suite|executive/i.test(rawSubType);
+
+    // 2. Classic Agents: historical public-domain thinkers (philosophical / critical lenses)
+    const is_classic = !is_c_suite && (
         rawSubType === 'Classic Digital Twin' ||
-        /digital twin/i.test(rawSubType) ||
+        /classic digital twin/i.test(rawSubType) ||
+        a.is_classic_agent === true ||
+        a.category === 'classic_agent'
+    );
+
+    // 3. Human Agents: real living industry figures with consented digital twins
+    const is_human = !is_c_suite && !is_classic && Boolean(
+        rawSubType === 'Digital Twin' ||
         rawSubType === 'human_agent' ||
         rawSubType === 'human_twin' ||
         rawSubType === 'expert_twin' ||
@@ -151,14 +171,36 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         a.agent_type === 'human_agent' ||
         a.agent_type === 'human_twin'
     );
-    const slug = a.expertSlug || a.expert_slug || a.slug || a.analyst_id || (is_human_agent ? a.id : undefined);
+
+    let category: AgentCategory = 'synthetic_agent';
+    let category_label = 'Synthetic Analyst';
+    if (is_human) {
+        category = 'human_agent';
+        category_label = 'Expert Digital Twin';
+    } else if (is_classic) {
+        category = 'classic_agent';
+        category_label = 'Classic Digital Twin';
+    } else if (is_c_suite) {
+        category = 'c_suite_agent';
+        category_label = 'C-Suite Agent';
+    }
+
+    const slug = a.expertSlug || a.expert_slug || a.slug || a.analyst_id || (is_human ? a.id : undefined);
+    const consult_tool = is_human ? 'consult_human_agent' : 'consult_analyst';
 
     return {
         ...a,
         analyst_id,
         name,
         description,
-        is_human_agent,
+        category,
+        category_label,
+        type: category,
+        is_human_agent: is_human,
+        is_classic_agent: is_classic,
+        is_c_suite_agent: is_c_suite,
+        is_verified_real_person: is_human,
+        consult_tool,
         slug: slug ? String(slug).trim() : undefined,
         ...(expert_in ? { expert_in } : {}),
         ...(outside_their_lane ? { outside_their_lane } : {}),

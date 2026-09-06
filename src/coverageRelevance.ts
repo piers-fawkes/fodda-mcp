@@ -591,6 +591,8 @@ export interface NextMovesSpecific {
         analyst_id: string;
         display_name: string;
         reason: string;
+        category?: string | undefined;
+        consult_tool?: string | undefined;
     } | undefined;
     shelf_graphs?: NextMovesShelfGraph[] | undefined;
 }
@@ -913,15 +915,23 @@ export async function generateNextMoves(
                 };
             }
         } else {
-            // Empty brand footprint: pick top domain graph from catalog without keyword-matching on bare brand name
-            const unsearchedDomain = catalog.filter(g => !searchedGraphIds.has(g.graph_id) && (g.graph_type === 'domain' || !g.curator))[0] ||
-                                     catalog.find(g => !searchedGraphIds.has(g.graph_id));
+            // Empty brand footprint: try to find relevant unsearched domain graph if score >= 0.10
+            let relevantCandidates: any[] = [];
+            try {
+                relevantCandidates = getRelevantGraphs(query);
+            } catch {
+                relevantCandidates = [];
+            }
+            const unsearchedDomain = relevantCandidates.find(
+                cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10
+            )?.graph;
+            const primarySearched = searchedGraphs[0];
+            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || 'the graph');
+
             if (unsearchedDomain) {
                 const topDisplay = buildDisplayName(unsearchedDomain);
-                const primarySearched = searchedGraphs[0];
-                const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-                const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-                const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || topDisplay);
                 nextMoves.thread = {
                     kind: 'honest_thin',
                     graph_id: primaryGid || unsearchedDomain.graph_id,
@@ -931,6 +941,13 @@ export async function generateNextMoves(
                         graph_display: topDisplay,
                         reason: unsearchedDomain.headline || unsearchedDomain.domain || unsearchedDomain.name,
                     }
+                };
+            } else {
+                nextMoves.thread = {
+                    kind: 'honest_thin',
+                    graph_id: primaryGid,
+                    graph_display: primaryDisplay,
+                    text: `That's what Fodda holds on this right now.`,
                 };
             }
         }
@@ -969,13 +986,14 @@ export async function generateNextMoves(
                 cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10
             );
 
+            const primarySearched = searchedGraphs[0];
+            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
+            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
+            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || 'the graph');
+
             if (unsearchedCandidate) {
                 const adjG = unsearchedCandidate.graph;
                 const adjDisplay = buildDisplayName(adjG);
-                const primarySearched = searchedGraphs[0];
-                const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-                const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-                const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || adjDisplay);
 
                 nextMoves.thread = {
                     kind: (status === 'thin' || status === 'empty' || isSmallReportOrExhausted) ? 'honest_thin' : 'adjacent_room',
@@ -988,31 +1006,14 @@ export async function generateNextMoves(
                     }
                 };
             } else if (status === 'thin' || status === 'empty' || isSmallReportOrExhausted) {
-                // Find any unsearched catalog graph (never self/searched)
-                const unsearchedFallback = catalog.find(g => !searchedGraphIds.has(g.graph_id));
-                if (unsearchedFallback) {
-                    const adjDisplay = buildDisplayName(unsearchedFallback);
-                    const primarySearched = searchedGraphs[0];
-                    const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-                    const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-                    const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || adjDisplay);
-
-                    nextMoves.thread = {
-                        kind: 'honest_thin',
-                        graph_id: primaryGid || unsearchedFallback.graph_id,
-                        graph_display: primaryDisplay,
-                        adjacent: {
-                            graph_id: unsearchedFallback.graph_id,
-                            graph_display: adjDisplay,
-                            reason: unsearchedFallback.headline || unsearchedFallback.domain || unsearchedFallback.name,
-                        }
-                    };
-                } else {
-                    // All candidates are searched -> drop thread completely
-                    nextMoves.thread = undefined;
-                }
+                // Honest thin without hallucinated adjacent graph: never fabricate catalog[0] or blind unsearched fallback
+                nextMoves.thread = {
+                    kind: 'honest_thin',
+                    graph_id: primaryGid,
+                    graph_display: primaryDisplay,
+                    text: `That's what Fodda holds on this right now.`,
+                };
             } else {
-                // ok status with 0 remainder and no unsearched room -> thread is undefined
                 nextMoves.thread = undefined;
             }
         }
@@ -1172,12 +1173,31 @@ export async function generateNextMoves(
 
     const qLower = (query || '').toLowerCase().trim();
     const queryTokens = tokens;
-    const allQueryWords = qLower.split(/[^a-z0-9]+/).filter((w: string) => w.length >= 3);
+    const allQueryWords = qLower.split(/[^a-z0-9]+/).filter((w: string) => w.length >= 3 && !GENERIC_QUERY_TOKENS.has(w));
+
+    const isBrandOrCorporateQuery = Boolean(
+        options?.isBrandTracker ||
+        /brand|financial|earnings|corporate|cmo|ceo|cfo|executive|revenue|margin|quarterly|investor|q[1-4]|balance sheet/i.test(qLower)
+    );
+    const isPhilosophicalQuery = /art\b|aesthetic|philosophy|philosophical|criticism|craftsmanship|harlem renaissance|aesthetic theory|ethics of art|ruskin|locke\b/i.test(qLower);
+
+    function getCategory(a: CatalogAnalyst): 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent' {
+        if (a.category) return a.category;
+        if (a.is_human_agent || a.is_verified_real_person) return 'human_agent';
+        if (a.is_c_suite_agent || /brand-(cmo|ceo|cfo)/i.test(a.analyst_id || '')) return 'c_suite_agent';
+        if (a.is_classic_agent) return 'classic_agent';
+        const sub = (a.graphSubType || a.graph_sub_type || a.type || a.kind || '').toString().toLowerCase();
+        if (sub.includes('classic')) return 'classic_agent';
+        if (sub.includes('digital twin') || sub.includes('human')) return 'human_agent';
+        if (sub.includes('c-suite') || sub.includes('executive')) return 'c_suite_agent';
+        return 'synthetic_agent';
+    }
 
     interface ScoredAnalyst {
         analyst: CatalogAnalyst;
         score: number;
         hasBlindSpot: boolean;
+        hasExplicitMatch: boolean;
         directMatch: boolean;
     }
 
@@ -1188,6 +1208,26 @@ export async function generateNextMoves(
 
         let score = 0;
         let directMatch = false;
+        let hasExplicitMatch = false;
+
+        const category = getCategory(a);
+
+        // ── Tier Intent Weighting ──
+        if (category === 'c_suite_agent') {
+            if (isBrandOrCorporateQuery) {
+                score += 6.0;
+            } else {
+                score -= 5.0;
+            }
+        } else if (category === 'classic_agent') {
+            if (isPhilosophicalQuery) {
+                score += 5.0;
+            } else {
+                score -= 10.0; // Classic thinkers must never outrank living practitioners on contemporary queries
+            }
+        } else if (category === 'human_agent' || a.is_verified_real_person) {
+            score += 3.0; // Prioritize living human practitioners over synthetic agents
+        }
 
         // 1. Negative signal: Blind spot / outside_their_lane
         const blindSpot = (typeof a.outside_their_lane === 'string' ? a.outside_their_lane : '').toLowerCase();
@@ -1212,15 +1252,18 @@ export async function generateNextMoves(
         if (expertIn.length > 0) {
             if (qLower.length > 5 && expertIn.includes(qLower)) {
                 score += 8;
+                hasExplicitMatch = true;
             }
             for (const t of queryTokens) {
                 if (expertIn.includes(t)) {
                     score += 4;
+                    if (t.length >= 4) hasExplicitMatch = true;
                 }
             }
             for (const w of allQueryWords) {
                 if (expertIn.includes(w)) {
                     score += 1.5;
+                    if (w.length >= 4) hasExplicitMatch = true;
                 }
             }
         }
@@ -1230,20 +1273,23 @@ export async function generateNextMoves(
         for (const tp of aTopics) {
             if (qLower.includes(tp) || tp.includes(qLower)) {
                 score += 5;
+                hasExplicitMatch = true;
             }
             for (const t of queryTokens) {
-                if (tp.includes(t)) {
+                if (tp.includes(t) || t.includes(tp)) {
                     score += 3;
+                    if (t.length >= 3 && tp.length >= 3) hasExplicitMatch = true;
                 }
             }
             for (const w of allQueryWords) {
-                if (tp.includes(w)) {
+                if (tp.includes(w) || w.includes(tp)) {
                     score += 1.5;
+                    if (w.length >= 3 && tp.length >= 3) hasExplicitMatch = true;
                 }
             }
         }
 
-        // 4. Positive signal: description
+        // 4. Positive signal: description (supporting context)
         const desc = (typeof a.description === 'string' ? a.description : '').toLowerCase();
         if (desc.length > 0) {
             if (qLower.length > 5 && desc.includes(qLower)) {
@@ -1275,18 +1321,19 @@ export async function generateNextMoves(
                     : (searchedGraphIds.has(aSlug) ? 1.0 : 0);
                 if (relScore > 0) {
                     score += relScore * 5.0;
+                    hasExplicitMatch = true;
                     if (relScore >= 0.5) directMatch = true;
                 }
             }
         }
 
-        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, directMatch });
+        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, directMatch });
     }
 
-    // Require minimum threshold score and no disqualifying blind spot match
-    const MIN_EXPERT_FIT_SCORE = 3.0;
+    // Require minimum threshold score (>= 6.0), explicit domain/topic match, and no disqualifying blind spot match
+    const MIN_EXPERT_FIT_SCORE = 6.0;
     const validCandidates = scoredAnalysts
-        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && !s.hasBlindSpot)
+        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && s.hasExplicitMatch && !s.hasBlindSpot)
         .sort((a, b) => b.score - a.score);
 
     const matchedAnalyst = validCandidates.length > 0 ? validCandidates[0]?.analyst : null;
@@ -1304,10 +1351,13 @@ export async function generateNextMoves(
             ? (lane && lane.length > 3 ? `closest expert lane for ${lane}` : 'closest expert lane for this topic')
             : (lane && lane.length > 3 ? `covers ${lane} directly` : 'covers this domain directly');
 
+        const cat = matchedAnalyst.category || getCategory(matchedAnalyst);
         specific.expert = {
             analyst_id: matchedAnalyst.analyst_id,
             display_name: matchedAnalyst.name,
             reason,
+            category: cat,
+            consult_tool: matchedAnalyst.consult_tool || (cat === 'human_agent' ? 'consult_human_agent' : 'consult_analyst'),
         };
     }
 
