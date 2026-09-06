@@ -90,24 +90,30 @@ async function runTests() {
 
     const ben = allData.analysts.find((a: any) => a.analyst_id === 'ben-dietz-sic');
     assert.strictEqual(ben.category, 'human_agent');
+    assert.strictEqual(ben.category_label, 'Human Agent');
+    assert.strictEqual(ben.twin_type, 'Expert Digital Twin');
     assert.strictEqual(ben.is_verified_real_person, true);
     assert.strictEqual(ben.consult_tool, 'consult_human_agent');
 
     const cmo = allData.analysts.find((a: any) => a.analyst_id === 'brand-cmo');
     assert.strictEqual(cmo.category, 'c_suite_agent');
+    assert.strictEqual(cmo.category_label, 'C-Suite Agent');
     assert.strictEqual(cmo.is_verified_real_person, false);
     assert.strictEqual(cmo.consult_tool, 'consult_analyst');
 
     const ruskin = allData.analysts.find((a: any) => a.analyst_id === 'john-ruskin');
     assert.strictEqual(ruskin.category, 'classic_agent');
+    assert.strictEqual(ruskin.category_label, 'Classic Agent');
+    assert.strictEqual(ruskin.twin_type, 'Classic Digital Twin');
     assert.strictEqual(ruskin.is_verified_real_person, false);
     assert.strictEqual(ruskin.consult_tool, 'consult_analyst');
 
     const synthetic = allData.analysts.find((a: any) => a.analyst_id === 'retail-synthetic');
     assert.strictEqual(synthetic.category, 'synthetic_agent');
+    assert.strictEqual(synthetic.category_label, 'Synthetic Agent');
     assert.strictEqual(synthetic.is_verified_real_person, false);
 
-    console.log('✅ 4-Tier Categorization Passed: Living human, C-Suite, Classic, and Synthetic agents correctly classified');
+    console.log('✅ 4-Tier Categorization Passed: Human Agent (Expert Digital Twin), Classic Agent (Classic Digital Twin), C-Suite, and Synthetic correctly classified');
 
     // 3. Test list_analysts category filtering
     const humanOnlyRes = await listTool.handler({ category: 'human_agent' });

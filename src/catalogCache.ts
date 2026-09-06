@@ -81,6 +81,7 @@ export interface CatalogAnalyst {
     description: string;
     category?: AgentCategory;
     category_label?: string;
+    twin_type?: string;
     type?: string;
     agent_type?: string;
     kind?: string;
@@ -120,33 +121,22 @@ export function stringifyField(f: any): string {
 }
 
 export function normalizeAnalyst(a: any): CatalogAnalyst {
-    if (!a) return a;
-    const analyst_id = a.analyst_id || a.id || a.slug || a.name || '';
-    const name = a.name || analyst_id;
-    const description = stringifyField(a.description);
-    const rawExpertIn = a.expert_in || a.expertIn || a.topic;
-    const expert_in = rawExpertIn ? stringifyField(rawExpertIn) : undefined;
-    const rawOutside = a.outside_their_lane || a.outsideTheirLane || a.blindSpots || a.blind_spots;
-    const outside_their_lane = rawOutside ? stringifyField(rawOutside) : undefined;
-
-    let topics = a.topics;
-    if (typeof topics === 'string') {
-        topics = topics.split(',').map((t: string) => t.trim()).filter(Boolean);
-    } else if (Array.isArray(topics)) {
-        topics = topics.map(t => typeof t === 'string' ? t.trim() : (t?.name || t?.title || '')).filter(Boolean);
-    } else {
-        topics = undefined;
-    }
+    const analyst_id = String(a.analyst_id || a.id || a.slug || a.name || '').trim();
+    const name = String(a.name || a.analyst_id || a.id || a.slug || '').trim();
+    const description = stringifyField(a.description || a.bio || a.lens || a.standpoint || '');
+    const expert_in = stringifyField(a.expert_in || a.expertIn || a.topic || '');
+    const outside_their_lane = stringifyField(a.outside_their_lane || a.outsideTheirLane || a.blind_spots || a.blindSpots || '');
+    const topics = Array.isArray(a.topics) ? a.topics : (typeof a.topics === 'string' ? a.topics.split(',').map((s: string) => s.trim()) : undefined);
 
     const rawSubType = (a.graphSubType || a.graph_sub_type || a.subType || a.type || a.kind || a.agent_type || '').toString().trim();
-    const cleanId = String(analyst_id).toLowerCase().trim();
+    const cleanId = analyst_id.toLowerCase();
 
-    // ── 4-Tier Agent Taxonomy ──
-    // 1. C-Suite Agents: brand executives grounded in corporate earnings and disclosures
+    // ── 4-Tier Agent Classification ──
+    // 1. C-Suite Agents: corporate executive personas grounded in SEC/earnings
     const is_c_suite = cleanId === 'brand-cmo' || cleanId === 'brand-ceo' || cleanId === 'brand-cfo' ||
         /brand-(cmo|ceo|cfo)/i.test(cleanId) || /c-suite|executive/i.test(rawSubType);
 
-    // 2. Classic Agents: historical public-domain thinkers (philosophical / critical lenses)
+    // 2. Classic Agents: public-domain historical thinkers providing philosophical lenses
     const is_classic = !is_c_suite && (
         rawSubType === 'Classic Digital Twin' ||
         /classic digital twin/i.test(rawSubType) ||
@@ -173,13 +163,16 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
     );
 
     let category: AgentCategory = 'synthetic_agent';
-    let category_label = 'Synthetic Analyst';
+    let category_label = 'Synthetic Agent';
+    let twin_type: string | undefined = undefined;
     if (is_human) {
         category = 'human_agent';
-        category_label = 'Expert Digital Twin';
+        category_label = 'Human Agent';
+        twin_type = 'Expert Digital Twin';
     } else if (is_classic) {
         category = 'classic_agent';
-        category_label = 'Classic Digital Twin';
+        category_label = 'Classic Agent';
+        twin_type = 'Classic Digital Twin';
     } else if (is_c_suite) {
         category = 'c_suite_agent';
         category_label = 'C-Suite Agent';
@@ -195,6 +188,7 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         description,
         category,
         category_label,
+        ...(twin_type ? { twin_type } : {}),
         type: category,
         is_human_agent: is_human,
         is_classic_agent: is_classic,

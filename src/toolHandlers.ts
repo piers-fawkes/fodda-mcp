@@ -946,9 +946,9 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Lists available agents across 4 categories: human_agent (Expert Digital Twins of living industry figures e.g. Ben Dietz, Anu Lingala), c_suite_agent (corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), classic_agent (Classic Digital Twins of historical thinkers e.g. John Ruskin), and synthetic_agent (synthetic domain specialists). Filter by category or pass a query to match expert lanes.',
+        'Lists available agents across 4 categories: human_agent (Human Agents — Expert Digital Twins of living industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — Classic Digital Twins of historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes.',
         {
-            category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Expert Digital Twin), 'c_suite_agent', 'classic_agent' (Classic Digital Twin), 'synthetic_agent', or 'all' (default)."),
+            category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Human Agent — Expert Digital Twin), 'classic_agent' (Classic Agent — Classic Digital Twin), 'c_suite_agent' (C-Suite Agent), 'synthetic_agent' (Synthetic Agent), or 'all' (default)."),
             query: z.string().optional().describe("Optional natural language search query to filter analysts by lane, domain, expertise, or topics (e.g. 'streetwear', 'earnings', 'marketing')."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -1007,13 +1007,16 @@ export async function createServer(
                         );
 
                         let agentCategory: 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent' = 'synthetic_agent';
-                        let categoryLabel = 'Synthetic Analyst';
+                        let categoryLabel = 'Synthetic Agent';
+                        let twinType: string | undefined = undefined;
                         if (is_human) {
                             agentCategory = 'human_agent';
-                            categoryLabel = 'Expert Digital Twin';
+                            categoryLabel = 'Human Agent';
+                            twinType = 'Expert Digital Twin';
                         } else if (is_classic) {
                             agentCategory = 'classic_agent';
-                            categoryLabel = 'Classic Digital Twin';
+                            categoryLabel = 'Classic Agent';
+                            twinType = 'Classic Digital Twin';
                         } else if (is_c_suite) {
                             agentCategory = 'c_suite_agent';
                             categoryLabel = 'C-Suite Agent';
@@ -1042,6 +1045,7 @@ export async function createServer(
                             name: a.name,
                             category: agentCategory,
                             category_label: categoryLabel,
+                            ...(twinType ? { twin_type: twinType } : {}),
                             type: agentCategory,
                             consult_tool,
                             is_verified_real_person: is_human,
@@ -4984,19 +4988,19 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Synthetic Analyst expert who answers in their expert voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Synthetic analyst experts have a unique methodology, domain expertise, and analytical lens with a curated evidence base. For company-specific executives (e.g. "Nike CMO", "Apple CEO", "Target CFO"), you can pass analyst_id: "brand-cmo" with company: "Nike", or pass analyst_id: "Nike CMO" directly (auto-resolves to analyst_id: "brand-cmo" and company: "Nike"). Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Any referrals to other expert graphs are returned in third-person platform voice with an offer to query the referred graph.',
+        'Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are Classic Digital Twins of historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. "brand-cmo" with company: "Nike", or "Nike CMO" directly); Synthetic Agents provide domain-specific intelligence. Call list_analysts first to find the right agent ID. Responses may include coverage status, source attribution, and referrals to other graphs.',
         {
-            analyst_id: z.string().describe("The internal expert ID of the Synthetic Analyst (e.g., 'brand-cmo' or from list_analysts). This is an internal identifier; the expert's display name is in the response."),
-            query: z.string().describe("The question or topic to discuss with the synthetic analyst"),
+            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
+            query: z.string().describe("The question or topic to discuss with the analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context across the session. Omit for a one-off question."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Synthetic Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Consult Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
-            // Proactive routing: if analyst is known to be a Human Agent (Digital Twin), route directly before any API call
+            // Proactive routing: if analyst is known to be a Human Agent (Expert Digital Twin), route directly before any API call
             const match = getAnalysts().find((a: any) => {
                 const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
                 const nameKey = (a.name || '').toLowerCase().trim();
@@ -5013,7 +5017,7 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (Expert Digital Twin) created directly with the named expert\'s consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person.',
+        'Consult an authorized Human Agent (an Expert Digital Twin created directly with the named expert\'s consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person.',
         {
             analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
@@ -5022,7 +5026,7 @@ export async function createServer(
             deep: z.boolean().optional().describe("Set true to have the human agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Human Agent (Expert Digital Twin)', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Consult Human Agent', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 

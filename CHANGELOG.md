@@ -32,8 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added natural language homework detection for queries like "do your homework", "deep dive", "find concrete data", "verify with data", "rigorous breakdown". Automatically sets `deep: true` in the upstream consult request.
 - **Platform Capabilities Triad (`src/toolHandlers.ts`)**:
   - Updated `get_capabilities`: organized research libraries around the approved triad (`get_domain_intelligence`, `get_report_intelligence`, `get_specialist_intelligence`, `search_graph`, `get_validated_trends`) and agents around 4 categories (`consult_human_agent`, `consult_analyst`, `list_analysts`).
-- **Nomenclature Alignment ("Human Agent (Expert Digital Twin)") (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
-  - Aligned user- and maker-facing titles and descriptions to "Human Agent (Expert Digital Twin)" for living experts and "Classic Digital Twin" for historical thinkers across tool titles, descriptions, and catalog normalization.
+- **Nomenclature Distinction (Human Agents & Classic Agents)**:
+  - Formally separated entity names from their digital twin types:
+    - **Human Agent** (`category_label: 'Human Agent'`): living, consented practitioners; what they are is an **Expert Digital Twin** (`twin_type: 'Expert Digital Twin'`).
+    - **Classic Agent** (`category_label: 'Classic Agent'`): historical public-domain thinkers; what they are is a **Classic Digital Twin** (`twin_type: 'Classic Digital Twin'`).
+    - **C-Suite Agent** (`category_label: 'C-Suite Agent'`): corporate executive strategy lenses.
+    - **Synthetic Agent** (`category_label: 'Synthetic Agent'`): domain-specific synthetic lenses.
+  - Aligned tool titles to `'Consult Human Agent'` and `'Consult Analyst'`.
 - *Verification:*
   - All 33 unit tests in `src/test_next_moves.ts` passed (including Test 31 Pacific Islands regression, Test 32 Beauty suppression, Test 33 4-tier routing).
   - All 4 tests in `src/test_consult_routing.ts` passed.
