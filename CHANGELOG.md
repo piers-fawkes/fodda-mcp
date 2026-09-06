@@ -5,6 +5,26 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.55] - 2026-09-06
+
+### Added & Changed (Parent-Trend Evidence Validation, Medium Mismatch Rejection & Format-Aware Trend Ranking)
+- **Parent-Trend Evidence Validation & Medium Mismatch Filtering (`src/enrichment.ts`)**:
+  - Implemented strict parent-trend concept validation: physical pop-up and spatial retail trends require evidence to explicitly describe physical spaces, temporary retail, pop-ups, sampling, or in-person experiential activations.
+  - Added `DIGITAL_OR_B2B_PATTERNS` disqualification: rejects purely digital e-commerce channels (e.g. Ralph Lauren's TikTok Shop) and B2B enterprise software / supply chain pilots (e.g. PepsiCo Texas supply-chain pilot, P&G enterprise technology bundles, Unilever agentic shopping models) when attached to physical pop-up trends.
+  - For "Immersive Brand Pop-Ups", replaced Ralph Lauren's TikTok Shop with verified luxury physical activations: **Macy's Bloomingdale's 'Surf Shop' Carousel Pop-Up**, **Hermès 'Hermestories' Experiential Theater**, and **Studio Yet Pop-Up High-Performance Space**.
+  - Enforced strict evidence floor: returns a clean empty array (`evidence: []`) when a trend's candidate evidence contains no qualifying on-topic items (e.g. on "Pop-Ups as Test Labs"), eliminating false off-topic proofs.
+- **Format Match & Evidence-Backed Trend Scoring (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Refined `computeTierFit()` to evaluate title-level format alignment (boosting trends with "Pop-Up", "Experiential", "Activation" in their titles) and verified luxury evidence citations, bypassing legacy 100-brand piped strings from Airtable.
+  - Elevated sharp, query-specific trends (**"Immersive Brand Pop-Ups"** and **"Travel Retailers Deploying Experiential Pop-Up Installations"**) to Rank 1 and 2, ahead of broad umbrella trends ("Location-as-Media Activations").
+  - Penalized trends with 0 valid evidence items, ensuring trends with rich, verified luxury evidence surface first.
+- *Verification:*
+  - All 5 tests in `src/test_search_graph_quality.ts` passed.
+  - All 33 tests in `src/test_next_moves.ts` passed.
+  - All tests in `src/test_specialist_and_analyst_tiers.ts` passed.
+  - Live execution against Cloud Run API revision `00657-vwh` verified: Ralph Lauren TikTok Shop eliminated; PepsiCo, P&G, and Unilever eliminated; top results led by sharp luxury pop-up trends.
+  - `npm run build` passed (50 tools generated, Cost Silence Guard passed).
+  - `npm test` verified health 200 response on port 3099.
+
 ## [1.46.54] - 2026-09-06
 
 ### Added & Changed (Evidence Ranking, Freshness Precedence, Market Tier Fit & Payload Slimming)

@@ -225,38 +225,58 @@ export function computeTierFit(row: any, query: string): number {
     const isLuxuryQuery = [...LUXURY_KEYWORDS].some(k => qLower.includes(k));
     const isBudgetQuery = [...MASS_BUDGET_KEYWORDS].some(k => qLower.includes(k));
 
-    if (!isLuxuryQuery && !isBudgetQuery) return 0;
+    const title = (row.trendName || row.title || row.label || row.name || '').toLowerCase();
+    const summary = (row.summary || row.description || row.trendDescription || '').toLowerCase();
 
-    const rowText = [
-        row.trendName, row.title, row.label, row.name,
-        row.summary, row.description, row.trendDescription,
-        Array.isArray(row.brandNames) ? row.brandNames.join(' ') : String(row.brandNames || ''),
-        Array.isArray(row.sectors) ? row.sectors.join(' ') : String(row.sectors || ''),
-    ].filter(Boolean).join(' ').toLowerCase();
+    let boost = 0;
 
+    // 1. Format alignment with query (e.g. pop-up / activation / experiential)
+    if (/\bpop-?ups?\b/i.test(qLower)) {
+        if (/\bpop-?ups?\b/i.test(title)) boost += 0.40;
+        else if (/\bpop-?ups?\b/i.test(summary)) boost += 0.15;
+    }
+    if (/\b(experiential|experiences?)\b/i.test(qLower)) {
+        if (/\b(experiential|experiences?)\b/i.test(title)) boost += 0.20;
+    }
+    if (/\bactivations?\b/i.test(qLower)) {
+        if (/\bactivations?\b/i.test(title)) boost += 0.15;
+    }
+
+    // 2. Luxury / Market Tier matching
     if (isLuxuryQuery) {
-        const hasLuxuryBrand = [...LUXURY_BRANDS].some(b => rowText.includes(b));
-        const hasLuxuryWord = [...LUXURY_KEYWORDS].some(k => rowText.includes(k));
-        const hasBudgetBrand = [...MASS_BUDGET_BRANDS].some(b => rowText.includes(b));
+        // Title-level luxury match gets highest priority
+        const titleHasLuxWord = [...LUXURY_KEYWORDS].some(k => title.includes(k));
+        const titleHasLuxBrand = [...LUXURY_BRANDS].some(b => title.includes(b));
+        if (titleHasLuxWord || titleHasLuxBrand) boost += 0.40;
 
-        let boost = 0;
-        if (hasLuxuryBrand) boost += 0.25;
-        if (hasLuxuryWord) boost += 0.20;
-        // Demote mega-trends or generic trends dominated by budget/mass brands without explicit luxury focus
-        if (hasBudgetBrand && !hasLuxuryWord) boost -= 0.30;
-        return boost;
+        // Summary-level luxury match
+        const summaryHasLux = [...LUXURY_KEYWORDS].some(k => summary.includes(k)) ||
+            [...LUXURY_BRANDS].some(b => summary.includes(b));
+        if (summaryHasLux) boost += 0.25;
+
+        // Evidence-level luxury match
+        if (Array.isArray(row.evidence) && row.evidence.length > 0) {
+            const hasLuxEvidence = row.evidence.some((e: any) => {
+                const txt = `${e.title || ''} ${e.summary || ''}`.toLowerCase();
+                return [...LUXURY_BRANDS].some(b => txt.includes(b)) || [...LUXURY_KEYWORDS].some(k => txt.includes(k));
+            });
+            if (hasLuxEvidence) boost += 0.35;
+            boost += 0.20; // Having verified on-topic evidence is a positive signal
+        } else {
+            boost -= 0.20; // Having 0 valid evidence items penalizes the trend
+        }
+
+        // Mass-market penalty
+        const titleHasMass = [...MASS_BUDGET_BRANDS].some(b => title.includes(b));
+        const summaryHasMass = [...MASS_BUDGET_BRANDS].some(b => summary.includes(b));
+        if (titleHasMass || summaryHasMass) boost -= 0.40;
+    } else if (isBudgetQuery) {
+        const titleHasMass = [...MASS_BUDGET_BRANDS].some(b => title.includes(b)) ||
+            [...MASS_BUDGET_KEYWORDS].some(k => title.includes(k));
+        if (titleHasMass) boost += 0.40;
     }
 
-    if (isBudgetQuery) {
-        const hasBudgetBrand = [...MASS_BUDGET_BRANDS].some(b => rowText.includes(b));
-        const hasBudgetWord = [...MASS_BUDGET_KEYWORDS].some(k => rowText.includes(k));
-        let boost = 0;
-        if (hasBudgetBrand) boost += 0.25;
-        if (hasBudgetWord) boost += 0.20;
-        return boost;
-    }
-
-    return 0;
+    return boost;
 }
 
 /** Normalize brand string for deduplication / comparison. */

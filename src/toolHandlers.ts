@@ -1509,11 +1509,9 @@ export async function createServer(
                     data.rows.sort((a: any, b: any) => {
                         const tierFitA = computeTierFit(a, query);
                         const tierFitB = computeTierFit(b, query);
-                        if (Math.abs(tierFitB - tierFitA) > 0.15) return tierFitB - tierFitA;
-
-                        const relA = a.relevance_score || a.semantic_score || a._score || 0;
-                        const relB = b.relevance_score || b.semantic_score || b._score || 0;
-                        if (Math.abs(relB - relA) > 0.05) return relB - relA;
+                        const scoreA = (a.relevance_score || a.semantic_score || a._score || 0) + tierFitA;
+                        const scoreB = (b.relevance_score || b.semantic_score || b._score || 0) + tierFitB;
+                        if (Math.abs(scoreB - scoreA) > 0.05) return scoreB - scoreA;
 
                         const daysA = a.freshnessDays ?? 999;
                         const daysB = b.freshnessDays ?? 999;

@@ -203,13 +203,43 @@ export const LUXURY_BRANDS = new Set([
     'tiffany', 'saint laurent', 'balenciaga', 'bottega veneta', 'burberry', 'moncler',
     'loewe', 'celine', 'fendi', 'versace', 'ferragamo', 'valentino', 'rolex', 'harrods',
     'maison margiela', 'the macallan', 'hennessy', 'rh', 'nordstrom', 'saks', 'bergdorf',
-    'kering', 'lvmh', 'richemont', 'bulgari', 'bvlgari', 'chopard', 'patek philippe', 'audemars piguet'
+    'kering', 'lvmh', 'richemont', 'bulgari', 'bvlgari', 'chopard', 'patek philippe', 'audemars piguet',
+    "bloomingdale's", "bloomingdales", "harrods", "le bon marché", "la samaritaine",
+    "selfridges", "lane crawford", "neiman marcus", "galeries lafayette", "l’oréal travel retail",
+    "l'oréal travel retail", "l'oreal travel retail", "campari"
 ]);
 
 export const MASS_BUDGET_KEYWORDS = new Set(['budget', 'discount', 'mass-market', 'value', 'cheap', 'fast-food', 'low-cost']);
 export const MASS_BUDGET_BRANDS = new Set([
     'miniso', 'kfc', 'mcdonald\'s', 'mcdonalds', 'taco bell', 'burger king', 'dollar general',
     'dollar tree', 'five below', 'primark', 'shein', 'temu', 'walmart', 'popeyes', 'domino\'s'
+]);
+
+export const DIGITAL_OR_B2B_PATTERNS = [
+    /\btiktok shop\b/i,
+    /\bonline marketplace\b/i,
+    /\be-?commerce platform\b/i,
+    /\becommerce storefront\b/i,
+    /\bdigital storefront\b/i,
+    /\bsupply chain pilot\b/i,
+    /\benterprise-wide technology bundles\b/i,
+    /\bagentic shopping models\b/i,
+    /\bwarehouse logistics\b/i,
+    /\bcheckout api\b/i,
+    /\bquick delivery partnerships\b/i,
+    /\bconnected packaging\b/i,
+    /\bsoftware platform\b/i,
+    /\bcloud infrastructure\b/i,
+];
+
+export const PHYSICAL_SPATIAL_TERMS = new Set([
+    'pop-up', 'popup', 'pop up', 'pop-ups', 'popups', 'pop ups',
+    'temporary store', 'temporary space', 'temporary retail', 'temporary restaurant',
+    'ephemeral', 'kiosk', 'activation', 'experiential', 'installation', 'showcase',
+    'concept store', 'in-store', 'physical store', 'storefront', 'shop-in-shop',
+    'store-in-store', 'exhibition', 'retail space', 'boutique', 'resortcore',
+    'carousel', 'sampling', 'tasting', 'theater play', 'wellness hub', 'venue', 'hub',
+    'destination', 'physical experience', 'in-person'
 ]);
 
 const GENERIC_QUERY_STOPWORDS = new Set([
@@ -220,8 +250,8 @@ const GENERIC_QUERY_STOPWORDS = new Set([
 
 /**
  * Filter and rank evidence items against query qualifiers and trend context.
- * Prevents off-topic earnings transcripts or unrelated corporate items from surfacing
- * under creative/consumer trends just because of loose graph connectivity.
+ * Strictly validates evidence against parent trend topic and medium (e.g. physical pop-ups
+ * vs digital e-commerce/supply chain) and filters counter-tier brands.
  */
 export function rankAndFilterEvidence(
     items: any[],
@@ -229,7 +259,7 @@ export function rankAndFilterEvidence(
     trendContext?: any,
     opts: { maxItems?: number } = {}
 ): any[] {
-    if (!Array.isArray(items) || items.length === 0) return items;
+    if (!Array.isArray(items) || items.length === 0) return [];
     const maxItems = opts.maxItems ?? 3;
 
     const qLower = (query || '').toLowerCase();
@@ -241,9 +271,9 @@ export function rankAndFilterEvidence(
 
     const trendTitle = (trendContext?.trendName || trendContext?.title || trendContext?.label || '').toLowerCase();
     const trendWords = trendTitle.split(/[^a-z0-9]+/).filter((w: string) => w.length > 2 && !GENERIC_QUERY_STOPWORDS.has(w));
+    const isPopUpTrend = /\b(pop-?ups?|temporary store|temporary retail)\b/i.test(trendTitle) || /\b(pop-?ups?)\b/i.test(qLower);
 
     const scored = items.map((item, idx) => {
-        let score = 0;
         const title = (item.title || '').toLowerCase();
         const summary = (item.summary || item.excerpt || '').toLowerCase();
         const contentType = (item.contentType || '').toLowerCase();
@@ -253,91 +283,96 @@ export function rankAndFilterEvidence(
 
         const fullText = `${title} ${summary} ${brands.join(' ')}`;
 
-        // 1. Demote financial / earnings transcripts for qualitative queries
+        // 1. Digital/B2B Disqualification for Physical Pop-Up / Spatial Trends
+        if (isPopUpTrend) {
+            const isDigitalOrB2B = DIGITAL_OR_B2B_PATTERNS.some(p => p.test(fullText));
+            const mentionsPhysical = [...PHYSICAL_SPATIAL_TERMS].some(term => fullText.includes(term));
+            if (isDigitalOrB2B && !mentionsPhysical) {
+                return { item, score: -999, originalIdx: idx, reason: 'digital-only/B2B mismatch for physical pop-up trend' };
+            }
+            if (!mentionsPhysical) {
+                return { item, score: -999, originalIdx: idx, reason: 'no physical pop-up/spatial keyword' };
+            }
+        }
+
+        // 2. Demote financial / earnings transcripts for qualitative queries
         const isEarningsOrFinancial =
             /\b(revenue|ebitda|gross margin|earnings|quarterly|q[1-4]|probes|consolidated revenue|adjusted ebitda)\b/i.test(title) ||
             /\b(investor relations|q[1-4] 202[0-9]|earnings call|quarterly results)\b/i.test(fullText);
 
         if (isEarningsOrFinancial && !isFinancialQuery) {
-            score -= 20.0;
+            return { item, score: -999, originalIdx: idx, reason: 'financial transcript on qualitative query' };
         }
 
-        // 2. Category tier matching
+        // 3. Category tier matching
+        if (hasLuxuryQuery) {
+            const mentionsMassBrand = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
+                [...MASS_BUDGET_BRANDS].some(b => fullText.includes(b));
+            if (mentionsMassBrand) {
+                return { item, score: -999, originalIdx: idx, reason: 'mass-market brand on luxury query' };
+            }
+        }
+
+        // Trend validation baseline
+        let score = 5.0;
+
+        // Luxury boost
         if (hasLuxuryQuery) {
             const mentionsLuxuryBrand = brands.some((b: string) => LUXURY_BRANDS.has(b)) ||
                 [...LUXURY_BRANDS].some(b => fullText.includes(b));
             const mentionsLuxuryKeyword = [...LUXURY_KEYWORDS].some(k => fullText.includes(k));
-
-            if (mentionsLuxuryBrand || mentionsLuxuryKeyword) {
-                score += 15.0;
-            }
-
-            const mentionsMassBrand = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
-                [...MASS_BUDGET_BRANDS].some(b => fullText.includes(b));
-            if (mentionsMassBrand) {
-                score -= 25.0; // Demote mass-market/fast-food when query asked for luxury
-            }
+            if (mentionsLuxuryBrand) score += 20.0;
+            if (mentionsLuxuryKeyword) score += 10.0;
         } else if (hasBudgetQuery) {
             const mentionsMassBrand = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
                 [...MASS_BUDGET_BRANDS].some(b => fullText.includes(b));
             if (mentionsMassBrand) score += 15.0;
         }
 
-        // 3. Query term overlap
+        // Pop-up keyword boost
+        if (isPopUpTrend) {
+            if (/\bpop-?ups?\b/i.test(title)) score += 8.0;
+            else if (/\bpop-?ups?\b/i.test(summary)) score += 4.0;
+        }
+
+        // Query term overlap
         for (const word of qWords) {
             if (title.includes(word)) score += 4.0;
             else if (summary.includes(word)) score += 2.0;
             if (brands.some((b: string) => b.includes(word))) score += 3.0;
         }
 
-        // 4. Trend topic overlap
+        // Trend topic overlap
         for (const word of trendWords) {
             if (title.includes(word)) score += 2.5;
             else if (summary.includes(word)) score += 1.0;
         }
 
-        // 5. Content type preference (prioritize tangible proof/case studies)
+        // Content type preference (prioritize tangible proof/case studies)
         if (contentType === 'signal' || contentType === 'case study' || contentType === 'case_study') {
             score += 3.0;
         } else if (contentType === 'interpretation' || contentType === 'analysis') {
             score += 1.5;
         }
 
-        // 6. Recency bonus
+        // Recency bonus
         if (item.publishedAt) {
             const daysAgo = (Date.now() - new Date(item.publishedAt).getTime()) / 864e5;
-            if (!isNaN(daysAgo) && daysAgo < 180) score += 1.0;
+            if (!isNaN(daysAgo) && daysAgo < 180) score += 2.0;
         }
 
-        return { item, score, originalIdx: idx };
+        return { item, score, originalIdx: idx, reason: 'ok' };
     });
 
-    scored.sort((a, b) => {
+    // Only allow positive-scoring, non-disqualified items
+    const positiveEligible = scored.filter(s => s.score >= 5.0);
+    positiveEligible.sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
         return a.originalIdx - b.originalIdx;
     });
 
-    // Filter out counter-tier items (e.g. mass/fast-food when query is explicitly luxury)
-    // and exclude negative-scoring items unless no positive candidates exist.
-    const eligible = scored.filter(s => {
-        if (hasLuxuryQuery) {
-            const brands = Array.isArray(s.item.brandNames)
-                ? s.item.brandNames.map((b: string) => String(b).toLowerCase())
-                : (typeof s.item.brandNames === 'string' ? s.item.brandNames.toLowerCase().split('|') : []);
-            const title = (s.item.title || '').toLowerCase();
-            const summary = (s.item.summary || '').toLowerCase();
-            const text = `${title} ${summary} ${brands.join(' ')}`;
-            const mentionsMass = brands.some((b: string) => MASS_BUDGET_BRANDS.has(b)) ||
-                [...MASS_BUDGET_BRANDS].some(b => text.includes(b));
-            if (mentionsMass) return false;
-        }
-        return true;
-    });
-
-    const positiveEligible = eligible.filter(s => s.score > 0);
-    const pool = positiveEligible.length > 0 ? positiveEligible : eligible;
-
-    return pool.slice(0, maxItems).map(s => s.item);
+    // If no items qualify, return [] — never fall back to off-topic / disqualified items!
+    return positiveEligible.slice(0, maxItems).map(s => s.item);
 }
 
 function extractCleanDomain(urlStr: string): string {
