@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.56] - 2026-09-06
+
+### Added & Changed (Place Reconciliation, Placeholder Stripping & Unambiguous Evidence Counts)
+- **Place Metadata Reconciliation & In-Text City Extraction (`src/enrichment.ts`)**:
+  - Implemented `reconcilePlace()`: dynamically reconciles conflicting or erroneous geographic metadata (`place`) on evidence items by cross-referencing against verified cities mentioned in the title and summary text (e.g. `in Milan`, `in Harajuku`, `in SoHo, New York`, `in Los Angeles`).
+  - Fixed Hermès "Hermestories" location bug: corrected erroneous DB metadata (`place: "Seattle, USA, North America"`) to `place: "Milan, Italy"` based on editorial text.
+  - Normalized and reconciled locations across key activations: Lululemon Studio Yet (`Los Angeles, USA`), Victoria's Secret (`New York, USA`), and Dior Addict Sweet Shop (`Tokyo, Japan`).
+- **Placeholder Data Cleaning & Stripping (`src/enrichment.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `isPlaceholderPlace()`: detects and eliminates template placeholder strings such as `"string, string, string"`, `"string"`, `"N/A"`, `"n/a"`, `"undefined"`, `"null"`, `"unknown"`.
+  - Cleansed evidence items (e.g. 30atoms Airport Pop-Up, xNomad, Grace Taylor) so that invalid placeholder `place` attributes are cleanly deleted rather than surfaced to LLMs.
+  - Cleansed trend-level `place` arrays in `liteData.rows` and `fallbackData.rows` so trends with placeholder places omit the field.
+- **Unambiguous Evidence Count Semantics (`src/toolHandlers.ts`)**:
+  - Separated evidence count metrics into `linked_evidence_count` (total evidence items linked in the graph database, e.g. 4) and `returned_evidence_count` (items returned in payload after relevance and quality filtering, e.g. 0).
+  - Aligned canonical `evidence_count` to reflect the length of the returned array (`evidence_count: 0` when `evidence: []`), resolving misleading "four linked, zero relevant" ambiguity on filtered trends like *Pop-Ups as Test Labs*.
+  - Preserved `linked_evidence_count` in Phase 2 envelope calculations (`mainstream` vs `weak_signals` and `research_gaps`) so that database graph depth remains accurately known.
+- *Verification:*
+  - All 7 tests in `src/test_search_graph_quality.ts` passed.
+  - Build passed (`npm run build`, 50 tools, Cost Silence Guard passed).
+  - Health check verified 200 OK (`npm test`).
+  - Cloud Run deployment deferred per user request.
+
 ## [1.46.55] - 2026-09-06
 
 ### Added & Changed (Parent-Trend Evidence Validation, Medium Mismatch Rejection & Format-Aware Trend Ranking)

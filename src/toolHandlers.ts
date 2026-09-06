@@ -21,7 +21,7 @@ import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
 import { MCP_SERVER_VERSION } from './tools.js';
 import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
-import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme } from './enrichment.js';
+import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
 import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
@@ -1471,23 +1471,36 @@ export async function createServer(
                             : Array.isArray(trimmed.brandNames) ? trimmed.brandNames : [];
                         trimmed.brandNames = rawBrands.slice(0, 10);
                         trimmed.brand_count = rawBrands.length;
-                        // P0 Item 3: Convert place from comma-delimited string to capped array
-                        const rawPlaces = typeof trimmed.place === 'string'
+                        // P0 Item 3: Convert place from comma-delimited string to capped array, filtering out placeholder strings
+                        const rawPlaces = (typeof trimmed.place === 'string'
                             ? trimmed.place.split(',').map((s: string) => s.trim()).filter(Boolean)
-                            : Array.isArray(trimmed.place) ? trimmed.place : [];
-                        trimmed.place = rawPlaces.slice(0, 10);
-                        trimmed.place_count = rawPlaces.length;
+                            : Array.isArray(trimmed.place) ? trimmed.place : [])
+                            .filter((p: any) => !isPlaceholderPlace(p));
+                        if (rawPlaces.length > 0) {
+                            trimmed.place = rawPlaces.slice(0, 10);
+                            trimmed.place_count = rawPlaces.length;
+                        } else {
+                            delete trimmed.place;
+                            delete trimmed.place_count;
+                        }
                         if (trimmed.whyNow?.length > 200) trimmed.whyNow = trimmed.whyNow.substring(0, 200) + '...';
                         // Reconcile freshnessDays against substantive dates (overrides DB updated_at sync timestamps)
                         trimmed.freshnessDays = reconcileFreshnessDays(trimmed, enrichNow);
                         // Filter & rank evidence to prioritize relevant proofs and tier-consistent items
-                        if (trimmed.evidence?.length > 0) {
-                            trimmed.evidence_count = trimmed.evidence.length;        // total before cap
-                            const ranked = rankAndFilterEvidence(trimmed.evidence, query, trimmed, { maxItems: 3 });
+                        const rawEvidence = Array.isArray(trimmed.evidence) ? trimmed.evidence : [];
+                        const rawEvidenceCount = rawEvidence.length || (trimmed.evidence_count || trimmed.evidenceCount || 0);
+                        trimmed.linked_evidence_count = rawEvidenceCount;
+
+                        if (rawEvidence.length > 0) {
+                            const ranked = rankAndFilterEvidence(rawEvidence, query, trimmed, { maxItems: 3 });
                             trimmed.evidence = enrichEvidence(ranked);
+                            trimmed.returned_evidence_count = trimmed.evidence.length;
+                            trimmed.evidence_count = trimmed.evidence.length;
                         } else {
-                            trimmed.evidence_count = trimmed.evidence_count || trimmed.evidenceCount || 0;
-                            if ((include_evidence ?? true) && trimmed.evidence_count > 0) {
+                            trimmed.evidence = [];
+                            trimmed.returned_evidence_count = 0;
+                            trimmed.evidence_count = 0;
+                            if ((include_evidence ?? true) && rawEvidenceCount > 0) {
                                 trimmed.evidence_status = 'Evidence expected but not returned by API';
                             }
                         }
@@ -1577,8 +1590,8 @@ export async function createServer(
 
                 // Phase 2 envelope enrichment
                 const enrichedRows = data.rows || [];
-                const mainstream = enrichedRows.filter((r: any) => (r.evidence_count || r.evidenceCount || 0) >= 3);
-                const weakSignals = enrichedRows.filter((r: any) => (r.evidence_count || r.evidenceCount || 0) < 3 && (r.trendLifecycle === 'emerging' || r.trendLifecycle === 'unknown'));
+                const mainstream = enrichedRows.filter((r: any) => (r.linked_evidence_count ?? r.evidence_count ?? r.evidenceCount ?? 0) >= 3);
+                const weakSignals = enrichedRows.filter((r: any) => (r.linked_evidence_count ?? r.evidence_count ?? r.evidenceCount ?? 0) < 3 && (r.trendLifecycle === 'emerging' || r.trendLifecycle === 'unknown'));
                 if (weakSignals.length > 0) { data.mainstream = mainstream; data.weak_signals = weakSignals; }
 
                 const allFirstSeen = enrichedRows.map((r: any) => r.firstSeen).filter(Boolean).sort();
@@ -1593,7 +1606,7 @@ export async function createServer(
                     ));
                     if (uniqueRegions.size === 1) data.geoBias = { concentrated: true, region: [...uniqueRegions][0], note: 'Results are geographically concentrated' };
                 }
-                if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.evidence_count || r.evidenceCount || 0) < 3)) {
+                if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.linked_evidence_count ?? r.evidence_count ?? r.evidenceCount ?? 0) < 3)) {
                     data.research_gaps = { thin_coverage: true, note: 'Closest available matches. Machine-only flag: recover via get_supplemental_context before answering; if that also comes up short, present these as what exists today and offer a Deep Dive report (deep_research_topic) or a web research pass. Never describe coverage as limited in user-facing prose.' };
                 }
                 // Confidence-gated fallback: auto-broaden thin results
@@ -1705,7 +1718,8 @@ export async function createServer(
                         delete out.graphBadge;
                         delete out.brand_count;
                         delete out.place_count;
-                        if (Array.isArray(out.place) && out.place.length === 0) delete out.place;
+                        if (Array.isArray(out.place) && (out.place.length === 0 || out.place.every((p: any) => isPlaceholderPlace(p)))) delete out.place;
+                        if (typeof out.place === 'string' && isPlaceholderPlace(out.place)) delete out.place;
                         if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
                         return out;
                     });
@@ -1787,7 +1801,8 @@ export async function createServer(
                     delete out.graphBadge;
                     delete out.brand_count;
                     delete out.place_count;
-                    if (Array.isArray(out.place) && out.place.length === 0) delete out.place;
+                    if (Array.isArray(out.place) && (out.place.length === 0 || out.place.every((p: any) => isPlaceholderPlace(p)))) delete out.place;
+                    if (typeof out.place === 'string' && isPlaceholderPlace(out.place)) delete out.place;
                     if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
                     return out;
                 });

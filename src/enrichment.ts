@@ -107,6 +107,114 @@ const EVIDENCE_ROLES: Record<string, string> = {
     'data point': 'background',
 };
 
+// ---------------------------------------------------------------------------
+// Geographic Metadata & Placeholder Cleaning
+// ---------------------------------------------------------------------------
+
+export const KNOWN_CITY_LOCATIONS: Record<string, string> = {
+    'milan': 'Milan, Italy',
+    'paris': 'Paris, France',
+    'tokyo': 'Tokyo, Japan',
+    'harajuku': 'Tokyo, Japan',
+    'ginza': 'Tokyo, Japan',
+    'shibuya': 'Tokyo, Japan',
+    'kyoto': 'Kyoto, Japan',
+    'london': 'London, UK',
+    'mayfair': 'London, UK',
+    'covent garden': 'London, UK',
+    'new york': 'New York, USA',
+    'soho': 'New York, USA',
+    'manhattan': 'New York, USA',
+    'brooklyn': 'New York, USA',
+    'los angeles': 'Los Angeles, USA',
+    'beverly hills': 'Los Angeles, USA',
+    'west hollywood': 'Los Angeles, USA',
+    'miami': 'Miami, USA',
+    'chicago': 'Chicago, USA',
+    'san francisco': 'San Francisco, USA',
+    'seattle': 'Seattle, USA',
+    'atlanta': 'Atlanta, USA',
+    'las vegas': 'Las Vegas, USA',
+    'dallas': 'Dallas, USA',
+    'austin': 'Austin, USA',
+    'boston': 'Boston, USA',
+    'singapore': 'Singapore',
+    'hong kong': 'Hong Kong',
+    'shanghai': 'Shanghai, China',
+    'beijing': 'Beijing, China',
+    'seoul': 'Seoul, South Korea',
+    'gangnam': 'Seoul, South Korea',
+    'dubai': 'Dubai, UAE',
+    'rome': 'Rome, Italy',
+    'florence': 'Florence, Italy',
+    'venice': 'Venice, Italy',
+    'berlin': 'Berlin, Germany',
+    'munich': 'Munich, Germany',
+    'madrid': 'Madrid, Spain',
+    'barcelona': 'Barcelona, Spain',
+    'sydney': 'Sydney, Australia',
+    'melbourne': 'Melbourne, Australia',
+    'toronto': 'Toronto, Canada',
+    'vancouver': 'Vancouver, Canada',
+    'buenos aires': 'Buenos Aires, Argentina',
+    'são paulo': 'São Paulo, Brazil',
+    'sao paulo': 'São Paulo, Brazil',
+    'rio de janeiro': 'Rio de Janeiro, Brazil'
+};
+
+const PLACEHOLDER_TOKENS = new Set([
+    'string', 'n/a', 'na', 'n', 'a', 'none', 'null', 'undefined', 'unknown',
+    'placeholder', 'test', 'tbd', 'tba'
+]);
+
+export function isPlaceholderPlace(val: any): boolean {
+    if (val === null || val === undefined) return true;
+    if (typeof val !== 'string') {
+        if (Array.isArray(val)) {
+            return val.length === 0 || val.every(p => isPlaceholderPlace(p));
+        }
+        return true;
+    }
+    const trimmed = val.trim().toLowerCase();
+    if (!trimmed) return true;
+    if (PLACEHOLDER_TOKENS.has(trimmed) || /^(string(,\s*string)*|n\/?a|none|null|undefined|unknown|placeholder|test|tbd|tba)$/i.test(trimmed)) {
+        return true;
+    }
+    const parts = trimmed.split(/[,/]/).map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0) return true;
+    return parts.every(p => PLACEHOLDER_TOKENS.has(p));
+}
+
+export function reconcilePlace(currentPlace?: string, title?: string, summary?: string): string | undefined {
+    let place = currentPlace && !isPlaceholderPlace(currentPlace) ? currentPlace.trim() : undefined;
+    const text = `${title || ''} ${summary || ''}`;
+    if (!text.trim()) return place;
+
+    // Normalize duplicate components like "Singapore, Singapore" -> "Singapore"
+    if (place) {
+        const parts = place.split(',').map(s => s.trim());
+        if (parts.length === 2 && parts[0] && parts[1] && parts[0].toLowerCase() === parts[1].toLowerCase()) {
+            place = parts[0];
+        }
+    }
+
+    // Sort by key length descending so longer/more specific keys match before shorter substrings
+    const sortedEntries = Object.entries(KNOWN_CITY_LOCATIONS).sort((a, b) => b[0].length - a[0].length);
+
+    for (const [cityKey, canonicalLocation] of sortedEntries) {
+        const pattern = new RegExp(`\\b(?:in|at|across|hosted in|opens? in|launched in)\\s+${cityKey}\\b|\\b${cityKey}\\s+(?:pop-?up|ephemeral|store|carousel|activation|flagship|boutique|residency)\\b`, 'i');
+        if (pattern.test(text)) {
+            // If place is missing or contradicts the explicit city from text, override
+            if (!place || !place.toLowerCase().includes(cityKey)) {
+                return canonicalLocation;
+            }
+            return place;
+        }
+    }
+
+    return place;
+}
+
 /**
  * Enrich evidence items with pre-formatted markdown citations and editorial roles.
  * Models are much more likely to pass through a ready-made link than construct one.
@@ -176,9 +284,22 @@ export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } =
             }
         }
 
-        // Clean dead / null / empty fields to prevent LLM context bloat
+        // Clean and reconcile place metadata
+        if (cleanItem.place !== undefined) {
+            cleanItem.place = reconcilePlace(cleanItem.place, cleanItem.title, cleanItem.summary);
+            if (!cleanItem.place || isPlaceholderPlace(cleanItem.place)) {
+                delete cleanItem.place;
+            }
+        } else if (cleanItem.title || cleanItem.summary) {
+            const detectedPlace = reconcilePlace(undefined, cleanItem.title, cleanItem.summary);
+            if (detectedPlace) {
+                cleanItem.place = detectedPlace;
+            }
+        }
+
+        // Clean dead / null / empty / placeholder fields to prevent LLM context bloat
         for (const k of ['imageUrl', 'speakerName', 'speakerTitle', 'publication', 'place']) {
-            if (cleanItem[k] === null || cleanItem[k] === undefined || cleanItem[k] === '') {
+            if (cleanItem[k] === null || cleanItem[k] === undefined || cleanItem[k] === '' || (k === 'place' && isPlaceholderPlace(cleanItem[k]))) {
                 delete cleanItem[k];
             }
         }

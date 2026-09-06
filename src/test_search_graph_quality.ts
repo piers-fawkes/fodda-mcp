@@ -4,6 +4,8 @@ import {
     rankAndFilterEvidence,
     enrichEvidence,
     computeMomentum,
+    isPlaceholderPlace,
+    reconcilePlace,
     LUXURY_KEYWORDS,
     LUXURY_BRANDS,
     MASS_BUDGET_KEYWORDS,
@@ -133,7 +135,7 @@ const enriched = enrichEvidence([
         id: 'rec12345678901234',
         node_id: 'rec12345678901234',
         title: 'Dior Pop-Up',
-        summary: 'Dior pop-up store in Paris',
+        summary: 'Dior pop-up store with new product launches',
         sourceUrl: 'https://fodda.ai/article/dior',
         imageUrl: null,
         speakerName: null,
@@ -185,5 +187,140 @@ assert.strictEqual(sanitizedForChatGpt.total, 5, 'total should be preserved');
 assert.strictEqual(sanitizedForChatGpt.rows.length, 1, 'rows should be preserved');
 assert.strictEqual(sanitizedForChatGpt.rows[0].node_id, '6575', 'node_id should be preserved');
 console.log('✅ Test 5 Passed: ChatGPT payload cleanly sanitized and slimmed');
+
+// ---------------------------------------------------------------------------
+// Test 6: Place Reconciliation & Placeholder Stripping (Issues 2 & 3)
+// ---------------------------------------------------------------------------
+console.log('\nTest 6: Place Reconciliation & Placeholder Stripping');
+
+// 6a: isPlaceholderPlace checks
+assert.strictEqual(isPlaceholderPlace('string, string, string'), true, '"string, string, string" must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace('string'), true, '"string" must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace('N/A'), true, '"N/A" must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace('n/a'), true, '"n/a" must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace('undefined'), true, '"undefined" must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace('null'), true, '"null" must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace(''), true, 'Empty string must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace(undefined), true, 'undefined must be flagged as placeholder');
+assert.strictEqual(isPlaceholderPlace('Milan, Italy'), false, '"Milan, Italy" is valid place');
+assert.strictEqual(isPlaceholderPlace('Seattle, USA, North America'), false, '"Seattle, USA" is valid place string');
+console.log('  ✅ 6a: isPlaceholderPlace correctly identifies placeholder variants');
+
+// 6b: reconcilePlace location reconciliation
+const hermesReconciled = reconcilePlace(
+    'Seattle, USA, North America',
+    "Launch of 'Hermestories' Experiential Theater Play",
+    "Hermès launched 'Hermestories' in Milan, an experiential theater play designed to allow visitors to discover the history of Hermès."
+);
+assert.strictEqual(hermesReconciled, 'Milan, Italy', 'Contradictory Seattle place must be reconciled to Milan, Italy based on summary');
+
+const studioYetReconciled = reconcilePlace(
+    'Seattle, USA, North America',
+    'Studio Yet Pop-Up High-Performance Training Space Launch',
+    "Lululemon is hosting 'Studio Yet,' a 3-week pop-up high-performance training space in Los Angeles."
+);
+assert.strictEqual(studioYetReconciled, 'Los Angeles, USA', 'Contradictory Seattle place must be reconciled to Los Angeles, USA based on summary');
+
+const placeholderPlaceReconciled = reconcilePlace(
+    'string, string, string',
+    '30atoms Integrates Mobile Testing Station and Transparent Design Within Airport Pop-Up',
+    "Skincare brand 30atoms created a pop-up store in an airport. The design uses stainless steel..."
+);
+assert.strictEqual(placeholderPlaceReconciled, undefined, 'Placeholder place with no city in text should return undefined');
+
+const diorHarajukuReconciled = reconcilePlace(
+    'undefined',
+    "Dior's Addict Sweet Shop in Harajuku: Blurring Lines Between Playful Retail and Emotional Engagement",
+    "Dior has launched the Addict Sweet Shop in Harajuku, transforming retail into an immersive experience..."
+);
+assert.strictEqual(diorHarajukuReconciled, 'Tokyo, Japan', 'Dior in Harajuku should reconcile to Tokyo, Japan');
+console.log('  ✅ 6b: reconcilePlace reconciles text cities and discards placeholders');
+
+// 6c: enrichEvidence integrates place reconciliation and placeholder stripping
+const enrichedEvidenceWithPlaces = enrichEvidence([
+    {
+        title: "Launch of 'Hermestories' Experiential Theater Play",
+        summary: "Hermès launched 'Hermestories' in Milan, an experiential theater play...",
+        place: 'Seattle, USA, North America',
+        contentType: 'case_study'
+    },
+    {
+        title: '30atoms Integrates Mobile Testing Station Within Airport Pop-Up',
+        summary: 'Skincare brand 30atoms created a pop-up store in an airport.',
+        place: 'string, string, string',
+        contentType: 'case_study'
+    },
+    {
+        title: 'Grace Taylor Pop-Up',
+        summary: 'Grace Taylor showcases accessories.',
+        place: 'N/A',
+        contentType: 'case_study'
+    }
+]);
+
+assert.strictEqual(enrichedEvidenceWithPlaces[0].place, 'Milan, Italy', 'Hermès place must be reconciled to Milan, Italy');
+assert.strictEqual(enrichedEvidenceWithPlaces[1].place, undefined, '30atoms placeholder place must be completely stripped');
+assert.strictEqual(enrichedEvidenceWithPlaces[2].place, undefined, 'Grace Taylor N/A place must be completely stripped');
+console.log('  ✅ 6c: enrichEvidence cleanly reconciles Hermès to Milan and strips all placeholder places');
+console.log('✅ Test 6 Passed: Place reconciliation & placeholder stripping verified');
+
+// ---------------------------------------------------------------------------
+// Test 7: Evidence Count Semantics (Issue 1)
+// ---------------------------------------------------------------------------
+console.log('\nTest 7: Evidence Count Semantics (linked_evidence_count, returned_evidence_count, evidence_count)');
+
+// Simulate search_graph row shaping for 0 relevant evidence (Node 6683: Pop-Ups as Test Labs)
+const rawNode6683Row: any = {
+    node_id: '6683',
+    trendName: 'Pop Ups As Test Labs',
+    evidence_count: 4, // 4 linked in DB graph
+    evidence: [
+        { title: 'Samuel (UBS) probes Miniso', contentType: 'interpretation', brandNames: ['Miniso'] },
+        { title: 'Miniso Q4 Revenue', contentType: 'metric', brandNames: ['Miniso'] },
+        { title: 'PepsiCo Texas Supply Chain Pilot', contentType: 'case_study', brandNames: ['PepsiCo'] },
+        { title: 'P&G Enterprise Software Bundles', contentType: 'case_study', brandNames: ['P&G'] }
+    ]
+};
+
+// Apply filtering
+const rawEvidenceCount = rawNode6683Row.evidence.length;
+rawNode6683Row.linked_evidence_count = rawEvidenceCount;
+const filteredEvidence = rankAndFilterEvidence(rawNode6683Row.evidence, luxuryQuery, rawNode6683Row, { maxItems: 3 });
+rawNode6683Row.evidence = enrichEvidence(filteredEvidence);
+rawNode6683Row.returned_evidence_count = rawNode6683Row.evidence.length;
+rawNode6683Row.evidence_count = rawNode6683Row.evidence.length;
+
+assert.strictEqual(rawNode6683Row.linked_evidence_count, 4, 'linked_evidence_count should reflect the 4 linked items in graph');
+assert.strictEqual(rawNode6683Row.returned_evidence_count, 0, 'returned_evidence_count should be 0 after quality/relevance filtering');
+assert.strictEqual(rawNode6683Row.evidence_count, 0, 'evidence_count must be 0 when evidence array is empty');
+assert.strictEqual(rawNode6683Row.evidence.length, 0, 'evidence array must be empty');
+
+// Simulate row with 3 valid items (e.g. Immersive Brand Pop-Ups)
+const rawNode8688Row: any = {
+    node_id: '8688',
+    trendName: 'Immersive Brand Storytelling Through Themed Activations',
+    evidence: [
+        { title: "Dior's Addict Sweet Shop in Harajuku", summary: "Dior launched an immersive retail pop-up in Harajuku...", contentType: 'case_study', brandNames: ['Dior'] },
+        { title: 'Hennessy Lunar New Year Travel Retail Pop-Up', summary: 'Terminal 1 Singapore...', contentType: 'case_study', brandNames: ['Hennessy'] },
+        { title: "Launch of 'Hermestories' Experiential Theater Play", summary: "Hermès launched in Milan...", contentType: 'case_study', brandNames: ['Hermès'] }
+    ]
+};
+const rawCount8688 = rawNode8688Row.evidence.length;
+rawNode8688Row.linked_evidence_count = rawCount8688;
+const filtered8688 = rankAndFilterEvidence(rawNode8688Row.evidence, luxuryQuery, rawNode8688Row, { maxItems: 3 });
+rawNode8688Row.evidence = enrichEvidence(filtered8688);
+rawNode8688Row.returned_evidence_count = rawNode8688Row.evidence.length;
+rawNode8688Row.evidence_count = rawNode8688Row.evidence.length;
+
+assert.strictEqual(rawNode8688Row.linked_evidence_count, 3, 'linked_evidence_count should be 3');
+assert.strictEqual(rawNode8688Row.returned_evidence_count, 3, 'returned_evidence_count should be 3');
+assert.strictEqual(rawNode8688Row.evidence_count, 3, 'evidence_count should be 3');
+const diorItem = rawNode8688Row.evidence.find((e: any) => (e.title || '').includes('Dior'));
+const hermesItem = rawNode8688Row.evidence.find((e: any) => (e.title || '').includes('Hermestories'));
+assert.ok(diorItem, 'Dior item should be in returned evidence');
+assert.ok(hermesItem, 'Hermès item should be in returned evidence');
+assert.strictEqual(diorItem.place, 'Tokyo, Japan', 'Dior Harajuku place should be Tokyo, Japan');
+assert.strictEqual(hermesItem.place, 'Milan, Italy', 'Hermès place should be Milan, Italy');
+console.log('✅ Test 7 Passed: Evidence count semantics unambiguous (linked: 4, returned: 0, count: 0 for filtered trend)');
 
 console.log('\nAll search_graph quality, freshness, and payload slimming tests passed!');
