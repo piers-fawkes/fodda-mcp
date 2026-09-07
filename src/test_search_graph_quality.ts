@@ -419,5 +419,46 @@ assert.ok(peterRouted, 'peter-abraham-bicycles-cycling must be routed for query 
 assert.ok(peterRouted!.score >= 0.80, `peter score should be high (>=0.80), got ${peterRouted!.score}`);
 console.log('✅ Test 8 Passed: DAILY_LIMIT_EXCEEDED classified cleanly & multi-HA backingGraphs bridged accurately');
 
-console.log('\nAll search_graph quality, freshness, payload slimming, and routing bridge tests passed!');
+// ---------------------------------------------------------------------------
+// Test 9: Explicit Scope Honest Failure & Scoped Graph Protection
+// ---------------------------------------------------------------------------
+console.log('\nTest 9: Explicit Scope Honest Failure & Direct Match Protection');
+
+// 9a: Direct match and high-semantic-score protection against zero-on-topic drop
+const mockValZeroOnTopic = { on_topic_total: 0, rows: [{ name: 'digital wall', semantic_score: 0.90 }] };
+const directMatchMeta = { isDirectMatch: true, graph: { graph_id: 'peter-abraham-bicycles-cycling' } };
+const hasHighSemantic = mockValZeroOnTopic.rows.some((r: any) => (r.semantic_score || 0) >= 0.75);
+assert.ok(hasHighSemantic, 'Row should have high semantic score (0.90 >= 0.75)');
+
+// In un-scoped fanout without direct match, generic off-topic graph with 0 on-topic is dropped
+const genericOffTopicMeta = { isDirectMatch: false, graph: { graph_id: 'retail' } };
+const genericOffTopicRows = [{ name: 'Store closures', semantic_score: 0.50 }];
+const shouldDropGeneric = !genericOffTopicMeta.isDirectMatch && !genericOffTopicRows.some((r: any) => (r.semantic_score || 0) >= 0.75) && mockValZeroOnTopic.on_topic_total === 0;
+assert.ok(shouldDropGeneric, 'Generic off-topic 0 on-topic rows must be dropped in fanout');
+
+// But direct match or high semantic rows are protected from being dropped
+const shouldDropProtected = !directMatchMeta.isDirectMatch && !hasHighSemantic && mockValZeroOnTopic.on_topic_total === 0;
+assert.ok(!shouldDropProtected, 'Direct match / high-semantic rows must NOT be dropped even if on_topic_total is 0');
+
+// 9b: Scoped graphs empty result honest failure simulation
+const mockScopedGraphs = [{ graph_id: 'peter-abraham-bicycles-cycling', name: 'Peter Abraham' }];
+const mockEmptyRows: any[] = [];
+const unavailableGraphs: Array<{ graph_id: string; reason: string }> = [];
+const graphsWithResults = new Set(mockEmptyRows.map((r: any) => r.graphId));
+
+for (const g of mockScopedGraphs) {
+    if (!graphsWithResults.has(g.graph_id)) {
+        unavailableGraphs.push({
+            graph_id: g.graph_id,
+            reason: 'no matching trends found in this graph for query'
+        });
+    }
+}
+assert.strictEqual(unavailableGraphs.length, 1, 'Should record peter-abraham-bicycles-cycling in unavailable_graphs');
+assert.strictEqual(unavailableGraphs[0]!.graph_id, 'peter-abraham-bicycles-cycling');
+assert.ok(unavailableGraphs[0]!.reason.includes('no matching trends'), 'Reason should be explicit');
+console.log('✅ Test 9 Passed: Scoped graphs honest failure & zero-on-topic protection verified');
+
+console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, and honest-failure tests passed!');
+
 

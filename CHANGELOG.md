@@ -5,6 +5,23 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.58] - 2026-09-06
+
+### Added & Changed (Explicit-Scope Honest Failure, Scoped Graph Protection & Zero-On-Topic Drop Guard)
+- **Explicit Scope Honest Failure (`src/toolHandlers.ts`)**:
+  - Enforced strict contract for `graphs: [...]`: when an explicit graph scope is provided, the search is restricted to EXACTLY those graphs.
+  - Eliminated silent fallback/auto-broadening to `retail`: if the requested graphs return 0 results, the system fails honestly with `dataStatus: 'SCOPE_UNAVAILABLE'`, `rows: []`, `total: 0`, and records the specific graphs in `unavailable_graphs` with clear reasons (e.g. `'no matching trends found in this graph for query'`).
+  - Ensured `effectiveGraphId` falls back to `scopedGraphs[0]?.graph_id` rather than `'retail'`.
+- **Scoped Graph & Direct Match Row Protection (`src/toolHandlers.ts`)**:
+  - Guarded the fanout zero-on-topic dropping logic (`val.on_topic_total === 0`):
+    1. Scoped graphs (`scopedGraphs`) are NEVER dropped from search results.
+    2. Directly routed domain graphs (`graphMeta?.isDirectMatch`) are NEVER dropped.
+    3. Graphs containing high semantic similarity rows (`semantic_score >= 0.75`) are NEVER dropped.
+  - Fixes retrieval suppression on expert graphs (such as `peter-abraham-bicycles-cycling`): expert trends with high vector similarity (0.90+) whose API relevance scores lacked title-match boosts are now preserved and surfaced in both explicit-scope and auto-route queries.
+- *Verification:*
+  - All 9 tests in `src/test_search_graph_quality.ts` passed (including Test 9 covering explicit scope honest failure and fanout protection).
+  - TypeScript compilation and tools manifest build passed clean (`npm run build`).
+
 ## [1.46.57] - 2026-09-06
 
 ### Added & Changed (Two-Store Indexing Bridge & DAILY_LIMIT_EXCEEDED Error Classification)

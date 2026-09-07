@@ -1252,8 +1252,14 @@ export async function createServer(
                         const graphTotal = val?.total ?? (Array.isArray(val) ? val.length : (val?.rows?.length || 0));
                         const graphOnTopicTotal = val?.on_topic_total ?? val?.total_count ?? graphTotal;
 
-                        // Item 5: Drop rows from any graph whose on_topic_total === 0 before diversity reranking
-                        if (typeof val?.on_topic_total === 'number' && val.on_topic_total === 0) {
+                        // Item 5: Drop rows from any graph whose on_topic_total === 0 before diversity reranking,
+                        // EXCEPT when:
+                        // (1) Graph was explicitly scoped by the caller (scopedGraphs is active)
+                        // (2) Graph was scored as a direct match by the router (graphMeta?.isDirectMatch)
+                        // (3) Any row from the graph has high semantic similarity (>= 0.75), indicating the API's
+                        //     title-match low-coverage threshold was triggered even though semantic retrieval succeeded.
+                        const hasHighSemanticMatch = rows.some((r: any) => (r.semantic_score || r._score || 0) >= 0.75);
+                        if (!scopedGraphs && !graphMeta?.isDirectMatch && !hasHighSemanticMatch && typeof val?.on_topic_total === 'number' && val.on_topic_total === 0) {
                             console.error(`[fanout] dropped ${rows.length} zero-on-topic rows from ${graphMeta?.graph?.graph_id || 'unknown'}`);
                             continue;
                         }
@@ -1428,6 +1434,35 @@ export async function createServer(
                     }
                     const fanoutTotal = results.filter(r => r.status === 'fulfilled').reduce((sum, r: any) => sum + (r.value?.total || r.value?.rows?.length || (Array.isArray(r.value) ? r.value.length : 0)), 0);
                     const fanoutOnTopicTotal = results.filter(r => r.status === 'fulfilled').reduce((sum, r: any) => sum + (r.value?.on_topic_total || r.value?.total_count || r.value?.total || r.value?.rows?.length || (Array.isArray(r.value) ? r.value.length : 0)), 0);
+
+                    // Scoped graphs: track individual graphs that yielded 0 rows
+                    if (scopedGraphs) {
+                        const graphsWithResults = new Set(allRows.map((r: any) => r.graphId || r._use_this_graphId).filter(Boolean));
+                        for (const g of scopedGraphs) {
+                            if (!graphsWithResults.has(g.graph_id)) {
+                                unavailableGraphs.push({
+                                    graph_id: g.graph_id,
+                                    reason: 'no matching trends found in this graph for query'
+                                });
+                            }
+                        }
+                        // Under explicit scope, if no rows were found, fail honestly — NEVER substitute retail
+                        if (allRows.length === 0) {
+                            return {
+                                content: [{
+                                    type: 'text' as const,
+                                    text: JSON.stringify({
+                                        rows: [],
+                                        total: 0,
+                                        dataStatus: 'SCOPE_UNAVAILABLE',
+                                        unavailable_graphs: unavailableGraphs,
+                                        message: `None of the requested graphs returned matching trends for query "${query}". No other graphs were substituted. Call list_graphs for available graph ids.`,
+                                    }, null, 2)
+                                }]
+                            };
+                        }
+                    }
+
                     data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs, total: fanoutTotal, on_topic_total: fanoutOnTopicTotal };
                     if (unavailableGraphs.length > 0) data.unavailable_graphs = unavailableGraphs;
                 } else {
@@ -1537,8 +1572,8 @@ export async function createServer(
                     data.results = data.rows;
                     if (data.total === undefined) data.total = data.rows.length;
                 }
-                // When graphId was omitted (all-graph search), use first result's graph or 'retail'
-                const effectiveGraphId = targetGraphId || (data?.rows?.[0]?._use_this_graphId) || (data?.rows?.[0]?.graphId) || 'retail';
+                // When graphId was omitted (all-graph search), use first result's graph, scoped graph, or 'retail'
+                const effectiveGraphId = targetGraphId || (data?.rows?.[0]?._use_this_graphId) || (data?.rows?.[0]?.graphId) || (scopedGraphs ? scopedGraphs[0]?.graph_id : 'retail');
                 data.theme = getFoddaTheme(effectiveGraphId);
 
                 const primaryCatalogEntry = getGraphs().find(g => g.graph_id === effectiveGraphId);
@@ -1609,8 +1644,8 @@ export async function createServer(
                 if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.linked_evidence_count ?? r.evidence_count ?? r.evidenceCount ?? 0) < 3)) {
                     data.research_gaps = { thin_coverage: true, note: 'Closest available matches. Machine-only flag: recover via get_supplemental_context before answering; if that also comes up short, present these as what exists today and offer a Deep Dive report (deep_research_topic) or a web research pass. Never describe coverage as limited in user-facing prose.' };
                 }
-                // Confidence-gated fallback: auto-broaden thin results
-                if (enrichedRows.length < 3 && query.split(' ').length > 3 && effectiveGraphId) {
+                // Confidence-gated fallback: auto-broaden thin results (STRICTLY DISABLED under explicit graph scope)
+                if (!scopedGraphs && enrichedRows.length < 3 && query.split(' ').length > 3 && effectiveGraphId) {
                     try {
                         const shorterQuery = query.split(' ').slice(0, 3).join(' ');
                         const fallback = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), { query: shorterQuery, limit: 10, use_semantic: true, include_evidence: false });
