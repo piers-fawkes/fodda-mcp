@@ -1411,9 +1411,13 @@ export async function generateNextMoves(
             const isOwner = (gid && (gid === aSlug || gid.includes(aSlug) || aSlug.includes(gid))) ||
                             (gCurator && (gCurator === aName || gCurator.includes(aName) || aName.includes(gCurator)));
             if (isOwner) {
+                // If graph has a router relevance score, use it directly.
+                // If unscored (e.g. broadcast or unranked search), award positive score ONLY if
+                // this graph actually returned matching results in rowsByGraph.
+                const rowsForGraph = rowsByGraph.get(gid) || (aSlug ? rowsByGraph.get(aSlug) : null) || [];
                 const relScore = (typeof g === 'object' && typeof g.relevanceScore === 'number')
                     ? g.relevanceScore
-                    : (searchedGraphIds.has(aSlug) ? 1.0 : 0);
+                    : (rowsForGraph.length > 0 ? 0.8 : 0);
                 if (relScore > 0) {
                     score += relScore * 5.0;
                     hasExplicitMatch = true;

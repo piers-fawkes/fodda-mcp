@@ -5,6 +5,21 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.62] - 2026-09-08
+
+### Fixed & Deprecated (Self-Recommendation Shared Guard & Specialist Intelligence Scoping)
+- **Shared-Layer Expert Recommendation Guard (`src/coverageRelevance.ts`)**:
+  - In `generateNextMoves()`: Analysts with graphs in an unranked broadcast search (without explicit router relevance scores) are now only awarded positive relevance (`+5.0` boost and `hasExplicitMatch`) if their graph actually returned matching results for the query (`rowsForGraph.length > 0`).
+  - Completely suppresses false-positive self-recommendations across all tools sharing `coverageRelevance.ts` (e.g. Piers Fawkes being falsely nominated on beauty retail queries because his graph was present in an unranked 43-graph pool).
+- **`layers_searched` Alignment (`src/toolHandlers.ts`)**:
+  - In `get_specialist_intelligence`: Derived `searchedGraphs` directly from `data.graphs_searched` returned by the API (or filtered exclusively to `expert` and `analyst`), removing hardcoded `industry report`.
+  - Eliminates self-contradiction where `coverage.layers_searched` included `["report"]` while API `_meta.layers_searched` was `["expert"]`.
+- **Tool Deprecation Notice (`src/toolHandlers.ts`)**:
+  - Marked `get_specialist_intelligence` and `get_expert_intelligence` as deprecated in favor of `search_graph` (which routes across all 312 graphs) and `consult_human_agent` / `consult_analyst` (for direct expert and classic thinker dialogue).
+- *Verification:*
+  - Added Test 12 to `src/test_search_graph_quality.ts` verifying self-recommendation suppression on unranked zero-result graphs and proper recommendation on matching rows; all 12 tests pass.
+  - Full test suite (`npm test`) passes cleanly.
+
 ## [1.46.61] - 2026-09-08
 
 ### Fixed (whyNow Word-Boundary & Sentence-Aware Truncation)

@@ -12,7 +12,7 @@ import {
     MASS_BUDGET_BRANDS,
     cleanTruncateWhyNow
 } from './enrichment.js';
-import { computeTierFit } from './coverageRelevance.js';
+import { computeTierFit, generateNextMoves } from './coverageRelevance.js';
 import { sanitizePayloadForChatGpt } from './toolHandlers.js';
 import { classifyAccessError } from './errorHandling.js';
 import { setCachedCatalogForTesting, getRelevantGraphs, getGraphs } from './catalogCache.js';
@@ -537,7 +537,81 @@ console.log('  ✅ 11c: Long single-sentence breaks at word boundary without mid
 
 console.log('✅ Test 11 Passed: cleanTruncateWhyNow preserves words and sentences cleanly');
 
-console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, honest-failure, evidence-decoupling, and whyNow-truncation tests passed!');
+// ---------------------------------------------------------------------------
+// Test 12: Expert Recommendation Shared-Layer Guard & layers_searched Alignment
+// ---------------------------------------------------------------------------
+console.log('\nTest 12: Expert Recommendation Shared-Layer Guard & layers_searched Alignment');
+
+const mockAnalystsForRec: any[] = [
+    {
+        analyst_id: 'piers-fawkes',
+        name: 'Piers Fawkes',
+        category: 'human_agent',
+        description: 'Founder & CEO of PSFK, AI and knowledge systems expert, customer experience strategist',
+        expert_in: 'AI systems that maximize knowledge, intelligence architecture',
+        consult_tool: 'consult_human_agent'
+    },
+    {
+        analyst_id: 'peter-abraham-bicycles-cycling',
+        name: 'Peter Abraham',
+        category: 'human_agent',
+        description: 'Bicycle culture and mobility expert',
+        expert_in: 'cycling, cycling culture, mobility',
+        consult_tool: 'consult_human_agent'
+    }
+];
+
+const mockCatalogForRec: any[] = [
+    { graph_id: 'piers-fawkes', name: 'Piers Fawkes', graph_type: 'expert', status: 'live' },
+    { graph_id: 'peter-abraham-bicycles-cycling', name: 'Peter Abraham', graph_type: 'expert', status: 'live' },
+    { graph_id: 'beauty', name: 'PSFK Beauty', graph_type: 'domain', status: 'live' }
+];
+
+// 12a: When searchedGraphs is unranked (no relevanceScore) and owner returns 0 rows,
+// Piers Fawkes must NOT be recommended for a beauty query even though query contains 'retail'
+const nextMovesBeauty = await generateNextMoves(
+    [{ title: 'Clean beauty formulation', graphId: 'beauty', description: 'Beauty retail experience trends' }],
+    'beauty industry retail experience',
+    mockCatalogForRec, // unranked list of graphs (broadcast / specialist pool)
+    'ok',
+    undefined,
+    undefined,
+    mockCatalogForRec,
+    mockAnalystsForRec,
+    { total: 1, onTopicTotal: 1 }
+);
+
+assert.strictEqual(
+    nextMovesBeauty.specific?.expert,
+    undefined,
+    'Unranked owner with 0 returned rows must NOT receive +5.0 boost or be recommended for beauty query'
+);
+console.log('  ✅ 12a: Self-recommendation suppressed for unranked owner with 0 returned rows');
+
+// 12b: When owner actually returns matching rows, they receive positive recommendation signal
+const nextMovesCycling = await generateNextMoves(
+    [{ title: 'Gravel cycling club growth', graphId: 'peter-abraham-bicycles-cycling', description: 'Bicycle culture' }],
+    'cycling and bicycle culture trends',
+    mockCatalogForRec,
+    'ok',
+    undefined,
+    undefined,
+    mockCatalogForRec,
+    mockAnalystsForRec,
+    { total: 1, onTopicTotal: 1 }
+);
+
+assert.strictEqual(
+    nextMovesCycling.specific?.expert?.analyst_id,
+    'peter-abraham-bicycles-cycling',
+    'Owner with returned rows must be recommended for relevant topic'
+);
+console.log('  ✅ 12b: Owner with returned rows is properly recommended for on-topic query');
+
+console.log('✅ Test 12 Passed: Expert recommendation shared guard & layers_searched alignment verified');
+
+console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, honest-failure, evidence-decoupling, whyNow-truncation, and expert-recommendation tests passed!');
+
 
 
 

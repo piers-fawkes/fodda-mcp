@@ -3065,7 +3065,11 @@ export async function createServer(
             const specialistWithheld = await settleOrWithhold({ queryTypeCode: 'expert_intelligence', apiKey, userId: resolveUserId(userId, uid), query }, 'get_specialist_intelligence');
             if (specialistWithheld) return specialistWithheld;
 
-            const searchedGraphs = getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'industry report' || g.graph_type === 'analyst');
+            const actualSearchedIds = new Set(Array.isArray(data?.graphs_searched) ? data.graphs_searched : []);
+            const allCatalog = getGraphs();
+            const searchedGraphs = actualSearchedIds.size > 0
+                ? allCatalog.filter(g => actualSearchedIds.has(g.graph_id))
+                : getLiveGraphs().filter(g => g.graph_type === 'expert' || g.graph_type === 'analyst');
             const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                 total: data?.total,
                 onTopicTotal: data?.on_topic_total,
@@ -3093,7 +3097,7 @@ export async function createServer(
 
     server.tool(
         'get_specialist_intelligence',
-        "Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel. Use when the query requires specialist depth or strategic practitioner perspectives.",
+        "[Deprecated: Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist and thinker consultation.] Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel.",
         {
             query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'streetwear subcultures')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -3108,7 +3112,7 @@ export async function createServer(
 
     server.tool(
         'get_expert_intelligence',
-        "(Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios.",
+        "[Deprecated: Prefer search_graph or consult_human_agent / consult_analyst.] (Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios.",
         {
             query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'streetwear subcultures')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),

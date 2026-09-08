@@ -290,7 +290,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "(Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios."
+      "description": "[Deprecated: Prefer search_graph or consult_human_agent / consult_analyst.] (Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios."
     },
     {
       "name": "get_label_values",
@@ -395,7 +395,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel. Use when the query requires specialist depth or strategic practitioner perspectives."
+      "description": "[Deprecated: Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist and thinker consultation.] Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel."
     },
     {
       "name": "get_supplemental_context",
