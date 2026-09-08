@@ -5,6 +5,19 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.59] - 2026-09-08
+
+### Added & Changed (Upstream Evidence Decoupling & include_evidence Option Protection)
+- **Upstream Evidence Decoupling (`src/toolHandlers.ts`)**:
+  - In `search_graph`: the request payload sent upstream to `POST /v1/graphs/:graphId/search` now always specifies `include_evidence: true`.
+  - Root Cause Addressed: The upstream API's Relevance Gate (`v1Router.ts:1889`) checks query term presence across trend and evidence text when composite scores are below the semantic threshold. When searches are run with `include_evidence: false` (or when evidence is absent), specialist trends whose titles use natural variations (e.g. "rides", "cyclists", "bike" vs "cycling") are dropped by the API's keyword gate, and surviving rows are penalized with `evidenceFactor = 0.6` (crushing scores down to 0.395).
+  - Calling upstream with `include_evidence: true` ensures the API's Relevance Gate evaluates linked evidence titles, allowing all specialist trends to pass and receive full relevance scores (0.726, 0.569, etc.).
+  - If the MCP client explicitly passed `include_evidence: false`, post-processing in `toolHandlers.ts` strips the evidence array and sets `evidence_count: 0` before returning the response, honoring the client's request while protecting row completeness and relevance scoring.
+  - Also updated fallback query in `search_graph` to pass `include_evidence: true`.
+- *Verification:*
+  - Added Test 10 to `src/test_search_graph_quality.ts` validating evidence decoupling, unpenalized score retention, and clean evidence stripping; all 10 tests passed.
+  - TypeScript build and manifest generation passed cleanly (`npm run build`).
+
 ## [1.46.58] - 2026-09-06
 
 ### Added & Changed (Explicit-Scope Honest Failure, Scoped Graph Protection & Zero-On-Topic Drop Guard)

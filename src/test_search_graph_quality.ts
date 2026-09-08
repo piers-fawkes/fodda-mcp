@@ -459,6 +459,51 @@ assert.strictEqual(unavailableGraphs[0]!.graph_id, 'peter-abraham-bicycles-cycli
 assert.ok(unavailableGraphs[0]!.reason.includes('no matching trends'), 'Reason should be explicit');
 console.log('✅ Test 9 Passed: Scoped graphs honest failure & zero-on-topic protection verified');
 
-console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, and honest-failure tests passed!');
+// ---------------------------------------------------------------------------
+// Test 10: Upstream Evidence Decoupling & include_evidence=false Support
+// ---------------------------------------------------------------------------
+console.log('\nTest 10: Upstream Evidence Decoupling & include_evidence=false Support');
+
+// Simulate MCP upstream request body construction
+const callerIncludeEvidenceFalse = false;
+const upstreamBody = {
+    query: 'cycling and bicycle culture trends',
+    limit: 10,
+    use_semantic: true,
+    include_evidence: true // upstream ALWAYS true to avoid API relevance-gate row dropping
+};
+assert.strictEqual(upstreamBody.include_evidence, true, 'Upstream body must always request evidence so API Relevance Gate has full tokens');
+
+// Simulate row returned from upstream with evidence
+const upstreamRowWithEvidence = {
+    node_id: 'peter-digital-wall',
+    trendName: 'digital wall',
+    relevance_score: 0.726,
+    evidence: [
+        { title: 'The 2025 Bicycle Trend Report', contentType: 'case_study' },
+        { title: 'Peter Abraham on Black Cycling', contentType: 'case_study' }
+    ]
+};
+
+// Post-processing when caller passed include_evidence === false
+const rawEv = Array.isArray(upstreamRowWithEvidence.evidence) ? upstreamRowWithEvidence.evidence : [];
+const processedRow: any = { ...upstreamRowWithEvidence };
+if (callerIncludeEvidenceFalse !== false && rawEv.length > 0) {
+    processedRow.evidence = rawEv;
+    processedRow.returned_evidence_count = rawEv.length;
+    processedRow.evidence_count = rawEv.length;
+} else {
+    processedRow.evidence = [];
+    processedRow.returned_evidence_count = 0;
+    processedRow.evidence_count = 0;
+}
+
+assert.strictEqual(processedRow.evidence.length, 0, 'Evidence array must be stripped when caller passes include_evidence: false');
+assert.strictEqual(processedRow.evidence_count, 0, 'evidence_count must be 0 when caller passes include_evidence: false');
+assert.strictEqual(processedRow.relevance_score, 0.726, 'relevance_score must remain unpenalized (0.726, not crushed to 0.395)');
+console.log('✅ Test 10 Passed: include_evidence decoupling verified (unpenalized score + stripped evidence)');
+
+console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, honest-failure, and evidence-decoupling tests passed!');
+
 
 

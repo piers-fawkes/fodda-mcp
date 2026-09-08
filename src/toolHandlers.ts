@@ -1148,7 +1148,10 @@ export async function createServer(
                     query,
                     limit: effectiveLimit,
                     use_semantic: use_semantic !== false,
-                    include_evidence: include_evidence ?? true,
+                    // Always request evidence upstream so the API Relevance Gate and scoring pipeline
+                    // do not drop on-topic trends whose titles lack literal query tokens or penalize scores.
+                    // If the caller requested include_evidence === false, evidence is stripped in post-processing.
+                    include_evidence: true,
                 };
 
                 // ── Supplemental data is deferred until we know results are relevant ──
@@ -1526,7 +1529,7 @@ export async function createServer(
                         const rawEvidenceCount = rawEvidence.length || (trimmed.evidence_count || trimmed.evidenceCount || 0);
                         trimmed.linked_evidence_count = rawEvidenceCount;
 
-                        if (rawEvidence.length > 0) {
+                        if (include_evidence !== false && rawEvidence.length > 0) {
                             const ranked = rankAndFilterEvidence(rawEvidence, query, trimmed, { maxItems: 3 });
                             trimmed.evidence = enrichEvidence(ranked);
                             trimmed.returned_evidence_count = trimmed.evidence.length;
@@ -1535,7 +1538,7 @@ export async function createServer(
                             trimmed.evidence = [];
                             trimmed.returned_evidence_count = 0;
                             trimmed.evidence_count = 0;
-                            if ((include_evidence ?? true) && rawEvidenceCount > 0) {
+                            if (include_evidence !== false && rawEvidenceCount > 0) {
                                 trimmed.evidence_status = 'Evidence expected but not returned by API';
                             }
                         }
@@ -1648,7 +1651,7 @@ export async function createServer(
                 if (!scopedGraphs && enrichedRows.length < 3 && query.split(' ').length > 3 && effectiveGraphId) {
                     try {
                         const shorterQuery = query.split(' ').slice(0, 3).join(' ');
-                        const fallback = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), { query: shorterQuery, limit: 10, use_semantic: true, include_evidence: false });
+                        const fallback = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), { query: shorterQuery, limit: 10, use_semantic: true, include_evidence: true });
                         const fallbackRows = Array.isArray(fallback) ? fallback : fallback?.rows || [];
                         if (fallbackRows.length > 0) {
                             const existingIds = new Set(enrichedRows.map((r: any) => r.node_id || r.trendId));
