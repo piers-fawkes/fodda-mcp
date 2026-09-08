@@ -599,3 +599,42 @@ export function getSupplementalTheme() {
         }
     };
 }
+
+/**
+ * Truncates whyNow cleanly without mid-word or mid-sentence cuts.
+ * - Leaves text intact if <= maxLength (default 280 chars).
+ * - Prefers breaking at sentence boundaries (.!?) if available between minLength (140) and maxLength.
+ * - Otherwise breaks at the nearest word boundary before maxLength and appends '...'.
+ * - Trims any dangling punctuation before the ellipsis.
+ */
+export function cleanTruncateWhyNow(whyNow: any, maxLength: number = 280, minLength: number = 140): string | undefined {
+    if (!whyNow || typeof whyNow !== 'string') return whyNow;
+    const trimmed = whyNow.trim();
+    if (trimmed.length <= maxLength) return trimmed;
+
+    const window = trimmed.slice(0, maxLength);
+
+    // Check for clean sentence ending within [minLength, maxLength]
+    // Matches period, exclamation, or question mark followed by whitespace or end of string
+    const sentenceMatches = [...window.matchAll(/([.!?])(?:\s+|$)/g)];
+    const validSentenceEnds = sentenceMatches
+        .map(m => (m.index ?? 0) + (m[1]?.length || 1))
+        .filter(idx => idx >= minLength && idx <= maxLength);
+
+    if (validSentenceEnds.length > 0) {
+        const bestEnd = validSentenceEnds[validSentenceEnds.length - 1];
+        return trimmed.slice(0, bestEnd).trim();
+    }
+
+    // Fall back to last word boundary
+    const lastSpace = window.lastIndexOf(' ');
+    if (lastSpace >= minLength) {
+        const cut = window.slice(0, lastSpace).replace(/[,;:—\-\.\s]+$/, '').trim();
+        return `${cut}...`;
+    }
+
+    // Fallback if no suitable word boundary found
+    const cut = window.replace(/[,;:—\-\.\s]+$/, '').trim();
+    return `${cut}...`;
+}
+

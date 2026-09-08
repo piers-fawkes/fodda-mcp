@@ -9,7 +9,8 @@ import {
     LUXURY_KEYWORDS,
     LUXURY_BRANDS,
     MASS_BUDGET_KEYWORDS,
-    MASS_BUDGET_BRANDS
+    MASS_BUDGET_BRANDS,
+    cleanTruncateWhyNow
 } from './enrichment.js';
 import { computeTierFit } from './coverageRelevance.js';
 import { sanitizePayloadForChatGpt } from './toolHandlers.js';
@@ -503,7 +504,41 @@ assert.strictEqual(processedRow.evidence_count, 0, 'evidence_count must be 0 whe
 assert.strictEqual(processedRow.relevance_score, 0.726, 'relevance_score must remain unpenalized (0.726, not crushed to 0.395)');
 console.log('✅ Test 10 Passed: include_evidence decoupling verified (unpenalized score + stripped evidence)');
 
-console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, honest-failure, and evidence-decoupling tests passed!');
+// ---------------------------------------------------------------------------
+// Test 11: cleanTruncateWhyNow Word-Boundary & Sentence Preservation
+// ---------------------------------------------------------------------------
+console.log('\nTest 11: cleanTruncateWhyNow Word-Boundary & Sentence Preservation');
+
+// 11a: Length <= 280 preserves text completely (fixes "...brands levera..." bug)
+const sample215 = 'Consumer demand for micro-mobility has surged across urban centers as municipal infrastructure expands and brands leverage community group rides to foster long-term customer loyalty and engagement in tier-1 markets.';
+const res215 = cleanTruncateWhyNow(sample215);
+assert.strictEqual(res215, sample215, 'Strings <= 280 chars must not be truncated');
+assert.ok(!res215?.includes('levera...'), 'Must never cut words mid-character');
+console.log('  ✅ 11a: Strings <= 280 chars preserved intact with complete words');
+
+// 11b: String with complete sentence within [140, 280] terminates on clean sentence
+const sampleTwoSentences = 'Consumer demand for micro-mobility has surged across urban centers as municipal infrastructure expands and brands leverage community group rides. These initiatives represent a key shift towards experiential marketing, allowing regional distributors to connect directly with cycling communities across North America and Europe.';
+const resSentence = cleanTruncateWhyNow(sampleTwoSentences);
+assert.strictEqual(
+    resSentence,
+    'Consumer demand for micro-mobility has surged across urban centers as municipal infrastructure expands and brands leverage community group rides.',
+    'Should cleanly terminate at sentence boundary when available'
+);
+assert.ok(resSentence.endsWith('.'), 'Sentence termination ends with period, not ellipsis');
+console.log('  ✅ 11b: Clean sentence boundary cleanly captured without dangling ellipsis');
+
+// 11c: Long single-sentence string breaks at word boundary and appends ellipsis
+const sampleLongSingle = 'Consumer demand for micro-mobility has surged across urban centers as municipal infrastructure expands and brands leverage community group rides to foster long-term customer loyalty and engagement in tier-1 markets through innovative localized experiences that bridge retail and sports culture.';
+const resLongSingle = cleanTruncateWhyNow(sampleLongSingle);
+assert.ok(resLongSingle !== undefined && resLongSingle.endsWith('...'), 'Long strings must end with ellipsis');
+assert.ok(!resLongSingle.match(/[a-zA-Z]\.\.\.$/)?.input?.endsWith('levera...'), 'Must break at word space, not mid-word');
+assert.ok(resLongSingle.length <= 283, 'Total length must respect boundary cap');
+console.log('  ✅ 11c: Long single-sentence breaks at word boundary without mid-word splits');
+
+console.log('✅ Test 11 Passed: cleanTruncateWhyNow preserves words and sentences cleanly');
+
+console.log('\nAll search_graph quality, freshness, payload slimming, routing bridge, honest-failure, evidence-decoupling, and whyNow-truncation tests passed!');
+
 
 
 

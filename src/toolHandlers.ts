@@ -21,7 +21,7 @@ import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
 import { MCP_SERVER_VERSION } from './tools.js';
 import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
-import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace } from './enrichment.js';
+import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace, cleanTruncateWhyNow } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
 import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
@@ -1521,7 +1521,7 @@ export async function createServer(
                             delete trimmed.place;
                             delete trimmed.place_count;
                         }
-                        if (trimmed.whyNow?.length > 200) trimmed.whyNow = trimmed.whyNow.substring(0, 200) + '...';
+                        if (trimmed.whyNow) trimmed.whyNow = cleanTruncateWhyNow(trimmed.whyNow);
                         // Reconcile freshnessDays against substantive dates (overrides DB updated_at sync timestamps)
                         trimmed.freshnessDays = reconcileFreshnessDays(trimmed, enrichNow);
                         // Filter & rank evidence to prioritize relevant proofs and tier-consistent items

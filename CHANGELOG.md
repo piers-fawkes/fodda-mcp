@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.61] - 2026-09-08
+
+### Fixed (whyNow Word-Boundary & Sentence-Aware Truncation)
+- **Word-Boundary & Sentence Preservation (`src/enrichment.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `cleanTruncateWhyNow(whyNow, maxLength = 280, minLength = 140)`.
+  - Replaced rigid `substring(0, 200) + '...'` in `search_graph` row processing with `cleanTruncateWhyNow`.
+  - Text up to 280 characters is preserved without truncation (preventing premature cuts on 1-2 sentence rationales, such as `"...brands levera..."`).
+  - Text exceeding 280 characters searches for a complete sentence boundary (`. `, `! `, `? `) within `[140, 280]` characters, or falls back to the last word boundary before the cap with a clean ellipsis (`...`), eliminating mid-word and mid-token splits.
+- *Verification:*
+  - Added Test 11 to `src/test_search_graph_quality.ts` testing string preservation <= 280 chars, sentence boundary termination, and word-boundary ellipsis fallback. All 11 tests pass.
+
 ## [1.46.60] - 2026-09-08
 
 ### Fixed (Coverage Status False-Positive on Healthy Results & Evidence Guard)
