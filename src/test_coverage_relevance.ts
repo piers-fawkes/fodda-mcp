@@ -133,6 +133,47 @@ async function runTests() {
     // ── Direct unit check on the counter ──
     check('countOnTopicRows on QA replica', countOnTopicRows(qaRows, QA_QUERY, [], CATALOG), { onTopic: 2, evaluated: true });
 
+    // ── Case H: Backend dataStatus: 'TREND_MATCH' with 10 rows without evidence arrays ──
+    // Specialist search (e.g. Peter Abraham cycling search) returns 10 trends confirmed
+    // by backend vector search. Should NOT be downgraded to 'thin' or attach suggested_action.
+    const cyclingRows = [
+        { _use_this_graphId: 'peter-abraham-bicycles-cycling', title: 'digital wall', summary: 'Chinese cycling market', relevance_score: 0.726, evidence: [] },
+        { _use_this_graphId: 'peter-abraham-bicycles-cycling', title: 'eventization of the weekly ride', summary: 'Group rides', relevance_score: 0.569, evidence: [] },
+        { _use_this_graphId: 'peter-abraham-bicycles-cycling', title: 'post-Justin generation', summary: 'Young cyclists', relevance_score: 0.566, evidence: [] },
+        { _use_this_graphId: 'peter-abraham-bicycles-cycling', title: 'Ride LA Together', summary: 'LA bike infrastructure', relevance_score: 0.56, evidence: [] },
+        { _use_this_graphId: 'havas-marketing', title: 'Gaming Culture', summary: 'Niche fandoms', relevance_score: 0.632, evidence: [] },
+        { _use_this_graphId: 'pinterest-hobbies-trend-report-2026', title: 'Collecting As Identity', summary: 'Hobby collection', relevance_score: 0.615, evidence: [] },
+        { _use_this_graphId: 'collectibles-alt-assets', title: 'Live Commerce', summary: 'Discovery layer', relevance_score: 0.516, evidence: [] },
+        { _use_this_graphId: '2026-macro-trend-graph', title: 'BIOADAPTIVE BALANCE', summary: 'Health balance', relevance_score: 0.496, evidence: [] },
+        { _use_this_graphId: '2026-macro-trend-graph', title: 'ANALOG SOUL', summary: 'Physical touchpoints', relevance_score: 0.493, evidence: [] },
+        { _use_this_graphId: 'edelman-marketing', title: 'Finance Eats Culture', summary: 'Financialization', relevance_score: 0.448, evidence: [] },
+    ];
+    const h = await addCoverageAnnotation({
+        dataStatus: 'TREND_MATCH',
+        on_topic_total: 4,
+        rows: cyclingRows
+    }, 'cycling and bicycle culture trends', [], 10, false, CATALOG);
+    check('H: backend TREND_MATCH status', h.coverage.status, 'ok');
+    check('H: results_returned', h.coverage.results_returned, 10);
+    check('H: no suggested_action on TREND_MATCH', h.coverage.suggested_action, undefined);
+
+    // ── Case I: Multi-graph fanout with on_topic_total: 4 and 10 rows ──
+    const i = await addCoverageAnnotation({
+        dataStatus: 'ok',
+        on_topic_total: 4,
+        rows: cyclingRows
+    }, 'cycling and bicycle culture trends', [], 10, false, CATALOG, { onTopicTotal: 4 });
+    check('I: on_topic_total >= 3 status', i.coverage.status, 'ok');
+    check('I: no suggested_action when on_topic_total >= 3', i.coverage.suggested_action, undefined);
+
+    // ── Case J: include_evidence: false with 10 rows does not trigger isThinEvidence ──
+    const j = await addCoverageAnnotation({
+        dataStatus: 'ok',
+        rows: cyclingRows
+    }, 'top emerging trends', [], 10, false, CATALOG, { include_evidence: false });
+    check('J: include_evidence: false does not flag thin on generic query', j.coverage.status, 'ok');
+    check('J: no suggested_action on healthy results without evidence', j.coverage.suggested_action, undefined);
+
     console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
     process.exit(failures === 0 ? 0 : 1);
 }

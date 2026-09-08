@@ -1669,6 +1669,7 @@ export async function createServer(
                 data = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data.total,
                     onTopicTotal: data.on_topic_total,
+                    include_evidence: include_evidence !== false,
                     knownBrand: getKnownBrand(),
                     foddaRequest,
                     apiKey,
@@ -3016,6 +3017,7 @@ export async function createServer(
                 const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
+                    include_evidence: include_evidence !== false,
                     knownBrand: getKnownBrand(),
                     foddaRequest,
                     apiKey,
@@ -3067,6 +3069,7 @@ export async function createServer(
             const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                 total: data?.total,
                 onTopicTotal: data?.on_topic_total,
+                include_evidence: include_evidence !== false,
                 knownBrand: getKnownBrand(),
                 foddaRequest,
                 apiKey,
@@ -3160,6 +3163,7 @@ export async function createServer(
                 const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,
+                    include_evidence: include_evidence !== false,
                     knownBrand: getKnownBrand(),
                     foddaRequest,
                     apiKey,

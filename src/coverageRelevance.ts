@@ -507,8 +507,20 @@ export async function addCoverageAnnotation(
             isThinCount = false;
         }
 
+        // Evidence check guard: only evaluate evidence thinness if rows actually contain
+        // evidence arrays AND evidence was not skipped or opted out.
+        // If resultCount >= 3 and query did not request inline evidence (or evidence was stripped),
+        // missing inline evidence must NOT flag healthy results as 'thin'.
+        const hasEvidenceArrays = rows.some((r: any) =>
+            (Array.isArray(r.evidence) && r.evidence.length > 0) ||
+            (Array.isArray(r.evidence_items) && r.evidence_items.length > 0) ||
+            (Array.isArray(r.evidenceItems) && r.evidenceItems.length > 0) ||
+            (Array.isArray(r.trendEvidence) && r.trendEvidence.length > 0)
+        );
+
         let isThinEvidence = false;
-        if (!skipEvidenceCheck) {
+        const skipEvidence = skipEvidenceCheck || options?.include_evidence === false || !hasEvidenceArrays;
+        if (!skipEvidence && resultCount >= 3) {
             isThinEvidence = rows.every((r: any) => {
                 const count = Array.isArray(r.evidence)
                     ? r.evidence.length
@@ -539,6 +551,22 @@ export async function addCoverageAnnotation(
 
         if (isThinCount || isThinEvidence || isThinRelevance) {
             status = 'thin';
+        }
+
+        // ── Respect Backend dataStatus / on_topic_total ──
+        // Fodda API evaluates vector similarity and relevance scores directly in the graph layer.
+        // When normalizedData.dataStatus === 'TREND_MATCH' or (on_topic_total >= 3),
+        // the backend has already confirmed that the returned trends are genuine on-topic matches.
+        // MCP's secondary heuristics should not downgrade a confirmed TREND_MATCH to 'thin'.
+        const backendOnTopicTotal = normalizedData.on_topic_total ?? options?.onTopicTotal;
+        const isBackendTrendMatch = normalizedData.dataStatus === 'TREND_MATCH' ||
+            (typeof backendOnTopicTotal === 'number' && backendOnTopicTotal >= 3);
+
+        if (isBackendTrendMatch && resultCount >= 3) {
+            status = 'ok';
+            if (onTopicCount !== undefined && onTopicCount < 3) {
+                onTopicCount = Math.min(resultCount, Math.max(3, typeof backendOnTopicTotal === 'number' ? backendOnTopicTotal : 3));
+            }
         }
     }
 
@@ -682,6 +710,7 @@ export interface NextMoves {
 export interface NextMovesOptions {
     total?: number | undefined;
     onTopicTotal?: number | undefined;
+    include_evidence?: boolean | undefined;
     knownBrand?: string | undefined;
     currentAnalystId?: string | undefined;
     analysts?: CatalogAnalyst[] | undefined;

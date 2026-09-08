@@ -5,6 +5,20 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.60] - 2026-09-08
+
+### Fixed (Coverage Status False-Positive on Healthy Results & Evidence Guard)
+- **Evidence Check Guard (`src/coverageRelevance.ts`)**:
+  - In `addCoverageAnnotation()`: `isThinEvidence` is no longer evaluated when rows do not contain evidence arrays or when evidence was not requested (`include_evidence: false` or omitted).
+  - Prevents false-positive `coverage.status = 'thin'` on healthy result sets (e.g. 10 on-topic trends) when returned without inline evidence.
+- **Backend `dataStatus` & `on_topic_total` Authority (`src/coverageRelevance.ts`)**:
+  - In `addCoverageAnnotation()`: When backend reports `dataStatus === 'TREND_MATCH'` or `on_topic_total >= 3` (evaluated via vector similarity in the graph layer), MCP's secondary keyword heuristics no longer downgrade healthy results (>= 3 rows) to `'thin'`.
+  - Ensures `coverage.status` remains `'ok'` on verified graph matches and suppresses unnecessary `coverage.suggested_action` for supplemental recovery on healthy results.
+  - Forwarded `include_evidence` in options to `addCoverageAnnotation` from all intelligence tool handlers (`search_graph`, `get_domain_intelligence`, `get_specialist_intelligence`, `get_report_intelligence`).
+- *Verification:*
+  - Added Cases H, I, and J in `src/test_coverage_relevance.ts` validating backend `TREND_MATCH`, `on_topic_total >= 3`, and evidence decoupling; all test cases pass.
+  - `npm run build` and `npx tsx src/test_search_graph_quality.ts` passed cleanly.
+
 ## [1.46.59] - 2026-09-08
 
 ### Added & Changed (Upstream Evidence Decoupling & include_evidence Option Protection)
