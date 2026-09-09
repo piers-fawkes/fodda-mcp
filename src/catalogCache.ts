@@ -122,7 +122,7 @@ export function stringifyField(f: any): string {
 
 export function normalizeAnalyst(a: any): CatalogAnalyst {
     const analyst_id = String(a.analyst_id || a.id || a.slug || a.name || '').trim();
-    const name = String(a.name || a.analyst_id || a.id || a.slug || '').trim();
+    const name = cleanDisplayName(String(a.name || a.analyst_id || a.id || a.slug || '').trim());
     const description = stringifyField(a.description || a.bio || a.lens || a.standpoint || '');
     const expert_in = stringifyField(a.expert_in || a.expertIn || a.topic || '');
     const outside_their_lane = stringifyField(a.outside_their_lane || a.outsideTheirLane || a.blind_spots || a.blindSpots || '');
@@ -172,7 +172,7 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
     } else if (is_classic) {
         category = 'classic_agent';
         category_label = 'Classic Agent';
-        twin_type = 'Classic Digital Twin';
+        twin_type = 'Classic Agent';
     } else if (is_c_suite) {
         category = 'c_suite_agent';
         category_label = 'C-Suite Agent';
@@ -499,6 +499,18 @@ export function buildDisplayName(g: CatalogGraph): string {
     }
 
     return g.name;
+}
+
+/**
+ * Clean display names across MCP surfaces.
+ * Removes retired suffixes such as "(Classic Digital Twin)", "(Digital Twin)", etc.
+ */
+export function cleanDisplayName(name: string | undefined | null): string {
+    if (!name || typeof name !== 'string') return '';
+    return name
+        .replace(/\s*[\(\[]\s*(?:Classic\s+|Expert\s+|Human\s+)?(?:Digital\s+)?Twin\s*[\)\]]/gi, '')
+        .replace(/\s*[\(\[]\s*(?:Classic|Human|Synthetic|C-Suite)\s+Agent\s*[\)\]]/gi, '')
+        .trim();
 }
 
 /**

@@ -1,7 +1,7 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 50,
+  "count": 51,
   "billable": 22,
   "tools": [
     {
@@ -97,7 +97,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are Classic Digital Twins of historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. \"brand-cmo\" with company: \"Nike\", or \"Nike CMO\" directly); Synthetic Agents provide domain-specific intelligence. Call list_analysts first to find the right agent ID. Responses may include coverage status, source attribution, and referrals to other graphs."
+      "description": "Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. \"brand-cmo\" with company: \"Nike\", or \"Nike CMO\" directly); Synthetic Agents provide domain-specific intelligence. Supports deep homework mode (pass deep: true or ask to \"do your homework\" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right agent ID. Responses may include coverage status, source attribution, and referrals to other graphs."
     },
     {
       "name": "consult_human_agent",
@@ -110,7 +110,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Consult an authorized Human Agent (an Expert Digital Twin created directly with the named expert's consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to \"do your homework\" to trigger background research across specialist graphs and market data). Call list_analysts first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person."
+      "description": "Consult an authorized Human Agent (created directly with the named expert's consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to \"do your homework\" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person."
     },
     {
       "name": "deep_research_topic",
@@ -174,6 +174,16 @@
         "mcp"
       ],
       "description": "Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding."
+    },
+    {
+      "name": "find_expert",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Expert",
+      "profiles": [
+        "mcp"
+      ],
+      "description": "Find 2–3 genuine candidate experts for a question, brief, or situation with domain-grounded rationale. Discovery tool (\"who should I ask\") across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists. Evaluates lane overlap, filters out declared blind spots, and fails honestly when no expert matches. Call this when deciding which expert to consult, then pass the matched analyst_id to consult_human_agent or consult_analyst."
     },
     {
       "name": "generate_visual",
@@ -437,7 +447,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Lists available agents across 4 categories: human_agent (Human Agents — Expert Digital Twins of living industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — Classic Digital Twins of historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes."
+      "description": "Lists available agents across 4 categories: human_agent (Human Agents — real industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes."
     },
     {
       "name": "list_graphs",

@@ -32,7 +32,7 @@
  * returned — callers keep the legacy count-only behavior.
  */
 
-import { getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getAnalysts } from './catalogCache.js';
+import { getGraphs, getLiveGraphs, buildDisplayName, cleanDisplayName, getRelevantGraphs, getAnalysts } from './catalogCache.js';
 import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
 import type { FoddaRequestFn } from './types.js';
 import { LUXURY_KEYWORDS, LUXURY_BRANDS, MASS_BUDGET_KEYWORDS, MASS_BUDGET_BRANDS } from './enrichment.js';
@@ -874,6 +874,285 @@ export function formatThemePhrase(rawCandidates: string[], fallback: string = 'e
     return `${cleanedThemes[0]} and ${cleanedThemes[1]}`;
 }
 
+/**
+ * Cross-cutting or generic tech/strategy terms that appear across multiple domains.
+ * When evaluating domain fit, matching solely on these words does NOT constitute
+ * genuine domain overlap if the query contains a specific vertical or domain term.
+ */
+export const CROSS_CUTTING_MODIFIERS = new Set([
+    'ai', 'artificial intelligence', 'genai', 'tech', 'technology', 'trends', 'trend',
+    'insights', 'insight', 'strategy', 'strategic', 'systems', 'system',
+    'innovation', 'innovations', 'future', 'futures', 'management', 'data',
+    'analytics', 'research', 'market', 'markets', 'consumer', 'consumers',
+    'culture', 'experience', 'experiences', 'overview', 'summary', 'report',
+    'industry', 'growth', 'landscape', 'benchmarks', 'benchmark'
+]);
+
+export interface CandidateExpert {
+    analyst_id: string;
+    display_name: string;
+    category: 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent';
+    consult_tool: 'consult_human_agent' | 'consult_analyst';
+    reason: string;
+    out_of_lane?: boolean;
+}
+
+export interface CandidateExpertOptions {
+    analysts?: CatalogAnalyst[] | undefined;
+    graphs?: CatalogGraph[] | undefined;
+    limit?: number | undefined;
+    currentAnalystId?: string | undefined;
+    excludeAnalystId?: string | undefined;
+    searchedGraphs?: any[] | undefined;
+    rowsByGraph?: Map<string, any[]> | undefined;
+    status?: string | undefined;
+    isBrandTracker?: boolean | undefined;
+}
+
+/**
+ * Score and rank candidate experts for a query.
+ * Reuses the shared scoring spine: domain overlap, blind-spot exclusion,
+ * self-recommendation suppression, and honest failure.
+ */
+export function findCandidateExperts(
+    query: string,
+    options?: CandidateExpertOptions
+): CandidateExpert[] {
+    const rawAnalysts = options?.analysts || getAnalysts();
+    const activeAnalysts = rawAnalysts.filter(a => {
+        const st = (a.status || a.Status || '').toLowerCase().trim();
+        return !st || st === 'active';
+    });
+
+    const isCurrentAnalyst = (a: CatalogAnalyst) => {
+        const excludeId = options?.currentAnalystId || options?.excludeAnalystId;
+        if (!excludeId) return false;
+        const cur = excludeId.toLowerCase().trim();
+        return (a.analyst_id && a.analyst_id.toLowerCase().trim() === cur) ||
+               (a.name && a.name.toLowerCase().trim() === cur);
+    };
+
+    const qLower = (query || '').toLowerCase().trim();
+    const queryTokens = specificQueryTokens(query);
+    const allQueryWords = qLower.split(/[^a-z0-9]+/).filter((w: string) => w.length >= 3 && !GENERIC_QUERY_TOKENS.has(w));
+    const queryDomainWords = allQueryWords.filter(w => !CROSS_CUTTING_MODIFIERS.has(w));
+
+    const isBrandOrCorporateQuery = Boolean(
+        options?.isBrandTracker ||
+        /brand|financial|earnings|corporate|cmo|ceo|cfo|executive|revenue|margin|quarterly|investor|q[1-4]|balance sheet/i.test(qLower)
+    );
+    const isPhilosophicalQuery = /art\b|aesthetic|philosophy|philosophical|criticism|craftsmanship|harlem renaissance|aesthetic theory|ethics of art|ruskin|locke\b/i.test(qLower);
+
+    function getCategory(a: CatalogAnalyst): 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent' {
+        if (a.category) return a.category;
+        if (a.is_human_agent || a.is_verified_real_person) return 'human_agent';
+        if (a.is_c_suite_agent || /brand-(cmo|ceo|cfo)/i.test(a.analyst_id || '')) return 'c_suite_agent';
+        if (a.is_classic_agent) return 'classic_agent';
+        const sub = (a.graphSubType || a.graph_sub_type || a.type || a.kind || '').toString().toLowerCase();
+        if (sub.includes('classic')) return 'classic_agent';
+        if (sub.includes('digital twin') || sub.includes('human')) return 'human_agent';
+        if (sub.includes('c-suite') || sub.includes('executive')) return 'c_suite_agent';
+        return 'synthetic_agent';
+    }
+
+    const searchedGraphs = options?.searchedGraphs || (options?.graphs ? options.graphs : getRelevantGraphs(query, 4, 15, 0.10));
+    const rowsByGraph = options?.rowsByGraph || new Map<string, any[]>();
+
+    interface ScoredAnalyst {
+        analyst: CatalogAnalyst;
+        score: number;
+        hasBlindSpot: boolean;
+        hasExplicitMatch: boolean;
+        directMatch: boolean;
+    }
+
+    const scoredAnalysts: ScoredAnalyst[] = [];
+
+    for (const a of activeAnalysts) {
+        if (isCurrentAnalyst(a)) continue;
+
+        let score = 0;
+        let directMatch = false;
+        let hasExplicitMatch = false;
+
+        const category = getCategory(a);
+
+        // ── Tier Intent Weighting ──
+        if (category === 'c_suite_agent') {
+            if (isBrandOrCorporateQuery) {
+                score += 6.0;
+            } else {
+                score -= 5.0;
+            }
+        } else if (category === 'classic_agent') {
+            if (isPhilosophicalQuery) {
+                score += 5.0;
+            } else {
+                score -= 10.0; // Classic thinkers must never outrank living practitioners on contemporary queries
+            }
+        } else if (category === 'human_agent' || a.is_verified_real_person) {
+            score += 3.0; // Prioritize living human practitioners over synthetic agents
+        }
+
+        // 1. Negative signal: Blind spot / outside_their_lane
+        const rawBlindSpots = [
+            ...(Array.isArray(a.outside_their_lane) ? a.outside_their_lane : (typeof a.outside_their_lane === 'string' ? [a.outside_their_lane] : [])),
+            ...(Array.isArray(a.blind_spots) ? a.blind_spots : (typeof a.blind_spots === 'string' ? [a.blind_spots] : [])),
+        ].join(' ').toLowerCase();
+        let hasBlindSpot = false;
+        if (rawBlindSpots.length > 0) {
+            for (const t of queryTokens) {
+                if (t.length >= 3 && rawBlindSpots.includes(t)) {
+                    hasBlindSpot = true;
+                    score -= 20;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (w.length >= 4 && rawBlindSpots.includes(w)) {
+                    hasBlindSpot = true;
+                    score -= 10;
+                }
+            }
+        }
+
+        // 2. Positive signal: expert_in & what_they_offer
+        const expertIn = [
+            ...(Array.isArray(a.expert_in) ? a.expert_in : (typeof a.expert_in === 'string' ? [a.expert_in] : [])),
+            ...(Array.isArray(a.what_they_offer) ? a.what_they_offer : (typeof a.what_they_offer === 'string' ? [a.what_they_offer] : [])),
+        ].join(' ').toLowerCase();
+        if (expertIn.length > 0) {
+            if (qLower.length > 5 && expertIn.includes(qLower)) {
+                score += 8;
+                hasExplicitMatch = true;
+            }
+            for (const t of queryTokens) {
+                if (expertIn.includes(t)) {
+                    const isDomainToken = queryDomainWords.length === 0 || queryDomainWords.includes(t) || !CROSS_CUTTING_MODIFIERS.has(t);
+                    score += isDomainToken ? 4 : 1.5;
+                    if (t.length >= 4 && isDomainToken) hasExplicitMatch = true;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (expertIn.includes(w)) {
+                    const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
+                    score += isDomainWord ? 1.5 : 0.5;
+                    if (w.length >= 4 && isDomainWord) hasExplicitMatch = true;
+                }
+            }
+        }
+
+        // 3. Positive signal: topics
+        const aTopics = (Array.isArray(a.topics) ? a.topics : []).map((t: any) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean);
+        for (const tp of aTopics) {
+            if (qLower.includes(tp) || tp.includes(qLower)) {
+                score += 5;
+                hasExplicitMatch = true;
+            }
+            for (const t of queryTokens) {
+                if (tp.includes(t) || t.includes(tp)) {
+                    const isDomainToken = queryDomainWords.length === 0 || queryDomainWords.includes(t) || !CROSS_CUTTING_MODIFIERS.has(t);
+                    score += isDomainToken ? 3 : 1;
+                    if (t.length >= 3 && tp.length >= 3 && isDomainToken) hasExplicitMatch = true;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (tp.includes(w) || w.includes(tp)) {
+                    const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
+                    score += isDomainWord ? 1.5 : 0.5;
+                    if (w.length >= 3 && tp.length >= 3 && isDomainWord) hasExplicitMatch = true;
+                }
+            }
+        }
+
+        // 4. Positive signal: description (supporting context)
+        const desc = (typeof a.description === 'string' ? a.description : '').toLowerCase();
+        if (desc.length > 0) {
+            if (qLower.length > 5 && desc.includes(qLower)) {
+                score += 4;
+            }
+            for (const t of queryTokens) {
+                if (desc.includes(t)) {
+                    score += 2;
+                }
+            }
+            for (const w of allQueryWords) {
+                if (desc.includes(w)) {
+                    score += 1;
+                }
+            }
+        }
+
+        // 5. Positive signal: Searched graphs & graph relevance scores
+        const aSlug = (a.analyst_id || '').toLowerCase().trim();
+        const aName = (a.name || '').toLowerCase().trim();
+        for (const g of searchedGraphs) {
+            const gid = (typeof g === 'string' ? g : (g.graph_id || g.id || '')).toLowerCase().trim();
+            const gCurator = (typeof g === 'object' && g.curator ? g.curator : '').toLowerCase().trim();
+            const isOwner = (gid && (gid === aSlug || gid.includes(aSlug) || aSlug.includes(gid))) ||
+                            (gCurator && (gCurator === aName || gCurator.includes(aName) || aName.includes(gCurator)));
+            if (isOwner) {
+                // If graph has a router relevance score, use it directly.
+                // If unscored (e.g. broadcast or unranked search), award positive score ONLY if
+                // this graph actually returned matching results in rowsByGraph.
+                const rowsForGraph = rowsByGraph.get(gid) || (aSlug ? rowsByGraph.get(aSlug) : null) || [];
+                const relScore = (typeof g === 'object' && typeof g.relevanceScore === 'number')
+                    ? g.relevanceScore
+                    : (rowsForGraph.length > 0 ? 0.8 : 0);
+                if (relScore > 0) {
+                    score += relScore * 5.0;
+                    hasExplicitMatch = true;
+                    if (relScore >= 0.5) directMatch = true;
+                }
+            }
+        }
+
+        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, directMatch });
+    }
+
+    // Require minimum threshold score (>= 6.0), explicit domain/topic match, and no disqualifying blind spot match
+    const MIN_EXPERT_FIT_SCORE = 6.0;
+    const validCandidates = scoredAnalysts
+        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && s.hasExplicitMatch && !s.hasBlindSpot)
+        .sort((a, b) => b.score - a.score);
+
+    const maxLimit = Math.min(Math.max(options?.limit || 3, 1), 3);
+    const topCandidates = validCandidates.slice(0, maxLimit);
+    const status = options?.status;
+
+    return topCandidates.map(c => {
+        const matchedAnalyst = c.analyst;
+        let lane = '';
+        const rawExpertIn = [
+            ...(Array.isArray(matchedAnalyst.expert_in) ? matchedAnalyst.expert_in : (typeof matchedAnalyst.expert_in === 'string' ? [matchedAnalyst.expert_in] : [])),
+            ...(Array.isArray(matchedAnalyst.what_they_offer) ? matchedAnalyst.what_they_offer : (typeof matchedAnalyst.what_they_offer === 'string' ? [matchedAnalyst.what_they_offer] : [])),
+        ].filter(Boolean).join(', ');
+        if (rawExpertIn.trim().length > 0) {
+            lane = truncateAtWordBoundary(rawExpertIn.trim(), 60);
+        } else if (matchedAnalyst.description && matchedAnalyst.description.trim().length > 0) {
+            const firstClause = (matchedAnalyst.description.split(/[,.;]/)[0] || '').trim();
+            lane = truncateAtWordBoundary(firstClause, 60);
+        }
+
+        const reason = (status === 'thin' || status === 'empty')
+            ? (lane && lane.length > 3 ? `closest expert lane for ${lane}` : 'closest expert lane for this topic')
+            : (lane && lane.length > 3 ? `covers ${lane} directly` : 'covers this domain directly');
+
+        const cat = matchedAnalyst.category || getCategory(matchedAnalyst);
+        const consult_tool: 'consult_human_agent' | 'consult_analyst' = (matchedAnalyst.consult_tool === 'consult_human_agent' || matchedAnalyst.consult_tool === 'consult_analyst')
+            ? matchedAnalyst.consult_tool
+            : (cat === 'human_agent' ? 'consult_human_agent' : 'consult_analyst');
+
+        return {
+            analyst_id: matchedAnalyst.analyst_id,
+            display_name: cleanDisplayName(matchedAnalyst.name),
+            category: cat,
+            consult_tool,
+            reason,
+            out_of_lane: false
+        };
+    });
+}
+
 export async function generateNextMoves(
     rows: any[],
     query: string,
@@ -1253,211 +1532,20 @@ export async function generateNextMoves(
         }
     }
 
-    // Expert: scored lane-fit picker over active analysts
-    const activeAnalysts = analysts.filter(a => {
-        const st = (a.status || a.Status || '').toLowerCase().trim();
-        return !st || st === 'active';
+    // Expert: scored lane-fit picker over active analysts using shared findCandidateExperts
+    const candidateExperts = findCandidateExperts(query, {
+        analysts,
+        graphs: catalog,
+        limit: 1,
+        currentAnalystId: options?.currentAnalystId,
+        searchedGraphs,
+        rowsByGraph,
+        status,
+        isBrandTracker: options?.isBrandTracker
     });
 
-    const isCurrentAnalyst = (a: CatalogAnalyst) => {
-        if (!options?.currentAnalystId) return false;
-        const cur = options.currentAnalystId.toLowerCase().trim();
-        return (a.analyst_id && a.analyst_id.toLowerCase().trim() === cur) ||
-               (a.name && a.name.toLowerCase().trim() === cur);
-    };
-
-    const qLower = (query || '').toLowerCase().trim();
-    const queryTokens = tokens;
-    const allQueryWords = qLower.split(/[^a-z0-9]+/).filter((w: string) => w.length >= 3 && !GENERIC_QUERY_TOKENS.has(w));
-
-    const isBrandOrCorporateQuery = Boolean(
-        options?.isBrandTracker ||
-        /brand|financial|earnings|corporate|cmo|ceo|cfo|executive|revenue|margin|quarterly|investor|q[1-4]|balance sheet/i.test(qLower)
-    );
-    const isPhilosophicalQuery = /art\b|aesthetic|philosophy|philosophical|criticism|craftsmanship|harlem renaissance|aesthetic theory|ethics of art|ruskin|locke\b/i.test(qLower);
-
-    function getCategory(a: CatalogAnalyst): 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent' {
-        if (a.category) return a.category;
-        if (a.is_human_agent || a.is_verified_real_person) return 'human_agent';
-        if (a.is_c_suite_agent || /brand-(cmo|ceo|cfo)/i.test(a.analyst_id || '')) return 'c_suite_agent';
-        if (a.is_classic_agent) return 'classic_agent';
-        const sub = (a.graphSubType || a.graph_sub_type || a.type || a.kind || '').toString().toLowerCase();
-        if (sub.includes('classic')) return 'classic_agent';
-        if (sub.includes('digital twin') || sub.includes('human')) return 'human_agent';
-        if (sub.includes('c-suite') || sub.includes('executive')) return 'c_suite_agent';
-        return 'synthetic_agent';
-    }
-
-    interface ScoredAnalyst {
-        analyst: CatalogAnalyst;
-        score: number;
-        hasBlindSpot: boolean;
-        hasExplicitMatch: boolean;
-        directMatch: boolean;
-    }
-
-    const scoredAnalysts: ScoredAnalyst[] = [];
-
-    for (const a of activeAnalysts) {
-        if (isCurrentAnalyst(a)) continue;
-
-        let score = 0;
-        let directMatch = false;
-        let hasExplicitMatch = false;
-
-        const category = getCategory(a);
-
-        // ── Tier Intent Weighting ──
-        if (category === 'c_suite_agent') {
-            if (isBrandOrCorporateQuery) {
-                score += 6.0;
-            } else {
-                score -= 5.0;
-            }
-        } else if (category === 'classic_agent') {
-            if (isPhilosophicalQuery) {
-                score += 5.0;
-            } else {
-                score -= 10.0; // Classic thinkers must never outrank living practitioners on contemporary queries
-            }
-        } else if (category === 'human_agent' || a.is_verified_real_person) {
-            score += 3.0; // Prioritize living human practitioners over synthetic agents
-        }
-
-        // 1. Negative signal: Blind spot / outside_their_lane
-        const blindSpot = (typeof a.outside_their_lane === 'string' ? a.outside_their_lane : '').toLowerCase();
-        let hasBlindSpot = false;
-        if (blindSpot.length > 0) {
-            for (const t of queryTokens) {
-                if (t.length >= 3 && blindSpot.includes(t)) {
-                    hasBlindSpot = true;
-                    score -= 20;
-                }
-            }
-            for (const w of allQueryWords) {
-                if (w.length >= 4 && blindSpot.includes(w)) {
-                    hasBlindSpot = true;
-                    score -= 10;
-                }
-            }
-        }
-
-        // 2. Positive signal: expert_in & what_they_offer
-        const expertIn = (((typeof a.expert_in === 'string' ? a.expert_in : '') + ' ' + (typeof a.what_they_offer === 'string' ? a.what_they_offer : ''))).toLowerCase();
-        if (expertIn.length > 0) {
-            if (qLower.length > 5 && expertIn.includes(qLower)) {
-                score += 8;
-                hasExplicitMatch = true;
-            }
-            for (const t of queryTokens) {
-                if (expertIn.includes(t)) {
-                    score += 4;
-                    if (t.length >= 4) hasExplicitMatch = true;
-                }
-            }
-            for (const w of allQueryWords) {
-                if (expertIn.includes(w)) {
-                    score += 1.5;
-                    if (w.length >= 4) hasExplicitMatch = true;
-                }
-            }
-        }
-
-        // 3. Positive signal: topics
-        const aTopics = (Array.isArray(a.topics) ? a.topics : []).map((t: any) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean);
-        for (const tp of aTopics) {
-            if (qLower.includes(tp) || tp.includes(qLower)) {
-                score += 5;
-                hasExplicitMatch = true;
-            }
-            for (const t of queryTokens) {
-                if (tp.includes(t) || t.includes(tp)) {
-                    score += 3;
-                    if (t.length >= 3 && tp.length >= 3) hasExplicitMatch = true;
-                }
-            }
-            for (const w of allQueryWords) {
-                if (tp.includes(w) || w.includes(tp)) {
-                    score += 1.5;
-                    if (w.length >= 3 && tp.length >= 3) hasExplicitMatch = true;
-                }
-            }
-        }
-
-        // 4. Positive signal: description (supporting context)
-        const desc = (typeof a.description === 'string' ? a.description : '').toLowerCase();
-        if (desc.length > 0) {
-            if (qLower.length > 5 && desc.includes(qLower)) {
-                score += 4;
-            }
-            for (const t of queryTokens) {
-                if (desc.includes(t)) {
-                    score += 2;
-                }
-            }
-            for (const w of allQueryWords) {
-                if (desc.includes(w)) {
-                    score += 1;
-                }
-            }
-        }
-
-        // 5. Positive signal: Searched graphs & graph relevance scores
-        const aSlug = (a.analyst_id || '').toLowerCase().trim();
-        const aName = (a.name || '').toLowerCase().trim();
-        for (const g of searchedGraphs) {
-            const gid = (typeof g === 'string' ? g : (g.graph_id || g.id || '')).toLowerCase().trim();
-            const gCurator = (typeof g === 'object' && g.curator ? g.curator : '').toLowerCase().trim();
-            const isOwner = (gid && (gid === aSlug || gid.includes(aSlug) || aSlug.includes(gid))) ||
-                            (gCurator && (gCurator === aName || gCurator.includes(aName) || aName.includes(gCurator)));
-            if (isOwner) {
-                // If graph has a router relevance score, use it directly.
-                // If unscored (e.g. broadcast or unranked search), award positive score ONLY if
-                // this graph actually returned matching results in rowsByGraph.
-                const rowsForGraph = rowsByGraph.get(gid) || (aSlug ? rowsByGraph.get(aSlug) : null) || [];
-                const relScore = (typeof g === 'object' && typeof g.relevanceScore === 'number')
-                    ? g.relevanceScore
-                    : (rowsForGraph.length > 0 ? 0.8 : 0);
-                if (relScore > 0) {
-                    score += relScore * 5.0;
-                    hasExplicitMatch = true;
-                    if (relScore >= 0.5) directMatch = true;
-                }
-            }
-        }
-
-        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, directMatch });
-    }
-
-    // Require minimum threshold score (>= 6.0), explicit domain/topic match, and no disqualifying blind spot match
-    const MIN_EXPERT_FIT_SCORE = 6.0;
-    const validCandidates = scoredAnalysts
-        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && s.hasExplicitMatch && !s.hasBlindSpot)
-        .sort((a, b) => b.score - a.score);
-
-    const matchedAnalyst = validCandidates.length > 0 ? validCandidates[0]?.analyst : null;
-
-    if (matchedAnalyst) {
-        let lane = '';
-        if (matchedAnalyst.expert_in && matchedAnalyst.expert_in.trim().length > 0) {
-            lane = truncateAtWordBoundary(matchedAnalyst.expert_in.trim(), 60);
-        } else if (matchedAnalyst.description && matchedAnalyst.description.trim().length > 0) {
-            const firstClause = (matchedAnalyst.description.split(/[,.;]/)[0] || '').trim();
-            lane = truncateAtWordBoundary(firstClause, 60);
-        }
-
-        const reason = (status === 'thin' || status === 'empty')
-            ? (lane && lane.length > 3 ? `closest expert lane for ${lane}` : 'closest expert lane for this topic')
-            : (lane && lane.length > 3 ? `covers ${lane} directly` : 'covers this domain directly');
-
-        const cat = matchedAnalyst.category || getCategory(matchedAnalyst);
-        specific.expert = {
-            analyst_id: matchedAnalyst.analyst_id,
-            display_name: matchedAnalyst.name,
-            reason,
-            category: cat,
-            consult_tool: matchedAnalyst.consult_tool || (cat === 'human_agent' ? 'consult_human_agent' : 'consult_analyst'),
-        };
+    if (candidateExperts.length > 0 && candidateExperts[0]) {
+        specific.expert = candidateExperts[0];
     }
 
     if (Object.keys(specific).length > 0) {
@@ -1681,7 +1769,7 @@ export function generateConsultNextMoves(
         const topRef = result.referrals[0];
         specific.expert = {
             analyst_id: topRef.id || topRef.analyst_id || topRef.slug,
-            display_name: topRef.name || topRef.curator,
+            display_name: cleanDisplayName(topRef.name || topRef.curator),
             reason: topRef.reason || 'related expertise',
         };
     }

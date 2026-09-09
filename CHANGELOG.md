@@ -5,6 +5,30 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.63] - 2026-09-09
+
+### Added & Changed (Expert Layer: find_expert Discovery Tool, Classic Agent Cleanup, Deep Consult)
+- **Classic Agent Retired Terminology Cleanup (Brief 1)**:
+  - Added `cleanDisplayName()` in `src/catalogCache.ts` and `src/coverageRelevance.ts` stripping retired twin suffixes: `(Classic Digital Twin)`, `[Classic Digital Twin]`, `(Digital Twin)`, `(Human Twin)`, `(Expert Digital Twin)`, and bracketed variations.
+  - In `src/catalogCache.ts`: Updated `normalizeAnalyst()` to set `twin_type: 'Classic Agent'` (retiring `'Classic Digital Twin'`).
+  - In `src/toolHandlers.ts`: Sanitized display names in `list_analysts` output and updated tool/parameter descriptions for `consult_analyst`, `consult_human_agent`, and `list_analysts` to use "Classic Agent" and "Human Agent".
+- **Visible Expert Discovery Tool: `find_expert` (Brief 3)**:
+  - Added `find_expert` tool registered in `src/toolHandlers.ts` and mapped under category `Expert` in `tools-manifest.json` (free discovery tool).
+  - Returns a ranked shortlist of 2–3 genuine candidate experts across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists.
+  - Extracted shared matching logic into `findCandidateExperts()` in `src/coverageRelevance.ts`:
+    - **Genuine Domain Overlap:** `CROSS_CUTTING_MODIFIERS` filters out false matches based solely on generic modifiers ("ai", "strategy", "trends", "retail", "experience") unless the expert's declared lane explicitly matches domain terms.
+    - **Blind-Spot Exclusion:** Uses `outside_their_lane` and `blind_spots` to actively disqualify candidates from out-of-lane topics.
+    - **Self-Recommendation Suppression:** Respects `currentAnalystId` / `excludeAnalystId` so experts never recommend themselves during active consults.
+    - **Honest Empty Failure:** Returns `total_matches: 0` and `candidates: []` with an honest explanatory note when no expert covers the domain, refusing to force weak referrals.
+    - **Living Practitioner Priority:** Ranks living human experts above synthetic or classic agents on contemporary domain queries.
+- **Deep "Homework" Mode Extension on `consult_analyst` (Brief 4)**:
+  - Added `deep: z.boolean().optional()` parameter to `consult_analyst` schema and forwarded `deep` to the API outbound request payload (`/v1/analysts/consult` and `/v1/human-agents/consult`).
+  - Updated tool description to document homework trigger (pass `deep: true` or ask to "do your homework" to trigger background research across specialist graphs and market data).
+- *Verification:*
+  - Created `src/test_expert_layer.ts` testing display name cleaning, beauty/cycling query matching, out-of-domain honest empty results, blind spot exclusion, `find_expert` execution, and `consult_analyst` `deep` schema.
+  - Updated `src/test_specialist_and_analyst_tiers.ts` assertions for `Classic Agent`.
+  - All test suites (`test_expert_layer.js`, `test_specialist_and_analyst_tiers.js`, `test_consult_routing.js`, `test_coverage_relevance.js`, and `verify_tools_endpoint.js`) pass cleanly.
+
 ## [1.46.62] - 2026-09-08
 
 ### Fixed & Deprecated (Self-Recommendation Shared Guard & Specialist Intelligence Scoping)

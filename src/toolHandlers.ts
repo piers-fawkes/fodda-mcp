@@ -13,7 +13,7 @@ import { z } from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import axios from 'axios';
 import crypto from 'crypto';
-import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, getRelevantGraphs, getRelevantSources, getEnabledSkillConfigs, getSkillGraphs, getAnalysts, classifyGraphTier } from './catalogCache.js';
+import { buildDynamicPromptSections, getDomainGraphIds, getGraphs, getLiveGraphs, buildDisplayName, cleanDisplayName, getRelevantGraphs, getRelevantSources, getEnabledSkillConfigs, getSkillGraphs, getAnalysts, normalizeAnalyst, classifyGraphTier } from './catalogCache.js';
 import type { CatalogGraph, SourceCandidate } from './catalogCache.js';
 import { renderBrandWidget } from './brandTemplate.js';
 import { renderSearchWidget } from './searchTemplate.js';
@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit } from './coverageRelevance.js';
+import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit, findCandidateExperts, type CandidateExpert } from './coverageRelevance.js';
 import { buildReportEditorialBriefing } from './reportBriefing.js';
 
 // ---------------------------------------------------------------------------
@@ -946,9 +946,9 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Lists available agents across 4 categories: human_agent (Human Agents — Expert Digital Twins of living industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — Classic Digital Twins of historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes.',
+        'Lists available agents across 4 categories: human_agent (Human Agents — real industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes.',
         {
-            category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Human Agent — Expert Digital Twin), 'classic_agent' (Classic Agent — Classic Digital Twin), 'c_suite_agent' (C-Suite Agent), 'synthetic_agent' (Synthetic Agent), or 'all' (default)."),
+            category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Human Agent), 'classic_agent' (Classic Agent), 'c_suite_agent' (C-Suite Agent), 'synthetic_agent' (Synthetic Agent), or 'all' (default)."),
             query: z.string().optional().describe("Optional natural language search query to filter analysts by lane, domain, expertise, or topics (e.g. 'streetwear', 'earnings', 'marketing')."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -1016,7 +1016,7 @@ export async function createServer(
                         } else if (is_classic) {
                             agentCategory = 'classic_agent';
                             categoryLabel = 'Classic Agent';
-                            twinType = 'Classic Digital Twin';
+                            twinType = 'Classic Agent';
                         } else if (is_c_suite) {
                             agentCategory = 'c_suite_agent';
                             categoryLabel = 'C-Suite Agent';
@@ -1042,7 +1042,7 @@ export async function createServer(
 
                         const enriched = {
                             analyst_id: a.analyst_id || a.id || a.slug || a.name || '',
-                            name: a.name,
+                            name: cleanDisplayName(a.name),
                             category: agentCategory,
                             category_label: categoryLabel,
                             ...(twinType ? { twin_type: twinType } : {}),
@@ -1112,6 +1112,58 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
+        }
+    );
+
+    // --- find_expert (Visible Expert Matching — Brief 3) ---
+    server.tool(
+        'find_expert',
+        'Find 2–3 genuine candidate experts for a question, brief, or situation with domain-grounded rationale. Discovery tool ("who should I ask") across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists. Evaluates lane overlap, filters out declared blind spots, and fails honestly when no expert matches. Call this when deciding which expert to consult, then pass the matched analyst_id to consult_human_agent or consult_analyst.',
+        {
+            query: z.string().describe('The question, brief, topic, or situation to find candidate experts for.'),
+            limit: z.number().optional().default(3).describe('Maximum candidate experts to return (default: 3, max: 3).'),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Find Expert Candidates', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        async ({ query, limit, userId: uid }) => {
+            try {
+                const effectiveLimit = Math.min(Math.max(limit || 3, 1), 3);
+                let analysts = getAnalysts();
+                if (!analysts || analysts.length === 0) {
+                    try {
+                        const targetUserId = resolveUserId(userId, uid);
+                        const data = await foddaRequest('GET', '/v1/analysts', apiKey, targetUserId);
+                        const raw = Array.isArray(data) ? data : (data?.analysts || data?.rows || data?.data || []);
+                        if (Array.isArray(raw) && raw.length > 0) {
+                            analysts = raw.map(normalizeAnalyst);
+                        }
+                    } catch {
+                        // proceed with existing catalog cache
+                    }
+                }
+
+                const candidates = findCandidateExperts(query, {
+                    limit: effectiveLimit,
+                    analysts,
+                    graphs: getGraphs(),
+                });
+
+                const payload = {
+                    query,
+                    candidates,
+                    total_matches: candidates.length,
+                    ...(candidates.length === 0 ? {
+                        note: 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.'
+                    } : {
+                        next_step: "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them."
+                    })
+                };
+
+                return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+            } catch (err: any) {
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
             }
@@ -4886,19 +4938,27 @@ export async function createServer(
         }
     };
 
-    const executeConsultAnalystCore = async ({ analyst_id, query, company, session_id, userId: uid }: ConsultCoreParams) => {
+    const executeConsultAnalystCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
         try {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
             // Log query to Questions table (fire-and-forget, before cache)
             logUserQuery(query, 'consult_analyst');
 
-            const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), {
+            // Detect deep / homework intent from parameter or natural language query
+            const isDeep = Boolean(deep || /do (your |the )?homework|deep dive|go deeper|detailed evidence|comprehensive breakdown|verify with data|substantiate|rigorous breakdown/i.test(query));
+
+            const requestPayload: Record<string, any> = {
                 analyst_id: resolvedAnalystId,
                 query,
                 company: resolvedCompany,
                 session_id
-            });
+            };
+            if (isDeep) {
+                requestPayload.deep = true;
+            }
+
+            const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), requestPayload);
 
             const upstreamCoverage = result?.coverage;
 
@@ -5129,19 +5189,20 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are Classic Digital Twins of historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. "brand-cmo" with company: "Nike", or "Nike CMO" directly); Synthetic Agents provide domain-specific intelligence. Call list_analysts first to find the right agent ID. Responses may include coverage status, source attribution, and referrals to other graphs.',
+        'Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. "brand-cmo" with company: "Nike", or "Nike CMO" directly); Synthetic Agents provide domain-specific intelligence. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right agent ID. Responses may include coverage status, source attribution, and referrals to other graphs.',
         {
-            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
+            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context across the session. Omit for a one-off question."),
+            deep: z.boolean().optional().describe("Set true to have the agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Consult Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ analyst_id, query, company, session_id, userId: uid }) => {
+        async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
-            // Proactive routing: if analyst is known to be a Human Agent (Expert Digital Twin), route directly before any API call
+            // Proactive routing: if analyst is known to be a Human Agent, route directly before any API call
             const match = getAnalysts().find((a: any) => {
                 const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
                 const nameKey = (a.name || '').toLowerCase().trim();
@@ -5149,18 +5210,18 @@ export async function createServer(
                 return idKey === queryKey || nameKey === queryKey;
             });
             if (isTwinAnalyst(match)) {
-                return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
+                return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
             }
-            return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
+            return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
         }
     );
 
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (an Expert Digital Twin created directly with the named expert\'s consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person.',
+        'Consult an authorized Human Agent (created directly with the named expert\'s consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person.',
         {
-            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
+            analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts or find_expert). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context across the session. Omit for a one-off question."),
@@ -5180,7 +5241,7 @@ export async function createServer(
 
             // Proactive routing: if target is explicitly a synthetic analyst, route directly before any API call
             if (isSyntheticAnalyst(match)) {
-                return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, userId: uid });
+                return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
             }
             return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
         }

@@ -104,7 +104,7 @@ async function runTests() {
     const ruskin = allData.analysts.find((a: any) => a.analyst_id === 'john-ruskin');
     assert.strictEqual(ruskin.category, 'classic_agent');
     assert.strictEqual(ruskin.category_label, 'Classic Agent');
-    assert.strictEqual(ruskin.twin_type, 'Classic Digital Twin');
+    assert.strictEqual(ruskin.twin_type, 'Classic Agent');
     assert.strictEqual(ruskin.is_verified_real_person, false);
     assert.strictEqual(ruskin.consult_tool, 'consult_analyst');
 
@@ -113,7 +113,7 @@ async function runTests() {
     assert.strictEqual(synthetic.category_label, 'Synthetic Agent');
     assert.strictEqual(synthetic.is_verified_real_person, false);
 
-    console.log('✅ 4-Tier Categorization Passed: Human Agent (Expert Digital Twin), Classic Agent (Classic Digital Twin), C-Suite, and Synthetic correctly classified');
+    console.log('✅ 4-Tier Categorization Passed: Human Agent, Classic Agent, C-Suite, and Synthetic correctly classified');
 
     // 3. Test list_analysts category filtering
     const humanOnlyRes = await listTool.handler({ category: 'human_agent' });
