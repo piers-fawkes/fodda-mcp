@@ -5,6 +5,28 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.65] - 2026-09-10
+
+### Fixed & Enhanced (Earnings Tool Parameter Binding, Payload Hygiene, Pricing Reconciliation & Inline Corroboration)
+- **Parameter Binding in `get_validated_trends` (`src/toolHandlers.ts`)**:
+  - In `get_validated_trends`: Bound both `search` and `query` in `URLSearchParams` when `search` is provided (`params.set('search', search); params.set('query', search);`), ensuring full compatibility with the API route handler regardless of parameter name.
+- **Payload Hygiene & Prompt Injection Protection (`src/toolHandlers.ts`)**:
+  - In `get_validated_trends`: Stripped `{ type: 'text', text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 }` from the return payload, returning only the clean data JSON.
+  - In `executeConsultHumanAgentCore` and `executeConsultAnalystCore`: Removed `parts.push('--- SPEAKER NOTE: ... ---')` from prose content, eliminating injection directives from downstream LLM reasoning.
+  - Exposed `speaker_note` as a structured return field (`result.speaker_note`) on consult response objects for callers requiring metadata.
+- **Pricing Reconciliation & Billing Block Pass-Through (`scripts/generate-tools-manifest.mjs`, `tools-manifest.json`, `src/toolHandlers.ts`)**:
+  - In `scripts/generate-tools-manifest.mjs`: Added `get_validated_trends: 'earnings_intelligence'` to `BILLS_AS` and mapped category to `'Financial'`, aligning `tools-manifest.json` with the published Airtable offering rate ($25). Billable tools count increased to 23.
+  - Passed through backend `billing` and `usage` blocks in `executeConsultHumanAgentCore`, `executeConsultAnalystCore`, and `search_graph` (fan-out and single-graph paths), ensuring callers receive structured meter consumption telemetry.
+  - In `get_account_status`: Set `status.overage_api_calls` alongside `status.overage_tokens` ensuring clean non-token nomenclature across account status inspection.
+- **Inline Earnings Corroboration Formatting (`src/toolHandlers.ts`)**:
+  - Added `formatEarningsCorroboration()` to format pre-materialized `:VALIDATES` earnings quotes and analyst themes with executive attribution:
+    - E.g. `[Earnings Call Corroboration]: Fabrizio Freda (CEO) [EL]: "Prestige beauty showed resilience across European travel retail." (Q2-2026)`
+    - E.g. `[Earnings Call Corroboration]: [ULTA] Mass vs Prestige margin shifts (Q1-2026)`
+  - In `search_graph`: Appended formatted corroboration inline to `trimmed.summary` so consuming agents see the corroboration immediately alongside trend search results, while preserving structured `trimmed.earnings_corroboration` and `trimmed.earnings_corroboration_formatted`.
+- *Verification:*
+  - Added `src/test_earnings_hygiene_and_binding.ts` covering parameter binding, recipe/speaker-note stripping, billing pass-through, manifest integrity, and corroboration formatting (25 tests passing).
+  - All regression suites (`test_coverage_relevance.js`, `test_expert_layer.js`, `test_specialist_and_analyst_tiers.js`, `test_consult_routing.js`, `test_v2_2_visual_hardening.js`, `verify_tools_endpoint.js`) pass 100%.
+
 ## [1.46.64] - 2026-09-10
 
 ### Fixed & Changed (Candidate Lane Reason Precision & get_capabilities Refresh)

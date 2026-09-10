@@ -2,7 +2,7 @@
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
   "count": 51,
-  "billable": 22,
+  "billable": 23,
   "tools": [
     {
       "name": "begin_expert_onboarding",
@@ -425,8 +425,8 @@
     {
       "name": "get_validated_trends",
       "kind": "tool",
-      "bills_as": "free",
-      "category": "Other",
+      "bills_as": "earnings_intelligence",
+      "category": "Financial",
       "profiles": [
         "mcp",
         "topic-research",

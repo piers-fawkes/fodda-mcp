@@ -209,6 +209,49 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
     }
 }
 
+/**
+ * Format pre-materialized earnings corroboration attached to trend hits.
+ * Formats executive quotes and analyst question themes with proper attribution:
+ * E.g. `[Earnings Call Corroboration]: Fabrizio Freda (CEO) [EL]: "Prestige beauty showed resilience across European travel retail." (Q2-2026)`
+ * Or: `[Earnings Call Corroboration]: [ULTA] Mass vs Prestige dynamic (Q2-2026)`
+ */
+export function formatEarningsCorroboration(corroboration: any): string | null {
+    if (!corroboration) return null;
+    const items = Array.isArray(corroboration) ? corroboration : [corroboration];
+    if (items.length === 0) return null;
+
+    const formattedLines = items.map((item: any) => {
+        if (!item) return null;
+        if (typeof item === 'string') {
+            return `[Earnings Call Corroboration]: ${item}`;
+        }
+        const speaker = (item.speaker || item.speaker_name || item.name || item.executive || '').trim();
+        const title = (item.title || item.role || '').trim();
+        const quote = (item.quote || item.quote_from_ceo || item.statement || '').trim();
+        const period = (item.period || item.quarter || '').trim();
+        const ticker = (item.ticker || '').trim();
+        const theme = (item.theme || '').trim();
+
+        const speakerPart = [speaker, title ? `(${title})` : null].filter(Boolean).join(' ');
+        const attribution = [speakerPart, ticker ? `[${ticker}]` : null].filter(Boolean).join(' ') || (ticker ? `${ticker} Executive` : 'Executive');
+
+        if (quote) {
+            return `[Earnings Call Corroboration]: ${attribution}: "${quote}"${period ? ` (${period})` : ''}`;
+        }
+
+        if (theme) {
+            const prefix = speakerPart
+                ? [ticker ? `[${ticker}]` : null, `${speakerPart} on`].filter(Boolean).join(' ') + ' '
+                : (ticker ? `[${ticker}] ` : '');
+            return `[Earnings Call Corroboration]: ${prefix}${theme}${period ? ` (${period})` : ''}`;
+        }
+
+        return null;
+    }).filter(Boolean);
+
+    return formattedLines.length > 0 ? formattedLines.join('\n') : null;
+}
+
 /** Collect graph webpage URLs from catalog for graphs present in results */
 function collectGraphWebpageUrls(graphIds: string[]): Record<string, string> {
     const urls: Record<string, string> = {};
@@ -705,6 +748,7 @@ export async function createServer(
                     status.overage_active = true;
                     if (!isChatGpt) {
                         status.overage_tokens = Math.abs(status.api_calls_remaining);
+                        status.overage_api_calls = Math.abs(status.api_calls_remaining);
                         status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.50/API call.`;
                     }
                 }
@@ -1519,7 +1563,19 @@ export async function createServer(
                         }
                     }
 
-                    data = { rows: finalRows, dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH', _routed_graphs: actualSourceGraphs, total: fanoutTotal, on_topic_total: fanoutOnTopicTotal };
+                    const fulfilledResults = results.filter(r => r.status === 'fulfilled') as PromiseFulfilledResult<any>[];
+                    const firstBilling = fulfilledResults.find(r => r.value?.billing)?.value?.billing;
+                    const firstUsage = fulfilledResults.find(r => r.value?.usage)?.value?.usage;
+
+                    data = {
+                        rows: finalRows,
+                        dataStatus: allRows.length > 0 ? 'ok' : 'NO_MATCH',
+                        _routed_graphs: actualSourceGraphs,
+                        total: fanoutTotal,
+                        on_topic_total: fanoutOnTopicTotal,
+                        ...(firstBilling ? { billing: firstBilling } : {}),
+                        ...(firstUsage ? { usage: firstUsage } : {})
+                    };
                     if (unavailableGraphs.length > 0) data.unavailable_graphs = unavailableGraphs;
                 } else {
                     const matchedGraph = getGraphs().find(g => g.graph_id === targetGraphId);
@@ -1554,6 +1610,19 @@ export async function createServer(
                         // P0 Item 3: Populate canonical summary from source fields (raw rows have no summary)
                         if (!trimmed.summary) trimmed.summary = trimmed.description || trimmed.trendDescription || null;
                         if (!trimmed.relevance_score) trimmed.relevance_score = trimmed.semantic_score || trimmed._score || trimmed.score || null;
+
+                        // Surface inline earnings corroboration if present
+                        if (row.earnings_corroboration) {
+                            trimmed.earnings_corroboration = row.earnings_corroboration;
+                            const formattedCorroboration = formatEarningsCorroboration(row.earnings_corroboration);
+                            if (formattedCorroboration) {
+                                trimmed.earnings_corroboration_formatted = formattedCorroboration;
+                                trimmed.summary = trimmed.summary
+                                    ? `${trimmed.summary}\n\n${formattedCorroboration}`
+                                    : formattedCorroboration;
+                            }
+                        }
+
                         const resolvedId = LEGACY_ALIASES[trimmed._use_this_graphId || ''] || trimmed._use_this_graphId || targetGraphId || '';
                         trimmed.graphName = graphNameMap.get(resolvedId) || resolvedId;
                         // P0 Item 3: Convert brandNames from pipe-delimited string to capped array
@@ -3751,7 +3820,10 @@ export async function createServer(
                 const params = new URLSearchParams();
                 if (ticker) params.set('ticker', ticker);
                 if (sector) params.set('sector', sector);
-                if (search) params.set('search', search);
+                if (search) {
+                    params.set('search', search);
+                    params.set('query', search); // Ensure API route binding regardless of param alias
+                }
                 if (limit !== undefined) params.set('limit', String(Math.min(limit, 50)));
 
                 const qs = params.toString();
@@ -3765,8 +3837,7 @@ export async function createServer(
 
                 return {
                     content: [
-                        { type: 'text' as const, text: JSON.stringify(data, null, 2) },
-                        { type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 },
+                        { type: 'text' as const, text: JSON.stringify(data, null, 2) }
                     ]
                 };
             } catch (err: any) {
@@ -4882,9 +4953,6 @@ export async function createServer(
                     parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
                 }
             }
-            if (result.speaker_note) {
-                parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
-            }
 
             if (result.book_a_call) {
                 const callText = result.book_a_call.rate_display
@@ -4922,6 +4990,9 @@ export async function createServer(
                 sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.analyst ? { analyst: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
                 book_a_call: sessionSource === 'chatgpt' ? (result.book_a_call ? sanitizePayloadForChatGpt(result.book_a_call) : null) : (result.book_a_call ?? null),
+                ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
+                ...(result.billing ? { billing: result.billing } : {}),
+                ...(result.usage ? { usage: result.usage } : {}),
                 content: [{ type: 'text' as const, text: parts.join('\n') }]
             };
         } catch (err: any) {
@@ -5121,9 +5192,6 @@ export async function createServer(
                     parts.push(`--- REFERRALS (deliver these in 3rd person as the platform, NOT in the expert's voice) ---\n${refLines.join('\n')}`);
                 }
             }
-            if (result.speaker_note) {
-                parts.push(`--- SPEAKER NOTE: ${result.speaker_note} ---`);
-            }
 
             if (result.book_a_call) {
                 const callText = result.book_a_call.rate_display
@@ -5160,6 +5228,9 @@ export async function createServer(
                 coverage: result.coverage,
                 next_moves: analystNextMoves,
                 sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
+                ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
+                ...(result.billing ? { billing: result.billing } : {}),
+                ...(result.usage ? { usage: result.usage } : {}),
                 content: [{ type: 'text' as const, text: parts.join('\n') }]
             };
         } catch (err: any) {
