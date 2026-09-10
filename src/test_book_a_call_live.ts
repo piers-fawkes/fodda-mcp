@@ -132,17 +132,32 @@ async function runBookACallVerification() {
     console.log('✅ PASS: consult_human_agent for Jeremy Bergstein returned expected envelope.\n');
 
     // ─────────────────────────────────────────────────────────────
-    // TEST 3: consult_human_agent with book_a_call null (James Colistra)
+    // TEST 3: consult_human_agent with book_a_call present (James Colistra)
     // ─────────────────────────────────────────────────────────────
-    console.log('--- TEST 3: consult_human_agent for James Colistra (book_a_call null) ---');
+    console.log('--- TEST 3: consult_human_agent for James Colistra (book_a_call populated) ---');
     const jamesConsultRes = await consultFn({
         analyst_id: 'james-colistra-earned-media-and-podcast',
         query: 'how could i hire James for some consulting!'
     }, { authInfo: {} });
 
-    console.log('James response book_a_call:', jamesConsultRes.book_a_call);
-    assert.strictEqual(jamesConsultRes.book_a_call, null, 'James book_a_call should be null');
-    console.log('✅ PASS: James Colistra consult returned book_a_call: null as expected.\n');
+    console.log('James response book_a_call:', JSON.stringify(jamesConsultRes.book_a_call));
+    assert.ok(jamesConsultRes.book_a_call, 'James book_a_call should be populated');
+    assert.strictEqual(jamesConsultRes.book_a_call.rate_display, '$250/hr', 'James book_a_call rate_display must be $250/hr');
+    assert.strictEqual(jamesConsultRes.book_a_call.url, 'https://meetings-na2.hubspot.com/james-colistra/introcall', 'James book_a_call url mismatch');
+    console.log('✅ PASS: James Colistra consult returned book_a_call populated as expected.\n');
+
+    // ─────────────────────────────────────────────────────────────
+    // TEST 3B: consult_human_agent with book_a_call null (Peter Abraham - no bookURL)
+    // ─────────────────────────────────────────────────────────────
+    console.log('--- TEST 3B: consult_human_agent for Peter Abraham (book_a_call null) ---');
+    const peterConsultRes = await consultFn({
+        analyst_id: 'peter-abraham-bicycles-cycling',
+        query: 'how could i book a call with Peter?'
+    }, { authInfo: {} });
+
+    console.log('Peter response book_a_call:', peterConsultRes.book_a_call);
+    assert.strictEqual(peterConsultRes.book_a_call, null, 'Peter book_a_call should be null');
+    console.log('✅ PASS: Peter Abraham consult returned book_a_call: null as expected.\n');
 
     // ─────────────────────────────────────────────────────────────
     // TEST 4: Grep for Leaked Internal Field Names & Slugs in Text

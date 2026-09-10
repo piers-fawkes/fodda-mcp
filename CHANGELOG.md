@@ -14,9 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`get_capabilities` Platform Tool Manifest Alignment (`src/toolHandlers.ts`)**:
   - Added `find_expert` to the `expert_consult` capability tools array.
   - Aligned `topic_research` to prioritize `search_graph` across all 312+ graphs alongside domain and report library tools.
+- **`book_a_call` Live Verification (`src/test_book_a_call_live.ts`)**:
+  - Updated live verification suite to test James Colistra as an active positive test case (`rate_display: "$250/hr"`, `url: "https://meetings-na2.hubspot.com/james-colistra/introcall"`), transitioning Peter Abraham to the negative control.
+  - End-to-end verified Airtable ingestion, API `/v1/human-agents` response, and MCP `consult_human_agent` banner.
 - *Verification:*
   - Added Peter Abraham `what_they_offer` assertion and `get_capabilities` `find_expert` inclusion check to `src/test_expert_layer.ts`.
-  - All test suites (`test_expert_layer.js`, `test_specialist_and_analyst_tiers.js`, `test_consult_routing.js`, `test_coverage_relevance.js`, `verify_tools_endpoint.js`) pass cleanly.
+  - Verified `node dist/test_book_a_call_live.js` passing 100% end-to-end against production API.
+  - All test suites (`test_expert_layer.js`, `test_specialist_and_analyst_tiers.js`, `test_consult_routing.js`, `test_coverage_relevance.js`, `verify_tools_endpoint.js`, `test_book_a_call_live.js`) pass cleanly.
 
 ## [1.46.63] - 2026-09-09
 
