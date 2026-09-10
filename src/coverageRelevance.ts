@@ -1122,15 +1122,17 @@ export function findCandidateExperts(
     return topCandidates.map(c => {
         const matchedAnalyst = c.analyst;
         let lane = '';
-        const rawExpertIn = [
-            ...(Array.isArray(matchedAnalyst.expert_in) ? matchedAnalyst.expert_in : (typeof matchedAnalyst.expert_in === 'string' ? [matchedAnalyst.expert_in] : [])),
-            ...(Array.isArray(matchedAnalyst.what_they_offer) ? matchedAnalyst.what_they_offer : (typeof matchedAnalyst.what_they_offer === 'string' ? [matchedAnalyst.what_they_offer] : [])),
-        ].filter(Boolean).join(', ');
-        if (rawExpertIn.trim().length > 0) {
-            lane = truncateAtWordBoundary(rawExpertIn.trim(), 60);
+        const expertInStr = Array.isArray(matchedAnalyst.expert_in)
+            ? matchedAnalyst.expert_in.filter(Boolean).join(', ')
+            : (typeof matchedAnalyst.expert_in === 'string' ? matchedAnalyst.expert_in : '');
+
+        if (expertInStr.trim().length > 0) {
+            lane = truncateAtWordBoundary(expertInStr.trim(), 60);
         } else if (matchedAnalyst.description && matchedAnalyst.description.trim().length > 0) {
             const firstClause = (matchedAnalyst.description.split(/[,.;]/)[0] || '').trim();
             lane = truncateAtWordBoundary(firstClause, 60);
+        } else if (matchedAnalyst.what_they_offer && typeof matchedAnalyst.what_they_offer === 'string' && matchedAnalyst.what_they_offer.trim().length > 0) {
+            lane = truncateAtWordBoundary(matchedAnalyst.what_they_offer.trim(), 60);
         }
 
         const reason = (status === 'thin' || status === 'empty')

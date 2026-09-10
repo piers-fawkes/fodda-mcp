@@ -5,6 +5,19 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.64] - 2026-09-10
+
+### Fixed & Changed (Candidate Lane Reason Precision & get_capabilities Refresh)
+- **Candidate Lane Formatting Precision (`src/coverageRelevance.ts`)**:
+  - In `findCandidateExperts()`: Prioritized `matchedAnalyst.expert_in` directly as the candidate's domain lane without appending `what_they_offer` (`askLine`).
+  - Eliminates awkward reason phrasing where imperative action prompts (e.g. `"Ask Peter^[HA] to innovate your cycling product strategy"`) were glued onto domain nouns, ensuring reasons cleanly state the domain (e.g. `"covers cycling, bicycles, gravel racing directly"`) while preserving `^[HA]` on the expert's profile and `askLine`.
+- **`get_capabilities` Platform Tool Manifest Alignment (`src/toolHandlers.ts`)**:
+  - Added `find_expert` to the `expert_consult` capability tools array.
+  - Aligned `topic_research` to prioritize `search_graph` across all 312+ graphs alongside domain and report library tools.
+- *Verification:*
+  - Added Peter Abraham `what_they_offer` assertion and `get_capabilities` `find_expert` inclusion check to `src/test_expert_layer.ts`.
+  - All test suites (`test_expert_layer.js`, `test_specialist_and_analyst_tiers.js`, `test_consult_routing.js`, `test_coverage_relevance.js`, `verify_tools_endpoint.js`) pass cleanly.
+
 ## [1.46.63] - 2026-09-09
 
 ### Added & Changed (Expert Layer: find_expert Discovery Tool, Classic Agent Cleanup, Deep Consult)

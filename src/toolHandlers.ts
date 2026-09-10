@@ -867,8 +867,8 @@ export async function createServer(
                             {
                                 id: 'topic_research',
                                 name: 'Topic & Library Intelligence',
-                                value: 'Multi-graph library search across domain libraries (get_domain_intelligence), published reports (get_report_intelligence), specialist strategist graphs (get_specialist_intelligence), and validated trends (get_validated_trends).',
-                                tools: ['get_domain_intelligence', 'get_report_intelligence', 'get_specialist_intelligence', 'search_graph', 'get_validated_trends'],
+                                value: 'Multi-graph search across all 312+ graphs via search_graph, curated domain libraries (get_domain_intelligence), published reports (get_report_intelligence), and validated trends (get_validated_trends).',
+                                tools: ['search_graph', 'get_domain_intelligence', 'get_report_intelligence', 'get_validated_trends'],
                                 audience: 'Researchers, planners, innovation teams',
                                 example_prompts: [
                                     'Pressure-test our sustainability strategy against Fodda\'s packaging trends.',
@@ -878,11 +878,12 @@ export async function createServer(
                             },
                             {
                                 id: 'expert_consult',
-                                name: 'Agent Consultation & Deliverables',
-                                value: 'Direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
-                                tools: ['consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable'],
+                                name: 'Agent Consultation & Discovery',
+                                value: 'Discovery and direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
+                                tools: ['find_expert', 'consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable'],
                                 audience: 'Teams seeking verified practitioner perspectives, executive strategy, or custom deliverables',
                                 example_prompts: [
+                                    'Who is the right expert to ask about clean beauty formulations? (find_expert)',
                                     'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
                                     'Consult Brand CMO on Nike\'s direct-to-consumer strategy.',
                                     'List available Human Agents and C-Suite analysts.'

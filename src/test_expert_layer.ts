@@ -63,6 +63,7 @@ async function runTests() {
             is_verified_real_person: true,
             consult_tool: 'consult_human_agent',
             expert_in: ['cycling', 'bicycles', 'gravel racing', 'outdoor apparel'],
+            what_they_offer: 'Ask Peter^[HA] to innovate your cycling product strategy',
             topics: ['endurance sports', 'brand strategy'],
             outside_their_lane: ['beauty', 'skincare'],
             blind_spots: ['fast fashion'],
@@ -117,6 +118,9 @@ async function runTests() {
     console.log('Cycling query candidates:', cyclingCandidates.map(c => `${c.display_name} (${c.analyst_id})`));
     assert.strictEqual(cyclingCandidates.length, 1);
     assert.strictEqual(cyclingCandidates[0]?.analyst_id, 'peter-abraham-cycling');
+    assert.ok(cyclingCandidates[0]?.reason.includes('cycling'), 'Reason should cite cycling domain');
+    assert.ok(!cyclingCandidates[0]?.reason.includes('Ask Peter'), 'Reason should not contain what_they_offer askLine imperative');
+    console.log('Peter Abraham candidate reason:', cyclingCandidates[0]?.reason);
 
     // Test 2c: Self-recommendation protection - Peter Abraham excluded when consulting Peter Abraham
     const cyclingSelfExclusion = findCandidateExperts('gravel cycling race culture and gear', {
@@ -204,7 +208,19 @@ async function runTests() {
         : consultTool.inputSchema?.def?.shape;
     assert.ok(shape && shape.deep, 'consult_analyst schema must accept deep parameter');
 
-    console.log('✅ consult_analyst deep parameter schema verified.\n');
+    // ─────────────────────────────────────────────────────────────
+    // 5. get_capabilities find_expert Inclusion Tests
+    // ─────────────────────────────────────────────────────────────
+    console.log('--- 5. Testing get_capabilities find_expert Inclusion ---');
+    const getCapabilitiesTool = tools['get_capabilities'];
+    assert.ok(getCapabilitiesTool, 'get_capabilities must be registered');
+    const capRes = await getCapabilitiesTool.handler({});
+    const capParsed = JSON.parse(capRes.content[0].text);
+    const expertCap = capParsed.capabilities.find((c: any) => c.id === 'expert_consult');
+    assert.ok(expertCap, 'expert_consult capability must exist');
+    assert.ok(expertCap.tools.includes('find_expert'), 'find_expert must be listed in expert_consult tools');
+    console.log('expert_consult tools:', expertCap.tools);
+    console.log('✅ get_capabilities find_expert inclusion verified.\n');
 
     console.log('================================================================');
     console.log(' ALL EXPERT LAYER TESTS PASSED SUCCESSFULLY!');
