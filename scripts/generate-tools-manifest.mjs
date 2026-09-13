@@ -46,7 +46,7 @@ const CATEGORY = {
   get_evidence: 'Graph', get_node: 'Graph', get_neighbors: 'Graph', get_label_values: 'Graph',
   get_supplemental_context: 'Supplemental',
   get_earnings_intelligence: 'Financial', get_earnings_divergence: 'Financial', get_company_earnings: 'Financial', get_validated_trends: 'Financial',
-  consult_analyst: 'Expert', consult_human_agent: 'Expert', list_analysts: 'Expert', find_expert: 'Expert',
+  consult_analyst: 'Expert', consult_human_agent: 'Expert', list_analysts: 'Expert', find_expert: 'Expert', request_expert_intro: 'Expert',
   get_specialist_intelligence: 'Intelligence', get_expert_intelligence: 'Intelligence',
   request_deliverable: 'Expert', check_deliverable_status: 'Status',
   brainstorm_topic: 'Ideation', discover_adjacent_trends: 'Ideation',

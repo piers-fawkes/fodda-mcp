@@ -924,7 +924,7 @@ export async function createServer(
                                 id: 'expert_consult',
                                 name: 'Agent Consultation & Discovery',
                                 value: 'Discovery and direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
-                                tools: ['find_expert', 'consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable'],
+                                tools: ['find_expert', 'consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable', 'request_expert_intro'],
                                 audience: 'Teams seeking verified practitioner perspectives, executive strategy, or custom deliverables',
                                 example_prompts: [
                                     'Who is the right expert to ask about clean beauty formulations? (find_expert)',
@@ -4771,7 +4771,9 @@ export async function createServer(
                 const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
                 const nameKey = (a.name || '').toLowerCase().trim();
                 const queryKey = resolvedAnalystId.toLowerCase().trim();
-                return idKey === queryKey || nameKey === queryKey;
+                if (idKey === queryKey || nameKey === queryKey) return true;
+                const firstName = nameKey.split(/\s+/)[0];
+                return firstName && firstName === queryKey;
             });
 
             logUserQuery(query, 'consult_human_agent');
@@ -4779,8 +4781,10 @@ export async function createServer(
             // Detect deep / homework intent from parameter or natural language query
             const isDeep = Boolean(deep || /do (your |the )?homework|deep dive|go deeper|detailed evidence|comprehensive breakdown|verify with data|substantiate|rigorous breakdown/i.test(query));
 
+            const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
+
             const requestPayload: Record<string, any> = {
-                analyst_id: resolvedAnalystId,
+                analyst_id: targetAnalystId,
                 query,
                 company: resolvedCompany,
                 session_id
@@ -5014,14 +5018,25 @@ export async function createServer(
         try {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
+            const match = getAnalysts().find((a: any) => {
+                const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                const nameKey = (a.name || '').toLowerCase().trim();
+                const queryKey = resolvedAnalystId.toLowerCase().trim();
+                if (idKey === queryKey || nameKey === queryKey) return true;
+                const firstName = nameKey.split(/\s+/)[0];
+                return firstName && firstName === queryKey;
+            });
+
             // Log query to Questions table (fire-and-forget, before cache)
             logUserQuery(query, 'consult_analyst');
 
             // Detect deep / homework intent from parameter or natural language query
             const isDeep = Boolean(deep || /do (your |the )?homework|deep dive|go deeper|detailed evidence|comprehensive breakdown|verify with data|substantiate|rigorous breakdown/i.test(query));
 
+            const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
+
             const requestPayload: Record<string, any> = {
-                analyst_id: resolvedAnalystId,
+                analyst_id: targetAnalystId,
                 query,
                 company: resolvedCompany,
                 session_id
@@ -5279,12 +5294,17 @@ export async function createServer(
                 const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
                 const nameKey = (a.name || '').toLowerCase().trim();
                 const queryKey = resolvedAnalystId.toLowerCase().trim();
-                return idKey === queryKey || nameKey === queryKey;
+                if (idKey === queryKey || nameKey === queryKey) return true;
+                const firstName = nameKey.split(/\s+/)[0];
+                return firstName && firstName === queryKey;
             });
+
+            const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
+
             if (isTwinAnalyst(match)) {
-                return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+                return await executeConsultHumanAgentCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
             }
-            return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+            return await executeConsultAnalystCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
         }
     );
 
@@ -5308,14 +5328,119 @@ export async function createServer(
                 const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
                 const nameKey = (a.name || '').toLowerCase().trim();
                 const queryKey = resolvedAnalystId.toLowerCase().trim();
-                return idKey === queryKey || nameKey === queryKey;
+                if (idKey === queryKey || nameKey === queryKey) return true;
+                const firstName = nameKey.split(/\s+/)[0];
+                return firstName && firstName === queryKey;
             });
+
+            const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
 
             // Proactive routing: if target is explicitly a synthetic analyst, route directly before any API call
             if (isSyntheticAnalyst(match)) {
-                return await executeConsultAnalystCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+                return await executeConsultAnalystCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
             }
-            return await executeConsultHumanAgentCore({ analyst_id: resolvedAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+            return await executeConsultHumanAgentCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+        }
+    );
+
+    // --- request_expert_intro (Inquiry & Advisory Intro Capture) ---
+    server.tool(
+        'request_expert_intro',
+        'Capture and submit an inquiry or advisory request to connect with a human expert on Fodda (for 1-on-1 consultations, advisory projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email.',
+        {
+            expert_id: z.string().describe("The expert's display name or analyst ID (e.g., 'Peter Abraham' or 'peter-abraham-bicycles-cycling')."),
+            requester_email: z.string().describe("The email address of the person requesting the introduction or consultation."),
+            requester_name: z.string().optional().describe("The name of the requester."),
+            message: z.string().optional().describe("Brief description of what you'd like to discuss, project scope, or questions for the expert."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Request Expert Introduction', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        async ({ expert_id, requester_email, requester_name, message, userId: uid }) => {
+            try {
+                const normalizedEmail = (requester_email || '').trim().toLowerCase();
+                if (!normalizedEmail || !normalizedEmail.includes('@') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: JSON.stringify({
+                                error: 'A valid email address is required to coordinate an expert introduction.'
+                            })
+                        }]
+                    };
+                }
+
+                // Match expert against cached analysts
+                const queryKey = (expert_id || '').toLowerCase().trim();
+                const match = getAnalysts().find((a: any) => {
+                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                    const nameKey = (a.name || '').toLowerCase().trim();
+                    if (idKey === queryKey || nameKey === queryKey) return true;
+                    const firstName = nameKey.split(/\s+/)[0];
+                    if (firstName && firstName === queryKey) return true;
+                    return queryKey && (idKey.includes(queryKey) || nameKey.includes(queryKey));
+                });
+
+                const expertName = match?.name || expert_id;
+                const expertSlug = match?.analyst_id || match?.id || match?.slug || expert_id;
+                const expertIn = match?.expert_in || (Array.isArray(match?.topics) ? match.topics.join(', ') : '');
+                const bookUrl = match?.book_a_call || '';
+                const callPrice = match?.rate_display || match?.price || '';
+
+                // Dispatch to website /api/intent webhook via foddaRequest
+                try {
+                    await foddaRequest('POST', '/api/intent', apiKey, resolveUserId(userId, uid), {
+                        intent_event: 'expert_video_call_booking',
+                        email: normalizedEmail,
+                        parameters: {
+                            expertId: expertSlug,
+                            expertName,
+                            expertSlug,
+                            expertIn,
+                            topics: message || '',
+                            requesterName: requester_name || undefined,
+                            callPrice: callPrice || undefined,
+                            bookUrl: bookUrl || undefined,
+                            source: 'mcp'
+                        }
+                    });
+                } catch (intentErr: any) {
+                    console.warn(`[request_expert_intro] Intent dispatch warning: ${intentErr.message}`);
+                }
+
+                const profileUrl = `https://www.fodda.ai/experts/${expertSlug}`;
+
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            status: 'INQUIRY_RECEIVED',
+                            message: `Thank you! Your inquiry to connect with ${expertName} has been received. Our team (team@fodda.ai) will review your request and follow up via email at ${normalizedEmail} to coordinate details and next steps.`,
+                            expert: {
+                                name: expertName,
+                                slug: expertSlug,
+                                profile_url: profileUrl,
+                                ...(callPrice ? { rate: callPrice } : {}),
+                                ...(bookUrl ? { direct_booking_url: bookUrl } : {})
+                            },
+                            requester: {
+                                email: normalizedEmail,
+                                ...(requester_name ? { name: requester_name } : {}),
+                                ...(message ? { inquiry_summary: message } : {})
+                            }
+                        }, null, 2)
+                    }]
+                };
+            } catch (err: any) {
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            error: 'Failed to submit expert introduction request. Please try again or reach out to team@fodda.ai.',
+                            details: err.message
+                        })
+                    }]
+                };
+            }
         }
     );
 

@@ -54,6 +54,6 @@ Project-specific agents/workflows/rules live in that repo's `.agents/`.
   descriptions, website, docs) shows the **published USD price from Airtable**. Never write "tokens"
   or "via SPT" in user- or maker-visible text.
 - Prefer one MCP tool with a `view` param over many tools (context budget).
-- **Test sends go ONLY to `nathan@searchshop.ai` and `piers.fawkes@psfk.com`** — never a real
-  user/prospect. Hard rule.
+- **Test sends go ONLY to `piers.fawkes@psfk.com`** — never a real
+  user/prospect, and not to Nathan. Hard rule.
 - Every change updates `CHANGELOG.md` and states a real verification result.

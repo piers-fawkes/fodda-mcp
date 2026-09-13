@@ -93,6 +93,8 @@ export const TOOL_VERSIONS = {
     deep_research_topic: "1.0.0",
     read_url: "1.0.0",
     list_analysts: "1.2.0",
+    find_expert: "1.0.0",
+    request_expert_intro: "1.0.0",
     consult_analyst: "1.0.0",
     consult_human_agent: "1.2.0",
     toggle_graph_preference: "1.0.0",

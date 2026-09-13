@@ -184,6 +184,8 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
     ],
     'expert-consult': [
         'get_capabilities',
+        'find_expert',
+        'request_expert_intro',
         'consult_analyst',
         'consult_human_agent',
         'list_analysts',
@@ -208,6 +210,8 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'get_company_earnings',
         'deep_research_topic',
         'check_research_status',
+        'find_expert',
+        'request_expert_intro',
         'consult_analyst',
         'consult_human_agent',
         'list_analysts',

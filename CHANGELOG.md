@@ -5,6 +5,29 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.66] - 2026-09-12
+
+### Added & Fixed (Expert Inquiry & Intro Capture Flow, Name Resolution & Candidate Scoring Immunity)
+- **New Tool `request_expert_intro` (`src/toolHandlers.ts`, `tools-manifest.json`, `src/tools.ts`, `scripts/generate-tools-manifest.mjs`)**:
+  - Implemented `request_expert_intro` tool to capture user inquiries (expert ID/name, requester email, name, message/scope) when a user wants to book, hire, or connect with an expert whose `book_a_call` is null (e.g. Peter Abraham).
+  - Outbound dispatch: Dispatches `intent_event: 'expert_video_call_booking'` via `foddaRequest('POST', '/api/intent', ...)` to the website/sales webhook with HMAC signing and 10s non-throwing timeout.
+  - Returns user-friendly confirmation envelope with expert profile link and confirmation that team@fodda.ai will coordinate next steps.
+  - Registered in `tools-manifest.json` as free lead capture under `Expert` category, and included in `expert-consult` and `copilot` profiles in `src/index.ts`.
+- **Candidate Expert Discovery & Direct Lookup (`src/coverageRelevance.ts`)**:
+  - Added direct name and slug signal matching (+15 score) in `findCandidateExperts()`.
+  - Added blind spot name immunity: Prevented an expert from being disqualified when their descriptive blind spot text contains their own name (e.g. "James does not focus on...").
+  - Allowed `directMatch` candidates to qualify for candidate selection when explicitly asked for by name or slug.
+  - Verified that `"How could I book a call with Peter?"` matches Peter Abraham and `"How can I hire James for some consulting?"` matches James Colistra.
+- **Consult Target Slug Resolution (`src/toolHandlers.ts`)**:
+  - Updated `consult_human_agent` and `consult_analyst` to match display names and first names against cached analysts, passing `targetAnalystId` (the canonical slug e.g. `peter-abraham-bicycles-cycling`) upstream instead of raw user input to prevent 404 errors.
+- **System Prompt Concierge Framing (`src/systemPrompt.ts`)**:
+  - Updated lines 65, 69, 71, and 118: Replaced legacy refusal copy (*"State clearly that the expert isn't taking calls"*) with proactive concierge guidance (*"Hey — [Name] doesn't maintain a direct public calendar through Fodda, but our team coordinates 1-on-1 consultations... If you want, I can capture your inquiry right here..."*).
+  - Instructed the model to capture the user's email and inquiry notes, then call `request_expert_intro`.
+- *Verification:*
+  - Created automated test suite `src/test_expert_intro.ts` verifying candidate matching for Peter Abraham and James Colistra, concierge framing in systemPrompt, manifest registration, and tool profiles.
+  - Verification run: `node dist/test_expert_intro.js` -> 10/10 passed.
+  - Full suite: `npm test` -> 200 OK (52 tools, 23 billable, 29 free).
+
 ## [1.46.65] - 2026-09-10
 
 ### Fixed & Enhanced (Earnings Tool Parameter Binding, Payload Hygiene, Pricing Reconciliation & Inline Corroboration)

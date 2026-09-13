@@ -994,6 +994,14 @@ export function findCandidateExperts(
             score += 3.0; // Prioritize living human practitioners over synthetic agents
         }
 
+        // Extract expert name and slug parts for direct identification and blindspot immunity
+        const aName = (a.name || '').toLowerCase().trim();
+        const aSlug = (a.analyst_id || '').toLowerCase().trim();
+        const nameParts = new Set([
+            ...aName.split(/\s+/).filter((p: string) => p.length >= 3),
+            ...aSlug.split(/[-_]+/).filter((p: string) => p.length >= 3)
+        ]);
+
         // 1. Negative signal: Blind spot / outside_their_lane
         const rawBlindSpots = [
             ...(Array.isArray(a.outside_their_lane) ? a.outside_their_lane : (typeof a.outside_their_lane === 'string' ? [a.outside_their_lane] : [])),
@@ -1002,12 +1010,14 @@ export function findCandidateExperts(
         let hasBlindSpot = false;
         if (rawBlindSpots.length > 0) {
             for (const t of queryTokens) {
+                if (nameParts.has(t)) continue; // Never disqualify an expert for matching their own name or slug!
                 if (t.length >= 3 && rawBlindSpots.includes(t)) {
                     hasBlindSpot = true;
                     score -= 20;
                 }
             }
             for (const w of allQueryWords) {
+                if (nameParts.has(w)) continue; // Never disqualify an expert for matching their own name or slug!
                 if (w.length >= 4 && rawBlindSpots.includes(w)) {
                     hasBlindSpot = true;
                     score -= 10;
@@ -1037,6 +1047,26 @@ export function findCandidateExperts(
                     const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
                     score += isDomainWord ? 1.5 : 0.5;
                     if (w.length >= 4 && isDomainWord) hasExplicitMatch = true;
+                }
+            }
+        }
+
+        // 2b. Positive signal: direct name or analyst_id match (for lookup/booking/hiring intent)
+        if (qLower.includes(aName) && aName.length >= 4) {
+            score += 15;
+            hasExplicitMatch = true;
+            directMatch = true;
+        } else if (aSlug && (qLower.includes(aSlug) || aSlug.includes(qLower))) {
+            score += 15;
+            hasExplicitMatch = true;
+            directMatch = true;
+        } else {
+            for (const part of nameParts) {
+                if (queryTokens.includes(part) || allQueryWords.includes(part)) {
+                    score += 10;
+                    hasExplicitMatch = true;
+                    directMatch = true;
+                    break;
                 }
             }
         }
@@ -1083,8 +1113,6 @@ export function findCandidateExperts(
         }
 
         // 5. Positive signal: Searched graphs & graph relevance scores
-        const aSlug = (a.analyst_id || '').toLowerCase().trim();
-        const aName = (a.name || '').toLowerCase().trim();
         for (const g of searchedGraphs) {
             const gid = (typeof g === 'string' ? g : (g.graph_id || g.id || '')).toLowerCase().trim();
             const gCurator = (typeof g === 'object' && g.curator ? g.curator : '').toLowerCase().trim();
@@ -1112,7 +1140,7 @@ export function findCandidateExperts(
     // Require minimum threshold score (>= 6.0), explicit domain/topic match, and no disqualifying blind spot match
     const MIN_EXPERT_FIT_SCORE = 6.0;
     const validCandidates = scoredAnalysts
-        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && s.hasExplicitMatch && !s.hasBlindSpot)
+        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && (s.directMatch || (s.hasExplicitMatch && !s.hasBlindSpot)))
         .sort((a, b) => b.score - a.score);
 
     const maxLimit = Math.min(Math.max(options?.limit || 3, 1), 3);

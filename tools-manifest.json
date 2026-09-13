@@ -1,7 +1,7 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 51,
+  "count": 52,
   "billable": 23,
   "tools": [
     {
@@ -181,7 +181,9 @@
       "bills_as": "free",
       "category": "Expert",
       "profiles": [
-        "mcp"
+        "mcp",
+        "expert-consult",
+        "copilot"
       ],
       "description": "Find 2–3 genuine candidate experts for a question, brief, or situation with domain-grounded rationale. Discovery tool (\"who should I ask\") across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists. Evaluates lane overlap, filters out declared blind spots, and fails honestly when no expert matches. Call this when deciding which expert to consult, then pass the matched analyst_id to consult_human_agent or consult_analyst."
     },
@@ -501,6 +503,18 @@
         "expert-consult"
       ],
       "description": "Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is \"completed\" to get the artifact links. The offering price is charged on acceptance; the analyst's research is included, not billed separately. Example brief: \"Marketing plan for a DTC skincare launch targeting Gen-Z, 50k budget, 90-day horizon.\""
+    },
+    {
+      "name": "request_expert_intro",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Expert",
+      "profiles": [
+        "mcp",
+        "expert-consult",
+        "copilot"
+      ],
+      "description": "Capture and submit an inquiry or advisory request to connect with a human expert on Fodda (for 1-on-1 consultations, advisory projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email."
     },
     {
       "name": "schedule_interview",

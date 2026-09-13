@@ -3,7 +3,7 @@
  * Dispatches quarterly J-Lens concept workspace sweep reports via Email and Slack.
  * 
  * Fodda House Rules:
- * - Test sends go ONLY to nathan@searchshop.ai and piers.fawkes@psfk.com.
+ * - Test sends go ONLY to piers.fawkes@psfk.com.
  * - US spelling, no em dashes, direct language.
  */
 
@@ -91,7 +91,7 @@ function formatReportMarkdown(report: JLensSweepReport): string {
  * Send J-Lens sweep notifications via Email (Resend) and Slack.
  * 
  * Fodda House Rules Enforcement:
- * Recipient list is strictly restricted to nathan@searchshop.ai and piers.fawkes@psfk.com.
+ * Recipient list is strictly restricted to piers.fawkes@psfk.com.
  */
 export async function sendJLensSweepNotifications(
     report: JLensSweepReport
@@ -102,7 +102,7 @@ export async function sendJLensSweepNotifications(
         errors: [],
     };
 
-    const allowedRecipients = ['nathan@searchshop.ai', 'piers.fawkes@psfk.com'];
+    const allowedRecipients = ['piers.fawkes@psfk.com'];
     const markdownContent = formatReportMarkdown(report);
 
     // 1. Dispatch Email via Resend
