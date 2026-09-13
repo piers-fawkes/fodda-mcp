@@ -5,6 +5,16 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed (Build Context & Upload Hygiene)
+- **Build & Upload Exclusion Patterns (`.dockerignore`, `.gcloudignore`)**:
+  - Excluded `.claude`, `.gemini`, `.agents`, `.agent`, `scratch`, and `.secrets` from Docker build context and Google Cloud upload package.
+  - Prevents uploading agent caches, local worktrees (e.g. `.claude/worktrees` totaling ~295 MB), agent workspaces, scratch files, and local secrets to Cloud Build or copying them into Docker images.
+- *Verification:*
+  - Verified `gcloud meta list-files-for-upload` upload manifest drops from 922 files to 142 files, with 0 matches for `.claude`, `.gemini`, `.agents`, `.agent`, `scratch`, or `.secrets`.
+  - Tested pattern matching against `.dockerignore` verifying agent paths are excluded while build sources (`Dockerfile`, `package.json`, `src/`) remain included.
+
 ## [1.46.66] - 2026-09-12
 
 ### Added & Fixed (Expert Inquiry & Intro Capture Flow, Name Resolution & Candidate Scoring Immunity)
