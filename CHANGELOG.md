@@ -5,6 +5,16 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.73] - 2026-09-15
+
+### Fixed (Expose Structured next_moves and Consult Envelope in Tool content Payloads)
+- **Exposed Structured Next Moves in Consult Content (`src/toolHandlers.ts`)**:
+  - In `executeConsultHumanAgentCore` and `executeConsultAnalystCore`, appended an inert structured next moves metadata block (`── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──`) containing serialized `next_moves` JSON and derived `consult_envelope` suggested follow-up lines to `parts`.
+  - Ensures MCP clients that only forward `content` text blocks into LLM context (e.g. Copilot Studio, Claude Desktop) receive structured follow-up recommendations, thread continuations, adjacent graph shelf recommendations, and scoping copy per `RULE: StructuredNextMoves`.
+  - Preserved inert posture without imperative commands or prompt injection.
+- **Verification Suite Updated (`src/test_verify_deprecate_render_spec.ts`)**:
+  - Added assertions confirming `content[0].text` includes the structured next moves metadata block, suggested follow-ups, and `consult_envelope` fields for both `consult_human_agent` and `consult_analyst`.
+
 ## [1.46.72] - 2026-09-15
 
 ### Fixed (Mark consult_analyst and consult_human_agent as readOnlyHint: true)

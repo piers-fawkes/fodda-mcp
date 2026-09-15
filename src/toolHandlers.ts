@@ -4950,6 +4950,13 @@ export async function createServer(
             );
             sessionTracker.recordNextMoves(humanAgentNextMoves, query);
 
+            if (humanAgentNextMoves) {
+                parts.push(`\n── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──\n${JSON.stringify(humanAgentNextMoves, null, 2)}`);
+                if (humanAgentNextMoves.consult_envelope) {
+                    parts.push(`\n--- SUGGESTED FOLLOW-UPS ---\n- Thread: ${humanAgentNextMoves.consult_envelope.thread_line}\n- Shelf: ${humanAgentNextMoves.consult_envelope.shelf_line || 'None'}\n- Scope: ${humanAgentNextMoves.consult_envelope.scope_line}`);
+                }
+            }
+
             const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
             if (consultWithheld) return consultWithheld;
             return {
@@ -5195,6 +5202,13 @@ export async function createServer(
                 getAnalysts()
             );
             sessionTracker.recordNextMoves(analystNextMoves, query);
+
+            if (analystNextMoves) {
+                parts.push(`\n── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──\n${JSON.stringify(analystNextMoves, null, 2)}`);
+                if (analystNextMoves.consult_envelope) {
+                    parts.push(`\n--- SUGGESTED FOLLOW-UPS ---\n- Thread: ${analystNextMoves.consult_envelope.thread_line}\n- Shelf: ${analystNextMoves.consult_envelope.shelf_line || 'None'}\n- Scope: ${analystNextMoves.consult_envelope.scope_line}`);
+                }
+            }
 
             const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
             if (consultWithheld) return consultWithheld;

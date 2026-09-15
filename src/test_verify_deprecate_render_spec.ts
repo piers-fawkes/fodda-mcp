@@ -228,6 +228,21 @@ async function runRuntimeTests() {
     check(typeof consultNextMoves?.consult_envelope?.thread_line === 'string', 'consult_human_agent consult_envelope has thread_line');
     check(typeof consultNextMoves?.consult_envelope?.shelf_line === 'string', 'consult_human_agent consult_envelope has shelf_line');
     check(typeof consultNextMoves?.consult_envelope?.scope_line === 'string', 'consult_human_agent consult_envelope has scope_line');
+    check(consultRes.content[0].text.includes('── STRUCTURED NEXT MOVES'), 'consult_human_agent content[0].text includes STRUCTURED NEXT MOVES metadata block');
+    check(consultRes.content[0].text.includes('--- SUGGESTED FOLLOW-UPS ---'), 'consult_human_agent content[0].text includes SUGGESTED FOLLOW-UPS block');
+    check(consultRes.content[0].text.includes('consult_envelope'), 'consult_human_agent content[0].text contains consult_envelope metadata');
+
+    // Test C: consult_analyst
+    const analystReg: any = (server as any)._registeredTools['consult_analyst'];
+    assert.ok(analystReg, 'consult_analyst tool must be registered');
+    const analystFn = analystReg.handler || analystReg.callback || analystReg.execute;
+
+    const analystRes = await analystFn({ analyst_id: 'ben-dietz-sic', query: 'What is the future of creator-led retail?' }, { authInfo: {} });
+    assert.ok(Array.isArray(analystRes.content) && analystRes.content.length > 0, 'consult_analyst must return content array');
+    check(!analystRes.content[0].text.includes('── NEXT MOVES CLOSING BLOCK'), 'consult_analyst content does not contain NEXT MOVES CLOSING BLOCK banner');
+    check(analystRes.content[0].text.includes('── STRUCTURED NEXT MOVES'), 'consult_analyst content[0].text includes STRUCTURED NEXT MOVES metadata block');
+    check(analystRes.content[0].text.includes('--- SUGGESTED FOLLOW-UPS ---'), 'consult_analyst content[0].text includes SUGGESTED FOLLOW-UPS block');
+    check(analystRes.content[0].text.includes('consult_envelope'), 'consult_analyst content[0].text contains consult_envelope metadata');
 
     console.log(`\nVerification Summary: ${passed} checks passed, ${failed} checks failed.`);
     if (failed > 0) {
