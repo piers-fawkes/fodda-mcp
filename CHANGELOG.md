@@ -5,6 +5,21 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.71] - 2026-09-15
+
+### Fixed & Changed (Reconnect get_earnings_divergence to Live Truth Layer & Register Query Pricing)
+- **Reconnected to Production Truth Layer Endpoint (`src/toolHandlers.ts`)**:
+  - Replaced legacy endpoint call `GET /v1/supplemental/earnings/divergence` (which targeted empty legacy Neo4j deflect patterns) with the live production cross-coverage deflection scan `GET /v1/earnings/divergence`.
+  - Scans 517+ covered consumer-facing companies across the Airtable Q&A database, aggregating executive deflections, evasions, and narrative shifts by question theme.
+- **Updated Tool Schema & Parameter Binding (`src/toolHandlers.ts`)**:
+  - Updated tool description quoting the published $20.00 price: *"Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda's earnings truth layer. Returns question themes, company counts, sample management responses, and directness breakdowns. For single-company Q&A deflections, use get_company_earnings with view=qa."*
+  - Replaced legacy parameters (`dateFrom`, `dateTo`) with live truth-layer filters: `sector`, `period` (e.g. `Q1-2026`), and `min_companies` (default 2), while preserving `search`, `industry`, `limit` (max 25), and `userId` aliases.
+- **Registered Query Pricing & Settle / Meter Key Alignment (`src/pricingCache.ts`, `src/toolHandlers.ts`, `scripts/generate-tools-manifest.mjs`)**:
+  - Registered `earnings_divergence` in `DEFAULT_PRICING` with 40 API calls ($20.00 published price from Airtable Offerings table `tblHsMfyoW39LqCv8` / `FALLBACK_PLATFORM_OFFERINGS`), mapping tool `get_earnings_divergence` and meter interaction type `earnings_divergence`.
+  - Updated `get_earnings_divergence` handler to guard with `sptGuard('earnings_divergence')` and settle via `settleOrWithhold` with `queryTypeCode: 'earnings_divergence'`.
+  - Updated `BILLS_AS.get_earnings_divergence` to `'earnings_divergence'` in manifest generator and refreshed `tools-manifest.json`.
+  - Aligned Cost Silence Guard to allow published USD prices ($20 per query) in tool descriptions per Fodda House Rules while strictly preventing token/SPT phrasing.
+
 ## [1.46.70] - 2026-09-15
 
 ### Deprecated & Changed (Imperative Render Spec Deprecation & Migration to Structured Next Moves)

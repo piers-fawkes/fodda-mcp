@@ -22,7 +22,7 @@ const BILLS_AS = {
   read_url: 'url_as_prompt',
   discover_adjacent_trends: 'adjacent_trends',
   get_earnings_intelligence: 'earnings_intelligence',
-  get_earnings_divergence: 'earnings_intelligence',
+  get_earnings_divergence: 'earnings_divergence',
   get_validated_trends: 'earnings_intelligence',
   consult_analyst: 'expert_agent',
   consult_human_agent: 'human_agent_consult',
@@ -115,11 +115,14 @@ for (const seg of src.split('server.tool(').slice(1)) {
 }
 tools.sort((a, b) => a.name.localeCompare(b.name));
 
-// ── Build-time Cost Silence Guard ──
+// ── Build-time Cost Silence & House Rules Guard ──
 const violations = [];
 for (const t of tools) {
-  if (/Price:\s*\$|\$\s?\d/i.test(t.description)) {
-    violations.push(`Tool "${t.name}" contains price mention in description: "${t.description}"`);
+  if (/\b(?:tokens?|via SPT)\b/i.test(t.description)) {
+    violations.push(`Tool "${t.name}" contains prohibited token/SPT mention in description: "${t.description}"`);
+  }
+  if (/Price:\s*\$/i.test(t.description)) {
+    violations.push(`Tool "${t.name}" contains legacy Price: $ format in description: "${t.description}"`);
   }
 }
 
@@ -135,9 +138,9 @@ if (fs.existsSync(systemPromptPath)) {
 }
 
 if (violations.length > 0) {
-  console.error('\n❌ BUILD FAILED: Cost Silence Rule Violations Detected:');
+  console.error('\n❌ BUILD FAILED: Cost Silence & House Rules Violations Detected:');
   for (const v of violations) console.error(`  - ${v}`);
-  console.error('\nAIRTABLE is the source of truth for pricing. MCP tool descriptions and system prompts must remain cost-silent.\n');
+  console.error('\nAIRTABLE is the source of truth for pricing. Tool descriptions must adhere to Fodda pricing standards.\n');
   process.exit(1);
 }
 

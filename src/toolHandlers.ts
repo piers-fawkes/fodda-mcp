@@ -3628,38 +3628,45 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for "where are executives deflecting?" or "divergence in [sector] earnings." For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness.',
+        'Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda\'s earnings truth layer. Returns question themes, company counts, sample management responses, and directness breakdowns. For single-company Q&A deflections, use get_company_earnings with view=qa.',
         {
-            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
-            industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'luxury')"),
-            search: z.string().optional().describe("Free text search (e.g., 'tariffs', 'AI capex', 'margin erosion')"),
-            dateFrom: z.string().optional().describe("ISO date range start"),
-            dateTo: z.string().optional().describe("ISO date range end"),
-            limit: z.number().int().optional().describe('Max results to return (default 10, max 25)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'consumer goods', 'food & beverage', 'travel')"),
+            period: z.string().optional().describe("Quarter filter (e.g., 'Q1-2026'). Defaults to latest quarter."),
+            min_companies: z.number().int().optional().default(2).describe("Minimum number of covered companies deflecting on the theme to include in results (default 2)."),
+            // Legacy/fallback compatibility:
+            search: z.string().optional().describe("Optional search term (used for logging and query attribution)."),
+            industry: z.string().optional().describe("Industry filter alias."),
+            limit: z.number().int().optional().describe("Max deflection themes to return (default 25)."),
+            userId: z.string().optional().describe("Optional user identifier for trial usage tracking."),
         },
         { title: 'Detect Earnings Call Divergence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ sector, industry, search, dateFrom, dateTo, limit, userId: uid }) => {
+        async ({ sector, period, min_companies, search, industry, limit, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(search || sector || industry || 'earnings divergence', 'earnings_divergence');
 
                 const params = new URLSearchParams();
                 if (sector) params.set('sector', sector);
-                if (industry) params.set('industry', industry);
-                if (search) params.set('search', search);
-                if (dateFrom) params.set('dateFrom', dateFrom);
-                if (dateTo) params.set('dateTo', dateTo);
+                if (period) params.set('period', period);
+                if (min_companies !== undefined) params.set('min_companies', String(min_companies));
                 if (limit !== undefined) params.set('limit', String(Math.min(limit, 25)));
 
                 const qs = params.toString();
-                const divergenceGuard = sptGuard('earnings_intelligence');
+                const divergenceGuard = sptGuard('earnings_divergence');
                 if (divergenceGuard) return divergenceGuard;
 
-                const data = await foddaRequest('GET', `/v1/supplemental/earnings/divergence${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
+                const data = await foddaRequest('GET', `/v1/earnings/divergence${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
-                const divergenceWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || sector || industry || 'divergence' }, 'get_earnings_divergence');
+                const divergenceWithheld = await settleOrWithhold(
+                    {
+                        queryTypeCode: 'earnings_divergence',
+                        apiKey,
+                        userId: resolveUserId(userId, uid),
+                        query: search || sector || industry || 'earnings divergence'
+                    },
+                    'get_earnings_divergence'
+                );
                 if (divergenceWithheld) return divergenceWithheld;
 
                 const divergencePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;

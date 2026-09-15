@@ -256,14 +256,14 @@
     {
       "name": "get_earnings_divergence",
       "kind": "tool",
-      "bills_as": "earnings_intelligence",
+      "bills_as": "earnings_divergence",
       "category": "Financial",
       "profiles": [
         "mcp",
         "earnings-intelligence",
         "chatgpt"
       ],
-      "description": "Cross-company analyst-management divergence detection from the knowledge graph (legacy-thematic). Surfaces where executives are deflecting, reframing, or avoiding specific topics — the gap between what analysts press on and how management responds. Use for \"where are executives deflecting?\" or \"divergence in [sector] earnings.\" For per-ticker deflection signals, use get_company_earnings with view=qa and filter by response_directness."
+      "description": "Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda's earnings truth layer. Returns question themes, company counts, sample management responses, and directness breakdowns. For single-company Q&A deflections, use get_company_earnings with view=qa."
     },
     {
       "name": "get_earnings_intelligence",

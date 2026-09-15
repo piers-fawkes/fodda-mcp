@@ -246,6 +246,18 @@ const DEFAULT_PRICING: QueryPricing[] = [
         absorbsGeminiCost: false,
     },
     {
+        queryTypeCode: 'earnings_divergence',
+        queryTypeName: 'Earnings Divergence & Deflection',
+        apiCallsCharged: 40,
+        researchCalls: 1,
+        overheadCalls: 0,
+        mcpToolName: 'get_earnings_divergence',
+        meterInteractionType: 'earnings_divergence',
+        isActive: true,
+        includesSupplementals: false,
+        absorbsGeminiCost: false,
+    },
+    {
         queryTypeCode: 'earnings_company',
         queryTypeName: 'Per-Ticker Earnings Snapshot',
         apiCallsCharged: 10,
