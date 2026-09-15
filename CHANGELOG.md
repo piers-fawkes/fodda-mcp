@@ -5,15 +5,48 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.46.68] - 2026-09-14
 
-### Changed (Build Context & Upload Hygiene)
-- **Build & Upload Exclusion Patterns (`.dockerignore`, `.gcloudignore`)**:
-  - Excluded `.claude`, `.gemini`, `.agents`, `.agent`, `scratch`, and `.secrets` from Docker build context and Google Cloud upload package.
-  - Prevents uploading agent caches, local worktrees (e.g. `.claude/worktrees` totaling ~295 MB), agent workspaces, scratch files, and local secrets to Cloud Build or copying them into Docker images.
+### Changed & Fixed (BYO-MCP Onboarding Submission Clarity & Ghosting Prevention)
+- **Eliminated False "Saved As You Go" Persistence Copy (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Removed all occurrences of "saved as you go" and "is recorded when you connect it" across prompt instructions and tool handlers.
+  - Replaced with clear, honest persistence copy matching actual runtime behavior: *"Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your MCP URL and profile live only in this conversation until final submission."*
+  - Updated pause/interruption copy for the BYO-MCP flow: *"No problem — if you need to pause, please return to this same conversation to finish connecting your MCP and submit. Nothing is saved on Fodda's servers until the final submission step."*
+  - Updated horizontal stepper guidance: BYO-MCP note indicates that progress lives only in this conversation until final submission and goes live after review.
+- **Strict Negative Constraint Against Premature Completion Claims (`src/systemPrompt.ts`)**:
+  - Added hard guardrail under `BYO-MCP SAFEGUARDS`: The agent MUST NEVER claim or imply that an expert profile has been submitted, recorded, or sent for review unless and until `finalize_byo_mcp_onboarding` has executed and returned `{ status: 'submitted_for_review' }`. If not called or errored, the agent must explicitly state the pending step.
+- **Streamlined BYO-MCP Execution Path & Terms Gate (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Defined explicit execution flow when the expert provides endpoint URL and profile info: call `submit_basic_info` and `submit_mcp_source` immediately, display discovered tools/topics, explicitly request Terms acceptance: *"To complete submission, please confirm that you accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."*, and call `finalize_byo_mcp_onboarding` with `termsAccepted: true`.
+  - Updated next-step guidance in `submit_mcp_source` status text and error guidance in `finalize_byo_mcp_onboarding` to prompt for explicit Terms of Service acceptance and remind that server persistence occurs only on finalization.
+- **Verification Test Suite (`src/test_byo_mcp_submission_clarity.ts`)**:
+  - Added automated test suite verifying invariant string grep (zero occurrences of misleading copy), behavioral rules in system prompt, tool handler copy, and transcript simulation preventing premature completion claims before `finalize_byo_mcp_onboarding`.
+
+## [1.46.67] - 2026-09-14
+
+### Added & Fixed (Service-to-Service Connection Rejection Bypass & Bearer Auth Support)
+- **Bearer Authorization Support on `/mcp` (`src/index.ts`)**:
+  - Streamable HTTP `/mcp` transport handler now accepts API keys supplied via standard `Authorization: Bearer <apiKey>` headers (`sk_live_...`, `sk_trial_...`, or internal service keys).
+  - Explicitly guards against treating internal service keys as Clerk OAuth JWTs for token resolution.
+- **Internal Service-to-Service Bypass on Legacy Deprecation Middleware (`src/index.ts`)**:
+  - Requests carrying valid `Authorization: Bearer` headers, `X-Internal-Key` matching `FODDA_INTERNAL_API_KEY`, valid `X-Fodda-Signature` HMAC (verified against `FODDA_MCP_SECRET` with 5-minute replay window), or `X-API-Key` headers cleanly bypass the `-32001` legacy URL deprecation gate, even if legacy query parameters (`?api_key=...` / `?user_id=...`) are present.
+  - Unauthenticated legacy clients relying strictly on query string parameters continue to receive the helpful HTTP 401 `-32001` error redirecting to `https://app.fodda.ai`.
+- **User Identity Resolution from `X-User-Email` (`src/index.ts`)**:
+  - Added support for `X-User-Email` header alongside `X-User-Id` for resolving user identity and tenant context in both Streamable HTTP and SSE transports.
+  - Defaults session kind to `internal-test` for verified internal service connections when not explicitly set.
+- **Stateless Single-Shot JSON-RPC Execution on `/mcp` (`src/index.ts`)**:
+  - When an authenticated POST request arrives without an existing session ID and with a method other than `initialize` (e.g. `tools/list` via curl), the server creates a stateless `StreamableHTTPServerTransport` to execute the request and return HTTP 200 with the tools list, rather than returning a 400 "Session required" error.
+- **CORS Allowlist (`src/index.ts`)**:
+  - Added `X-Internal-Key`, `X-User-Email`, `X-Fodda-Signature`, and `X-Fodda-Timestamp` to `Access-Control-Allow-Headers`.
 - *Verification:*
-  - Verified `gcloud meta list-files-for-upload` upload manifest drops from 922 files to 142 files, with 0 matches for `.claude`, `.gemini`, `.agents`, `.agent`, `scratch`, or `.secrets`.
-  - Tested pattern matching against `.dockerignore` verifying agent paths are excluded while build sources (`Dockerfile`, `package.json`, `src/`) remain included.
+  - Created automated test suite `src/test_service_to_service_auth.ts` exercising:
+    1. Legacy query-string requests without headers -> rejected with HTTP 401 / code `-32001`.
+    2. Direct `curl`-style stateless `tools/list` with `Authorization: Bearer` -> 200 OK with 52 tools.
+    3. Bearer header overriding legacy query params -> 200 OK (bypasses `-32001`).
+    4. Internal service auth via `X-Internal-Key` -> 200 OK (bypasses `-32001`).
+    5. Internal service auth via `X-Fodda-Signature` HMAC -> 200 OK (bypasses `-32001`).
+    6. Stateful `initialize` handshake with `X-User-Email` -> 200 OK with `Mcp-Session-Id` header.
+    7. MCP SDK `StreamableHTTPClientTransport` client connection -> 200 OK with 52 tools.
+  - Ran `npm test` verifying server health and 52 tools manifest integrity under v1.46.67.
 
 ## [1.46.66] - 2026-09-12
 

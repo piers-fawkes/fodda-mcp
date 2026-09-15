@@ -173,7 +173,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding."
+      "description": "Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding. This is the sole submission step; profile and MCP details are not saved to Fodda until this tool executes."
     },
     {
       "name": "find_expert",

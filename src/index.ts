@@ -40,7 +40,7 @@ process.on('uncaughtException', (err: any) => {
 const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
 const WEBSITE_BASE_URL = process.env.WEBSITE_BASE_URL || 'https://www.fodda.ai';
 
-const app = express();
+export const app = express();
 app.use(express.json({ limit: '512kb' }));
 
 // Strip api_key from request logging globally before anything hits Cloud Run logs
@@ -55,11 +55,59 @@ app.use((req, _res, next) => {
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-Stripe-SPT, Mcp-Session-Id, Accept, X-Fodda-Session-Kind, X-Fodda-Source');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-User-Email, X-Internal-Key, X-Fodda-Signature, X-Fodda-Timestamp, X-Stripe-SPT, Mcp-Session-Id, Accept, X-Fodda-Session-Kind, X-Fodda-Source');
     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
 });
+
+// Helper to verify incoming HMAC signature from internal services
+export function isIncomingHmacValid(req: express.Request): boolean {
+    const secret = process.env.FODDA_MCP_SECRET;
+    if (!secret) return false;
+    const signature = (req.headers['x-fodda-signature'] as string) || '';
+    if (!signature) return false;
+    const timestamp = (req.headers['x-fodda-timestamp'] as string) || '';
+
+    // If timestamp is supplied, enforce a 5-minute replay window (300,000 ms)
+    if (timestamp) {
+        const ts = parseInt(timestamp, 10);
+        if (isNaN(ts) || Math.abs(Date.now() - ts) > 300000) {
+            return false;
+        }
+    }
+
+    // Try payload with timestamp: `${timestamp}.${JSON.stringify(body)}` or `${timestamp}.${path}`
+    const payloadWithTs = (req.method === 'POST' || req.method === 'PATCH')
+        ? (timestamp ? `${timestamp}.${JSON.stringify(req.body ?? {})}` : JSON.stringify(req.body ?? {}))
+        : (timestamp ? `${timestamp}.${req.originalUrl || req.url}` : (req.originalUrl || req.url));
+
+    const expectedWithTs = crypto.createHmac('sha256', secret).update(payloadWithTs).digest('hex');
+    if (signature.length === expectedWithTs.length) {
+        try {
+            if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedWithTs, 'hex'))) {
+                return true;
+            }
+        } catch { /* ignore */ }
+    }
+
+    // Also support payload without timestamp fallback
+    if (timestamp) {
+        const fallbackPayload = (req.method === 'POST' || req.method === 'PATCH')
+            ? JSON.stringify(req.body ?? {})
+            : (req.originalUrl || req.url);
+        const fallbackExpected = crypto.createHmac('sha256', secret).update(fallbackPayload).digest('hex');
+        if (signature.length === fallbackExpected.length) {
+            try {
+                if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(fallbackExpected, 'hex'))) {
+                    return true;
+                }
+            } catch { /* ignore */ }
+        }
+    }
+
+    return false;
+}
 
 // Deprecation middleware for legacy URL parameters (?api_key=... / ?user_id=...)
 const LEGACY_DEPRECATION_PATHS = [
@@ -70,6 +118,28 @@ const LEGACY_DEPRECATION_PATHS = [
 
 app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
     if (req.query.api_key !== undefined || req.query.user_id !== undefined) {
+        const authHeader = (req.headers['authorization'] || '').toString().trim();
+        const rawBearer = authHeader.replace(/^Bearer\s+/i, '').trim();
+        const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
+        const internalKeyHeader = (req.headers['x-internal-key'] as string) || '';
+        const apiKeyHeader = (req.headers['x-api-key'] as string) || '';
+
+        // Check if request carries modern credentials or internal service authorization
+        const hasBearerAuth = rawBearer.length > 0;
+        const hasInternalKey = !!(internalKey && (
+            internalKeyHeader === internalKey ||
+            rawBearer === internalKey ||
+            apiKeyHeader === internalKey ||
+            (req.query.api_key as string) === internalKey
+        ));
+        const hasValidHmac = isIncomingHmacValid(req);
+        const hasHeaderApiKey = apiKeyHeader.startsWith('sk_live_') || apiKeyHeader.startsWith('sk_trial_');
+
+        // Service-to-service calls or requests supplying valid header credentials bypass deprecation
+        if (hasBearerAuth || hasInternalKey || hasValidHmac || hasHeaderApiKey) {
+            return next();
+        }
+
         const message = 'Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Account → MCP Integration) and update your connector.';
         const accept = req.headers['accept'] || '';
         const contentType = req.headers['content-type'] || '';
@@ -1037,9 +1107,20 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         const isSpt = !!spt;
 
         const rawBearer = !isSpt ? rawAuth.replace(/^Bearer\s+/i, '').trim() : '';
+        // Internal service auth detection
+        const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
+        const internalKeyHeader = (req.headers['x-internal-key'] as string) || '';
+        const hasValidHmac = isIncomingHmacValid(req);
+        const isInternalAuth = hasValidHmac || !!(internalKey && (
+            internalKeyHeader === internalKey ||
+            rawBearer === internalKey ||
+            (req.headers['x-api-key'] as string) === internalKey ||
+            (req.query.api_key as string) === internalKey
+        ));
+
         // Clerk OAuth tokens may be JWTs (eyJ...), opaque tokens (oat_...), session tokens (sess_...), or custom OAuth tokens.
-        // If it's not a standard sk_live_ / sk_trial_ key, send it to clerk-resolve.
-        const isClerkJwt = !isSpt && rawBearer.length > 0 && !rawBearer.startsWith('sk_live_') && !rawBearer.startsWith('sk_trial_');
+        // If it's not a standard sk_live_ / sk_trial_ key and not internal auth, send it to clerk-resolve.
+        const isClerkJwt = !isSpt && !isInternalAuth && rawBearer.length > 0 && !rawBearer.startsWith('sk_live_') && !rawBearer.startsWith('sk_trial_');
         if (isClerkJwt) {
             // Attempt Clerk JWT → Fodda API key resolution
             try {
@@ -1093,26 +1174,29 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         }
 
         // Extract API key, userId, and entry ID from URL or headers.
-        // Priority: resolved OAuth key → X-API-Key header → Authorization Bearer (if non-Clerk sk_live_/sk_trial_) → resolved token key → query string (fallback).
+        // Priority: resolved OAuth key → X-API-Key header → Authorization Bearer (if non-Clerk sk_live_/sk_trial_) → internal service key → resolved token key → query string (fallback).
         const resolvedOAuthKey = (req as any).__resolvedApiKey || '';
         const resolvedOAuthUser = (req as any).__resolvedUserId || '';
 
         const apiKey = isSpt ? '' : (resolvedOAuthKey
             || (req.headers['x-api-key'] as string)
-            || (!isClerkJwt ? (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, '')) : '')
+            || (!isClerkJwt ? rawBearer : '')
+            || (isInternalAuth ? (internalKey || 'sk_internal_service') : '')
             || resolvedApiKey
             || (req.query.api_key as string)
             || '');
         const entryId = resolvedEntryId || (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup
         const isEmailId = entryId.includes('@') && entryId.includes('.');
-        // Priority for userId: resolved OAuth user → resolved token email → query user_id → header X-User-Id → query id / anonymous
+        const headerUserId = (req.headers['x-user-id'] as string) || (req.headers['x-user-email'] as string) || '';
+        // Priority for userId: resolved OAuth user → resolved token email → header X-User-Id / X-User-Email → query user_id → query id / anonymous
         const userId = isSpt ? 'spt_agent' : (resolvedOAuthUser
             || resolvedEmail
+            || headerUserId
             || (req.query.user_id as string)
-            || (req.headers['x-user-id'] as string)
             || (isEmailId ? entryId : 'anonymous'));
-        const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || 'customer';
+        const defaultSessionKind = isInternalAuth ? 'internal-test' : 'customer';
+        const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || defaultSessionKind;
         const isInternalTest = sessionKind === 'internal-test';
         const defaultSource = isInternalTest ? 'mcp-internal-test' : ((offeringSlug !== 'mcp' && allowedTools !== undefined) ? offeringSlug : (isSpt ? 'spt' : ''));
         const rawSource = (req.headers['x-fodda-source'] as string) || (req.query.source as string) || '';
@@ -1166,7 +1250,6 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // Wrap foddaRequest. SPT sessions authenticate the internal fan-out with the
                 // internal service key (the SPT is spent ONCE at settlement, never on fan-out);
                 // otherwise bake in source attribution.
-                const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
                 const boundFoddaRequest = isSpt
                     ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg)) as typeof foddaRequest)
                     : (source
@@ -1198,11 +1281,46 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 };
                 await server.connect(transport as any);
             } else {
-                return res.status(400).json({
-                    jsonrpc: '2.0',
-                    error: { code: -32000, message: 'Bad Request: Session required' },
-                    id: null
-                });
+                // Non-initialize POST without an existing sessionId:
+                // Support stateless single-shot JSON-RPC execution (e.g. direct tools/list via curl or script)
+                if (!isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
+                    const metadataSlug = offeringSlug || 'mcp';
+                    res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/${metadataSlug}"`);
+                    return res.status(401).json({
+                        jsonrpc: '2.0',
+                        error: { code: -32000, message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.' },
+                        id: body?.id ?? null,
+                    });
+                }
+
+                let sptInfo: { token: string; maxAmountCents: number | null; prices: Record<string, number> } | null = null;
+                if (isSpt) {
+                    if (process.env.ENABLE_SPT !== 'true') {
+                        return res.status(401).json({
+                            jsonrpc: '2.0',
+                            error: { code: -32000, message: 'SPT payment tokens are not accepted on this endpoint. Connect via OAuth at https://app.fodda.ai.' },
+                            id: body?.id ?? null,
+                        });
+                    }
+                    const v = await validateSpt(spt);
+                    if (!v.valid) {
+                        return res.status(402).json({
+                            jsonrpc: '2.0',
+                            error: { code: -32002, message: `SPT validation failed: ${v.error || 'invalid token'}` },
+                            id: body?.id ?? null,
+                        });
+                    }
+                    sptInfo = { token: spt, maxAmountCents: v.max_amount_cents, prices: v.prices };
+                }
+
+                const boundFoddaRequest = isSpt
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg)) as typeof foddaRequest)
+                    : (source
+                        ? (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest)
+                        : foddaRequest);
+                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, source || undefined);
+                transport = new StreamableHTTPServerTransport();
+                await server.connect(transport as any);
             }
         } else {
             return res.status(404).json({
@@ -1234,8 +1352,20 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
 // Legacy SSE transport
 app.get('/sse', async (req, res) => {
     const rawSseAuth = (req.headers['authorization'] as string) || '';
+    const rawBearer = /^Bearer\s+/i.test(rawSseAuth) ? rawSseAuth.replace(/^Bearer\s+/i, '').trim() : '';
+    const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
+    const internalKeyHeader = (req.headers['x-internal-key'] as string) || '';
+    const hasValidHmac = isIncomingHmacValid(req);
+    const isInternalAuth = hasValidHmac || !!(internalKey && (
+        internalKeyHeader === internalKey ||
+        rawBearer === internalKey ||
+        (req.headers['x-api-key'] as string) === internalKey ||
+        (req.query.api_key as string) === internalKey
+    ));
+
     const apiKey = (req.headers['x-api-key'] as string)
-        || (/^Bearer\s+/i.test(rawSseAuth) ? rawSseAuth.replace(/^Bearer\s+/i, '').trim() : '')
+        || rawBearer
+        || (isInternalAuth ? (internalKey || 'sk_internal_service') : '')
         || (req.query.api_key as string) || '';
     // No anonymous use of any offering (Piers, 2026-09-02): the legacy SSE lane
     // gets the same gate as the Streamable HTTP routes.
@@ -1245,10 +1375,12 @@ app.get('/sse', async (req, res) => {
     }
     const entryId = (req.query.id as string) || '';
     const isEmailId = entryId.includes('@') && entryId.includes('.');
+    const headerUserId = (req.headers['x-user-id'] as string) || (req.headers['x-user-email'] as string) || '';
     const userId = (req.query.user_id as string)
-        || (req.headers['x-user-id'] as string)
+        || headerUserId
         || (isEmailId ? entryId : 'anonymous');
-    const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || 'customer';
+    const defaultSessionKind = isInternalAuth ? 'internal-test' : 'customer';
+    const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || defaultSessionKind;
     const isInternalTest = sessionKind === 'internal-test';
     const source = isInternalTest ? 'mcp-internal-test' : ((req.headers['x-fodda-source'] as string) || (req.query.source as string) || '');
     const sessionId = crypto.randomUUID();

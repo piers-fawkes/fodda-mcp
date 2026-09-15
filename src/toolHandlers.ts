@@ -5555,7 +5555,7 @@ export async function createServer(
                         `Welcome to Fodda Human Agent Onboarding (Bring-Your-Own-MCP).`,
                         ``,
                         `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
-                        `• Process: Connect your live MCP endpoint to ground your agent directly in your live tools and data (skipping background research and interview). Each step is saved as you go; your MCP URL is recorded when you connect it, and your Human Agent goes live after review.`,
+                        `• Process: Connect your live MCP endpoint to ground your agent directly in your live tools and data (skipping background research and interview). Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your MCP URL and profile live only in this conversation until final submission. Your Human Agent goes live after review.`,
                         `• Fallback: If you encounter issues connecting your MCP endpoint, you can switch back to the standard onboarding path at any time.`,
                         ``,
                         `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (or call \`submit_basic_info\` directly). Next, you'll provide your MCP endpoint URL for verification.`
@@ -5746,7 +5746,7 @@ export async function createServer(
                         ? `• **Discovered Expertise Topics**: ${derivedTopics.join(', ')}`
                         : `• **Topics**: No automated topics could be extracted from tool schemas. Please summarize 3-5 core expertise topics covering your domain.`,
                     ``,
-                    `👉 **Next Step:** Confirm the expertise topics with the expert. You may refine or add topics, explore optional tone of voice, and then call \`finalize_byo_mcp_onboarding\` to complete onboarding.`
+                    `👉 **Next Step:** Confirm the expertise topics with the expert, explicitly request acceptance of the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy), and call \`finalize_byo_mcp_onboarding\` to complete onboarding. Remember: nothing is saved on Fodda's servers until \`finalize_byo_mcp_onboarding\` executes successfully.`
                 ].join('\n');
 
                 const payload = {
@@ -5781,7 +5781,7 @@ export async function createServer(
 
     server.tool(
         'finalize_byo_mcp_onboarding',
-        'Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding.',
+        'Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding. This is the sole submission step; profile and MCP details are not saved to Fodda until this tool executes.',
         {
             name: z.string().describe("The expert's full name"),
             role: z.string().describe("The expert's current role or title"),
@@ -5803,7 +5803,7 @@ export async function createServer(
                     isError: true,
                     content: [{
                         type: 'text' as const,
-                        text: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance, then call finalize_byo_mcp_onboarding with termsAccepted: true.'
+                        text: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance: "To complete submission, please confirm that you accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)." Then call finalize_byo_mcp_onboarding with termsAccepted: true.'
                     }]
                 };
             }
