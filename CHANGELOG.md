@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.69] - 2026-09-14
+
+### Fixed (Streamable HTTP Accept Header Normalization)
+- **Ensure `Accept` Header Includes Both `application/json` and `text/event-stream` (`src/index.ts`)**:
+  - The `@modelcontextprotocol/sdk` Streamable HTTP transport strictly validates that the request `Accept` header contains both `application/json` and `text/event-stream`.
+  - Fixed an issue where clients sending `Accept: */*` (such as `curl` default) or `Accept: application/json` could trigger an HTTP 406 "Not Acceptable" error from the MCP SDK transport if only `text/event-stream` was injected.
+  - Dynamically inspects incoming `Accept` headers and injects whichever required MIME type is missing before handing off to the transport.
+
 ## [1.46.68] - 2026-09-14
 
 ### Changed & Fixed (BYO-MCP Onboarding Submission Clarity & Ghosting Prevention)

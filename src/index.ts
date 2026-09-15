@@ -1330,10 +1330,13 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             });
         }
 
-        // Inject Accept: text/event-stream if missing (prevents SDK 406)
-        const accept = req.headers['accept'] || '';
-        if (!accept.includes('text/event-stream')) {
-            req.headers['accept'] = accept ? `${accept}, text/event-stream` : 'application/json, text/event-stream';
+        // Ensure Accept includes both application/json and text/event-stream (required by MCP SDK Streamable HTTP transport)
+        const currentAccept = (req.headers['accept'] || '').toString();
+        const needed: string[] = [];
+        if (!currentAccept.includes('application/json')) needed.push('application/json');
+        if (!currentAccept.includes('text/event-stream')) needed.push('text/event-stream');
+        if (needed.length > 0) {
+            req.headers['accept'] = currentAccept ? `${currentAccept}, ${needed.join(', ')}` : 'application/json, text/event-stream';
             const idx = req.rawHeaders?.findIndex((h: string) => h.toLowerCase() === 'accept');
             if (idx !== undefined && idx >= 0 && req.rawHeaders) {
                 req.rawHeaders[idx + 1] = req.headers['accept'] as string;
