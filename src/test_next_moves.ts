@@ -91,6 +91,7 @@ async function runTests() {
     assert.ok(nextMoves, 'nextMoves should be defined');
     assert.strictEqual(nextMoves.presentation, 'internal');
     assert.strictEqual(nextMoves.scope_prompt, true);
+    assert.strictEqual(nextMoves.scope, 'Want this cut to Nike specifically?');
     assert.strictEqual(nextMoves.known_brand, 'Nike');
     assert.strictEqual(nextMoves.thread?.kind, 'more_in_graph');
     assert.strictEqual(nextMoves.thread?.graph_id, 'retail');
@@ -158,7 +159,7 @@ async function runTests() {
     const nextMoves = await generateNextMoves(
         rows,
         'retail strategy and cultural trends',
-        ['retail', 'ben-dietz-sic', 'beauty'],
+        ['retail', 'ben-dietz-sic', 'beauty', 'retail-lead'],
         'ok',
         undefined,
         undefined,
@@ -169,6 +170,7 @@ async function runTests() {
 
     assert.ok(nextMoves, 'nextMoves should be defined');
     assert.strictEqual(nextMoves.thread, undefined, 'Thread should be dropped when ok coverage has 0 remainder and no unsearched room');
+    assert.strictEqual(nextMoves.scope, "If you tell me the brand or brief you're working on, I'll cut this to that.");
     console.log('✅ Test 4 Passed: OK coverage with 0 remainder drops thread line');
 }
 

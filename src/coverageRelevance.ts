@@ -702,6 +702,7 @@ export interface NextMoves {
     specific?: NextMovesSpecific | undefined;
     shelf?: NextMovesShelfGraph[] | undefined;
     scope_prompt: boolean;
+    scope?: string | undefined;
     known_brand?: string | undefined;
     presentation?: 'internal' | undefined;
     consult_envelope?: NextMovesConsultEnvelope | undefined;
@@ -1582,6 +1583,10 @@ export async function generateNextMoves(
         nextMoves.specific = specific;
     }
 
+    nextMoves.scope = options?.knownBrand
+        ? `Want this cut to ${options.knownBrand} specifically?`
+        : `If you tell me the brand or brief you're working on, I'll cut this to that.`;
+
     return nextMoves;
 }
 
@@ -1814,6 +1819,8 @@ export function generateConsultNextMoves(
     } else {
         scopeSentence = `If you tell me the brand or brief you're working on, I'll cut this to that.`;
     }
+
+    nextMoves.scope = scopeSentence;
 
     nextMoves.consult_envelope = {
         thread_line: threadSentence,

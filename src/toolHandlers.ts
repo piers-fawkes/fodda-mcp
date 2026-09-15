@@ -31,7 +31,7 @@ import { buildResearcherInstruction } from './agents/fodda-researcher/index.js';
 import type { GraphContext } from './agents/fodda-researcher/index.js';
 import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
-import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, renderConsultClosingEnvelope, renderClosingBlock, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit, findCandidateExperts, type CandidateExpert } from './coverageRelevance.js';
+import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit, findCandidateExperts, type CandidateExpert } from './coverageRelevance.js';
 import { buildReportEditorialBriefing } from './reportBriefing.js';
 
 // ---------------------------------------------------------------------------
@@ -101,7 +101,6 @@ function buildRenderInstructions(opts: {
         'ONE TREND, ONE PARAGRAPH: Each trend gets exactly one paragraph of at most 3 sentences (~60 words). Open the paragraph with the trend name in bold followed by its lifecycle stage in italics, e.g. **Human-centric luxury** *(building)*. Insert a blank line between trends — never run two trends into one paragraph.',
         'MAX 3 TRENDS by default, ranked by relevance, even when the payload contains more. Mention in the closing line that further trends are available on request. Exception: the user explicitly asked for an exhaustive list.',
         'CITATIONS — SHORT ANCHORS: Every claim still requires its source link. Prefer short_citation (e.g. "[via Jing Daily](url)") or short source labels ("via Jing Daily", "BoF-McKinsey survey"), never the full evidence headline. Place links at the end of a sentence or in a trailing parenthetical — never mid-clause. Maximum 2 links per trend paragraph; if a trend has more evidence, cite the strongest 2 and note more exists.',
-        'NEXT MOVES CLOSING BLOCK (Render Spec 1.3): Every research answer and expert consult must end with a deterministic three-sentence closing block (no heading, no "any questions?", no emoji, no apology) in this fixed order: (1) Pull the thread: One specific thing surfaced but not finished, generated from next_moves.thread. In general search, use natural editorial phrasing ("several more trends/signals" for 2–8, "many more trends/signals" for 10+, or honest thin version). In expert consults (consult_human_agent / consult_analyst), this is the expert\'s authentic 1st-person next move (using expert_thread.next_angle or uncited themes, or referral recommendation on out-of-lane decline). (2) Explore the shelf / Go specific: Merchandises <=2 relevant graphs from catalogCache (excluding expert\'s own graph) or offers brand/statistics options from next_moves.specific. (3) Scope to the job: Fixed copy: "If you tell me the brand or brief you\'re working on, I\'ll cut this to that." (or "Want this cut to [brand] specifically?" if the user\'s research profile specifies a brand). Never invent names, brands, or numbers — all material must come from next_moves or result rows.',
         'NO FILLER STRUCTURE: No section headers for responses of 3 trends or fewer. No bullet-lists of evidence items. No restating evidence counts, graph counts, or relevance scores in prose.',
         'DEPTH ON REQUEST: When the user asks about ONE specific trend, the density caps lift — expand to full evidence, longer paragraphs, and complete citations. The caps govern first-pass survey responses, not drill-downs.',
         'COVERAGE RECOVERY: coverage.status is machine-readable routing data — NEVER tell the user coverage is "thin", "low", or "empty". When status is thin or empty, silently run coverage.suggested_action (get_supplemental_context) in the SAME turn and blend what it returns into the answer. If that also returns nothing usable, present what exists plainly — "this is what we have on this right now" — and offer the coverage.escalation options (a Deep Dive report via deep_research_topic, or your own web/LLM research with non-Fodda findings clearly attributed). Never pad weak matches into a confident-looking answer.',
@@ -1219,7 +1218,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, and lifecycle stage (emerging/building/mature/fading). If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence.',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, lifecycle stage (emerging/building/mature/fading), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -1739,15 +1738,6 @@ export async function createServer(
                     data._fodda_followup = `**Fodda →** ${prompts.map(p => p.label).join(' · ')}`;
                 }
 
-                // Inject _render_instructions for LLM clients that don't read server-level instructions
-                const resultGraphIds = [...new Set((data.rows || []).map((r: any) => r._use_this_graphId || r.graphId).filter(Boolean))] as string[];
-                data._render_instructions = buildRenderInstructions({
-                    hasWidget: true, // will be determined later, but default to true
-                    hasPrompts: prompts.length > 0,
-                    hasEvidence: (data.rows || []).some((r: any) => r.evidence?.length > 0),
-                    graphWebpageUrls: collectGraphWebpageUrls(resultGraphIds),
-                });
-
                 // Phase 2 envelope enrichment
                 const enrichedRows = data.rows || [];
                 const mainstream = enrichedRows.filter((r: any) => (r.linked_evidence_count ?? r.evidence_count ?? r.evidenceCount ?? 0) >= 3);
@@ -1891,6 +1881,7 @@ export async function createServer(
                         chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
                         return {
+                            next_moves: cleanData?.next_moves,
                             content: [
                                 { type: 'text' as const, text: JSON.stringify(cleanData, null, 2) },
                                 ...skillResults
@@ -1911,24 +1902,30 @@ export async function createServer(
                         // ── Query-level billing (large payload path) ──
                         chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
-                        return { content: [
-                            { type: 'text' as const, text: jsonPayload },
-                            { type: 'text' as const, text: FODDA_WIDGET_DESIGN_BRIEF },
-                        ] };
+                        return {
+                            next_moves: liteData?.next_moves,
+                            content: [
+                                { type: 'text' as const, text: jsonPayload },
+                                { type: 'text' as const, text: FODDA_WIDGET_DESIGN_BRIEF },
+                            ]
+                        };
                     }
 
-                    const widgetResponse = { content: [
-                        { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + jsonPayload },
-                        { type: 'text' as const, text: searchWidget.editorial_instruction },
-                        { type: 'text' as const, text: '── WIDGET HTML ──\nIf your client supports HTML visualization (show_widget, visualize:show_widget, or artifacts), pass this HTML verbatim. Do not rewrite or restyle.\n\n' + searchWidget.widget_html },
-                        // Append skill outputs as additional content blocks
-                        ...skillResults
-                            .filter(r => r.success && r.output)
-                            .map(r => ({
-                                type: 'text' as const,
-                                text: `── SKILL: ${r.skillName} ──\n${r.output}\n── END SKILL: ${r.skillName} ──`,
-                            })),
-                    ] };
+                    const widgetResponse = {
+                        next_moves: liteData?.next_moves,
+                        content: [
+                            { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + jsonPayload },
+                            { type: 'text' as const, text: searchWidget.editorial_instruction },
+                            { type: 'text' as const, text: '── WIDGET HTML ──\nIf your client supports HTML visualization (show_widget, visualize:show_widget, or artifacts), pass this HTML verbatim. Do not rewrite or restyle.\n\n' + searchWidget.widget_html },
+                            // Append skill outputs as additional content blocks
+                            ...skillResults
+                                .filter(r => r.success && r.output)
+                                .map(r => ({
+                                    type: 'text' as const,
+                                    text: `── SKILL: ${r.skillName} ──\n${r.output}\n── END SKILL: ${r.skillName} ──`,
+                                })),
+                        ]
+                    };
 
                     // ── Query-level billing (rich widget path) ──
                     chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
@@ -1973,6 +1970,7 @@ export async function createServer(
                     chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                         .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
                     return {
+                        next_moves: cleanData?.next_moves,
                         content: [
                             { type: 'text' as const, text: JSON.stringify(cleanData, null, 2) },
                             ...skillResults
@@ -1989,10 +1987,12 @@ export async function createServer(
                 chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
 
-                return { content: [
-                    { type: 'text' as const, text: JSON.stringify(fallbackData, null, 2) },
-                    { type: 'text' as const, text: '── FODDA SHELL TEMPLATE ──\nUse this shell to wrap your widget response. Replace {{CONTENT}} with your HTML and {{EXTRA_CSS}} with any additional styles.\n\n' + shellHtml },
-                    { type: 'text' as const, text: FODDA_COMPONENT_GUIDE },
+                return {
+                    next_moves: fallbackData?.next_moves,
+                    content: [
+                        { type: 'text' as const, text: JSON.stringify(fallbackData, null, 2) },
+                        { type: 'text' as const, text: '── FODDA SHELL TEMPLATE ──\nUse this shell to wrap your widget response. Replace {{CONTENT}} with your HTML and {{EXTRA_CSS}} with any additional styles.\n\n' + shellHtml },
+                        { type: 'text' as const, text: FODDA_COMPONENT_GUIDE },
                     // Append skill outputs (if any ran despite thin results)
                     ...skillResults
                         .filter(r => r.success && r.output)
@@ -2147,7 +2147,7 @@ export async function createServer(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches and optionally editorial links across graphs. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs.',
+        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches, optionally editorial links across graphs, and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -2182,17 +2182,9 @@ export async function createServer(
                 const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
                 if (adjacentWithheld) return adjacentWithheld;
 
-                const adjacentClosing = renderClosingBlock(data?.next_moves);
-                const closingInstruction = adjacentClosing.text
-                    ? `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):\n\n${adjacentClosing.lines.join('\n')}`
-                    : '';
-
                 const content: Array<{ type: 'text'; text: string }> = [
                     { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(data, null, 2) },
                 ];
-                if (closingInstruction) {
-                    content.push({ type: 'text' as const, text: closingInstruction });
-                }
 
                 return { next_moves: data?.next_moves, content };
             } catch (err: any) {
@@ -2743,12 +2735,6 @@ export async function createServer(
                     type: 'supplemental_validation',
                 },
             ].filter(p => uniqueTrends.length > 0),
-            _render_instructions: buildRenderInstructions({
-                hasWidget: true,
-                hasPrompts: true,
-                hasEvidence: uniqueEvidence.length > 0,
-                graphWebpageUrls: collectGraphWebpageUrls(Object.keys(graphPresence)),
-            }),
         };
 
         const topCompetitors = competitors.slice(0, 2).map(c => c.brand);
@@ -2800,7 +2786,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns trend footprint (which trends the brand appears in), competitive landscape (co-occurring brands ranked by overlap), cross-graph presence, evidence timeline, lifecycle distribution, and bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings). Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates cited, cross-graph intelligence into a single brand profile.',
+        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns brand footprint, themes, competitive landscape, cross-graph presence, evidence timeline, lifecycle distribution, bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates cited, cross-graph intelligence into a single brand profile.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -2930,11 +2916,6 @@ export async function createServer(
                 sessionTracker.recordNextMoves(brandNextMoves, brand_name);
                 (profile as any).next_moves = brandNextMoves;
 
-                const brandClosing = renderClosingBlock(brandNextMoves);
-                const closingBlockInstruction = brandClosing.text
-                    ? `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):\n\n${brandClosing.lines.join('\n')}`
-                    : '';
-
                 const rawDataBlock = {
                     type: 'text' as const,
                     text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
@@ -2947,21 +2928,10 @@ export async function createServer(
                 const content: Array<{ type: 'text'; text: string }> = [rawDataBlock];
                 if (widget.widget_html) {
                     if (EDITORIAL_INSTRUCTION) {
-                        const finalEditorial = closingBlockInstruction
-                            ? `${EDITORIAL_INSTRUCTION}\n\n${closingBlockInstruction}\n`
-                            : EDITORIAL_INSTRUCTION;
-                        content.push({ type: 'text' as const, text: finalEditorial });
-                        content.push(widgetBlock);
-                    } else {
-                        content.push(widgetBlock);
-                        if (closingBlockInstruction) {
-                            content.push({ type: 'text' as const, text: closingBlockInstruction });
-                        }
+                        content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
                     }
+                    content.push(widgetBlock);
                 } else {
-                    if (closingBlockInstruction) {
-                        content.push({ type: 'text' as const, text: closingBlockInstruction });
-                    }
                     content.push({ type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
                 }
                 return { next_moves: brandNextMoves, content };
@@ -4135,7 +4105,7 @@ export async function createServer(
     // adjacent territories, and cross-domain links that text search wouldn't surface.
     server.tool(
         'brainstorm_topic',
-        'Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, and geographic hotspots. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore.',
+        'Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, geographic hotspots, and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore.',
         {
             query: z.string().describe("The topic or theme to brainstorm around (e.g., 'tequila', 'sustainable packaging', 'Gen Z beauty')"),
             depth: z.number().optional().describe('Traversal depth: 1 (immediate connections) or 2 (connections of connections). Default: 2. Use 1 for focused brainstorms, 2 for wider exploration.'),
@@ -4351,11 +4321,6 @@ export async function createServer(
                 sessionTracker.recordNextMoves(brainstormNextMoves, query);
                 (brainstormMap as any).next_moves = brainstormNextMoves;
 
-                const brainstormClosing = renderClosingBlock(brainstormNextMoves);
-                const closingInstruction = brainstormClosing.text
-                    ? `── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim at the end of your answer (no heading, no "any questions?", no emoji, no apology):\n\n${brainstormClosing.lines.join('\n')}`
-                    : '';
-
                 // ── Query-level billing ──
                 chargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[brainstorm] chargeQuery failed:', e.message));
@@ -4363,9 +4328,6 @@ export async function createServer(
                 const content: Array<{ type: 'text'; text: string }> = [
                     { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(brainstormMap, null, 2) },
                 ];
-                if (closingInstruction) {
-                    content.push({ type: 'text' as const, text: closingInstruction });
-                }
 
                 return { next_moves: brainstormNextMoves, content };
             } catch (err: any) {
@@ -4981,11 +4943,6 @@ export async function createServer(
             );
             sessionTracker.recordNextMoves(humanAgentNextMoves, query);
 
-            const consultClosing = renderConsultClosingEnvelope(humanAgentNextMoves);
-            if (consultClosing.text) {
-                parts.push(`\n\n${consultClosing.text}`);
-            }
-
             const consultWithheld = await settleOrWithhold({ queryTypeCode: 'human_agent_consult', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_human_agent');
             if (consultWithheld) return consultWithheld;
             return {
@@ -5232,11 +5189,6 @@ export async function createServer(
             );
             sessionTracker.recordNextMoves(analystNextMoves, query);
 
-            const consultClosing = renderConsultClosingEnvelope(analystNextMoves);
-            if (consultClosing.text) {
-                parts.push(`\n\n${consultClosing.text}`);
-            }
-
             const consultWithheld = await settleOrWithhold({ queryTypeCode: 'expert_agent', apiKey, userId: resolveUserId(userId, uid), query }, 'consult_analyst');
             if (consultWithheld) return consultWithheld;
             return {
@@ -5276,7 +5228,7 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. "brand-cmo" with company: "Nike", or "Nike CMO" directly); Synthetic Agents provide domain-specific intelligence. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right agent ID. Responses may include coverage status, source attribution, and referrals to other graphs.',
+        'Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. "brand-cmo" with company: "Nike", or "Nike CMO" directly); Synthetic Agents provide domain-specific intelligence. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right agent ID. Responses include structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs, and may include coverage status, source attribution, and referrals to other graphs.',
         {
             analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
@@ -5311,7 +5263,7 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (created directly with the named expert\'s consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right expert ID. Responses may include coverage status, source attribution, and referrals. Response may include `book_a_call` for booking time with the real person.',
+        'Consult an authorized Human Agent (created directly with the named expert\'s consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right expert ID. Responses include structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs, and may include coverage status, source attribution, referrals, or `book_a_call` for booking time with the real person.',
         {
             analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts or find_expert). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),

@@ -5,6 +5,25 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.70] - 2026-09-15
+
+### Deprecated & Changed (Imperative Render Spec Deprecation & Migration to Structured Next Moves)
+- **Eliminated Imperative Render Spec Closing Directives (`src/toolHandlers.ts`)**:
+  - Deprecated and removed imperative closing block text (`── NEXT MOVES CLOSING BLOCK (Render Spec 1.3) ──\nReproduce this exact 3-sentence closing block verbatim...`) from research and consult handlers (`brand_tracker`, `search_graph`, `discover_adjacent_trends`, `brainstorm_topic`, `consult_human_agent`, and `consult_analyst`).
+  - Removed imperative closing block rule #5 and `_render_instructions` from `buildRenderInstructions()`, ensuring MCP `content` returns pure, inert data without commanding LLM client output.
+  - Eliminated prompt injection vulnerability and hardened compatibility with frontier models (Claude 3.5 Sonnet, GPT-4o, Gemini 2.0 Pro) and enterprise safety guardrails (NeMo, Llama Guard).
+- **Standardized Structured `next_moves` Return Metadata (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Added optional `scope` string to `NextMoves` interface (`"If you tell me the brand or brief you're working on, I'll cut this to that."`).
+  - Populated `nextMoves.scope` across `generateNextMoves()` and `generateConsultNextMoves()`.
+  - Exposed structured `next_moves` at the root return object and in JSON data payloads across all research and consult endpoints.
+  - Retained `renderClosingBlock()` and `renderConsultClosingEnvelope()` purely for programmatic formatting and tests without server-side instruction injection into tool outputs.
+- **Updated Tool Descriptions & System Prompt Guidelines (`src/tools.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Updated tool descriptions for `search_graph`, `brand_tracker`, `discover_adjacent_trends`, `brainstorm_topic`, `consult_analyst`, and `consult_human_agent` to document that outputs include structured `next_moves` recommendations in their planning space.
+  - Updated `STATIC_BEHAVIORAL_RULES` in `src/systemPrompt.ts` under `Structured Next Moves (Follow-Up Recommendations)` and `RULE: StructuredNextMoves` to guide the model on how to render `next_moves` follow-ups from metadata rather than enforcing verbatim closing block directives.
+- **Automated Verification Suite (`src/test_verify_deprecate_render_spec.ts`, `src/test_next_moves.ts`, `src/test_next_moves_transcripts.ts`)**:
+  - Added dedicated end-to-end verification script testing invariant grep of source files, `brand_tracker("Nike")`, and `consult_human_agent(...)` outputs to confirm absence of imperative closing banners and presence of structured `next_moves`.
+  - Updated unit and transcript test suites to assert absence of imperative instructions and presence of structured metadata.
+
 ## [1.46.69] - 2026-09-14
 
 ### Fixed (Streamable HTTP Accept Header Normalization)

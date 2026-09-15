@@ -2,6 +2,9 @@
  * Tool Metadata — version constants for the Fodda MCP server.
  *
  * The actual tool registrations live in toolHandlers.ts.
+ * Research and consult tools return clean data payloads accompanied by
+ * structured `next_moves` recommendations (thread, specific, shelf, scope)
+ * rather than imperative server-rendered closing blocks.
  * This file provides version strings used by index.ts and toolHandlers.ts.
  */
 

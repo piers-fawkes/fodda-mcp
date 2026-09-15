@@ -460,21 +460,35 @@ async function runTranscripts() {
 
         let nextMoves: NextMoves | undefined;
 
-        // Parse next_moves strictly from JSON / RAW DATA blocks within res.content
-        for (const txt of allContentTexts) {
-            if (txt.includes('── RAW DATA (for follow-up reasoning) ──\n') || txt.trim().startsWith('{')) {
-                try {
-                    const cleanJson = txt.replace('── RAW DATA (for follow-up reasoning) ──\n', '').trim();
-                    const parsed = JSON.parse(cleanJson);
-                    if (parsed?.next_moves) {
-                        nextMoves = parsed.next_moves;
-                        break;
+        // Obtain next_moves from res.next_moves or parse strictly from JSON / RAW DATA blocks within res.content
+        if (res.next_moves) {
+            nextMoves = res.next_moves;
+        } else {
+            for (const txt of allContentTexts) {
+                if (txt.includes('── RAW DATA (for follow-up reasoning) ──\n') || txt.trim().startsWith('{')) {
+                    try {
+                        const cleanJson = txt.replace('── RAW DATA (for follow-up reasoning) ──\n', '').trim();
+                        const parsed = JSON.parse(cleanJson);
+                        if (parsed?.next_moves) {
+                            nextMoves = parsed.next_moves;
+                            break;
+                        }
+                    } catch {
+                        // Not valid JSON block, continue
                     }
-                } catch {
-                    // Not valid JSON block, continue
                 }
             }
         }
+
+        // Verify content text blocks no longer contain imperative prompt injection directives
+        assert.ok(
+            !fullContentText.includes('── NEXT MOVES CLOSING BLOCK'),
+            `Tool ${tq.tool} content must NOT contain imperative NEXT MOVES CLOSING BLOCK banner: "${fullContentText.substring(0, 300)}"`
+        );
+        assert.ok(
+            !fullContentText.includes('Reproduce this exact 3-sentence closing block verbatim'),
+            `Tool ${tq.tool} content must NOT contain imperative prompt injection directive`
+        );
 
         // Targeted assertions for thin-coverage expert routing
         if (tq.title.includes('Query 15')) {
@@ -495,32 +509,27 @@ async function runTranscripts() {
         let lines: string[] = [];
         let closingBlock = '';
 
-        if (nextMoves) {
-            assert.strictEqual(nextMoves.presentation, 'internal', 'next_moves presentation must be internal');
-            assert.strictEqual(nextMoves.scope_prompt, true, 'scope_prompt must be true');
+        assert.ok(nextMoves, `Tool ${tq.tool} must provide structured next_moves in payload or result`);
+        assert.strictEqual(nextMoves.presentation, 'internal', 'next_moves presentation must be internal');
+        assert.strictEqual(nextMoves.scope_prompt, true, 'scope_prompt must be true');
+        assert.ok(nextMoves.scope, 'next_moves must include structured scope string');
 
-            const closing = renderClosingBlock(nextMoves);
-            lines = closing.lines;
-            closingBlock = closing.text;
-        } else if (tq.tool === 'consult_analyst' || tq.tool === 'consult_human_agent') {
-            // For consult tools, closing lines are rendered as a single paragraph at the end of content[0].text
-            const paragraphs = (res.content[0]?.text || '').trim().split(/\n\s*\n/).map((p: string) => p.trim()).filter(Boolean);
-            const closingParagraph = paragraphs[paragraphs.length - 1] || '';
-            
-            // Verify single paragraph: no newlines inside closing paragraph
-            assert.ok(!closingParagraph.includes('\n'), `Consult closing block must be a single paragraph without line breaks: "${closingParagraph}"`);
+        if (tq.tool === 'consult_analyst' || tq.tool === 'consult_human_agent') {
+            assert.ok(nextMoves.consult_envelope, `Consult tool ${tq.tool} must have structured consult_envelope`);
+            assert.ok(nextMoves.consult_envelope.thread_line, 'consult_envelope must have thread_line');
+            assert.ok(nextMoves.consult_envelope.scope_line, 'consult_envelope must have scope_line');
 
-            // Extract sentences from closing paragraph
-            lines = closingParagraph.split(/(?<=[.!?])\s+/).map((s: string) => s.trim()).filter(Boolean);
-            closingBlock = closingParagraph;
-
-            // Shelf check: if 3 sentences, sentence 2 is shelf line and must name a real catalog graph
-            if (lines.length === 3 && lines[1]) {
-                const shelfLine = lines[1];
+            // Shelf check: if shelf_line is present, it must name a real catalog graph
+            if (nextMoves.consult_envelope.shelf_line) {
+                const shelfLine = nextMoves.consult_envelope.shelf_line;
                 const namesGraph = mockGraphsList.some(g => shelfLine.includes(g.name));
                 assert.ok(namesGraph, `Shelf line in consult must name a real graph from catalog: "${shelfLine}"`);
             }
         }
+
+        const closing = renderClosingBlock(nextMoves);
+        lines = closing.lines;
+        closingBlock = closing.text;
 
         assert.ok(closingBlock.length > 0, `Closing block must not be empty for ${tq.tool}`);
 
@@ -529,16 +538,6 @@ async function runTranscripts() {
             lines.length === 2 || lines.length === 3,
             `Expected 2 or 3 sentences for ${tq.tool}, got ${lines.length}: "${closingBlock}"`
         );
-
-        // For tools where closing block is server-rendered into content text, verify lines appear in content
-        if (['brand_tracker', 'discover_adjacent_trends', 'brainstorm_topic', 'consult_analyst', 'consult_human_agent'].includes(tq.tool)) {
-            for (const line of lines) {
-                assert.ok(
-                    fullContentText.includes(line),
-                    `Tool ${tq.tool} content must contain rendered closing line: "${line}"`
-                );
-            }
-        }
 
         // Zero-count check for banned terms
         verifyZeroCountBannedTerms(closingBlock);
