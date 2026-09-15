@@ -234,8 +234,8 @@ async function fetchCatalog(): Promise<CatalogResponse> {
  * Fetch the analysts from the API. Requires internal auth.
  */
 async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
-    const url = `${API_BASE_URL}/v1/analysts`;
-    const internalKey = process.env.FODDA_INTERNAL_API_KEY;
+    const url = `${API_BASE_URL}/v1/analysts?include=unclaimed`;
+    const internalKey = process.env.FODDA_INTERNAL_API_KEY || process.env.FODDA_API_KEY;
     const headers = internalKey ? { 'Authorization': `Bearer ${internalKey}` } : {};
     
     try {

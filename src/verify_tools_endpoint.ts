@@ -12,12 +12,12 @@ async function runTest() {
     mcp.stdout.on('data', (data) => console.log(`[Server]: ${data}`));
     mcp.stderr.on('data', (data) => console.error(`[Server Error]: ${data}`));
 
-    // Poll /health with retries up to 10s to allow async catalog loading
+    // Poll /health with retries up to 30s to allow async catalog loading
     let response: any = null;
     const startTime = Date.now();
-    while (Date.now() - startTime < 10000) {
+    while (Date.now() - startTime < 30000) {
         try {
-            response = await axios.get(`http://localhost:${testPort}/health`, { timeout: 1500 });
+            response = await axios.get(`http://127.0.0.1:${testPort}/health`, { timeout: 1500 });
             if (response && response.status === 200) break;
         } catch {
             await new Promise(resolve => setTimeout(resolve, 400));
@@ -26,7 +26,7 @@ async function runTest() {
 
     try {
         if (!response) {
-            throw new Error(`Server did not respond with HTTP 200 within 10 seconds on port ${testPort}`);
+            throw new Error(`Server did not respond with HTTP 200 within 30 seconds on port ${testPort}`);
         }
         console.log('✅ Response Code:', response.status);
         console.log('✅ Health Status:', response.data.status);

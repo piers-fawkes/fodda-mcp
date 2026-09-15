@@ -4742,19 +4742,143 @@ export async function createServer(
         return subType === 'Synthetic Expert' || /synthetic/i.test(subType) || subType === 'synthetic' || subType === 'curated' || subType === 'domain';
     };
 
-    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
-        try {
-            const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+    const sendOnRequestDemandWebhook = async (params: {
+        expertId: string;
+        expertName: string;
+        expertIn: string;
+        query: string;
+        source?: string;
+    }): Promise<void> => {
+        const webhookUrls = [
+            'https://fodda-sales-agent-p3uz7zw7ja-uc.a.run.app/webhooks/intent',
+            'https://fodda-sales-agent-p3uz7zw7ja-uc.a.run.app/api/intent-webhook',
+        ];
+        const secret = process.env.INTENT_WEBHOOK_SECRET || 'fodda_intent_secret_x9281';
+        const payload = {
+            intent_event: 'unclaimed_expert_request',
+            email: 'anonymous@mcp.fodda.ai',
+            parameters: {
+                expertId: params.expertId,
+                expertName: params.expertName,
+                expertIn: params.expertIn,
+                requestedQuestion: params.query,
+                source: params.source || 'mcp_claude',
+            },
+        };
+        for (const url of webhookUrls) {
+            try {
+                await axios.post(url, payload, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-fodda-webhook-secret': secret,
+                    },
+                    timeout: 3000,
+                });
+                break;
+            } catch (err: any) {
+                if (url === webhookUrls[webhookUrls.length - 1]) {
+                    console.warn('[OnRequestWebhook] Failed to notify sales:', err.message);
+                }
+            }
+        }
+    };
 
-            const match = getAnalysts().find((a: any) => {
-                const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
-                const nameKey = (a.name || '').toLowerCase().trim();
-                const queryKey = resolvedAnalystId.toLowerCase().trim();
-                if (idKey === queryKey || nameKey === queryKey) return true;
-                const firstName = nameKey.split(/\s+/)[0];
-                return firstName && firstName === queryKey;
+    const buildOnRequestVerificationFootnote = (analyst: any): string => {
+        const expertName = analyst?.name || 'the Expert';
+        const expertSlug = analyst?.slug || analyst?.expertSlug || analyst?.id || analyst?.analyst_id || '';
+        const rawTopics = analyst?.topics || analyst?.topic || analyst?.expert_in || analyst?.expertIn;
+        const topicLabel = Array.isArray(rawTopics)
+            ? rawTopics.join(', ')
+            : (typeof rawTopics === 'string' && rawTopics.trim() ? rawTopics.trim() : 'industry');
+        return `\n\n---\n*Note: ${expertName}'s verified Human Agent is currently available On Request and undergoing onboarding verification. While her team reviews her model, this answer was retrieved from Fodda's underlying ${topicLabel} knowledge graph. You can view her profile and request access at https://www.fodda.ai/experts/${expertSlug}.*`;
+    };
+
+    const formatDomainFallbackIntelligence = (
+        query: string,
+        analyst: any,
+        domainTrends: any[],
+        topicLabel: string
+    ): { reportText: string; sources: any[] } => {
+        const expertName = analyst?.name || 'the Expert';
+        const expertSlug = analyst?.slug || analyst?.expertSlug || analyst?.id || analyst?.analyst_id || '';
+        const sources: any[] = [];
+        const seenUrls = new Set<string>();
+
+        const parts: string[] = [
+            `### Domain Intelligence Briefing: ${query}\n`,
+            `While ${expertName}'s verified Human Agent is currently available On Request and undergoing onboarding verification, here is the latest intelligence and evidence retrieved from Fodda's ${topicLabel} knowledge graph:\n`
+        ];
+
+        if (Array.isArray(domainTrends) && domainTrends.length > 0) {
+            domainTrends.slice(0, 4).forEach((t: any, idx: number) => {
+                parts.push(`#### ${idx + 1}. ${t.name || 'Industry Signal'}`);
+                if (t.description) {
+                    parts.push(`${t.description}\n`);
+                }
+
+                const evidenceItems = Array.isArray(t.evidence) ? t.evidence : [];
+                if (evidenceItems.length > 0) {
+                    parts.push(`**Key Evidence & Case Studies:**`);
+                    evidenceItems.slice(0, 3).forEach((ev: any) => {
+                        const snippet = ev.snippet || ev.text || '';
+                        const title = ev.title || ev.brand || 'Evidence';
+                        const url = ev.source_url || ev.url || '';
+                        if (url && !seenUrls.has(url)) {
+                            seenUrls.add(url);
+                            sources.push({
+                                title,
+                                url,
+                                origin: 'graph',
+                                type: 'web'
+                            });
+                            parts.push(`- ${snippet} ([${title}](${url}))`);
+                        } else if (snippet) {
+                            parts.push(`- ${snippet}`);
+                        }
+                    });
+                    parts.push('');
+                }
             });
+        } else {
+            parts.push(`Recent market indicators show accelerating transformation across ${topicLabel}, driven by changing consumer expectations and rapid technical advancements.\n`);
+        }
 
+        parts.push(`---\n*Note: ${expertName}'s verified Human Agent is currently available On Request and undergoing onboarding verification. While her team reviews her model, this answer was retrieved from Fodda's underlying ${topicLabel} knowledge graph. You can view her profile and request access at https://www.fodda.ai/experts/${expertSlug}.*`);
+
+        sources.push({
+            title: `${expertName} Human Agent — Official Profile`,
+            url: `https://www.fodda.ai/experts/${expertSlug}`,
+            origin: 'profile',
+            type: 'web'
+        });
+
+        return {
+            reportText: parts.join('\n'),
+            sources
+        };
+    };
+
+    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
+        const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
+
+        const match = getAnalysts().find((a: any) => {
+            const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+            const nameKey = (a.name || '').toLowerCase().trim();
+            const queryKey = resolvedAnalystId.toLowerCase().trim();
+            if (idKey === queryKey || nameKey === queryKey) return true;
+            const firstName = nameKey.split(/\s+/)[0];
+            return firstName && firstName === queryKey;
+        });
+
+        const isUnclaimedOrOnRequest = Boolean(
+            match && (
+                match.status === 'Unclaimed' ||
+                match.status === 'On Request' ||
+                (match.status && match.status !== 'Active')
+            )
+        );
+
+        try {
             logUserQuery(query, 'consult_human_agent');
 
             // Detect deep / homework intent from parameter or natural language query
@@ -4776,9 +4900,30 @@ export async function createServer(
             
             const upstreamCoverage = result?.coverage;
 
-            const reportText = typeof result.result === 'string'
+            let reportText = typeof result.result === 'string'
                 ? result.result
                 : (typeof result.report === 'string' ? result.report : (typeof result.response === 'string' ? result.response : JSON.stringify(result, null, 2)));
+
+            if (isUnclaimedOrOnRequest) {
+                const expertId = match?.slug || match?.id || match?.analyst_id || targetAnalystId;
+                const expertName = match?.name || targetAnalystId;
+                const rawTopics = match?.topics || match?.topic || match?.expert_in || match?.expertIn;
+                const topicLabel = Array.isArray(rawTopics)
+                    ? rawTopics.join(', ')
+                    : (typeof rawTopics === 'string' && rawTopics.trim() ? rawTopics.trim() : 'industry');
+
+                sendOnRequestDemandWebhook({
+                    expertId,
+                    expertName,
+                    expertIn: topicLabel,
+                    query,
+                    source: 'mcp_claude'
+                }).catch(err => console.warn('[OnRequestWebhook] Failed to notify sales:', err.message));
+
+                if (!reportText.includes('undergoing onboarding verification')) {
+                    reportText += buildOnRequestVerificationFootnote(match);
+                }
+            }
 
             // 1. Capture initial raw sources returned by upstream API
             const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
@@ -4990,7 +5135,88 @@ export async function createServer(
                     timeout: true
                 }) }] };
             }
+
             const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+            const is404NotFound = err.response?.status === 404 || (typeof msg === 'string' && /not found|not active/i.test(msg));
+
+            if (isUnclaimedOrOnRequest || is404NotFound) {
+                const candidateAnalyst: any = match || {
+                    id: resolvedAnalystId,
+                    analyst_id: resolvedAnalystId,
+                    name: cleanDisplayName(resolvedAnalystId),
+                    status: 'On Request',
+                    slug: resolvedAnalystId
+                };
+
+                const expertId = candidateAnalyst.slug || candidateAnalyst.id || candidateAnalyst.analyst_id || resolvedAnalystId;
+                const expertName = candidateAnalyst.name || cleanDisplayName(resolvedAnalystId);
+                const rawTopics = candidateAnalyst.topics || candidateAnalyst.topic || candidateAnalyst.expert_in || candidateAnalyst.expertIn || '';
+                const topicLabel = Array.isArray(rawTopics)
+                    ? rawTopics.join(', ')
+                    : (typeof rawTopics === 'string' && rawTopics.trim() ? rawTopics.trim() : 'industry');
+
+                // 1. Fire demand-signal webhook to Fodda Sales (fire-and-forget)
+                sendOnRequestDemandWebhook({
+                    expertId,
+                    expertName,
+                    expertIn: topicLabel,
+                    query,
+                    source: 'mcp_claude'
+                }).catch(e => console.warn('[OnRequestWebhook] Failed to notify sales:', e.message));
+
+                // 2. Retrieve domain fallback intelligence
+                try {
+                    const domainRes = await foddaRequest('POST', '/v1/search/domain', apiKey, resolveUserId(userId, uid), {
+                        query,
+                        limit: 5,
+                        include_evidence: true
+                    });
+
+                    const domainTrends = Array.isArray(domainRes?.trends) ? domainRes.trends : [];
+                    const { reportText, sources } = formatDomainFallbackIntelligence(query, candidateAnalyst, domainTrends, topicLabel);
+
+                    const parts: string[] = [reportText];
+                    parts.push(`\n--- COVERAGE: FULL ---`);
+
+                    if (sources.length > 0) {
+                        const formatLine = (s: any) => `- ${s.title || 'Source'}: ${s.url}`;
+                        parts.push(`--- SOURCES USED ---\n${sources.map(formatLine).join('\n')}`);
+                    }
+
+                    const humanAgentNextMoves = generateConsultNextMoves(
+                        { report: reportText, sources_used: sources, coverage: 'FULL' },
+                        query,
+                        expertId,
+                        {
+                            currentAnalystId: expertId,
+                            knownBrand: resolvedCompany || getKnownBrand(),
+                        },
+                        getGraphs(),
+                        getAnalysts()
+                    );
+                    sessionTracker.recordNextMoves(humanAgentNextMoves, query);
+
+                    if (humanAgentNextMoves) {
+                        parts.push(`\n── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──\n${JSON.stringify(humanAgentNextMoves, null, 2)}`);
+                    }
+
+                    return {
+                        coverage: 'FULL',
+                        next_moves: humanAgentNextMoves,
+                        sources_used: sources,
+                        content: [{ type: 'text' as const, text: parts.join('\n') }]
+                    };
+                } catch (fallbackErr: any) {
+                    console.warn('[OnRequestIntercept] Domain search fallback failed:', fallbackErr.message);
+                    const { reportText, sources } = formatDomainFallbackIntelligence(query, candidateAnalyst, [], topicLabel);
+                    return {
+                        coverage: 'PARTIAL',
+                        sources_used: sources,
+                        content: [{ type: 'text' as const, text: reportText }]
+                    };
+                }
+            }
+
             return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
         }
     };

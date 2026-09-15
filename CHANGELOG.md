@@ -5,6 +5,20 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.75] - 2026-09-15
+
+### Added & Fixed (On-Request Expert Query Intercept & Demand Webhook)
+- **On-Request & Unclaimed Expert Intercept in `consult_human_agent` (`src/toolHandlers.ts`)**:
+  - Intercepted queries targeting `Unclaimed` or `On Request` experts (e.g. `roxane-prieux`).
+  - Gracefully retrieves domain-backed intelligence across matching sector knowledge graphs instead of failing or returning a 404 error.
+  - Appends official verification footnote with expert profile URL directing users to review their model and request access (`https://www.fodda.ai/experts/${expertSlug}`).
+  - Fires non-blocking fire-and-forget demand-signal webhook to Fodda Sales (`/webhooks/intent` with `x-fodda-webhook-secret` authentication) with the exact user question to trigger automated expert onboarding and Slack alert in `#fodda-sales`.
+- **Catalog Cache Includes Unclaimed Analysts (`src/catalogCache.ts`)**:
+  - Updated `fetchAnalysts()` to query `/v1/analysts?include=unclaimed` with `FODDA_API_KEY` fallback, enabling `getAnalysts()` to recognize all 4,200+ rostered experts and cleanly resolve display names, topics, and canonical slugs.
+- **Verification Suite & API Handoff Brief (`src/test_on_request_intercept.ts`)**:
+  - Added automated test suite verifying `consult_human_agent` with unclaimed expert `roxane-prieux` returns 200 with domain content, verification footnote, and expert profile citation.
+  - Delivered cross-repo handoff brief for Fodda API Agent in `Fodda API/briefs/Brief - On-Request Expert Query Intercept in human-agents consult (API Agent).md`.
+
 ## [1.46.74] - 2026-09-15
 
 ### Changed & Fixed (Surface Degraded State & Warning Banner on get_earnings_divergence)
