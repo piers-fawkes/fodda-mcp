@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.72] - 2026-09-15
+
+### Fixed (Mark consult_analyst and consult_human_agent as readOnlyHint: true)
+- **Updated MCP Tool Annotations (`src/toolHandlers.ts`)**:
+  - Changed `readOnlyHint: false` to `readOnlyHint: true` for both `consult_analyst` and `consult_human_agent`.
+  - Informs MCP clients (such as Microsoft Copilot Studio) that these conversational intelligence and expert synthesis queries are safe read-only operations.
+  - Eliminates runtime user-confirmation modals ("No approval received" gate in Copilot Studio), unblocking autonomous agent workflows and testing of consult envelopes.
+
 ## [1.46.71] - 2026-09-15
 
 ### Fixed & Changed (Reconnect get_earnings_divergence to Live Truth Layer & Register Query Pricing)

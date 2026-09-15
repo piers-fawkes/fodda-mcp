@@ -5244,7 +5244,7 @@ export async function createServer(
             deep: z.boolean().optional().describe("Set true to have the agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Analyst', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Consult Analyst', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
@@ -5279,7 +5279,7 @@ export async function createServer(
             deep: z.boolean().optional().describe("Set true to have the human agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
-        { title: 'Consult Human Agent', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Consult Human Agent', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
