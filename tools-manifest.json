@@ -263,7 +263,7 @@
         "earnings-intelligence",
         "chatgpt"
       ],
-      "description": "Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda's earnings truth layer. Returns question themes, company counts, sample management responses, and directness breakdowns. For single-company Q&A deflections, use get_company_earnings with view=qa."
+      "description": "Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda's earnings truth layer. Returns question themes, company counts, causal rationales, and directness breakdowns. When degraded=true, clustering fell back to literal string matching rather than semantic convergence; check degraded and model_used before asserting multi-company trends. For single-company Q&A deflections, use get_company_earnings with view=qa."
     },
     {
       "name": "get_earnings_intelligence",

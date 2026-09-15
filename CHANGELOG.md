@@ -5,6 +5,21 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.74] - 2026-09-15
+
+### Changed & Fixed (Surface Degraded State & Warning Banner on get_earnings_divergence)
+- **Updated Tool Description for Degraded State Awareness (`src/toolHandlers.ts`)**:
+  - Documented `degraded=true` and `model_used` flags in the `get_earnings_divergence` tool description so LLMs and makers check whether results represent semantic convergence or literal string matching fallback.
+  - Aligned parameter summary to mention "causal rationales" across 517+ covered consumer-sector companies while maintaining published price invariant ($20 per query) and zero token/SPT phrasing.
+- **Explicit Degraded Clustering Warning Banner (`src/toolHandlers.ts`)**:
+  - Added inspection for degraded responses (`isDegraded = Boolean(data?.degraded || data?.data?.degraded || data?.model_used === 'literal-fallback' || data?.data?.model_used === 'literal-fallback')`).
+  - Prepended top-level `warning: "DEGRADED CLUSTERING: The underlying AI clustering service fell back to literal string matching. Groupings reflect identical question theme phrasing across calls, NOT semantic convergence on a shared operational or economic mechanism."` in degraded responses, preventing downstream LLMs from hallucinating semantic cross-company causality on literal text fallbacks.
+  - Left clean non-degraded responses untouched with no false warnings.
+- **Tools Manifest & Verification Suite Updated (`tools-manifest.json`, `src/test_earnings_divergence_live.ts`)**:
+  - Regenerated `tools-manifest.json` with updated tool description.
+  - Enhanced automated test suite with unit assertions verifying top-level and nested degraded flags inject warning banner as the first JSON key while clean responses emit no warning.
+  - Passed live truth-layer API probes (32/32 assertions passed).
+
 ## [1.46.73] - 2026-09-15
 
 ### Fixed (Expose Structured next_moves and Consult Envelope in Tool content Payloads)

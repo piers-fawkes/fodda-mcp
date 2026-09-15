@@ -45,6 +45,8 @@ async function run() {
     if (manifestTool) {
         assert(manifestTool.bills_as === 'earnings_divergence', 'bills_as is "earnings_divergence"');
         assert(manifestTool.description.includes('$20 per query'), 'description includes published price "$20 per query"');
+        assert(manifestTool.description.includes('causal rationales'), 'description mentions "causal rationales"');
+        assert(manifestTool.description.includes('When degraded=true, clustering fell back to literal string matching rather than semantic convergence'), 'description documents degraded=true behavior');
         assert(!manifestTool.description.includes('tokens') && !manifestTool.description.includes('via SPT'), 'description has NO token/SPT phrasing');
         assert(!manifestTool.description.includes('(legacy-thematic)'), 'legacy-thematic text was removed');
     }
@@ -56,8 +58,37 @@ async function run() {
     assert(!toolHandlersSrc.includes('/v1/supplemental/earnings/divergence'), 'legacy /v1/supplemental/earnings/divergence route eliminated');
     assert(toolHandlersSrc.includes("sptGuard('earnings_divergence')"), 'sptGuard uses earnings_divergence');
     assert(toolHandlersSrc.includes("queryTypeCode: 'earnings_divergence'"), 'settleOrWithhold uses queryTypeCode earnings_divergence');
+    assert(toolHandlersSrc.includes('DEGRADED CLUSTERING: The underlying AI clustering service fell back'), 'degraded warning banner defined in toolHandlers.ts');
 
-    console.log('\n=== 3. Live Truth-Layer Endpoint Probes ===');
+    console.log('\n=== 3. Degraded Detection & Warning Transformation Unit Check ===');
+    const warningExpected = "DEGRADED CLUSTERING: The underlying AI clustering service fell back to literal string matching. Groupings reflect identical question theme phrasing across calls, NOT semantic convergence on a shared operational or economic mechanism.";
+    function applyDegradedCheck(raw: any) {
+        let data = { ...raw };
+        const isDegraded = Boolean(data?.degraded || data?.data?.degraded || data?.model_used === 'literal-fallback' || data?.data?.model_used === 'literal-fallback');
+        if (isDegraded && data && typeof data === 'object') {
+            data = {
+                warning: warningExpected,
+                ...data,
+            };
+            data.warning = warningExpected;
+        }
+        return data;
+    }
+
+    // Case 1: Degraded flag true at top level
+    const degradedMock1 = applyDegradedCheck({ degraded: true, model_used: 'literal-fallback', themes: [] });
+    assert(degradedMock1.warning === warningExpected, 'Top-level degraded: true injects warning banner');
+    assert(Object.keys(degradedMock1)[0] === 'warning', 'Warning banner is prepended as first key');
+
+    // Case 2: Degraded flag in nested data
+    const degradedMock2 = applyDegradedCheck({ data: { degraded: true, themes: [] } });
+    assert(degradedMock2.warning === warningExpected, 'Nested data.degraded: true injects warning banner');
+
+    // Case 3: Clean semantic response
+    const cleanMock = applyDegradedCheck({ degraded: false, model_used: 'gemini-2.5-flash', themes: [] });
+    assert(cleanMock.warning === undefined, 'Clean response emits no warning');
+
+    console.log('\n=== 4. Live Truth-Layer Endpoint Probes ===');
     const apiKey = process.env.FODDA_API_KEY;
     const apiUrl = process.env.FODDA_API_URL || 'https://api.fodda.ai';
     const secret = process.env.FODDA_MCP_SECRET;

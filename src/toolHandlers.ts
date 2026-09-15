@@ -3628,7 +3628,7 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda\'s earnings truth layer. Returns question themes, company counts, sample management responses, and directness breakdowns. For single-company Q&A deflections, use get_company_earnings with view=qa.',
+        'Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda\'s earnings truth layer. Returns question themes, company counts, causal rationales, and directness breakdowns. When degraded=true, clustering fell back to literal string matching rather than semantic convergence; check degraded and model_used before asserting multi-company trends. For single-company Q&A deflections, use get_company_earnings with view=qa.',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'consumer goods', 'food & beverage', 'travel')"),
             period: z.string().optional().describe("Quarter filter (e.g., 'Q1-2026'). Defaults to latest quarter."),
@@ -3655,7 +3655,7 @@ export async function createServer(
                 const divergenceGuard = sptGuard('earnings_divergence');
                 if (divergenceGuard) return divergenceGuard;
 
-                const data = await foddaRequest('GET', `/v1/earnings/divergence${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
+                let data = await foddaRequest('GET', `/v1/earnings/divergence${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
                 const divergenceWithheld = await settleOrWithhold(
@@ -3668,6 +3668,16 @@ export async function createServer(
                     'get_earnings_divergence'
                 );
                 if (divergenceWithheld) return divergenceWithheld;
+
+                const isDegraded = Boolean(data?.degraded || data?.data?.degraded || data?.model_used === 'literal-fallback' || data?.data?.model_used === 'literal-fallback');
+                if (isDegraded && data && typeof data === 'object') {
+                    const warningText = "DEGRADED CLUSTERING: The underlying AI clustering service fell back to literal string matching. Groupings reflect identical question theme phrasing across calls, NOT semantic convergence on a shared operational or economic mechanism.";
+                    data = {
+                        warning: warningText,
+                        ...data,
+                    };
+                    data.warning = warningText;
+                }
 
                 const divergencePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(divergencePayload, null, 2) }] };
