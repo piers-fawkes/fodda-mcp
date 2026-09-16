@@ -2147,46 +2147,201 @@ export async function createServer(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Find trends similar to one you\'ve already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches, optionally editorial links across graphs, and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda\'s proprietary similarity index across all knowledge graphs.',
+        'Discover trends semantically or editorially adjacent to a specific trend node or a topic query. When provided with a topic query (seed_query or query), discovers matching seed trends across knowledge graphs and maps their adjacent territories. When provided with a specific trend_id (node_id) from search_graph, surfaces direct scored similarity matches. Returns scored connections and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal.',
         {
-            graphId: z.string().describe(GRAPH_ID_DESC),
-            trend_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
+            graphId: z.string().optional().describe('Knowledge graph ID (e.g. "retail"). Optional if seed_query or query is provided; defaults to "retail" or auto-routes based on query.'),
+            trend_id: z.string().optional().describe("The node_id from a prior search_graph result (e.g. '2507.0'). Optional if seed_query or query is provided. Node IDs are not sequential integers — do not guess or invent IDs. If searching from a topic or theme, pass seed_query instead."),
+            seed_query: z.string().optional().describe("Topic or theme to discover adjacent trends for (e.g. 'retailers paying to guarantee freight capacity ahead of peak season'). If provided, automatically finds seed trends and maps adjacent territories."),
+            query: z.string().optional().describe("Alias for seed_query. Topic or theme to discover adjacent trends for."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
-            min_score: z.number().optional().describe('Minimum similarity score threshold (0-1). Default: 0.80'),
+            min_score: z.number().optional().describe('Minimum similarity score threshold (0-1). Default: 0.80 for node lookups or 0.70 for topic exploration.'),
             limit: z.number().optional().describe('Maximum number of adjacent trends to return. Default: 10'),
             include_editorial: z.boolean().optional().describe('If true, also include editorially linked trends. Default: false')
         },
         { title: 'Discover Adjacent Trends', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, trend_id, userId: uid, min_score, limit, include_editorial }) => {
+        async ({ graphId, trend_id, seed_query, query, userId: uid, min_score, limit, include_editorial }: any) => {
             try {
-                if (graphId === 'psfk') graphId = 'retail';
-                // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(trend_id, 'discover_adjacent_trends', graphId);
-                const params = new URLSearchParams({ node_id: trend_id });
-                if (min_score !== undefined) params.set('min_score', String(min_score));
-                params.set('limit', String(Math.min(limit || 10, 20)));
-                if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
-                let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/adjacent?${params.toString()}`, apiKey, resolveUserId(userId, uid));
+                const resolvedUserId = resolveUserId(userId, uid);
+                const topic = (seed_query || query || (trend_id && (trend_id.includes(' ') || trend_id.length > 20) ? trend_id : undefined))?.trim();
 
-                data = await addCoverageAnnotation(data, trend_id, [graphId], limit, true, getGraphs(), {
-                    knownBrand: getKnownBrand(),
-                    foddaRequest,
-                    apiKey,
-                    userId: resolveUserId(userId, uid),
-                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
-                    sessionTracker,
-                });
-                sessionTracker.recordNextMoves(data?.next_moves, trend_id);
+                if (topic) {
+                    // Log query to Questions table (fire-and-forget, before cache)
+                    logUserQuery(topic, 'discover_adjacent_trends', graphId || 'multi-graph');
 
-                appendUsageWarning(data, resolveUserId(userId), sessionSource);
-                const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolveUserId(userId, uid), query: trend_id }, 'discover_adjacent_trends');
-                if (adjacentWithheld) return adjacentWithheld;
+                    // 1. Determine graphs to search for seed trends
+                    let graphIdsToSearch: string[] = [];
+                    if (graphId && graphId !== 'psfk') {
+                        graphIdsToSearch = [graphId];
+                    } else {
+                        const relevantGraphs = getRelevantGraphs(topic);
+                        graphIdsToSearch = relevantGraphs.slice(0, 4).map(g => g.graph.graph_id);
+                        if (graphIdsToSearch.length === 0) graphIdsToSearch = ['retail'];
+                    }
 
-                const content: Array<{ type: 'text'; text: string }> = [
-                    { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(data, null, 2) },
-                ];
+                    // 2. Search graphs in parallel for seed trends
+                    const searchPromises = graphIdsToSearch.map(async (gid) => {
+                        try {
+                            const body = { query: topic, limit: 5, use_semantic: true, include_evidence: false };
+                            const res = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(gid)}/search`, apiKey, resolvedUserId, body);
+                            return (res?.rows || []).map((r: any) => ({
+                                ...r,
+                                graphId: gid,
+                                _use_this_graphId: gid,
+                                _source_graph: gid,
+                                on_topic_total: res?.on_topic_total ?? res?.total ?? res?.total_count,
+                                total: res?.total ?? res?.total_count,
+                            }));
+                        } catch { return []; }
+                    });
 
-                return { next_moves: data?.next_moves, content };
+                    const allResults = (await Promise.all(searchPromises)).flat();
+
+                    // Deduplicate seeds by title
+                    const seen = new Set<string>();
+                    const seeds: any[] = [];
+                    for (const r of allResults.sort((a: any, b: any) => (b.score || 0) - (a.score || 0))) {
+                        const key = (r.title || r.trendName || '').toLowerCase();
+                        if (!seen.has(key) && seeds.length < 5) {
+                            seen.add(key);
+                            seeds.push(r);
+                        }
+                    }
+
+                    // 3. Discover adjacent trends for seeds via /adjacent
+                    const adjacentPromises = seeds.map(async (seed) => {
+                        const gid = seed._use_this_graphId || seed._source_graph;
+                        const nodeId = seed.node_id || seed.trendId;
+                        if (!gid || !nodeId) return { seed, adjacent: [] };
+
+                        try {
+                            const params = new URLSearchParams({
+                                node_id: String(nodeId),
+                                min_score: String(min_score !== undefined ? min_score : 0.70),
+                                limit: String(Math.min(limit || 10, 20)),
+                                include_editorial: String(include_editorial !== false),
+                                cross_graph: 'true',
+                            });
+                            const res = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(gid)}/adjacent?${params.toString()}`, apiKey, resolvedUserId);
+                            return { seed, graphId: gid, adjacent: res?.adjacent || [] };
+                        } catch { return { seed, graphId: gid, adjacent: [] }; }
+                    });
+
+                    const adjacentResults = await Promise.all(adjacentPromises);
+
+                    // 4. Cluster discoveries
+                    const adjacentTrends = new Map<string, any>();
+                    const seedTitles = new Set(seeds.map(s => (s.title || s.trendName || '').toLowerCase()));
+
+                    for (const { seed, adjacent } of adjacentResults) {
+                        const seedTitle = seed.title || seed.trendName || 'Unknown';
+                        for (const node of adjacent) {
+                            const name = node.trendName || node.name || node.title || '';
+                            const nameKey = name.toLowerCase();
+                            if (!name || seedTitles.has(nameKey)) continue;
+
+                            if (!adjacentTrends.has(nameKey)) {
+                                adjacentTrends.set(nameKey, {
+                                    name,
+                                    node_id: node.node_id || node.trendId,
+                                    graph_id: node.vertical || node.graph_id,
+                                    score: node.similarity || node.score,
+                                    relationship: node.editoriallyLinked ? 'EDITORIALLY_LINKED' : 'SEMANTICALLY_SIMILAR',
+                                    connected_to: seedTitle,
+                                    description: node.description || node.summary || '',
+                                    cross_graph: node.vertical !== (seed._use_this_graphId || seed._source_graph),
+                                });
+                            }
+                        }
+                    }
+
+                    const topAdjacent = [...adjacentTrends.values()].slice(0, limit || 10);
+
+                    const payload: any = {
+                        query: topic,
+                        mode: 'topic_adjacency_cascade',
+                        seeds_found: seeds.length,
+                        seed_trends: seeds.map(s => ({
+                            name: s.title || s.trendName,
+                            graph: s._use_this_graphId || s._source_graph,
+                            signal_score: s.signal_score || s.score,
+                            node_id: s.node_id || s.trendId,
+                        })),
+                        adjacent_trends: topAdjacent,
+                        total_adjacent: adjacentTrends.size,
+                    };
+
+                    const nextMoves = await generateNextMoves(
+                        allResults || [],
+                        topic,
+                        graphIdsToSearch,
+                        allResults.length === 0 ? 'empty' : 'ok',
+                        undefined,
+                        undefined,
+                        getGraphs(),
+                        getAnalysts(),
+                        {
+                            knownBrand: getKnownBrand(),
+                            foddaRequest,
+                            apiKey,
+                            userId: resolvedUserId,
+                            sessionId: (sessionTracker as any).sessionId || resolvedUserId,
+                            sessionTracker,
+                        }
+                    );
+                    sessionTracker.recordNextMoves(nextMoves, topic);
+                    payload.next_moves = nextMoves;
+
+                    appendUsageWarning(payload, resolveUserId(userId), sessionSource);
+                    const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolvedUserId, query: topic }, 'discover_adjacent_trends');
+                    if (adjacentWithheld) return adjacentWithheld;
+
+                    const content: Array<{ type: 'text'; text: string }> = [
+                        { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(payload, null, 2) },
+                    ];
+                    return { next_moves: nextMoves, content };
+                }
+
+                if (trend_id) {
+                    let targetGraphId = graphId || 'retail';
+                    if (targetGraphId === 'psfk') targetGraphId = 'retail';
+                    // Log query to Questions table (fire-and-forget, before cache)
+                    logUserQuery(trend_id, 'discover_adjacent_trends', targetGraphId);
+                    const params = new URLSearchParams({ node_id: trend_id });
+                    if (min_score !== undefined) params.set('min_score', String(min_score));
+                    params.set('limit', String(Math.min(limit || 10, 20)));
+                    if (include_editorial !== undefined) params.set('include_editorial', String(include_editorial));
+                    let data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(targetGraphId)}/adjacent?${params.toString()}`, apiKey, resolvedUserId);
+
+                    data = await addCoverageAnnotation(data, trend_id, [targetGraphId], limit, true, getGraphs(), {
+                        knownBrand: getKnownBrand(),
+                        foddaRequest,
+                        apiKey,
+                        userId: resolvedUserId,
+                        sessionId: (sessionTracker as any).sessionId || resolvedUserId,
+                        sessionTracker,
+                    });
+                    sessionTracker.recordNextMoves(data?.next_moves, trend_id);
+
+                    appendUsageWarning(data, resolveUserId(userId), sessionSource);
+                    const adjacentWithheld = await settleOrWithhold({ queryTypeCode: 'adjacent_trends', apiKey, userId: resolvedUserId, query: trend_id }, 'discover_adjacent_trends');
+                    if (adjacentWithheld) return adjacentWithheld;
+
+                    const content: Array<{ type: 'text'; text: string }> = [
+                        { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(data, null, 2) },
+                    ];
+
+                    return { next_moves: data?.next_moves, content };
+                }
+
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            error: "discover_adjacent_trends requires either 'seed_query' / 'query' (to explore adjacent trends for a topic) or 'trend_id' (to find trends similar to a specific node from search_graph)."
+                        }, null, 2)
+                    }]
+                };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
                 if (trialResult) return trialResult;

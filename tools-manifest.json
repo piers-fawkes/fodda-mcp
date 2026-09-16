@@ -133,7 +133,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Find trends similar to one you've already found — surfaces unexpected cross-domain connections that keyword search would miss. Returns scored similarity matches, optionally editorial links across graphs, and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal. This leverages Fodda's proprietary similarity index across all knowledge graphs."
+      "description": "Discover trends semantically or editorially adjacent to a specific trend node or a topic query. When provided with a topic query (seed_query or query), discovers matching seed trends across knowledge graphs and maps their adjacent territories. When provided with a specific trend_id (node_id) from search_graph, surfaces direct scored similarity matches. Returns scored connections and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal."
     },
     {
       "name": "draft_linkedin_article",

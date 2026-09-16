@@ -5,6 +5,21 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.76] - 2026-09-16
+
+### Added & Fixed (Polymorphic discover_adjacent_trends & Claude Resilience)
+- **Polymorphic Parameter Support in `discover_adjacent_trends` (`src/toolHandlers.ts`)**:
+  - Relaxed strict `graphId` and `trend_id` schema requirements. Added optional `seed_query` and `query` parameters.
+  - When invoked with `seed_query` or `query` (or when a natural language text phrase is passed into `trend_id`), automatically searches relevant graphs for seed trends, queries `/adjacent` across graphs, and clusters discovered adjacent trends into an adjacency cascade.
+  - Preserved legacy single-node similarity lookup when passed a valid graph `trend_id` (node ID).
+  - Added clean error feedback with usage guidance when neither topic query nor `trend_id` is provided.
+- **System Prompt & Discovery Alignment (`src/systemPrompt.ts`)**:
+  - Updated `ToolRoutingPreference` and `CompleteResearchWorkflow` to clarify topic-level adjacent trend exploration (`brainstorm_topic` or `discover_adjacent_trends`) vs node-level lookups.
+- **Tools Manifest Rebuilt (`tools-manifest.json`)**:
+  - Rebuilt manifest documenting both topic-query and node-ID modes while strictly passing the Cost Silence guard.
+- **Automated Test Suite (`src/test_adjacent_trends_polymorphic.ts`)**:
+  - Added test coverage verifying `seed_query`, `query`, phrase `trend_id`, legacy node lookup, and empty-argument error handling (16/16 checks passed).
+
 ## [1.46.75] - 2026-09-15
 
 ### Added & Fixed (On-Request Expert Query Intercept & Demand Webhook)

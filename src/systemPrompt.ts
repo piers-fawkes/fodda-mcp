@@ -267,7 +267,7 @@ compliance: RFC-2119
 - Expert quotes, strategic frameworks -> search_insights
 - Scientific research, clinical studies, peer-reviewed literature -> get_pubmed_research_trends, get_openalex_research_trends, get_clinical_trials (fire in parallel with search_graph when query asks for scientific/clinical evidence)
 - Complex research -> deep_research_topic
-- Brand-adjacent trends -> discover_adjacent_trends
+- Brand-adjacent trends & topic exploration -> brainstorm_topic (for topics) or discover_adjacent_trends (for topics or specific trend nodes)
 - Brainstorming -> brainstorm_topic
 - Default to Fodda tools for consumer, retail, culture, or lifestyle domains.
 
@@ -299,7 +299,7 @@ compliance: RFC-2119
 3. **STEP 2 (Gather Evidence)** — call get_evidence if needed. Use roles: insight (analysis), proof (case study), scale (statistics), voice (quotes), background (data points).
 4. **NOTE (Source Routing)** — Research tools now select sources automatically across graphs, earnings, and supplemental data. Trust the routing. Reach for the standalone earnings/supplemental tools only when the user explicitly wants that data in isolation.
 5. **STEP 4 (Close the Loop)** — Trend + economic condition + slow factor.
-6. **OPTIONAL** — Adjacent trends (discover_adjacent_trends) or Brainstorm (brainstorm_topic).
+6. **OPTIONAL** — Adjacent trends & ideation (brainstorm_topic or discover_adjacent_trends).
 
 ### RULE: StealThisIdea
 - At the end of every multi-trend response (3+ trends), synthesize a single concrete, actionable concept. Label it '💡 Steal This Idea'.
