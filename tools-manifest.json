@@ -22,7 +22,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, geographic hotspots, and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore."
+      "description": "Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, and geographic hotspots. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore."
     },
     {
       "name": "brand_tracker",
@@ -35,7 +35,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns brand footprint, themes, competitive landscape, cross-graph presence, evidence timeline, lifecycle distribution, bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use when the query is about a specific company or brand — \"What is Nike doing?\", \"Patagonia's innovation strategy\", \"How is Apple positioned?\". This aggregates cited, cross-graph intelligence into a single brand profile."
+      "description": "Comprehensive brand footprint combining 100+ Neo4j graphs, Google Trends, Wikipedia, Amazon commerce data, and earnings transcripts into a single deliverable."
     },
     {
       "name": "check_deliverable_status",
@@ -46,7 +46,7 @@
         "mcp",
         "expert-consult"
       ],
-      "description": "Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status (\"working\" | \"completed\" | \"failed\") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s."
+      "description": "Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status (\"working\" | \"completed\" | \"failed\") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s. (Expert deliverable job status poll.)"
     },
     {
       "name": "check_research_status",
@@ -59,7 +59,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED."
+      "description": "Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED. (Async research job status poll.)"
     },
     {
       "name": "check_supplemental_status",
@@ -74,7 +74,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED."
+      "description": "Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED. (Async supplemental query status poll.)"
     },
     {
       "name": "confirm_themes",
@@ -97,7 +97,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. \"brand-cmo\" with company: \"Nike\", or \"Nike CMO\" directly); Synthetic Agents provide domain-specific intelligence. Supports deep homework mode (pass deep: true or ask to \"do your homework\" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right agent ID. Responses include structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs, and may include coverage status, source attribution, and referrals to other graphs."
+      "description": "Direct 1-on-1 consultation with named human or synthetic expert analysts grounded in specialist knowledge graphs."
     },
     {
       "name": "consult_human_agent",
@@ -123,7 +123,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after."
+      "description": "Full multi-pass autonomous research agent producing an executive narrative brief complete with quantitative data tables and inline citations. (Multi-pass autonomous research agent (Plan -> 6 Graph queries -> 8 Supplemental APIs -> 2 Earnings DB queries -> 2 LLM synthesis & citation passes).)"
     },
     {
       "name": "discover_adjacent_trends",
@@ -133,7 +133,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Discover trends semantically or editorially adjacent to a specific trend node or a topic query. When provided with a topic query (seed_query or query), discovers matching seed trends across knowledge graphs and maps their adjacent territories. When provided with a specific trend_id (node_id) from search_graph, surfaces direct scored similarity matches. Returns scored connections and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal."
+      "description": "Vector-similarity graph traversal discovering non-obvious, cross-domain parallel trend patterns. (1 seed node embedding fetch + 1 vector cosine distance query + 1 direct link exclusion filter.)"
     },
     {
       "name": "draft_linkedin_article",
@@ -143,7 +143,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda's expert knowledge graphs. Use when the user says \"turn this research into an article…\", \"write a LinkedIn article about…\", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the \"How we found this\" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free."
+      "description": "Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda's expert knowledge graphs. Use when the user says \"turn this research into an article…\", \"write a LinkedIn article about…\", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the \"How we found this\" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free. (Deep trend evidence extraction + multi-section outline + longform article drafting.)"
     },
     {
       "name": "draft_linkedin_post",
@@ -153,7 +153,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Draft a LinkedIn post about any topic, grounded in Fodda's expert knowledge graphs. Use when the user says \"draft a LinkedIn post about…\", \"write a post on…\", \"turn this into a LinkedIn post\", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free."
+      "description": "Draft a LinkedIn post about any topic, grounded in Fodda's expert knowledge graphs. Use when the user says \"draft a LinkedIn post about…\", \"write a post on…\", \"turn this into a LinkedIn post\", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free. (Trend evidence extraction + tone/formatting prompt execution + draft compilation.)"
     },
     {
       "name": "expert_onboarding_research",
@@ -201,7 +201,7 @@
         "expert-consult",
         "chatgpt"
       ],
-      "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. Highlight focal entity using top-level \"focus\":\"Name\" or per-item \"focus\":true."
+      "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. (Data payload transformation + SVG chart rendering.)"
     },
     {
       "name": "get_capabilities",
@@ -218,7 +218,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Returns Fodda's main capabilities / features / offerings / products / services / tools and how to use them. Call this for any question about what Fodda can do or what's available."
+      "description": "Returns Fodda's capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what's available, or how much something costs. (Platform capability and pricing catalogue read (free).)"
     },
     {
       "name": "get_company_earnings",
@@ -251,7 +251,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context."
+      "description": "Search PSFK-curated domain graphs (travel & hospitality, retail, tech, beauty, fashion, sports, food & beverage) for trend intelligence with bundled evidence. No graph ID needed — searches all 7 live domain graphs in parallel. Returns expert-curated trends with bundled evidence including brand case studies, statistics, executive quotes and analysis with source attribution. When the query names a specific company or brand, brand_tracker is the entry point. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context."
     },
     {
       "name": "get_earnings_divergence",
@@ -263,7 +263,7 @@
         "earnings-intelligence",
         "chatgpt"
       ],
-      "description": "Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda's earnings truth layer. Returns question themes, company counts, causal rationales, and directness breakdowns. When degraded=true, clustering fell back to literal string matching rather than semantic convergence; check degraded and model_used before asserting multi-company trends. For single-company Q&A deflections, use get_company_earnings with view=qa."
+      "description": "Truth-layer analysis comparing analyst line of questioning against executive management prepared remarks. (2 Airtable table reads (Q&A + prepared remarks) + 1 sentiment gap calculation + 1 divergence matrix rendering.)"
     },
     {
       "name": "get_earnings_intelligence",
@@ -292,7 +292,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool."
+      "description": "Semantic search across 100+ knowledge graphs returning top trends, signal scores, and hard publisher citations with source URLs."
     },
     {
       "name": "get_expert_intelligence",
@@ -302,7 +302,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "[Deprecated: Prefer search_graph or consult_human_agent / consult_analyst.] (Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios."
+      "description": "Parallel search across top strategist agency frameworks and specialist strategist graphs. (1 registry lookup + 8 parallel Cypher queries across specialist strategist graphs + 1 merge pass.)"
     },
     {
       "name": "get_label_values",
@@ -318,7 +318,7 @@
         "expert-consult",
         "chatgpt"
       ],
-      "description": "List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To get a complete list of every trend in a graph, call with label=\"Trend\" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results."
+      "description": "List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To get a complete list of every trend in a graph, call with label=\"Trend\" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results. (Graph taxonomy label value lookup.)"
     },
     {
       "name": "get_my_account",
@@ -335,7 +335,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Check the current user's account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks \"how many API calls do I have?\", \"what plan am I on?\", \"what graphs can I access?\", or similar account questions. Returns live data — not cached from session start."
+      "description": "Check the current user's account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks \"how many API calls do I have?\", \"what plan am I on?\", \"what graphs can I access?\", or similar account questions. Returns live data — not cached from session start. (User account status & credit balance lookup.)"
     },
     {
       "name": "get_my_earnings",
@@ -361,7 +361,7 @@
         "expert-consult",
         "chatgpt"
       ],
-      "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result."
+      "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node in Neo4j.)"
     },
     {
       "name": "get_node",
@@ -377,7 +377,7 @@
         "expert-consult",
         "chatgpt"
       ],
-      "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result."
+      "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct Neo4j node metadata lookup by ID.)"
     },
     {
       "name": "get_onboarding_status",
@@ -397,7 +397,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Unilever, Jack Morton, and specialist research firms. Use when asked 'what does the X report say', 'latest findings from [Brand/Firm]', 'brief me on [Topic]', or for data-heavy competitive research where published report intelligence is more authoritative than web search. Returns an executive 5-pillar analyst briefing by default with cross-graph validation and expert twin spotlight. No graph ID needed."
+      "description": "Published corporate research and market forecast layer: searches industry report knowledge graphs (DHL, PwC, Unilever, Jack Morton, and specialist research firms) for published forecasts, projections, and whitepaper findings. Returns an executive 5-pillar analyst briefing by default with cross-graph validation. Does NOT return living consumer domain trends (use get_domain_intelligence) or standalone data points (use search_statistics). When the query names a specific company or brand, brand_tracker is the entry point. No graph ID needed."
     },
     {
       "name": "get_specialist_intelligence",
@@ -407,7 +407,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "[Deprecated: Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist and thinker consultation.] Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel."
+      "description": "[Deprecated: Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist and thinker consultation.] Proprietary strategist frameworks and niche domain intelligence layer: searches specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (culture, youth trends, commerce, media). Returns specialist frameworks and analysis; does not return broad consumer domain trends (use get_domain_intelligence) or standalone statistics (use search_statistics). When the query names a specific company or brand, brand_tracker is the entry point. No graph ID needed."
     },
     {
       "name": "get_supplemental_context",
@@ -422,7 +422,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation."
+      "description": "Multi-source API fan-out pulling real-time economic data from 80+ institutional sources (FRED, BLS, US Census, World Bank, etc.). (1 memory cache check + 8 parallel outbound HTTP API calls to institutional data sources + 1 5-bucket categorization pass.)"
     },
     {
       "name": "get_validated_trends",
@@ -449,7 +449,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Lists available agents across 4 categories: human_agent (Human Agents — real industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes."
+      "description": "List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to \"talk to\" or \"consult\" an expert, or when you need specialist depth on culture, strategy, or innovation topics. (Fast analyst registry metadata lookup.)"
     },
     {
       "name": "list_graphs",
@@ -466,7 +466,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "List all expert knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts, and topic coverage (e.g. retail, tech, food, travel, fashion, beauty, sports). Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools."
+      "description": "List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/tech/food/travel/fashion/beauty/sports instead). (Fast graph registry metadata lookup.)"
     },
     {
       "name": "manage_scheduled_reports",
@@ -476,7 +476,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Supports topic research or brand intelligence report types."
+      "description": "Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Costs 20 API calls per run. Supports topic research or brand intelligence report types. (Scheduled report CRUD operation.)"
     },
     {
       "name": "read_url",
@@ -502,7 +502,7 @@
         "mcp",
         "expert-consult"
       ],
-      "description": "Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is \"completed\" to get the artifact links. The offering price is charged on acceptance; the analyst's research is included, not billed separately. Example brief: \"Marketing plan for a DTC skincare launch targeting Gen-Z, 50k budget, 90-day horizon.\""
+      "description": "Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is \"completed\" to get the artifact links. The offering price is charged on acceptance; the analyst's research is included, not billed separately. Example brief: \"Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon.\" (Expert analyst workflow dispatch, research query execution, and deliverable template rendering.)"
     },
     {
       "name": "request_expert_intro",
@@ -541,7 +541,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, lifecycle stage (emerging/building/mature/fading), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence."
+      "description": "Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, lifecycle stage (emerging/building/mature/fading), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). When the query names a company or brand, brand_tracker is the entry point. Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence."
     },
     {
       "name": "search_insights",
@@ -554,7 +554,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth with source attribution."
+      "description": "Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Does NOT return raw statistics or market sizing — use search_statistics for hard numbers, or get_domain_intelligence for full trends with bundled evidence. When the query names a specific company or brand, brand_tracker is the entry point."
     },
     {
       "name": "search_statistics",
@@ -567,7 +567,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage."
+      "description": "Quantitative statistics and hard numbers layer only: returns specific figures, survey percentages, market sizes, growth rates, and quantitative data points linked to parent trends across Fodda knowledge graphs (domain, specialist, and report). Does NOT return narrative analysis, trends, or quotes — use search_insights for quotes/analysis, or get_domain_intelligence for full trends. When the query names a specific company or brand, brand_tracker is the entry point. Try this before external supplemental data tools."
     },
     {
       "name": "send_feedback",
@@ -577,7 +577,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Forward user feedback, feature requests, complaints, or prompt/answer quality issues to the Fodda team via email and Slack. Call this whenever a user shares feedback or expresses dissatisfaction — optionally include recent_prompt to capture the context."
+      "description": "Forward user feedback, feature requests, complaints, or exit reasons to the Fodda team via email and Slack. Call this whenever a user shares feedback — including when they want to leave, report a problem, or suggest an improvement. (User feedback logging.)"
     },
     {
       "name": "sign_up_free_account",
@@ -587,7 +587,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company)."
+      "description": "Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company). (User registration and free tier provision.)"
     },
     {
       "name": "submit_basic_info",
@@ -627,7 +627,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says \"Turn off Paralogy\", \"Enable igloo\", \"Disable the economics data\", or similar. The change is permanent until toggled again."
+      "description": "Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says \"Turn off Paralogy\", \"Enable igloo\", \"Disable the economics data\", or similar. The change is permanent until toggled again. (User graph enablement preference write.)"
     },
     {
       "name": "update_user_profile",
@@ -637,7 +637,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Save the user's research profile to improve the relevance of future responses. Call this after you understand the user's role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field."
+      "description": "Save the user's research profile to improve the relevance of future responses. Call this after you understand the user's role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field. (User persona context update.)"
     }
   ]
 }

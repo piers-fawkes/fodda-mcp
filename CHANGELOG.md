@@ -5,6 +5,32 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.77] - 2026-09-17
+
+### Changed & Fixed (Tool Descriptions Name Live Verticals and Layers; Brand Routing)
+- **Live Verticals & Layer Coverage in `get_domain_intelligence`**:
+  - Replaced legacy 6-vertical list with the 7 live verticals searched: **travel & hospitality, retail, tech, beauty, fashion, sports, food & beverage** (derived from live graph registry `graphs_searched` including `travel` and `tech`).
+  - Stated layer coverage: expert-curated trends with bundled evidence including brand case studies, statistics, executive quotes, and analysis with source attribution.
+  - Added entry-point routing for brand queries to `brand_tracker`.
+  - Owned by **Airtable** (`recIbRgxeN5Rklf0w`). Updated in Airtable Offerings table and verified to survive `npm run build` sync.
+- **Layer Demarcation in Sibling Search Tools**:
+  - `search_statistics`: Owned by **Airtable** (`rec7gOudG495WIuKq`). Clarified quantitative statistics and hard numbers layer only; defines boundaries (does not return narrative analysis, trends, quotes; routes to `search_insights`, `get_domain_intelligence`, and `brand_tracker`).
+  - `search_insights`: Owned by **Airtable** (`recypKy6FK6kOpHwY`). Clarified narrative and qualitative evidence layer only; defines boundaries (does not return raw statistics or market sizing; routes to `search_statistics`, `get_domain_intelligence`, and `brand_tracker`).
+  - `get_report_intelligence`: Owned by **Airtable** (`recAnFedM7cPrEgZI`). Clarified published corporate research and market forecast layer; defines boundaries (does not return living consumer trends or standalone metrics; routes to `get_domain_intelligence`, `search_statistics`, and `brand_tracker`).
+  - `get_specialist_intelligence`: Maintained in **TypeScript** (`src/toolHandlers.ts:3367` — no row in Airtable Offerings table). Clarified proprietary strategist frameworks and niche domain intelligence layer, with routing to `get_domain_intelligence`, `search_statistics`, and `brand_tracker`.
+  - `search_graph`: Owned by **Airtable** (`recFtEJxNvJntS2Y7`). Added explicit routing to `brand_tracker` when queries name a company or brand.
+- **House Rules & Cost Silence Cleanup in Airtable**:
+  - Removed legacy token mentions from Airtable Offerings rows `recNicxBGch3YguQn` (`get_company_earnings`), `recVfq7v2csFFmFRQ` (`get_earnings_intelligence`), and `recLAiaYhw8I3wUjG` (`read_url`) in compliance with global Fodda House Rules ("NEVER use 'tokens' or 'via SPT' in any user- or maker-visible text").
+- **System Prompt Routing Preferences (`src/systemPrompt.ts`)**:
+  - Added company/brand routing preference under `### RULE: ToolRoutingPreference`:
+    `- Company or brand queries -> brand_tracker (when the query names a company or brand, brand_tracker is the entry point).`
+- **Build & Cost Silence Guard**:
+  - `tools-manifest.json` regenerated with all updated tool descriptions; passed Cost Silence guard with zero violations.
+  - Live probe verification: `POST /v1/search/domain` with HMAC signing on `"Agentic AI for Travel Planning and Operations"` returned `graphs_searched: ["travel","sports","retail","food","beauty","fashion","tech"]`, 100% matching the named verticals in `get_domain_intelligence`.
+  - Grep audit confirmed zero price figures and zero token/SPT phrasing across all modified descriptions.
+- **Ecosystem Bible**:
+  - Bumped `Last updated: 2026-09-17` in canonical Fodda API `docs/bibles/ecosystem_overview.md`.
+
 ## [Unreleased] - 2026-09-17
 
 ### Documentation (no behaviour change, no version bump — nothing published)

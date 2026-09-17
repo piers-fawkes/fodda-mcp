@@ -724,7 +724,7 @@ export async function createServer(
     // --- get_my_account ---
     server.tool(
         'get_my_account',
-        'Check the current user\'s account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks "how many API calls do I have?", "what plan am I on?", "what graphs can I access?", or similar account questions. Returns live data — not cached from session start.',
+        'Check the current user\'s account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks "how many API calls do I have?", "what plan am I on?", "what graphs can I access?", or similar account questions. Returns live data — not cached from session start. (User account status & credit balance lookup.)',
         {},
         { title: 'Check Account Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async () => {
@@ -847,7 +847,7 @@ export async function createServer(
     // --- list_graphs ---
     server.tool(
         'list_graphs',
-        'List all expert knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts, and topic coverage (e.g. retail, tech, food, travel, fashion, beauty, sports). Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools.',
+        'List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/tech/food/travel/fashion/beauty/sports instead). (Fast graph registry metadata lookup.)',
         { userId: z.string().optional().describe('Optional user identifier. Authenticated users are identified automatically via API key. For trial users, this helps track usage.') },
         { title: 'List Knowledge Graphs', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
@@ -884,7 +884,7 @@ export async function createServer(
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
-        'Returns Fodda\'s main capabilities / features / offerings / products / services / tools and how to use them. Call this for any question about what Fodda can do or what\'s available.',
+        'Returns Fodda\'s capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what\'s available, or how much something costs. (Platform capability and pricing catalogue read (free).)',
         { userId: z.string().optional().describe('Optional user identifier.') },
         { title: 'Get Fodda Capabilities', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async () => {
@@ -1010,7 +1010,7 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Lists available agents across 4 categories: human_agent (Human Agents — real industry figures e.g. Ben Dietz, Anu Lingala), classic_agent (Classic Agents — historical thinkers e.g. John Ruskin), c_suite_agent (C-Suite Agents — corporate executives e.g. brand-cmo, brand-ceo, brand-cfo), and synthetic_agent (Synthetic Agents — synthetic domain specialists). Filter by category or pass a query to match expert lanes.',
+        'List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to "talk to" or "consult" an expert, or when you need specialist depth on culture, strategy, or innovation topics. (Fast analyst registry metadata lookup.)',
         {
             category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Human Agent), 'classic_agent' (Classic Agent), 'c_suite_agent' (C-Suite Agent), 'synthetic_agent' (Synthetic Agent), or 'all' (default)."),
             query: z.string().optional().describe("Optional natural language search query to filter analysts by lane, domain, expertise, or topics (e.g. 'streetwear', 'earnings', 'marketing')."),
@@ -1238,7 +1238,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, lifecycle stage (emerging/building/mature/fading), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence.',
+        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, lifecycle stage (emerging/building/mature/fading), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). When the query names a company or brand, brand_tracker is the entry point. Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -2044,7 +2044,7 @@ export async function createServer(
     // --- get_neighbors ---
     server.tool(
         'get_neighbors',
-        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result.',
+        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node in Neo4j.)',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
@@ -2080,7 +2080,7 @@ export async function createServer(
     // --- get_evidence ---
     server.tool(
         'get_evidence',
-        'Get the source articles, case studies, and statistics behind a specific trend — with full citations and publisher attribution. Each item includes source URL, location, brand names, publication date, category, and a formatted citation. Use after search_graph when you need the supporting proof behind a trend. This is a direct lookup by trend ID — not a text search tool.',
+        'Semantic search across 100+ knowledge graphs returning top trends, signal scores, and hard publisher citations with source URLs.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -2112,7 +2112,7 @@ export async function createServer(
     // --- get_node ---
     server.tool(
         'get_node',
-        'Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result.',
+        'Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct Neo4j node metadata lookup by ID.)',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             nodeId: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
@@ -2141,7 +2141,7 @@ export async function createServer(
     // --- get_label_values ---
     server.tool(
         'get_label_values',
-        'List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To get a complete list of every trend in a graph, call with label="Trend" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results.',
+        'List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To get a complete list of every trend in a graph, call with label="Trend" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results. (Graph taxonomy label value lookup.)',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
@@ -2167,7 +2167,7 @@ export async function createServer(
     // --- discover_adjacent_trends ---
     server.tool(
         'discover_adjacent_trends',
-        'Discover trends semantically or editorially adjacent to a specific trend node or a topic query. When provided with a topic query (seed_query or query), discovers matching seed trends across knowledge graphs and maps their adjacent territories. When provided with a specific trend_id (node_id) from search_graph, surfaces direct scored similarity matches. Returns scored connections and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use to expand research briefs, discover cross-industry parallels, or map the territory around a strong signal.',
+        'Vector-similarity graph traversal discovering non-obvious, cross-domain parallel trend patterns. (1 seed node embedding fetch + 1 vector cosine distance query + 1 direct link exclusion filter.)',
         {
             graphId: z.string().optional().describe('Knowledge graph ID (e.g. "retail"). Optional if seed_query or query is provided; defaults to "retail" or auto-routes based on query.'),
             trend_id: z.string().optional().describe("The node_id from a prior search_graph result (e.g. '2507.0'). Optional if seed_query or query is provided. Node IDs are not sequential integers — do not guess or invent IDs. If searching from a topic or theme, pass seed_query instead."),
@@ -2961,7 +2961,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Build a complete Brand Intelligence Profile by searching ALL knowledge graphs for a specific brand. Returns brand footprint, themes, competitive landscape, cross-graph presence, evidence timeline, lifecycle distribution, bundled supplemental signals (Google Trends, Wikipedia, Amazon, earnings), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use when the query is about a specific company or brand — "What is Nike doing?", "Patagonia\'s innovation strategy", "How is Apple positioned?". This aggregates cited, cross-graph intelligence into a single brand profile.',
+        'Comprehensive brand footprint combining 100+ Neo4j graphs, Google Trends, Wikipedia, Amazon commerce data, and earnings transcripts into a single deliverable.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -3126,7 +3126,7 @@ export async function createServer(
     // queries them in parallel, and returns a consolidated response.
     server.tool(
         'get_supplemental_context',
-        'A standard layer for macro, institutional, and real-time market data. Call this tool when curated coverage is thin, empty, or when the query is explicitly demand/attention-shaped (e.g. to get search volume, economic series, or census data). It retrieves data from 80+ authoritative sources (Google Trends, FRED, BLS, Census, etc.) fanned out in parallel. Returns categorized data blocks with source attribution and metadata. Note: call after search_graph indicates thin/empty coverage via its coverage annotation.',
+        'Multi-source API fan-out pulling real-time economic data from 80+ institutional sources (FRED, BLS, US Census, World Bank, etc.). (1 memory cache check + 8 parallel outbound HTTP API calls to institutional data sources + 1 5-bucket categorization pass.)',
         {
             query: z.string().describe("The topic or query to get supplemental data for (e.g., 'sustainable packaging', 'tequila spirits market', 'Gen Z beauty'). Include country names if searching non-US markets (e.g. 'Thailand consumer sentiment')."),
             domain: z.string().optional().describe("Domain hint to improve source routing: 'retail', 'beauty', 'fashion', 'sports', 'food', 'technology', 'culture', 'travel', 'design', 'macro'. Do NOT pass 'culture' or 'technology' for macro economic or consumer sentiment queries — leave omitted or set to 'macro'."),
@@ -3206,7 +3206,7 @@ export async function createServer(
     // --- check_supplemental_status ---
     server.tool(
         'check_supplemental_status',
-        'Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED.',
+        'Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED. (Async supplemental query status poll.)',
         {
             job_id: z.string().describe('The Job ID returned by get_supplemental_context'),
         },
@@ -3247,7 +3247,7 @@ export async function createServer(
     // Searches ALL PSFK curated domain graphs in parallel. Returns trends + bundled evidence.
     server.tool(
         'get_domain_intelligence',
-        "Search PSFK-curated domain graphs (retail, beauty, fashion, sports, consumer electronics, F&B) for trend intelligence with bundled evidence. No graph ID needed — searches all relevant domain graphs in parallel. Returns expert-curated trends with categorized evidence (statistics, case studies, analysis, interviews) and source attribution. Use for broad industry trend research, sector analysis, or when the query spans multiple consumer categories. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context.",
+        'Search PSFK-curated domain graphs (travel & hospitality, retail, tech, beauty, fashion, sports, food & beverage) for trend intelligence with bundled evidence. No graph ID needed — searches all 7 live domain graphs in parallel. Returns expert-curated trends with bundled evidence including brand case studies, statistics, executive quotes and analysis with source attribution. When the query names a specific company or brand, brand_tracker is the entry point. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context.',
         {
             query: z.string().describe("Natural language search query (e.g., 'sustainable packaging trends', 'Gen Z beauty habits')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -3364,7 +3364,7 @@ export async function createServer(
 
     server.tool(
         'get_specialist_intelligence',
-        "[Deprecated: Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist and thinker consultation.] Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (e.g. culture, youth trends, commerce, media). Contains proprietary strategic frameworks, specialist analysis, and high-density signals not found in broad domain libraries. No graph ID needed — searches specialist graphs in parallel.",
+        "[Deprecated: Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist and thinker consultation.] Proprietary strategist frameworks and niche domain intelligence layer: searches specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios (culture, youth trends, commerce, media). Returns specialist frameworks and analysis; does not return broad consumer domain trends (use get_domain_intelligence) or standalone statistics (use search_statistics). When the query names a specific company or brand, brand_tracker is the entry point. No graph ID needed.",
         {
             query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'streetwear subcultures')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -3379,7 +3379,7 @@ export async function createServer(
 
     server.tool(
         'get_expert_intelligence',
-        "[Deprecated: Prefer search_graph or consult_human_agent / consult_analyst.] (Legacy alias for get_specialist_intelligence) Search specialist knowledge graphs curated by domain strategists, newsletters, and boutique studios.",
+        'Parallel search across top strategist agency frameworks and specialist strategist graphs. (1 registry lookup + 8 parallel Cypher queries across specialist strategist graphs + 1 merge pass.)',
         {
             query: z.string().describe("Natural language search query (e.g., 'tequila spirits market', 'streetwear subcultures')"),
             limit: z.number().optional().describe('Max trends to return (default: 10, max: 50)'),
@@ -3396,7 +3396,7 @@ export async function createServer(
     // Searches ALL industry report graphs in parallel.
     server.tool(
         'get_report_intelligence',
-        "Search industry report knowledge graphs for published research findings, market forecasts, and quantitative projections from organizations like DHL, PwC, Unilever, Jack Morton, and specialist research firms. Use when asked 'what does the X report say', 'latest findings from [Brand/Firm]', 'brief me on [Topic]', or for data-heavy competitive research where published report intelligence is more authoritative than web search. Returns an executive 5-pillar analyst briefing by default with cross-graph validation and expert twin spotlight. No graph ID needed.",
+        'Published corporate research and market forecast layer: searches industry report knowledge graphs (DHL, PwC, Unilever, Jack Morton, and specialist research firms) for published forecasts, projections, and whitepaper findings. Returns an executive 5-pillar analyst briefing by default with cross-graph validation. Does NOT return living consumer domain trends (use get_domain_intelligence) or standalone data points (use search_statistics). When the query names a specific company or brand, brand_tracker is the entry point. No graph ID needed.',
         {
             query: z.string().describe("Natural language search query (e.g., 'luxury resale market size', 'electric vehicle adoption rates', 'Jack Morton fan experience')"),
             view: z.enum(['editorial', 'data']).optional().default('editorial').describe("Format mode: 'editorial' (default) returns a 5-pillar executive analyst briefing with cross-graph validation and expert twin spotlight; 'data' returns raw structured trend records."),
@@ -3472,7 +3472,7 @@ export async function createServer(
     // --- search_statistics ---
     server.tool(
         'search_statistics',
-        "HARD NUMBERS only: specific figures, market sizes, growth rates, and quantitative data points across Fodda's knowledge graphs. Each result links back to the expert trend it supports. Use when a question asks for a number or statistic — try this BEFORE supplemental data tools, as Fodda's experts may have already curated the answer. For expert quotes, editorial analysis, and narrative interpretation, use search_insights instead. Works on ALL graphs — domain, expert, and report. Search multiple graphs for best coverage.",
+        'Quantitative statistics and hard numbers layer only: returns specific figures, survey percentages, market sizes, growth rates, and quantitative data points linked to parent trends across Fodda knowledge graphs (domain, specialist, and report). Does NOT return narrative analysis, trends, or quotes — use search_insights for quotes/analysis, or get_domain_intelligence for full trends. When the query names a specific company or brand, brand_tracker is the entry point. Try this before external supplemental data tools.',
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
@@ -3584,7 +3584,7 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        "NARRATIVE only: expert quotes, editorial analysis, and strategic perspectives on a topic — sourced from named strategists and industry leaders. Returns qualitative evidence (quotes, interpretations) with source attribution and parent trend context, NOT raw numbers. For hard data points, market sizes, and growth rates, use search_statistics instead. Works on ALL graphs. Use when you need authoritative voices, strategic framing, or analytical depth with source attribution.",
+        'Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Does NOT return raw statistics or market sizing — use search_statistics for hard numbers, or get_domain_intelligence for full trends with bundled evidence. When the query names a specific company or brand, brand_tracker is the entry point.',
         {
             graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
@@ -3707,7 +3707,7 @@ export async function createServer(
     // --- draft_linkedin_post ---
     server.tool(
         'draft_linkedin_post',
-        'Draft a LinkedIn post about any topic, grounded in Fodda\'s expert knowledge graphs. Use when the user says "draft a LinkedIn post about…", "write a post on…", "turn this into a LinkedIn post", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free.',
+        'Draft a LinkedIn post about any topic, grounded in Fodda\'s expert knowledge graphs. Use when the user says "draft a LinkedIn post about…", "write a post on…", "turn this into a LinkedIn post", or wants social content backed by receipts. Returns a curated EVIDENCE PACK (claims with named companies, typed sources, and real URLs — never constructed) plus a strict composition contract; YOU write the post from it. Every claim is verifiable, thin coverage is flagged honestly, and dropped themes are logged with reasons. Bills as one content call; identical re-requests within 24h serve from cache free. (Trend evidence extraction + tone/formatting prompt execution + draft compilation.)',
         {
             topic: z.string().describe("The topic to post about (e.g., 'agentic commerce', 'retail media networks')"),
             angle: z.string().optional().describe('Optional thesis, or a post being responded to'),
@@ -3726,7 +3726,7 @@ export async function createServer(
     // --- draft_linkedin_article ---
     server.tool(
         'draft_linkedin_article',
-        'Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda\'s expert knowledge graphs. Use when the user says "turn this research into an article…", "write a LinkedIn article about…", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the "How we found this" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free.',
+        'Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda\'s expert knowledge graphs. Use when the user says "turn this research into an article…", "write a LinkedIn article about…", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the "How we found this" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free. (Deep trend evidence extraction + multi-section outline + longform article drafting.)',
         {
             topic: z.string().describe("The article topic (e.g., 'the rise of agentic commerce')"),
             thesis: z.string().optional().describe('The argument the article should make — gets pressure-tested by a Fodda analyst before drafting'),
@@ -3803,7 +3803,7 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Cross-company analyst-management deflection and divergence scan ($20 per query). Surfaces where executives are deflecting, reframing, or avoiding specific topics across 517 covered consumer-sector companies from Fodda\'s earnings truth layer. Returns question themes, company counts, causal rationales, and directness breakdowns. When degraded=true, clustering fell back to literal string matching rather than semantic convergence; check degraded and model_used before asserting multi-company trends. For single-company Q&A deflections, use get_company_earnings with view=qa.',
+        'Truth-layer analysis comparing analyst line of questioning against executive management prepared remarks. (2 Airtable table reads (Q&A + prepared remarks) + 1 sentiment gap calculation + 1 divergence matrix rendering.)',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'consumer goods', 'food & beverage', 'travel')"),
             period: z.string().optional().describe("Quarter filter (e.g., 'Q1-2026'). Defaults to latest quarter."),
@@ -4013,7 +4013,7 @@ export async function createServer(
     // --- update_user_profile ---
     server.tool(
         'update_user_profile',
-        'Save the user\'s research profile to improve the relevance of future responses. Call this after you understand the user\'s role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field.',
+        'Save the user\'s research profile to improve the relevance of future responses. Call this after you understand the user\'s role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field. (User persona context update.)',
         {
             userContext: z.string().describe('Behavioral framing instructions for this person. Format: one sentence of identity, then numbered FRAMING INSTRUCTIONS. Example: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists." Max 2000 chars.'),
             accountContext: z.string().optional().describe('Description of their company: industry, size, key markets, competitive position, mission. Shared across all users on this account. Max 2000 chars.'),
@@ -4059,7 +4059,7 @@ export async function createServer(
     // --- toggle_graph_preference ---
     server.tool(
         'toggle_graph_preference',
-        'Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says "Turn off Paralogy", "Enable igloo", "Disable the economics data", or similar. The change is permanent until toggled again.',
+        'Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says "Turn off Paralogy", "Enable igloo", "Disable the economics data", or similar. The change is permanent until toggled again. (User graph enablement preference write.)',
         {
             target_id: z.string().describe('The ID of the graph, skill, or data source to toggle (e.g., "paralogy", "igloo", "retail", "get_bea_spending_snapshot"). Use the exact ID from list_graphs.'),
             enabled: z.boolean().describe('true to enable (turn on), false to disable (turn off).'),
@@ -4110,7 +4110,7 @@ export async function createServer(
 
     server.tool(
         'send_feedback',
-        'Forward user feedback, feature requests, complaints, or prompt/answer quality issues to the Fodda team via email and Slack. Call this whenever a user shares feedback or expresses dissatisfaction — optionally include recent_prompt to capture the context.',
+        'Forward user feedback, feature requests, complaints, or exit reasons to the Fodda team via email and Slack. Call this whenever a user shares feedback — including when they want to leave, report a problem, or suggest an improvement. (User feedback logging.)',
         {
             feedback: z.string().describe('The user\'s feedback, complaint, suggestion, or exit reason'),
             user_email: z.string().optional().describe('User\'s email if known (for follow-up)'),
@@ -4204,7 +4204,7 @@ export async function createServer(
     const APP_BASE_URL = process.env.FODDA_APP_URL || 'https://app.fodda.ai';
     server.tool(
         'sign_up_free_account',
-        'Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company).',
+        'Create a free Fodda Base account (100 API calls/month across ALL knowledge graphs) and send a confirmation email. GUARDRAIL: only call this AFTER the user has explicitly provided their email and asked to create an account — never sign someone up proactively or with an email inferred from earlier context. Can also pass profile fields (name, job_title, company). (User registration and free tier provision.)',
         {
             email: z.string().describe('User\'s email address (required)'),
             user_confirmed: z.literal(true).describe('Must be true — the user must have explicitly asked to create an account before this tool is called. Never set this to true speculatively or on behalf of the user.'),
@@ -4297,7 +4297,7 @@ export async function createServer(
     // adjacent territories, and cross-domain links that text search wouldn't surface.
     server.tool(
         'brainstorm_topic',
-        'Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, geographic hotspots, and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore.',
+        'Explore and brainstorm around a topic using knowledge graph connections. Unlike search (which finds what matches), this tool discovers what CONNECTS — adjacent trends, unexpected cross-domain links, key brands, and geographic hotspots. Use when the user wants to brainstorm, explore adjacencies, find inspiration, or understand the landscape around a topic. Returns a structured brainstorm map with territories to explore.',
         {
             query: z.string().describe("The topic or theme to brainstorm around (e.g., 'tequila', 'sustainable packaging', 'Gen Z beauty')"),
             depth: z.number().optional().describe('Traversal depth: 1 (immediate connections) or 2 (connections of connections). Default: 2. Use 1 for focused brainstorms, 2 for wider exploration.'),
@@ -4533,7 +4533,7 @@ export async function createServer(
     // --- generate_visual ---
     server.tool(
         'generate_visual',
-        'Create a presentation-ready data visualization from research findings. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. Highlight focal entity using top-level "focus":"Name" or per-item "focus":true.',
+        'Create a presentation-ready data visualization from research findings. Available chart types: "cultural_shifts" (From→To transitions), "competitive_compass" (brands on 2 axes), "trend_constellation" (network of related trends), "implication_ladder" (Signal→Trend→So What→Do What), "innovation_pathway" (Now→Near-Term→Future), "opportunity_map" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. (Data payload transformation + SVG chart rendering.)',
         {
             chart_type: z.enum(['cultural_shifts', 'competitive_compass', 'trend_constellation', 'implication_ladder', 'innovation_pathway', 'opportunity_map']).describe('The type of visualization to generate'),
             data: z.string().describe('JSON string containing chart data. Optional top-level "focus":"Name" or per-item "focus":true highlights key entity in brand accent. cultural_shifts: {shifts:[{from,to}]}. competitive_compass: {brands:[{name,x,y,focus?:boolean}], axes:{left,right,top,bottom}, focus?:string}. trend_constellation: {trends:[{name,x,y,focus?:boolean}], connections:[{from,to,strength}], focus?:string}. implication_ladder: {signal,trend,so_what,do_what}. innovation_pathway: {now,near_term,future}. opportunity_map: {items:[{name,consumer_desire,market_activity,focus?:boolean}], x_label?:string, y_label?:string, focus?:string}'),
@@ -4587,7 +4587,7 @@ export async function createServer(
     // --- manage_scheduled_reports ---
     server.tool(
         'manage_scheduled_reports',
-        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Supports topic research or brand intelligence report types.',
+        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Costs 20 API calls per run. Supports topic research or brand intelligence report types. (Scheduled report CRUD operation.)',
         {
             action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']),
             query: z.string().optional().describe('For "create": the research query to run'),
@@ -4732,7 +4732,7 @@ export async function createServer(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Launch an autonomous Deep Research session that combines Fodda knowledge graph intelligence with live web research to produce a comprehensive editorial-quality report. The Research Agent plans its own strategy, searches multiple graphs, validates with institutional data, and synthesizes into a narrative brief with inline source citations. Use for complex, multi-faceted questions that need both curated expert intelligence AND current web context — e.g., strategic briefings, market landscape reports, competitive deep dives. Automatically includes earnings-call intelligence and macro/supplemental data when the topic warrants it (public companies, sectors, economic conditions). You do not need to call the earnings or supplemental tools separately before or after.',
+        'Full multi-pass autonomous research agent producing an executive narrative brief complete with quantitative data tables and inline citations. (Multi-pass autonomous research agent (Plan -> 6 Graph queries -> 8 Supplemental APIs -> 2 Earnings DB queries -> 2 LLM synthesis & citation passes).)',
         {
             query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
             sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
@@ -4859,7 +4859,7 @@ export async function createServer(
     // --- check_research_status ---
     server.tool(
         'check_research_status',
-        'Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED.',
+        'Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED. (Async research job status poll.)',
         {
             job_id: z.string().describe('The Job ID returned by deep_research_topic'),
         },
@@ -5660,7 +5660,7 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Consult a named Classic Agent, C-Suite Agent, or Synthetic Agent who answers in their specialized voice using their curated knowledge graph — one-off questions or multi-turn engagements (pass session_id back to continue). Classic Agents are historical thinkers (e.g. John Ruskin); C-Suite Agents provide corporate executive strategy grounded in SEC/earnings (e.g. "brand-cmo" with company: "Nike", or "Nike CMO" directly); Synthetic Agents provide domain-specific intelligence. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right agent ID. Responses include structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs, and may include coverage status, source attribution, and referrals to other graphs.',
+        'Direct 1-on-1 consultation with named human or synthetic expert analysts grounded in specialist knowledge graphs.',
         {
             analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
@@ -5831,7 +5831,7 @@ export async function createServer(
     // --- request_deliverable (Agentic Analysts Phase C) ---
     server.tool(
         'request_deliverable',
-        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, 50k budget, 90-day horizon."',
+        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon." (Expert analyst workflow dispatch, research query execution, and deliverable template rendering.)',
         {
             analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
@@ -5875,7 +5875,7 @@ export async function createServer(
     // --- check_deliverable_status (Agentic Analysts Phase C) ---
     server.tool(
         'check_deliverable_status',
-        'Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status ("working" | "completed" | "failed") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s.',
+        'Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status ("working" | "completed" | "failed") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s. (Expert deliverable job status poll.)',
         {
             job_id: z.string().describe("The job_id returned by request_deliverable."),
             userId: z.string().optional().describe('Optional user identifier.')

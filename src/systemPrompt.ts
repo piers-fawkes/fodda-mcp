@@ -263,6 +263,7 @@ compliance: RFC-2119
 ### RULE: ToolRoutingPreference
 - Market trends, consumer behavior -> search_graph
 - Brand strategy, competitive positioning -> brand_tracker
+- Company or brand queries -> brand_tracker (when the query names a company or brand, brand_tracker is the entry point).
 - Quantitative data points, market sizes -> search_statistics
 - Expert quotes, strategic frameworks -> search_insights
 - Scientific research, clinical studies, peer-reviewed literature -> get_pubmed_research_trends, get_openalex_research_trends, get_clinical_trials (fire in parallel with search_graph when query asks for scientific/clinical evidence)
