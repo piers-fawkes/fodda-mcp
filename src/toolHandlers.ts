@@ -3,6 +3,26 @@
  *
  * Extracted from index.ts to reduce monolith size.
  * Contains createServer() which registers all 30+ MCP tools.
+ *
+ * ──────────────────────────────────────────────────────────────────────────
+ * WARNING — TOOL DESCRIPTIONS IN THIS FILE MAY BE AIRTABLE-OWNED.
+ *
+ * `npm run build` runs scripts/sync-descriptions-from-airtable.mjs BEFORE tsc.
+ * That script reads the Airtable Offerings table (tbl93DJ627r81zKVP) and
+ * regex-rewrites the description string in `server.tool('<name>', '...')` for
+ * EVERY tool that has a row there. If you hand-edit such a description here,
+ * it is silently reverted on the next build.
+ *
+ *   Tool has an Offerings row  -> edit the Airtable row, then build.
+ *   Tool has no Offerings row  -> edit it here; the sync leaves it alone.
+ *
+ * The script exits 0 when AIRTABLE_API_KEY is unset, so a local build can
+ * appear to keep your edit while CI/deploy discards it. Verify by running the
+ * build and re-reading the description here before you ship.
+ *
+ * Airtable is the source of truth for published, customer-visible text.
+ * See Fodda API docs/bibles/system_clarifications.md section 2.
+ * ──────────────────────────────────────────────────────────────────────────
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

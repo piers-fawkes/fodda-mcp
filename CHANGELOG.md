@@ -5,6 +5,18 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-09-17
+
+### Documentation (no behaviour change, no version bump — nothing published)
+- **Airtable description-sync warning in `src/toolHandlers.ts`**:
+  - Added a file-header warning that tool descriptions in this file may be Airtable-owned. `npm run build` runs `scripts/sync-descriptions-from-airtable.mjs` **before** `tsc`; it reads the Offerings table (`tbl93DJ627r81zKVP`) and regex-rewrites the description string in `server.tool('<name>', '...')` for every tool that has a row, so hand-edits here are silently reverted on the next build.
+  - Documents the decision rule (Offerings row → edit Airtable then build; no row → edit in code) and the trap that the script exits 0 when `AIRTABLE_API_KEY` is unset, so a local build can appear to keep an edit that CI/deploy discards.
+  - Canonical copy of the gotcha: Fodda API `docs/bibles/system_clarifications.md` §2 (`Last updated:` 2026-09-17).
+- **Brief filed (`briefs/Brief - Tool Descriptions Must Name Live Verticals and Layers (MCP Agent).md`)**:
+  - `get_domain_intelligence`'s description names six verticals; a live probe on 2026-09-17 shows the tool actually searches `travel, sports, retail, food, beauty, fashion, tech`, with **`travel` the top-ranked graph** (relevance 0.883) for a hotel AI-booking query, returning case studies naming Marriott, Expedia, Booking.com and IHG. The omission caused a downstream agent to conclude Fodda has zero lodging coverage.
+  - Brief covers: naming the live verticals and the layers (trends, statistics, brand case studies, executive quotes), a `brand_tracker` routing line in `ToolRoutingPreference`, and manifest regeneration — with step 1 being "determine whether Airtable or TS owns each description before editing".
+  - Explicitly rejects adding a unified `search_intelligence` tool: `get_domain_intelligence` already fans out across all 7 live domain graphs with no `graph_id`, and the reported failure was a consumer-side evidence-harvest bug in the Fodda API newsletter cascade.
+
 ## [1.46.76] - 2026-09-16
 
 ### Added & Fixed (Polymorphic discover_adjacent_trends & Claude Resilience)
