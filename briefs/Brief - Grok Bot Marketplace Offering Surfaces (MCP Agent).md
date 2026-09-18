@@ -1,215 +1,292 @@
 # Brief: Grok Bot Marketplace Offering Surfaces
 
 **To:** Fodda MCP Agent (`mcp-agent`)
-**From:** Claude (review of Fodda × Grok Bot briefing, 2026-09-15)
-**Date:** 2026-09-15
-**Type:** Offering surface configuration + launch verification
-**Status:** Ready for Build
-**Files Expected to Change:**
-- `src/index.ts` (`OFFERING_SCOPED_TOOLS`)
-- `src/test_grok_offering_surfaces.ts` (new)
+**From:** Claude
+**Date:** 2026-09-17 (rev 2 — supersedes the 2026-09-15 version)
+**Type:** Marketplace surface configuration + launch verification
+**Status:** Milestone 1 ready now (zero code). Milestone 2 blocked on the Milestone 1 result.
+**Files Expected to Change:** none for Milestone 1. Milestone 2: `src/index.ts` (`OFFERING_SCOPED_TOOLS`), `src/test_grok_offering_surfaces.ts` (new).
 
 ---
 
-## 1. Context
+## 1. What changed in rev 2
 
-xAI's Grok Bot template marketplace lets a configured bot — identity, instructions, connected MCP
-server, routines — be shared as a link that visitors copy into their own account. Fodda wants two
-bots on it: **Fodda-Trends** (broad, general-purpose) and **Fodda-Earnings** (narrow specialist),
-run as a paired conversion test of broad-vs-narrow positioning.
+Rev 1 proposed two bots — `grok-trends` (broad) and `grok-earnings` (narrow) — run as a
+broad-versus-narrow conversion test. Two research passes (a hackathon-transcript scan and a
+marketplace census) plus review corrected that. **Four things in rev 1 were wrong:**
 
-**The acquisition mechanism described in the source briefing is already built.** Do not build it
-again. What exists in `src/index.ts` today:
+1. **The broad-vs-narrow framing is dropped.** xAI's own guidance is that scoped roles perform
+   better, so the test had a foregone conclusion. Bots are positioned as colleagues with a
+   recognisable job and a finished output, not as search surfaces.
+2. **`Fodda-Trends` is dead as a name.** A general "trends bot" fights the platform's grain. The
+   flagship is a role: **Fodda Brand & Account Context Analyst** — named for the job the census
+   found most demand for, not for an abstract "market context" capability.
+3. **`X-Fodda-Source` does not measure conversion.** Rev 1 claimed it did. It measures
+   *post-connection usage attribution* — it fires only after someone has already connected.
+   Everything upstream (listing view, template opened, bot added, OAuth started) is invisible to us.
+   See §7.
+4. **The `grok-trends` allowlist was far too big** — 25 tools including `get_node`,
+   `get_neighbors`, `get_label_values`. That exposes Fodda's internal ontology rather than user
+   jobs, and violates the standing preference for fewer tools on context-budget grounds.
 
-- `GET /.well-known/oauth-protected-resource[/:slug]` (line 172) advertises Clerk
-  (`CLERK_ISSUER`, default `https://clerk.fodda.ai`) as the authorization server.
-- An anonymous `initialize` gets `401` + `WWW-Authenticate: Bearer resource_metadata="…"`
-  (line 1218), which is what makes a compliant MCP client auto-start the OAuth handshake.
-- Clerk JWT → Fodda API key resolution runs through `POST /v1/auth/clerk-resolve` (line 1127),
-  landing the user as a real Fodda account.
-- `MCP_ALLOW_ANONYMOUS` is the existing gate-everything-vs-open switch. Current production policy
-  is **full gate**, which answers the source doc's "design decision still open" — it is already
-  decided in code. Changing it is a Piers decision, not part of this build.
-- The API side runs a daily unauthenticated live probe of the whole flow (discovery → DCR on
-  `clerk.fodda.ai` → PKCE authorize handoff → consent config) in `functions/v1/oauthProbe.ts`.
-  The Fodda half of the handshake is therefore already monitored; what is untested is the **Grok
-  client half** (the reported `redirect_uri` failure), which is a manual test, not a code task.
+**Also corrected:** rev 1 stated that a custom MCP connector does not survive a template copy, on
+the strength of two secondary write-ups. That is the **leading hypothesis, not a finding.** It has
+not been tested. §3 tests it.
 
-`OFFERING_SCOPED_TOOLS` (line 189) already provides exactly the per-bot mechanism these two bots
-need: the first path segment selects a tool allowlist, and `defaultSource` (line 1201) sets
-`X-Fodda-Source` to that slug for every upstream call. So per-bot tool scoping **and** per-bot
-attribution for the conversion test come for free once the slugs exist.
+### What rev 1 got right and is preserved
 
-### What the 2026-09-15 launch session adds
+The OAuth machinery, the slug mechanism, tool scoping, source attribution and the manual portability
+test all stand. None of it needs building:
 
-From xAI's own description of how bot templates work: a shared template copies the bot's
-**instructions, memories, some working context, and first-party plugins** — and deliberately does
-**not** copy sensitive data, stored credentials or chat history. Recipients get their own version to
-refine, not a clone.
+- `GET /.well-known/oauth-protected-resource[/:slug]` (`src/index.ts:172`) advertises Clerk.
+- An anonymous `initialize` returns `401` + `WWW-Authenticate` (`src/index.ts:1218`), which is what
+  makes a compliant client start the OAuth flow.
+- Clerk JWT → Fodda account resolution via `POST /v1/auth/clerk-resolve`.
+- `OFFERING_SCOPED_TOOLS` (`src/index.ts:189`) scopes tools per URL slug and sets `X-Fodda-Source`.
+- `functions/v1/oauthProbe.ts` (API repo) probes the Fodda half of the flow daily.
 
-Two consequences, one good and one dangerous:
+### Current state elsewhere in the estate
 
-- **Good — the acquisition thesis holds mechanically.** Credentials never travel with a template.
-  Every recipient must authenticate as themselves, which is precisely what the 401 +
-  `WWW-Authenticate` handshake triggers. There is no shared-credential path that would let a copied
-  bot ride the template author's account.
-- **Dangerous — the custom MCP connector does not travel.** Two independent write-ups of the
-  template marketplace (aibuilderclub, basenor; both secondary, neither official xAI documentation)
-  state it directly: templates carry identity, instructions, skills, routines, selected memories and
-  **first-party** integrations, and explicitly exclude "custom MCP servers and scripts", logins, API
-  keys and conversation history. `mcp.fodda.ai` is a custom connector. Both sources independently
-  advise that a bot depending on an MCP server "needs to tell the recipient what to connect."
+- **`expert-consult` is a live slug** (`src/index.ts:255`). Expert access does not need designing.
+- **`verify_claim` is already briefed** (API repo, `Brief — verify_claim Verification Skill`),
+  decoupled from Grok, and buildable independently. It is capability-critical here — see §5.
+- **The earnings sector bug is fixed** (API `ff2b0d6`, 2026-09-16): `sector="beauty"` no longer
+  returns NKE/LULU, and out-of-domain sectors fail clean instead of being web-filled. The
+  live-coverage resolution path within that fix is still unverified against real Airtable data.
 
-  So the copied bot arrives with instructions referencing Fodda tools it does not have — and because
-  Grok bots have their own computer and are designed to "go do things on their own even without the
-  perfect level of access", it will quietly browse `fodda.ai` instead. Degraded answer, no
-  attribution, no billing, no OAuth prompt, and no error anyone sees.
+### The layer strategy — why a crowded category is the target, not a warning
 
-  **Treat this as the expected outcome, not a risk.** The source briefing's Section 1 acquisition
-  mechanism — copy bot → first tool call triggers OAuth → user lands as a Fodda account — does not
-  work unmodified. §2C is now a confirmation step, not an open question, because the sources are
-  secondary and one real template copy settles it.
+The census's largest cluster is account and pre-call research (~21 listings, directional). An earlier
+reading of this brief treated that crowding as a reason to stay out. That was wrong, and the
+correction matters enough to state plainly:
 
-This brief is therefore small on purpose: add two slugs, prove the handshake and the attribution,
-and prove the template actually carries the connection.
+**Fodda is not selling a bot into that category. It is selling the context layer those bots
+consume.** Account research has two halves — *who* (contacts, org charts, buying committee, tech
+stack) and *what is happening in their world* (category shifts, competitive moves, earnings signals,
+supporting and contradicting evidence). Those bots already source the first half from CRM and contact
+connectors. The second half is exactly what Fodda has and they do not. Twenty-one listings doing
+account research are twenty-one potential MCP consumers, not twenty-one competitors.
 
----
+This is the difference between the two layers:
 
-## 2. What to build
+- **The MCP** is the product. Its target is the account-research cluster and anyone else who needs
+  company and category context with evidence.
+- **The Fodda bot** is the demonstration — it makes the layer visible and installable, and it is how
+  someone discovers the MCP in the first place.
 
-### A. Add two offering slugs to `OFFERING_SCOPED_TOOLS`
+What Fodda must not promise, in a bot or in a tool description: buying committees, contact data,
+technology stacks, sentiment scores or distribution footprints. No authoritative source exists for
+any of them.
 
-**`grok-trends`** — the general-purpose bot. Despite the product name, it must not be
-trends-only; it routes across whatever the question needs:
+### On the marketplace census
 
-```
-get_capabilities, search_graph, search_statistics, search_insights,
-get_report_intelligence, get_domain_intelligence, discover_adjacent_trends,
-get_validated_trends, brand_tracker, get_company_earnings,
-find_expert, consult_analyst, consult_human_agent, list_analysts, request_expert_intro,
-get_evidence, get_node, get_neighbors, get_label_values, list_graphs,
-get_my_account, generate_visual, read_url,
-get_supplemental_context, check_supplemental_status
-```
-
-**`grok-earnings`** — the specialist. Start from the existing `earnings-intelligence` list and add
-the consult tools, because the source briefing scopes Executive Tracker personas into this bot and
-`earnings-intelligence` does not currently carry them:
-
-```
-get_capabilities, get_earnings_intelligence, get_earnings_divergence,
-get_company_earnings, get_validated_trends,
-consult_analyst, list_analysts,
-search_graph, get_evidence, get_node, get_neighbors, get_label_values,
-list_graphs, get_my_account, generate_visual
-```
-
-Add the two slugs as **new entries**. Do not edit `earnings-intelligence`, `copilot` or any other
-existing offering — they are live surfaces with their own consumers.
-
-### B. Prove the surfaces with a live test
-
-New `src/test_grok_offering_surfaces.ts`, following the shape of the existing
-`src/test_identity_gap.ts` (it already asserts on `X-Fodda-Source` fan-out, line 195):
-
-1. `GET /.well-known/oauth-protected-resource/grok-trends` returns
-   `resource` ending `/grok-trends` and `authorization_servers: [CLERK_ISSUER]`. Same for
-   `grok-earnings`.
-2. An anonymous `initialize` POST to `/grok-trends` returns `401` with a `WWW-Authenticate` header
-   whose `resource_metadata` points at `/.well-known/oauth-protected-resource/grok-trends`.
-   Same for `grok-earnings`.
-3. An authenticated `tools/list` on `/grok-earnings` returns exactly the allowlist above — assert
-   both directions: every listed tool present, and a spot-check that an out-of-scope tool
-   (`deep_research_topic`) is absent.
-4. A fanned-out upstream call from a `/grok-trends` session carries
-   `X-Fodda-Source: grok-trends`, and from `/grok-earnings` carries `X-Fodda-Source: grok-earnings`.
-   This assertion is the conversion test — without it the broad-vs-narrow result is unmeasurable.
-
-### C. Prove template portability by hand — do this before anything else ships
-
-Not a code task; a 20-minute manual test that gates the whole channel. Run it first, because a
-negative result changes the plan rather than the implementation:
-
-1. Configure a bot on a Fodda-owned account with the `grok-trends` MCP connection and complete the
-   OAuth handshake.
-2. Share it as a template and add it from a **second, unrelated throwaway account**.
-3. On that second account, without touching settings, ask a question that requires a Fodda tool.
-
-Record which of these happens:
-
-- **(c) — expected.** The connection did not carry. The template is a distribution vehicle for
-  *instructions only*. The bot's own instructions must then carry the connection step, and the
-  funnel gains a manual stage: install → notice Fodda is missing → add `mcp.fodda.ai/<slug>` →
-  OAuth → account. Drop-off moves from "did they OAuth" to "did they bother to connect at all",
-  and `X-Fodda-Source` only ever fires for people who completed it.
-- **(a)** The connection carried and OAuth completed. → The sources are wrong; revert to the
-  original plan and say so loudly, because it changes the go-to-market.
-- **(b)** The connection carried but OAuth failed (the reported `redirect_uri` bug). → Blocked on an
-  xAI fix; capture the exact error and stop.
-
-### D. Write the bot instructions as a carried artifact
-
-Because instructions *do* travel with a template and tool descriptions do not, the routing guidance
-("which Fodda tool answers which shape of question") belongs in the **bot instructions**, not only
-in tool descriptions. Produce the instruction text for both bots as part of this work.
-
-Under outcome (c) this is not a nice-to-have — **the instructions are the entire onboarding
-mechanism**, because they are the only thing that survives the copy. Both bots must open by
-establishing whether the Fodda tools are present, and if they are not, say so plainly and give the
-one-line setup step (add `https://mcp.fodda.ai/<slug>` as a custom MCP connector, then complete the
-sign-in prompt). They must never substitute web browsing for a Fodda answer and present it as
-Fodda's — that is the failure mode that makes a broken install look like a working one.
+Counts are **directional supply signals, not demand**. Date-stamp every figure: an independent check
+found **69 listings on 2026-09-15**; the census found **72 on 2026-09-17**. A market moving 4% in two
+days is too immature to read as saturation or whitespace. Zero standalone earnings bots means
+*untested*, not *unwanted*. Do not repeat the census's derived scores — several are internally
+inconsistent (including one out of range) and are being re-verified separately.
 
 ---
 
-## 3. Where to register
+## 2. Two milestones, deliberately separated
 
-- `OFFERING_SCOPED_TOOLS` in `src/index.ts` — the slug map is the only registration point; routing,
-  OAuth metadata and source attribution all derive from it.
-- No new tools, no new env vars, no transport changes, no schema changes.
+| | Milestone 1 — Technical pilot | Milestone 2 — Marketplace flagship |
+|---|---|---|
+| Bot | Earnings Context Analyst | Fodda Brand & Account Context Analyst |
+| Slug | `earnings-intelligence` (live today) | `grok-brand-context` (new) |
+| Code needed | **None** | One additive slug + a test |
+| Purpose | Answer the portability/OAuth questions | The product people install |
+
+Earnings is **not demoted**. It is the only surface that can run the gating test this week with zero
+implementation, and it becomes a visible workflow inside the flagship — and a candidate spinout later
+if usage supports one.
 
 ---
 
-## 4. Definition of Done
+## 3. Milestone 1 — the technical pilot (do this first, no code)
 
-- [ ] `tools/list` on `/grok-trends` and `/grok-earnings` each return exactly their allowlist —
-      paste both actual lists into the verification.
-- [ ] Anonymous `initialize` on both slugs returns `401` + the slug-specific `WWW-Authenticate`
-      header. Paste the raw header.
-- [ ] Both `.well-known/oauth-protected-resource/<slug>` documents returned and pasted.
-- [ ] `X-Fodda-Source` asserted as `grok-trends` / `grok-earnings` on a fanned-out upstream call.
-- [ ] `earnings-intelligence`, `copilot`, `expert-consult` and `chatgpt` tool lists are byte-identical
-      to before the change — show the diff is additive only.
+Configure an Earnings Context Analyst bot on a Fodda-owned account against
+`https://mcp.fodda.ai/earnings-intelligence`, complete OAuth, share it as a template, then add it
+from an **unrelated throwaway account** and ask a question that requires Fodda.
+
+Record each of these as an observed fact, not an expectation:
+
+- Does the custom MCP connection travel with the template?
+- Are credentials correctly excluded (the recipient gets their own auth prompt)?
+- Does the OAuth flow begin, and does redirect handling succeed?
+- Does the copied bot see the intended tools?
+- Is `X-Fodda-Source: earnings-intelligence` preserved on the copy's calls?
+- When Fodda is absent, does the bot say so — or does it silently substitute web browsing?
+
+That last one is the failure that matters most, because it makes a broken install look like a
+working one.
+
+**Use the live slug exactly as it is.** Its allowlist currently includes `get_node`,
+`get_neighbors` and `get_label_values`, which Milestone 2 excludes on principle. Do not strip them
+to run this test: it is a live surface with its own consumers, and the pilot is about connection
+behaviour, not tool curation.
+
+**Outcomes:**
+
+- **Connection travels + OAuth completes** → the rev 1 hypothesis was wrong. Say so loudly; the
+  go-to-market simplifies considerably.
+- **Connection travels, OAuth fails** (the reported `redirect_uri` bug) → blocked on an xAI fix.
+  Capture the exact error and stop.
+- **Connection does not travel** → the template distributes *instructions only*. The bot's own
+  instructions become the entire onboarding mechanism, and the funnel gains a manual stage.
+
+---
+
+## 4. Milestone 2 — the flagship slug
+
+Add **one** new entry to `OFFERING_SCOPED_TOOLS`: `grok-brand-context`.
+
+Job, stated as an outcome: **put a company or brand in expert-grounded market context before a
+meeting, a pitch or a decision** — the category shifts that affect it, the competitive moves around
+it, evidence for and against the story, and what to ask next. Additive only — do not edit
+`earnings-intelligence`, `expert-consult`, `copilot`, `chatgpt` or any other live offering.
+
+### Allowlist — business capabilities only
+
+```
+get_capabilities
+get_domain_intelligence
+brand_tracker
+discover_adjacent_trends
+get_earnings_intelligence
+get_evidence
+find_expert
+verify_claim          ← only once the API-side verdict field has shipped
+```
+
+**Explicitly excluded, and why:**
+
+- `get_node`, `get_neighbors`, `get_label_values` — internal graph primitives, not user jobs.
+- `consult_human_agent`, `request_expert_intro` — these spend money and take a real person's time.
+  `find_expert` is read-only discovery; consultation is an escalation the user approves, and it
+  lives on `expert-consult`, which already exists for exactly this.
+- `deep_research_topic` — heavyweight multi-call operation; wrong thing for a marketplace visitor
+  to trigger by accident.
+- `get_my_account`, `generate_visual`, `read_url` — admin and generic utilities that add context
+  cost without serving the defined output.
+
+**`get_earnings_divergence` is deliberately absent.** It is a *cross-coverage deflection scan*
+("what topics are companies dodging this quarter?"), computed over earnings-call analyst Q&A and
+clustered by period/sector/industry. It is **not** a general market-divergence capability, and the
+census's "market pulse" framing must not be used to stretch it into one. It stays in the earnings
+surface. A general divergence capability, if wanted, is separate work.
+
+### Do not build wrapper tools yet
+
+An earlier draft proposed eight task-shaped wrappers (`build_market_context`,
+`research_company_in_context`, …). Rejected for now: the capability already exists under different
+names. `brand_tracker` *is* "put a brand in market context"; `get_domain_intelligence` *is* "build
+category context". The real gap is **naming and description**, not capability — see §5. Add a
+wrapper only when task-level evaluation shows Grok routing badly and better descriptions have
+already failed to fix it.
+
+---
+
+## 5. Tool descriptions — read this before editing any string
+
+**`npm run build` runs `scripts/sync-descriptions-from-airtable.mjs` *before* `tsc`.** It reads the
+Offerings table (`tbl93DJ627r81zKVP`) and regex-rewrites the description in `server.tool('<name>',
+'...')` for every tool with a row. **Hand-edits in `toolHandlers.ts` are silently reverted on the
+next build.** Worse, the script exits 0 when `AIRTABLE_API_KEY` is unset, so a local build can
+appear to keep an edit that CI discards.
+
+So, for every tool on the new allowlist, step 1 is *determine who owns its description*:
+
+- **Airtable row exists** → edit in Airtable, run the sync, confirm it landed.
+- **No row** → edit in code.
+
+This overlaps with the existing P1 brief *"Tool Descriptions Must Name the Live Verticals and the
+Layers"* (filed 2026-09-17). **Coordinate with it rather than duplicating it** — that brief already
+covers naming the verticals and layers and adding a `brand_tracker` routing line.
+
+A good description states: when to use the tool, what question shape it answers, what it returns, how
+it differs from a general web search, and what happens when coverage is thin. `brand_tracker` is the
+clearest case — the name alone could mean mention-tracking, health-monitoring, metric comparison or
+context retrieval, and Grok cannot pick correctly from the name.
+
+Routing guidance belongs in **both** the bot instructions (overall workflow) and the tool
+descriptions (per-call selection).
+
+---
+
+## 6. Bot instructions are a first-class deliverable
+
+Under the leading hypothesis, instructions are the only thing that survives a template copy — which
+makes them the onboarding mechanism, not documentation. Both bots need:
+
+- The job, stated as an outcome rather than a capability list.
+- The finished-output contract: relevant market shifts, why they matter to the question, evidence
+  with links and dates, named companies or brands, contradicting evidence, strategic implications,
+  and explicit confidence boundaries including what is missing.
+- Source hierarchy and citation rules; what to do when Fodda coverage is thin.
+- **A connection self-check.** If the Fodda tools are absent, say so plainly and give the one-line
+  setup step. Never substitute web browsing for a Fodda answer and present it as Fodda's.
+- Human escalation only on explicit user approval, never automatically.
+
+---
+
+## 7. Measurement — be honest about what we cannot see
+
+The funnel is: listing view → template opened → bot added → connector instruction shown → OAuth
+started → OAuth completed → first successful tool call → first completed output → second session →
+routine created.
+
+**Fodda can observe only from OAuth completion onward.** Everything before it happens inside the
+marketplace. `X-Fodda-Source` tags calls *after* connection — useful for comparing usage between
+surfaces, useless for measuring install-to-connect drop-off. Any claim about conversion must say
+which of these stages it actually covers, and rev 1's claim that attribution measures conversion
+must not be repeated.
+
+---
+
+## 8. Definition of Done
+
+**Milestone 1** — a written record of all six observations in §3, each as an observed result, with
+the exact error text for any failure. No code, no PR.
+
+**Milestone 2** (only after Milestone 1 reports):
+- [ ] `tools/list` on `/grok-brand-context` returns exactly the §4 allowlist — paste the real list.
+- [ ] Assert both directions: every intended tool present, and `get_node` plus `deep_research_topic`
+      absent.
+- [ ] Anonymous `initialize` on the slug returns `401` + the slug-specific `WWW-Authenticate` header.
+      Paste the raw header.
+- [ ] `.well-known/oauth-protected-resource/grok-brand-context` returned and pasted.
+- [ ] A fanned-out call carries `X-Fodda-Source: grok-brand-context`.
+- [ ] Every other offering's tool list is byte-identical — show the diff is additive only.
+- [ ] For each allowlisted tool, state whether Airtable or code owns its description.
 - [ ] `npm run build` clean.
 
 ---
 
-## 5. Do Not
+## 9. Do Not
 
-- Do not build OAuth, discovery, DCR or Clerk resolution. All of it ships today — see §1.
-- Do not change `MCP_ALLOW_ANONYMOUS`, and do not open an anonymous or partial-gate lane for these
-  slugs. Whether to leave basic search ungated is a Piers decision and is explicitly out of scope.
-- Do not enable SPT on these slugs (`ENABLE_SPT` stays as-is); the marketplace lane is OAuth +
-  account credits, matching the directory connector policy already in `index.ts`.
-- Do not modify existing offering slugs or their tool lists.
-- Do not add `deep_research_topic` to either bot — it is a heavy multi-call operation and a
-  marketplace visitor on Base tier is the wrong place to fire it by accident.
-- Do not touch API endpoints or `metering.ts`. If this work appears to need them, stop and produce
-  the companion API brief instead.
+- Do not build OAuth, discovery, DCR or Clerk resolution — all of it ships today.
+- Do not edit any existing offering slug's tool list.
+- Do not hand-edit a tool description without first establishing who owns it (§5).
+- Do not add `consult_human_agent` or `request_expert_intro` to a marketplace surface.
+- Do not add `get_earnings_divergence` to the market-context surface, or describe it as general
+  market divergence.
+- Do not build wrapper tools before evaluation shows descriptions cannot fix routing.
+- Do not change `MCP_ALLOW_ANONYMOUS` or enable SPT on these slugs.
+- Do not quote marketplace counts without a crawl date, or treat absence of a listing as absence of
+  demand.
+- Do not touch API endpoints or `metering.ts` — produce the companion API brief instead.
 
 ---
 
-## 6. Handoff to `api-agent` — unattended routine spend
+## 10. Handoff to `api-agent` — unattended routine spend
 
-Not in scope here; flagged because this brief is what makes it reachable.
+Grok routines run on schedules, webhooks and signals. A routine calls Fodda unattended, with no human
+per call. The Base-free 50-call daily cap contains this for free accounts, but is **fully bypassed
+when `account.hasPaymentMethod === true`** — so a carded user with an hourly routine against a
+heavyweight tool has no ceiling.
 
-Grok bots run **routines** on schedules, webhooks and signals — daily digests, and hourly reports
-during a launch. A routine calls Fodda tools unattended, with no human in the loop per call.
-
-The Base-free 50-call daily burst cap (shipped 2026-09-05) contains this for free accounts. But that
-cap is **fully bypassed when `account.hasPaymentMethod === true`**. So a carded marketplace user who
-sets an hourly routine against a heavyweight tool has no ceiling at all. Nothing about that is a
-marketplace bug — it is a pre-existing gap that routines make easy to hit by accident.
-
-Whether carded accounts need a spend ceiling (and where it sits) is a Piers decision. If it becomes
-one, it is an API brief, not this one.
+This is a **launch constraint, not a follow-up**. Before any recurring Fodda workflow is promoted,
+decide: account-level monthly ceiling, daily routine limits, threshold warnings, retry-loop
+protection, visible usage reporting, predictable insufficient-credit behaviour, and whether
+heavyweight tools may run unattended at all. It is an API brief when it becomes one.
