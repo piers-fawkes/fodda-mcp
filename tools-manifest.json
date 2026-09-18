@@ -33,7 +33,8 @@
         "mcp",
         "brand-intelligence",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "grok-brand-context"
       ],
       "description": "Comprehensive brand footprint combining 100+ Neo4j graphs, Google Trends, Wikipedia, Amazon commerce data, and earnings transcripts into a single deliverable."
     },
@@ -131,7 +132,8 @@
       "bills_as": "adjacent_trends",
       "category": "Ideation",
       "profiles": [
-        "mcp"
+        "mcp",
+        "grok-brand-context"
       ],
       "description": "Vector-similarity graph traversal discovering non-obvious, cross-domain parallel trend patterns. (1 seed node embedding fetch + 1 vector cosine distance query + 1 direct link exclusion filter.)"
     },
@@ -183,7 +185,8 @@
       "profiles": [
         "mcp",
         "expert-consult",
-        "copilot"
+        "copilot",
+        "grok-brand-context"
       ],
       "description": "Find 2–3 genuine candidate experts for a question, brief, or situation with domain-grounded rationale. Discovery tool (\"who should I ask\") across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists. Evaluates lane overlap, filters out declared blind spots, and fails honestly when no expert matches. Call this when deciding which expert to consult, then pass the matched analyst_id to consult_human_agent or consult_analyst."
     },
@@ -216,7 +219,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "grok-brand-context"
       ],
       "description": "Returns Fodda's capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what's available, or how much something costs. (Platform capability and pricing catalogue read (free).)"
     },
@@ -249,7 +253,8 @@
       "bills_as": "domain_intelligence",
       "category": "Intelligence",
       "profiles": [
-        "mcp"
+        "mcp",
+        "grok-brand-context"
       ],
       "description": "Search PSFK-curated domain graphs (travel & hospitality, retail, tech, beauty, fashion, sports, food & beverage) for trend intelligence with bundled evidence. No graph ID needed — searches all 7 live domain graphs in parallel. Returns expert-curated trends with bundled evidence including brand case studies, statistics, executive quotes and analysis with source attribution. When the query names a specific company or brand, brand_tracker is the entry point. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context."
     },
@@ -273,7 +278,8 @@
       "profiles": [
         "mcp",
         "earnings-intelligence",
-        "chatgpt"
+        "chatgpt",
+        "grok-brand-context"
       ],
       "description": "Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include \"knowledge_graph\" or \"web_supplemental\" provenance."
     },
@@ -290,7 +296,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "grok-brand-context"
       ],
       "description": "Semantic search across 100+ knowledge graphs returning top trends, signal scores, and hard publisher citations with source URLs."
     },
@@ -646,7 +653,8 @@
       "category": "Expert",
       "profiles": [
         "mcp",
-        "expert-consult"
+        "expert-consult",
+        "grok-brand-context"
       ],
       "description": "Verify a factual claim, hypothesis, or strategic assertion against primary evidence held in Fodda's expert knowledge graphs. Supported by an authorized Human Agent (a verified, living practitioner) who stands behind the structured verdict (\"confirms\", \"contradicts\", \"partial\", or \"no_coverage\") with cited evidence and rationale. When analyst_id is provided, routes to that specific Human Agent. When omitted, automatically routes to the best matching Human Agent based on domain relevance; if no Human Agent covers the domain, fails honestly without falling back to synthetic personas. Returns structured verdict, confidence level (full, partial, thin), one_line summary, rationale, sources, expert details, and booking information. If confidence is thin, present this to the user as limited domain coverage in plain language without echoing technical tags."
     }

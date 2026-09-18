@@ -5,6 +5,26 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.79] - 2026-09-18
+
+### Added (Grok Bot Offering Surface & Vertical Analyst Launch Set)
+- **Grok Bot Offering Surface `grok-brand-context` (`src/index.ts`)**:
+  - Registered `grok-brand-context` in `OFFERING_SCOPED_TOOLS` with lean business-level allowlist (8 tools): `get_capabilities`, `get_domain_intelligence`, `brand_tracker`, `discover_adjacent_trends`, `get_earnings_intelligence`, `get_evidence`, `find_expert`, `verify_claim`.
+  - Scoped to serve all 3 entry point shapes (Company: Brand & Account Context Analyst; Category: Retail, Technology, Beauty Analysts) onto a single consolidated MCP layer.
+  - Excluded graph primitives (`get_node`, `get_neighbors`, `get_label_values`), heavyweight operations (`deep_research_topic`), paid/human bookings (`consult_human_agent`), and specialized deflection scans (`get_earnings_divergence`).
+  - Added offering card metadata (`ai.fodda/grok-brand-context`) and routed `.well-known` discovery endpoints (`/.well-known/grok-brand-context`, `/.well-known/grok-brand-context.json`) and `/grok-brand-context` MCP transport.
+  - Automatically derives `X-Fodda-Source: grok-brand-context` for downstream attribution.
+  - Verified pure additive change across existing offering profiles.
+- **Automated Verification Test Suite (`src/test_grok_offering_surfaces.ts`)**:
+  - Automated assertions validating exact 8-tool allowlist, bidirectional absence of excluded tools, preservation of existing offerings, HTTP 401 with `WWW-Authenticate` header pointing to RFC 9728 discovery resource, and tool description ownership audit.
+- **Vertical Analyst Bot Configurations (`docs/grok-bot-instructions-pack.md`)**:
+  - Expanded prompt pack with complete system instructions, starter prompts, connection self-checks, and the 7-part finished output contract for all 3 category doors:
+    - **Fodda Retail Analyst** (PSFK Retail Graph — launches first among verticals, 200 trends, 68 fresh, 6.3k articles).
+    - **Fodda Technology Analyst** (PSFK Technology & Enterprise Graph — 140 trends, 38 fresh, 1.3k articles).
+    - **Fodda Beauty Analyst** (NielsenIQ / Tara James Taylor Graph — 47 trends, 14 fresh, 640 articles).
+- **Cross-Repo Ingestion Handoff**:
+  - Filed `briefs/Brief - Ingestion Tech Graph Future-Dated Article Cleanup & Ingest Guard (PSFK Ingestion Agent).md` targeting the 2029-02-13 future-dated article in Neo4j and establishing an ingest-time validation guard.
+
 ## [1.46.78] - 2026-09-18
 
 ### Added (`verify_claim` MCP Tool — Part B)

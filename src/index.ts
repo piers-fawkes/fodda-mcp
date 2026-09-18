@@ -319,6 +319,16 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'check_supplemental_status',
         'generate_visual',
     ],
+    'grok-brand-context': [
+        'get_capabilities',
+        'get_domain_intelligence',
+        'brand_tracker',
+        'discover_adjacent_trends',
+        'get_earnings_intelligence',
+        'get_evidence',
+        'find_expert',
+        'verify_claim',
+    ],
 };
 
 const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; description: string }> = {
@@ -357,6 +367,11 @@ const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; desc
         title: 'Fodda Market Intelligence for ChatGPT',
         description: 'Expert-curated knowledge, brand, research & earnings intelligence across PSFK expert graphs.',
     },
+    'grok-brand-context': {
+        name: 'ai.fodda/grok-brand-context',
+        title: 'Fodda Brand & Market Context',
+        description: 'Verified brand, market & earnings context across PSFK expert graphs with citable evidence, not web summaries.',
+    },
 };
 
 app.get([
@@ -368,6 +383,7 @@ app.get([
     '/.well-known/expert-consult', '/.well-known/expert-consult.json',
     '/.well-known/copilot', '/.well-known/copilot.json',
     '/.well-known/chatgpt', '/.well-known/chatgpt.json',
+    '/.well-known/grok-brand-context', '/.well-known/grok-brand-context.json',
 ], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     const matchedOffering = Object.keys(OFFERING_CARD_METADATA).find(slug => req.path.includes(slug));
@@ -1088,7 +1104,7 @@ export async function resolveMcpToken(token: string, websiteBaseUrl: string): Pr
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/c/:token'], async (req, res) => {
+app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/grok-brand-context', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
