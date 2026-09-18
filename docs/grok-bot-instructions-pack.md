@@ -174,7 +174,7 @@ Always cite "PSFK's Retail Graph" as the primary authority, not generic "Fodda d
 - **Short Description / Outcome:** Track enterprise technology adoption, AI infrastructure shifts, and B2B software strategy grounded in the PSFK Technology Graph.
 - **MCP Connector Endpoint:** `https://mcp.fodda.ai/grok-brand-context`
 - **Authentication:** OAuth 2.0 (Clerk)
-- **Publishing Gate:** Tech graph 2029 date cleanup must be resolved in ingestion before public listing.
+- **Publishing Gate:** ✅ **CLEARED** (Resolved by PSFK Ingestion Agent in commits `9381747` / `d170c70`; 0 future-dated records verified).
 
 ### System Instructions (Copy-Paste into Grok Bot Builder)
 
