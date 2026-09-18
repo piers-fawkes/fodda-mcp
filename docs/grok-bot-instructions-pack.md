@@ -4,12 +4,25 @@ This pack provides the complete, copy-paste ready configuration, system instruct
 
 ---
 
+## Live Marketplace Bot Directory
+
+| Bot | Focus / Domain | MCP Connector Endpoint | Public Template Link | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Fodda Brand & Account Context Analyst** | Flagship Pre-Meeting Dossiers | `https://mcp.fodda.ai/grok-brand-context` | https://x.ai/bot/uLsc529aqDnuQDacsDV9g | **Live** |
+| **Fodda Retail Analyst** | PSFK Retail Knowledge Graph | `https://mcp.fodda.ai/grok-brand-context` | https://x.ai/bot/KUZdLLjUhhI2Pswocwa9u | **Live** |
+| **Fodda Technology Analyst** | PSFK Tech & Enterprise Graph | `https://mcp.fodda.ai/grok-brand-context` | https://x.ai/bot/4GlAnnqQIVfsGLdSFIomX | **Live** |
+| **Fodda Beauty Analyst** | NielsenIQ Beauty Graph | `https://mcp.fodda.ai/grok-brand-context` | https://x.ai/bot/q6906XBgY0Dv_6gb6-mP3 | **Live** |
+| **Fodda Earnings Context Analyst** | SEC Disclosures & Deflection | `https://mcp.fodda.ai/earnings-intelligence` | https://x.ai/bot/eA3xMaWsBxFwGlVJ9gXJs | **Live** |
+
+---
+
 ## 1. Milestone 1 Pilot: Earnings Context Analyst
 
 - **Target Persona / Role Name:** `Earnings Context Analyst`
+- **Public Template Link:** https://x.ai/bot/eA3xMaWsBxFwGlVJ9gXJs
 - **Short Description / Outcome:** Put public company earnings commentary and Q&A disclosures into market context — what leadership said, what they deflected, and what the evidence actually shows.
 - **MCP Connector Endpoint:** `https://mcp.fodda.ai/earnings-intelligence`
-- **Authentication:** OAuth 2.0 (Clerk)
+- **Authentication:** OAuth 2.0 (Fodda Authorization)
 - **Icon / Avatar Suggestion:** Financial chart / signal glyph on dark slate.
 
 ### System Instructions (Copy-Paste into Grok Bot Builder)
@@ -22,7 +35,7 @@ Your job is to put public company earnings calls, executive commentary, and anal
 ## Critical Operating Rule: Connection Self-Check
 Before answering any query, check whether your Fodda MCP tools (`get_earnings_intelligence`, `get_company_earnings`, `get_earnings_divergence`, `search_graph`) are active and accessible.
 - IF THE TOOLS ARE MISSING OR UNAUTHENTICATED: Do NOT silently substitute general web browsing or guess. State clearly:
-  "⚠️ **Fodda Earnings Connector Required**: To analyze verified earnings calls and executive disclosures, please connect the Fodda MCP server at `https://mcp.fodda.ai/earnings-intelligence` and complete authentication."
+  "⚠️ **Fodda Earnings Connector Required**: To analyze verified earnings calls and executive disclosures, please connect the Fodda MCP server at `https://mcp.fodda.ai/earnings-intelligence` and complete authorization."
 - NEVER present general web search results as Fodda earnings intelligence.
 
 ────────────────────────────────────────
@@ -86,9 +99,10 @@ Every earnings analysis must adhere strictly to this 7-part structure:
 ## 2. Milestone 2 Flagship: Fodda Brand & Account Context Analyst
 
 - **Target Persona / Role Name:** `Brand & Account Context Analyst`
+- **Public Template Link:** https://x.ai/bot/uLsc529aqDnuQDacsDV9g
 - **Short Description / Outcome:** Put any company, brand, or client in expert-grounded market context before a meeting, pitch, or strategic decision.
 - **MCP Connector Endpoint:** `https://mcp.fodda.ai/grok-brand-context`
-- **Authentication:** OAuth 2.0 (Clerk)
+- **Authentication:** OAuth 2.0 (Fodda Authorization)
 - **Icon / Avatar Suggestion:** Modern lens / briefing badge on obsidian navy.
 
 ### System Instructions (Copy-Paste into Grok Bot Builder)
@@ -146,7 +160,7 @@ When testing the Earnings Context Analyst template in Grok, verify and record th
 |---|---|---|---|
 | 1 | **Connector Portability** | When shared as a template, does `https://mcp.fodda.ai/earnings-intelligence` remain configured on the recipient's copy? | |
 | 2 | **Credential Isolation** | Are credentials excluded so the recipient gets their own clean OAuth prompt? | |
-| 3 | **OAuth Handshake** | Does Clerk OAuth open and redirect cleanly to Grok without a redirect URI error? | |
+| 3 | **OAuth Handshake** | Does OAuth open and redirect cleanly to Grok without a redirect URI error? | |
 | 4 | **Tool Visibility** | Does the recipient's bot see the 13 earnings-intelligence tools upon connection? | |
 | 5 | **Source Attribution** | Does the outgoing MCP call preserve `X-Fodda-Source: earnings-intelligence`? | |
 | 6 | **Missing Connector Behavior** | When disconnected, does the bot output the self-check warning instead of faking it with web browsing? | |
@@ -156,10 +170,11 @@ When testing the Earnings Context Analyst template in Grok, verify and record th
 ## 4. Category Door 1: Fodda Retail Analyst (Launches First Among Verticals)
 
 - **Target Persona / Role Name:** `Retail Analyst` (or `Fodda Retail Analyst`)
+- **Public Template Link:** https://x.ai/bot/KUZdLLjUhhI2Pswocwa9u
 - **Curator & Evidence Base:** PSFK Retail Graph (200 trends, 68 fresh ≤90d, 23.5 avg evidence/trend, 6,304 articles)
 - **Short Description / Outcome:** Discover verified retail category shifts, store innovation, supply chain modernization, and consumer shopping trends grounded in the PSFK Retail Graph.
 - **MCP Connector Endpoint:** `https://mcp.fodda.ai/grok-brand-context`
-- **Authentication:** OAuth 2.0 (Clerk)
+- **Authentication:** OAuth 2.0 (Fodda Authorization)
 
 ### System Instructions (Copy-Paste into Grok Bot Builder)
 
@@ -204,10 +219,11 @@ Always cite "PSFK's Retail Graph" as the primary authority, not generic "Fodda d
 ## 5. Category Door 2: Fodda Technology Analyst (Replication Set)
 
 - **Target Persona / Role Name:** `Technology Analyst` (or `Fodda Technology Analyst`)
+- **Public Template Link:** https://x.ai/bot/4GlAnnqQIVfsGLdSFIomX
 - **Curator & Evidence Base:** PSFK Technology & Enterprise Graph (140 trends, 38 fresh ≤90d, 17.4 avg evidence/trend, 1,376 articles)
 - **Short Description / Outcome:** Track enterprise technology adoption, AI infrastructure shifts, and B2B software strategy grounded in the PSFK Technology Graph.
 - **MCP Connector Endpoint:** `https://mcp.fodda.ai/grok-brand-context`
-- **Authentication:** OAuth 2.0 (Clerk)
+- **Authentication:** OAuth 2.0 (Fodda Authorization)
 - **Publishing Gate:** ✅ **CLEARED** (Resolved by PSFK Ingestion Agent in commits `9381747` / `d170c70`; 0 future-dated records verified).
 
 ### System Instructions (Copy-Paste into Grok Bot Builder)
@@ -248,10 +264,11 @@ Verify that your Fodda MCP tools (`get_domain_intelligence`, `brand_tracker`, `d
 ## 6. Category Door 3: Fodda Beauty Analyst (Replication Set)
 
 - **Target Persona / Role Name:** `Beauty Analyst` (or `Fodda Beauty Analyst`)
+- **Public Template Link:** https://x.ai/bot/q6906XBgY0Dv_6gb6-mP3
 - **Curator & Evidence Base:** NielsenIQ / Tara James Taylor Beauty Graph (47 trends, 14 fresh ≤90d, 20.7 avg evidence/trend, 640 articles)
 - **Short Description / Outcome:** Analyze clean beauty formulations, clinical skincare shifts, longevity, and prestige beauty retail movements grounded in the NielsenIQ Beauty Graph.
 - **MCP Connector Endpoint:** `https://mcp.fodda.ai/grok-brand-context`
-- **Authentication:** OAuth 2.0 (Clerk)
+- **Authentication:** OAuth 2.0 (Fodda Authorization)
 
 ### System Instructions (Copy-Paste into Grok Bot Builder)
 

@@ -24,6 +24,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - **Fodda Beauty Analyst** (NielsenIQ / Tara James Taylor Graph — 47 trends, 14 fresh, 640 articles).
 - **Cross-Repo Ingestion Handoff**:
   - Filed `briefs/Brief - Ingestion Tech Graph Future-Dated Article Cleanup & Ingest Guard (PSFK Ingestion Agent).md` targeting the 2029-02-13 future-dated article in Neo4j and establishing an ingest-time validation guard.
+- **xAI Grok Bot Marketplace 5-Bot Suite Deployment**:
+  - Staged and published all five official Fodda analyst bot templates on xAI Grok:
+    - **Fodda Brand & Account Context Analyst**: `https://x.ai/bot/uLsc529aqDnuQDacsDV9g`
+    - **Fodda Retail Analyst**: `https://x.ai/bot/KUZdLLjUhhI2Pswocwa9u`
+    - **Fodda Technology Analyst**: `https://x.ai/bot/4GlAnnqQIVfsGLdSFIomX`
+    - **Fodda Beauty Analyst**: `https://x.ai/bot/q6906XBgY0Dv_6gb6-mP3`
+    - **Fodda Earnings Context Analyst**: `https://x.ai/bot/eA3xMaWsBxFwGlVJ9gXJs`
+  - Created [`docs/grok-bot-master-brief.md`](file:///Users/piersfawkes/Documents/Fodda%20MCP/docs/grok-bot-master-brief.md) with standardized 6-part specification per bot.
+  - Purged internal plumbing terms (Clerk, tokens, SPT) across all user-facing documentation and instructions.
+  - Automated test suite and live HTTP status checks verified (200 OK across all 5 public endpoints).
 
 ## [1.46.78] - 2026-09-18
 
