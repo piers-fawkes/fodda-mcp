@@ -5727,6 +5727,320 @@ export async function createServer(
         }
     );
 
+    // --- verify_claim ---
+    server.tool(
+        'verify_claim',
+        'Verify a factual claim, hypothesis, or strategic assertion against primary evidence held in Fodda\'s expert knowledge graphs. Supported by an authorized Human Agent (a verified, living practitioner) who stands behind the structured verdict ("confirms", "contradicts", "partial", or "no_coverage") with cited evidence and rationale. When analyst_id is provided, routes to that specific Human Agent. When omitted, automatically routes to the best matching Human Agent based on domain relevance; if no Human Agent covers the domain, fails honestly without falling back to synthetic personas. Returns structured verdict, confidence level (full, partial, thin), one_line summary, rationale, sources, expert details, and booking information. If confidence is thin, present this to the user as limited domain coverage in plain language without echoing technical tags.',
+        {
+            claim: z.string().describe("The factual claim, hypothesis, or statement to verify against expert evidence."),
+            analyst_id: z.string().optional().describe("Optional internal expert ID of the Human Agent (from find_expert or list_analysts). If omitted, automatically discovers and routes to the most relevant Human Agent."),
+            domain: z.string().optional().describe("Optional domain hint or industry sector (e.g. 'retail', 'tech', 'data privacy', 'supply chain') to assist in discovery when analyst_id is omitted."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        { title: 'Verify Claim with Human Agent', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ claim, analyst_id, domain, userId: uid }) => {
+            logUserQuery(claim, 'verify_claim');
+
+            let targetAnalystId: string;
+            let expertName: string;
+            let match: any;
+
+            if (analyst_id) {
+                const { analyst_id: resolvedAnalystId } = resolveAnalystAlias(analyst_id);
+                match = getAnalysts().find((a: any) => {
+                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                    const nameKey = (a.name || '').toLowerCase().trim();
+                    const queryKey = resolvedAnalystId.toLowerCase().trim();
+                    if (idKey === queryKey || nameKey === queryKey) return true;
+                    const firstName = nameKey.split(/\s+/)[0];
+                    return firstName && firstName === queryKey;
+                });
+
+                if (match && (isSyntheticAnalyst(match) || match.category === 'synthetic_agent' || match.category === 'classic_agent')) {
+                    return {
+                        isError: true,
+                        content: [{
+                            type: 'text' as const,
+                            text: JSON.stringify({
+                                error: `Only authorized Human Agents can verify claims. '${match.name || resolvedAnalystId}' is not a living practitioner and cannot provide claim verification.`
+                            })
+                        }]
+                    };
+                }
+
+                targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
+                expertName = match?.name || targetAnalystId;
+            } else {
+                let analysts = getAnalysts();
+                if (!analysts || analysts.length === 0) {
+                    try {
+                        const targetUserId = resolveUserId(userId, uid);
+                        const data = await foddaRequest('GET', '/v1/analysts', apiKey, targetUserId);
+                        const raw = Array.isArray(data) ? data : (data?.analysts || data?.rows || data?.data || []);
+                        if (Array.isArray(raw) && raw.length > 0) {
+                            analysts = raw.map(normalizeAnalyst);
+                        }
+                    } catch {
+                        // proceed with existing catalog cache
+                    }
+                }
+
+                const searchQuery = domain ? `${claim} (${domain})` : claim;
+                const candidates = findCandidateExperts(searchQuery, {
+                    limit: 5,
+                    analysts,
+                    graphs: getGraphs(),
+                });
+
+                const humanCandidates = candidates.filter(c => c.category === 'human_agent' || c.consult_tool === 'consult_human_agent');
+
+                if (humanCandidates.length === 0) {
+                    const payload = {
+                        claim,
+                        matched: false,
+                        expert: null,
+                        note: 'No active Human Agent directly covers this domain. Fodda fails honestly rather than forcing an ungrounded verification or falling back to a synthetic persona.'
+                    };
+                    return {
+                        ...payload,
+                        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }]
+                    };
+                }
+
+                const topMatch = humanCandidates[0];
+                if (!topMatch) {
+                    const payload = {
+                        claim,
+                        matched: false,
+                        expert: null,
+                        note: 'No active Human Agent directly covers this domain. Fodda fails honestly rather than forcing an ungrounded verification or falling back to a synthetic persona.'
+                    };
+                    return {
+                        ...payload,
+                        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }]
+                    };
+                }
+
+                targetAnalystId = topMatch.analyst_id;
+                match = analysts.find((a: any) => {
+                    const idKey = (a.analyst_id || a.id || a.slug || '').toLowerCase().trim();
+                    return idKey === targetAnalystId.toLowerCase().trim();
+                });
+                expertName = topMatch.display_name || match?.name || targetAnalystId;
+            }
+
+            const isUnclaimedOrOnRequest = Boolean(
+                match && (
+                    match.status === 'Unclaimed' ||
+                    match.status === 'On Request' ||
+                    (match.status && match.status !== 'Active')
+                )
+            );
+
+            if (isUnclaimedOrOnRequest) {
+                const expertId = match?.slug || match?.id || match?.analyst_id || targetAnalystId;
+                const expName = match?.name || targetAnalystId;
+                const rawTopics = match?.topics || match?.topic || match?.expert_in || match?.expertIn;
+                const topicLabel = Array.isArray(rawTopics)
+                    ? rawTopics.join(', ')
+                    : (typeof rawTopics === 'string' && rawTopics.trim() ? rawTopics.trim() : 'industry');
+
+                sendOnRequestDemandWebhook({
+                    expertId,
+                    expertName: expName,
+                    expertIn: topicLabel,
+                    query: claim,
+                    source: 'mcp_claude'
+                }).catch(err => console.warn('[OnRequestWebhook] Failed to notify sales:', err.message));
+            }
+
+            try {
+                const requestPayload: Record<string, any> = {
+                    analyst_id: targetAnalystId,
+                    query: claim,
+                    verify_claim: claim
+                };
+
+                const result = await foddaRequest('POST', '/v1/human-agents/consult', apiKey, resolveUserId(userId, uid), requestPayload);
+
+                const verdict = result?.verdict || 'no_coverage';
+
+                const upstreamCoverage = result?.coverage;
+                const coverageLower = (upstreamCoverage || '').toLowerCase().trim();
+                let confidence: 'full' | 'partial' | 'thin' = 'thin';
+                if (coverageLower === 'full' || coverageLower === 'in') {
+                    confidence = 'full';
+                } else if (coverageLower === 'partial') {
+                    confidence = 'partial';
+                } else {
+                    confidence = 'thin';
+                }
+
+                let narrative = typeof result.result === 'string'
+                    ? result.result
+                    : (typeof result.report === 'string'
+                        ? result.report
+                        : (typeof result.response === 'string' ? result.response : JSON.stringify(result, null, 2)));
+
+                narrative = narrative.replace(/^(?:\*\*)?VERDICT:\s*[A-Z_]+(?:\.\s*)?(?:\*\*)?\n*/i, '').trim();
+
+                const extractFirstSentence = (text: string): string => {
+                    const clean = text.trim();
+                    if (!clean) return '';
+                    const m = clean.match(/^.*?[.!?](?=\s|$)/s);
+                    if (m && m[0]) {
+                        return m[0].trim();
+                    }
+                    const lines = clean.split('\n');
+                    return (lines[0] || '').trim() || clean;
+                };
+                const one_line = extractFirstSentence(narrative);
+
+                const rawSources: any[] = Array.isArray(result.sources_used) ? result.sources_used : [];
+                const seenUrls = new Set<string>();
+
+                for (const s of rawSources) {
+                    if (typeof s === 'object' && s?.url) {
+                        seenUrls.add(s.url.trim());
+                    } else if (typeof s === 'string') {
+                        seenUrls.add(s.trim());
+                    }
+                }
+
+                const markdownLinkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+                const extractedSources: Array<{ title: string; url: string; origin: string; type: string }> = [];
+                let mMatch: RegExpExecArray | null;
+                while ((mMatch = markdownLinkRegex.exec(narrative)) !== null) {
+                    const rawTitle = mMatch[1];
+                    const rawUrl = mMatch[2];
+                    if (rawTitle && rawUrl) {
+                        const title = rawTitle.trim();
+                        const url = rawUrl.trim();
+                        if (url && !seenUrls.has(url)) {
+                            seenUrls.add(url);
+                            extractedSources.push({ title, url, origin: 'prose', type: 'web' });
+                        }
+                    }
+                }
+
+                const mergedSources = [...rawSources, ...extractedSources];
+
+                if (mergedSources.length === 0) {
+                    const expertObj = result.expert || result.analyst || match || {};
+                    const expName = expertObj.name || result.analyst_name || result.name || targetAnalystId;
+                    const cleanName = (expName || '').replace(/\^\s*\[HA\]/gi, '').replace(/\^\[HA\]/g, '').trim();
+                    const rawSlug = expertObj.expertSlug || expertObj.slug || expertObj.url || expertObj.webpage_url || expertObj.analyst_id || expertObj.id || targetAnalystId;
+                    const expertSlug = typeof rawSlug === 'string' ? rawSlug.split('/experts/').pop()?.replace(/^https?:\/\/[^\/]+/, '').replace(/^\//, '') : targetAnalystId;
+
+                    mergedSources.push({
+                        title: `${cleanName} Human Agent — Official and Verified Profile`,
+                        url: `https://www.fodda.ai/experts/${expertSlug}`,
+                        origin: 'profile',
+                        type: 'web'
+                    });
+                }
+
+                const classifyTier = (s: any): 'graph' | 'supplemental' | 'web' | 'exec_quote' => {
+                    if (typeof s === 'string') {
+                        if (s.includes('/experts/')) return 'web';
+                        if (s.includes('fodda.ai/graphs/') || s.includes('graph_id=')) return 'graph';
+                        return rawSources.includes(s) ? 'graph' : 'web';
+                    }
+                    const origin = (s.origin || '').toLowerCase();
+                    const type = (s.type || s.kind || '').toLowerCase();
+                    const url = (s.url || '').toLowerCase();
+
+                    if (type === 'exec_quote' || origin === 'exec_quote') return 'exec_quote';
+                    if (origin === 'prose' || origin === 'profile') return 'web';
+                    if (type === 'own_graph' || type === 'library_graph' || type === 'graph' || origin === 'graph') return 'graph';
+                    if (type === 'supplemental' || type === 'financial' || type === 'sec') return 'supplemental';
+                    if (type === 'web' || origin === 'web' || url.includes('/experts/')) return 'web';
+
+                    if (rawSources.includes(s) && !url.includes('/experts/')) return 'graph';
+                    if (url) return 'web';
+                    return 'graph';
+                };
+
+                const sources = mergedSources.map((s: any) => {
+                    const tier = classifyTier(s);
+                    if (typeof s === 'string') {
+                        return {
+                            title: s,
+                            ...(s.startsWith('http') ? { url: s } : {}),
+                            tier
+                        };
+                    }
+                    return {
+                        title: s.title || s.name || s.label || 'Source',
+                        ...(s.url ? { url: s.url } : {}),
+                        tier,
+                        ...(s.origin ? { origin: s.origin } : {}),
+                        ...(s.type ? { type: s.type } : {})
+                    };
+                });
+
+                const book_a_call = sessionSource === 'chatgpt'
+                    ? (result.book_a_call ? sanitizePayloadForChatGpt(result.book_a_call) : null)
+                    : (result.book_a_call ?? (match?.book_a_call ? {
+                        url: match.book_a_call,
+                        ...(match.rate_display ? { rate_display: match.rate_display } : {})
+                    } : null));
+
+                const consultWithheld = await settleOrWithhold({
+                    queryTypeCode: 'human_agent_consult',
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    query: claim
+                }, 'verify_claim');
+                if (consultWithheld) return consultWithheld;
+
+                const resolvedExpertName = result?.analyst?.name || result?.expert?.name || result?.analyst_name || expertName;
+
+                const payload = {
+                    verdict,
+                    confidence,
+                    one_line,
+                    rationale: narrative,
+                    sources,
+                    expert: resolvedExpertName,
+                    book_a_call
+                };
+
+                return {
+                    ...payload,
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify(payload, null, 2)
+                    }]
+                };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+                    return {
+                        isError: true,
+                        content: [{
+                            type: 'text' as const,
+                            text: JSON.stringify({
+                                error: 'Human Agent verification timed out (90s). The upstream API is processing a complex query with tool calls. Retry in a moment.',
+                                analyst_id: targetAnalystId,
+                                timeout: true
+                            })
+                        }]
+                    };
+                }
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({ error: msg })
+                    }]
+                };
+            }
+        }
+    );
+
     // --- request_expert_intro (Inquiry & Advisory Intro Capture) ---
     server.tool(
         'request_expert_intro',

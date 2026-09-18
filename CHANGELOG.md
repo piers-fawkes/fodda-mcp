@@ -5,6 +5,22 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.78] - 2026-09-18
+
+### Added (`verify_claim` MCP Tool — Part B)
+- **New Tool `verify_claim` (`src/toolHandlers.ts`)**:
+  - Registers `verify_claim` with `readOnlyHint: true` to verify factual claims, hypotheses, and strategic assertions against primary evidence in Fodda knowledge graphs.
+  - Exclusively backed by authorized Human Agents (consented, living practitioners) returning structured `verdict` (`confirms`, `contradicts`, `partial`, `no_coverage`), mapped `confidence` (`full`, `partial`, `thin`), `one_line` summary, `rationale` narrative, tiered `sources` (`graph`, `supplemental`, `web`, `exec_quote`), `expert` display name, and unflattened `book_a_call` (preserving `rate_display` verbatim).
+  - Explicit routing: when `analyst_id` is supplied, rejects synthetic/classic personas and calls `POST /v1/human-agents/consult` with `{ analyst_id, query: claim, verify_claim: claim }`.
+  - Automatic discovery: when `analyst_id` is omitted, evaluates domain candidates via `findCandidateExperts` and filters strictly for living Human Agents (`category === 'human_agent'` / `consult_tool === 'consult_human_agent'`).
+  - Honest no-match failure: if no Human Agent covers the domain, fails clean with `{ claim, matched: false, expert: null, note: "..." }` — zero synthetic persona fallback.
+  - Billing symmetry: invokes `settleOrWithhold({ queryTypeCode: 'human_agent_consult', ... })` so exactly one consult debit occurs per verification turn with zero additional surface.
+- **Offering Profile Scoping (`src/index.ts`)**:
+  - Added `'verify_claim'` to `OFFERING_SCOPED_TOOLS['expert-consult']` array. Excluded from all other offering profiles.
+- **Tools Manifest (`scripts/generate-tools-manifest.mjs`, `tools-manifest.json`)**:
+  - Mapped `verify_claim: 'human_agent_consult'` in `BILLS_AS` and `verify_claim: 'Expert'` in `CATEGORY`.
+  - Tools manifest regenerated with 53 tools; passed build-time Cost Silence guard with zero violations.
+
 ## [1.46.77] - 2026-09-17
 
 ### Changed & Fixed (Tool Descriptions Name Live Verticals and Layers; Brand Routing)

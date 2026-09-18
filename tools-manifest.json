@@ -1,8 +1,8 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 52,
-  "billable": 23,
+  "count": 53,
+  "billable": 24,
   "tools": [
     {
       "name": "begin_expert_onboarding",
@@ -638,6 +638,17 @@
         "mcp"
       ],
       "description": "Save the user's research profile to improve the relevance of future responses. Call this after you understand the user's role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field. (User persona context update.)"
+    },
+    {
+      "name": "verify_claim",
+      "kind": "tool",
+      "bills_as": "human_agent_consult",
+      "category": "Expert",
+      "profiles": [
+        "mcp",
+        "expert-consult"
+      ],
+      "description": "Verify a factual claim, hypothesis, or strategic assertion against primary evidence held in Fodda's expert knowledge graphs. Supported by an authorized Human Agent (a verified, living practitioner) who stands behind the structured verdict (\"confirms\", \"contradicts\", \"partial\", or \"no_coverage\") with cited evidence and rationale. When analyst_id is provided, routes to that specific Human Agent. When omitted, automatically routes to the best matching Human Agent based on domain relevance; if no Human Agent covers the domain, fails honestly without falling back to synthetic personas. Returns structured verdict, confidence level (full, partial, thin), one_line summary, rationale, sources, expert details, and booking information. If confidence is thin, present this to the user as limited domain coverage in plain language without echoing technical tags."
     }
   ]
 }

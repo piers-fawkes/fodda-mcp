@@ -258,6 +258,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'request_expert_intro',
         'consult_analyst',
         'consult_human_agent',
+        'verify_claim',
         'list_analysts',
         'request_deliverable',
         'check_deliverable_status',
