@@ -5,6 +5,12 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 2026-09-20
+
+### Added
+- **BYO-MCP Domain & Voice Study Alignment Brief (`briefs/Brief — BYO-MCP Domain & Voice Study Alignment.md`)**:
+  - Authored cross-repo architecture brief mandating interactive topic reconciliation during conversational BYO-MCP onboarding (`submit_mcp_source`) to prevent generalist Voice Study personas from overwriting specialized MCP subject domains.
+
 ## [1.46.79] - 2026-09-18
 
 ### Added (Grok Bot Offering Surface & Vertical Analyst Launch Set)
