@@ -164,7 +164,12 @@ async function runTests() {
     const server = await createServer(
         'test_api_key',
         'test_user',
-        (async () => ({})) as any,
+        (async (method: string, path: string) => {
+            if (path.includes('/v1/analysts')) {
+                return { analysts: mockAnalysts };
+            }
+            return {};
+        }) as any,
         (async () => ({})) as any,
         () => 'widget_1',
         () => 'http://localhost'
@@ -195,7 +200,198 @@ async function runTests() {
         assert.ok(first.reason, 'Candidate must have reason explanation');
         assert.ok(first.consult_tool, 'Candidate must have consult_tool');
     }
-    console.log('✅ find_expert tool handler tests passed.\n');
+    console.log('✅ find_expert local fallback tests passed.\n');
+
+    // ─────────────────────────────────────────────────────────────
+    // 3b. find_expert API Integration Tests (On-Request, Active, Related Graphs, Timeout Fallback)
+    // ─────────────────────────────────────────────────────────────
+    console.log('--- 3b. Testing find_expert API Integration & Differentiated Routing ---');
+
+    // Test 3b.1: On-Request Specialist via API
+    const serverWithOnRequestApi = await createServer(
+        'test_api_key',
+        'test_user',
+        (async (method: string, path: string) => {
+            if (path.includes('/v1/experts/search')) {
+                return {
+                    ok: true,
+                    query: 'nicotine pouches',
+                    total_matches: 1,
+                    timing_ms: 15.2,
+                    results: [
+                        {
+                            id: 'adam-specialist',
+                            slug: 'adam-specialist',
+                            name: 'Adam Specialist',
+                            status: 'Unclaimed',
+                            agent_class: 'human_agent',
+                            role_title: 'Regulatory & Market Entry Director',
+                            search_ask_line: 'Ask Adam about market entry and compliance for nicotine pouches and vaping products.',
+                            why_matched: ['Nicotine pouches', 'Vaping products'],
+                            topics: ['harm reduction', 'oral nicotine'],
+                            score: 25
+                        }
+                    ],
+                    related_knowledge_graphs: []
+                };
+            }
+            return {};
+        }) as any,
+        (async () => ({})) as any,
+        () => 'widget_1',
+        () => 'http://localhost'
+    );
+
+    const findExpertOnRequest = (serverWithOnRequestApi as any)._registeredTools['find_expert'];
+    const onRequestRes = await findExpertOnRequest.handler({ query: 'nicotine pouches' });
+    const onRequestParsed = JSON.parse(onRequestRes.content[0].text);
+    assert.strictEqual(onRequestParsed.total_matches, 1);
+    const onReqCandidate = onRequestParsed.candidates[0];
+    assert.strictEqual(onReqCandidate.analyst_id, 'adam-specialist');
+    assert.strictEqual(onReqCandidate.status, 'on_request');
+    assert.strictEqual(onReqCandidate.search_ask_line, 'Ask Adam about market entry and compliance for nicotine pouches and vaping products.');
+    assert.deepStrictEqual(onReqCandidate.why_matched, ['Nicotine pouches', 'Vaping products']);
+    assert.ok(onReqCandidate.next_step.includes('request_expert_intro(analyst_id: \'adam-specialist\')'));
+    assert.ok(onReqCandidate.next_step.includes('consult_human_agent(analyst_id: \'adam-specialist\')'));
+    console.log('✅ find_expert On-Request candidate routing verified.');
+
+    // Test 3b.2: Active Human Agent via API
+    const serverWithActiveApi = await createServer(
+        'test_api_key',
+        'test_user',
+        (async (method: string, path: string) => {
+            if (path.includes('/v1/experts/search')) {
+                return {
+                    ok: true,
+                    query: 'clean beauty',
+                    total_matches: 1,
+                    timing_ms: 12.0,
+                    results: [
+                        {
+                            id: 'tara-james-taylor',
+                            slug: 'tara-james-taylor',
+                            name: 'Tara James Taylor',
+                            status: 'Active',
+                            agent_class: 'human_agent',
+                            role_title: 'Global Head of Beauty & Personal Care',
+                            search_ask_line: 'Ask Tara about clean beauty formulation trends and retail distribution.',
+                            why_matched: ['Clean beauty', 'Cosmetics'],
+                            topics: ['clean beauty', 'skincare'],
+                            score: 28
+                        }
+                    ],
+                    related_knowledge_graphs: []
+                };
+            }
+            return {};
+        }) as any,
+        (async () => ({})) as any,
+        () => 'widget_1',
+        () => 'http://localhost'
+    );
+
+    const findExpertActive = (serverWithActiveApi as any)._registeredTools['find_expert'];
+    const activeRes = await findExpertActive.handler({ query: 'clean beauty' });
+    const activeParsed = JSON.parse(activeRes.content[0].text);
+    assert.strictEqual(activeParsed.total_matches, 1);
+    const activeCandidate = activeParsed.candidates[0];
+    assert.strictEqual(activeCandidate.status, 'active');
+    assert.strictEqual(activeCandidate.consult_tool, 'consult_human_agent');
+    assert.strictEqual(activeCandidate.next_step, "Call consult_human_agent with analyst_id: 'tara-james-taylor'.");
+    console.log('✅ find_expert Active Human Agent routing verified.');
+
+    // Test 3b.3: Zero Matches with Related Knowledge Graphs
+    const serverWithGraphsApi = await createServer(
+        'test_api_key',
+        'test_user',
+        (async (method: string, path: string) => {
+            if (path.includes('/v1/experts/search')) {
+                return {
+                    ok: true,
+                    query: 'sub-orbital hypersonic space travel',
+                    total_matches: 0,
+                    timing_ms: 8.5,
+                    results: [],
+                    related_knowledge_graphs: [
+                        { id: 'tech', name: 'PSFK Technology & Enterprise', description: 'Tech insights' },
+                        { id: 'transport', name: 'Mobility & Aerospace Trends', description: 'Transport insights' }
+                    ]
+                };
+            }
+            return {};
+        }) as any,
+        (async () => ({})) as any,
+        () => 'widget_1',
+        () => 'http://localhost'
+    );
+
+    const findExpertGraphs = (serverWithGraphsApi as any)._registeredTools['find_expert'];
+    const graphsRes = await findExpertGraphs.handler({ query: 'sub-orbital hypersonic space travel' });
+    const graphsParsed = JSON.parse(graphsRes.content[0].text);
+    assert.strictEqual(graphsParsed.total_matches, 0);
+    assert.deepStrictEqual(graphsParsed.candidates, []);
+    assert.ok(graphsParsed.note.includes('No dedicated Human Agent covers this domain yet'));
+    assert.ok(graphsParsed.note.includes('PSFK Technology & Enterprise, Mobility & Aerospace Trends'));
+    assert.ok(graphsParsed.note.includes("search_graph(graphId: 'tech', query: 'sub-orbital hypersonic space travel')"));
+    assert.strictEqual(graphsParsed.related_knowledge_graphs.length, 2);
+    console.log('✅ find_expert Related Knowledge Graphs recommendation verified.');
+
+    // Test 3b.4: Network Error Fallback to Local Matching
+    const serverWithErrorApi = await createServer(
+        'test_api_key',
+        'test_user',
+        (async (method: string, path: string) => {
+            if (path.includes('/v1/experts/search')) {
+                throw new Error('Connection refused to Fodda API');
+            }
+            if (path.includes('/v1/analysts')) {
+                return { analysts: mockAnalysts };
+            }
+            return {};
+        }) as any,
+        (async () => ({})) as any,
+        () => 'widget_1',
+        () => 'http://localhost'
+    );
+
+    const findExpertError = (serverWithErrorApi as any)._registeredTools['find_expert'];
+    const errorFallbackRes = await findExpertError.handler({ query: 'beauty, cosmetics, and skincare' });
+    assert.strictEqual(errorFallbackRes.isError, undefined);
+    const errorFallbackParsed = JSON.parse(errorFallbackRes.content[0].text);
+    assert.ok(errorFallbackParsed.total_matches >= 1, 'Local fallback must find candidate despite API error');
+    assert.strictEqual(errorFallbackParsed.candidates[0].analyst_id, 'lauren-goode-beauty');
+    console.log('✅ find_expert Network Error graceful local fallback verified.');
+
+    // Test 3b.5: Timeout Fallback (>3s) to Local Matching
+    const serverWithTimeoutApi = await createServer(
+        'test_api_key',
+        'test_user',
+        (async (method: string, path: string) => {
+            if (path.includes('/v1/experts/search')) {
+                // Simulate slow upstream hang (> 3s)
+                await new Promise(resolve => setTimeout(resolve, 3500));
+                return { ok: true, results: [] };
+            }
+            if (path.includes('/v1/analysts')) {
+                return { analysts: mockAnalysts };
+            }
+            return {};
+        }) as any,
+        (async () => ({})) as any,
+        () => 'widget_1',
+        () => 'http://localhost'
+    );
+
+    const findExpertTimeout = (serverWithTimeoutApi as any)._registeredTools['find_expert'];
+    const timeoutStart = Date.now();
+    const timeoutRes = await findExpertTimeout.handler({ query: 'beauty, cosmetics, and skincare' });
+    const elapsed = Date.now() - timeoutStart;
+    assert.strictEqual(timeoutRes.isError, undefined);
+    assert.ok(elapsed >= 2900 && elapsed < 4500, `Timeout must trigger around 3000ms, took ${elapsed}ms`);
+    const timeoutParsed = JSON.parse(timeoutRes.content[0].text);
+    assert.ok(timeoutParsed.total_matches >= 1, 'Local fallback must find candidate when API times out');
+    assert.strictEqual(timeoutParsed.candidates[0].analyst_id, 'lauren-goode-beauty');
+    console.log('✅ find_expert >3s Timeout graceful local fallback verified.\n');
 
     // ─────────────────────────────────────────────────────────────
     // 4. consult_analyst deep Parameter Tests

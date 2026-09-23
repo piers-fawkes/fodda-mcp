@@ -1182,7 +1182,7 @@ export async function createServer(
         }
     );
 
-    // --- find_expert (Visible Expert Matching — Brief 3) ---
+    // --- find_expert (Visible Expert Matching — Brief 3 & Expert Search API) ---
     server.tool(
         'find_expert',
         'Find 2–3 genuine candidate experts for a question, brief, or situation with domain-grounded rationale. Discovery tool ("who should I ask") across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists. Evaluates lane overlap, filters out declared blind spots, and fails honestly when no expert matches. Call this when deciding which expert to consult, then pass the matched analyst_id to consult_human_agent or consult_analyst.',
@@ -1195,10 +1195,99 @@ export async function createServer(
         async ({ query, limit, userId: uid }) => {
             try {
                 const effectiveLimit = Math.min(Math.max(limit || 3, 1), 3);
+                const targetUserId = resolveUserId(userId, uid);
+
+                let apiData: any = null;
+                let usedApi = false;
+
+                try {
+                    let timer: NodeJS.Timeout | undefined;
+                    const timeoutPromise = new Promise((_, reject) => {
+                        timer = setTimeout(() => reject(new Error('Expert search API timed out (>3s)')), 3000);
+                    });
+                    const fetchPromise = foddaRequest(
+                        'GET',
+                        `/v1/experts/search?q=${encodeURIComponent(query)}&limit=${effectiveLimit}`,
+                        apiKey,
+                        targetUserId
+                    );
+                    const response = await Promise.race([fetchPromise, timeoutPromise]).finally(() => {
+                        if (timer) clearTimeout(timer);
+                    });
+
+                    if (response && response.ok && Array.isArray(response.results)) {
+                        apiData = response;
+                        usedApi = true;
+                    }
+                } catch (apiErr: any) {
+                    // Fall back gracefully to local findCandidateExperts
+                    usedApi = false;
+                }
+
+                if (usedApi && apiData) {
+                    const results: any[] = apiData.results || [];
+                    const candidates = results.map((r: any) => {
+                        const analystId = r.slug || r.id;
+                        const displayName = cleanDisplayName(r.name);
+                        const category = r.agent_class || 'human_agent';
+                        const statusRaw = (r.status || '').toLowerCase().trim();
+                        const isOnRequest = statusRaw === 'unclaimed' || statusRaw === 'on request' || statusRaw === 'on_request';
+                        const consultTool = (category === 'human_agent' || isOnRequest)
+                            ? 'consult_human_agent'
+                            : (r.consult_tool || 'consult_analyst');
+
+                        const candidateObj: any = {
+                            analyst_id: analystId,
+                            display_name: displayName,
+                            category,
+                            consult_tool: consultTool,
+                            reason: Array.isArray(r.why_matched) && r.why_matched.length > 0
+                                ? `covers ${r.why_matched.join(', ')} directly`
+                                : (r.role_title || 'covers this domain directly'),
+                            out_of_lane: false
+                        };
+
+                        if (isOnRequest) {
+                            candidateObj.status = 'on_request';
+                            if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
+                            if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
+                            candidateObj.next_step = `This verified specialist is available On Request. You can introduce the user by calling request_expert_intro(analyst_id: '${analystId}') or consult domain knowledge with consult_human_agent(analyst_id: '${analystId}').`;
+                        } else {
+                            candidateObj.status = 'active';
+                            if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
+                            if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
+                            candidateObj.next_step = `Call ${consultTool} with analyst_id: '${analystId}'.`;
+                        }
+
+                        return candidateObj;
+                    });
+
+                    const relatedGraphs = Array.isArray(apiData.related_knowledge_graphs) ? apiData.related_knowledge_graphs : [];
+
+                    const payload: any = {
+                        query,
+                        candidates,
+                        total_matches: candidates.length,
+                    };
+
+                    if (candidates.length === 0) {
+                        payload.note = relatedGraphs.length > 0
+                            ? `No dedicated Human Agent covers this domain yet. However, this topic is covered in Fodda Knowledge Graphs: ${relatedGraphs.map((g: any) => g.name).join(', ')}. Query them using search_graph(graphId: '${relatedGraphs[0].id}', query: '${query}').`
+                            : 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.';
+                        if (relatedGraphs.length > 0) {
+                            payload.related_knowledge_graphs = relatedGraphs;
+                        }
+                    } else {
+                        payload.next_step = candidates[0].next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them.";
+                    }
+
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+                }
+
+                // Fallback: local findCandidateExperts over active catalog cache
                 let analysts = getAnalysts();
                 if (!analysts || analysts.length === 0) {
                     try {
-                        const targetUserId = resolveUserId(userId, uid);
                         const data = await foddaRequest('GET', '/v1/analysts', apiKey, targetUserId);
                         const raw = Array.isArray(data) ? data : (data?.analysts || data?.rows || data?.data || []);
                         if (Array.isArray(raw) && raw.length > 0) {
@@ -1209,11 +1298,17 @@ export async function createServer(
                     }
                 }
 
-                const candidates = findCandidateExperts(query, {
+                const localCandidates = findCandidateExperts(query, {
                     limit: effectiveLimit,
                     analysts,
                     graphs: getGraphs(),
                 });
+
+                const candidates = localCandidates.map(c => ({
+                    ...c,
+                    status: 'active',
+                    next_step: `Call ${c.consult_tool} with analyst_id: '${c.analyst_id}'.`
+                }));
 
                 const payload = {
                     query,
@@ -1222,7 +1317,7 @@ export async function createServer(
                     ...(candidates.length === 0 ? {
                         note: 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.'
                     } : {
-                        next_step: "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them."
+                        next_step: candidates[0]?.next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them."
                     })
                 };
 

@@ -5,7 +5,20 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - 2026-09-20
+## [1.46.80] - 2026-09-22
+
+### Changed
+- **Upgrade `find_expert` to Use Dedicated Expert Search API (`src/toolHandlers.ts`)**:
+  - Connected `find_expert` discovery tool to public endpoint `GET /v1/experts/search` with HMAC authentication (`FODDA_MCP_SECRET`).
+  - Expands AI discovery scope from ~20 active practitioners to the full 4,150+ specialist roster (including top-tier On-Request domain experts).
+  - Surfaces dynamic 1-sentence `search_ask_line` prompts and top 1–2 `why_matched` tags.
+  - Implements differentiated next-step routing:
+    - **Active Human Agents (`status: 'active'`):** Routes to `"Call consult_human_agent with analyst_id: '${analyst_id}'."`
+    - **On-Request Specialists (`status: 'on_request'`):** Routes to `"This verified specialist is available On Request. You can introduce the user by calling request_expert_intro(analyst_id: '${analyst_id}') or consult domain knowledge with consult_human_agent(analyst_id: '${analyst_id}')."`
+  - Surfaces Knowledge Graph fallback recommendations when zero experts match, suggesting relevant graphs with `search_graph(graphId: '${graphs[0].id}', query: '${query}')`.
+  - Built-in resilience: 3-second timeout guard (`Promise.race()`) with graceful silent fallback to local `findCandidateExperts()` on timeout or upstream error.
+- **Unit Test Coverage (`src/test_expert_layer.ts`)**:
+  - Added test cases verifying On-Request specialist candidate mapping and intro next step, Active Human Agent routing, zero-match knowledge graph recommendations, and API error / >3s timeout graceful fallback.
 
 ### Added
 - **BYO-MCP Domain & Voice Study Alignment Brief (`briefs/Brief — BYO-MCP Domain & Voice Study Alignment.md`)**:
