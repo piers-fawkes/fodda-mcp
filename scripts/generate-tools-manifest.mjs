@@ -39,6 +39,8 @@ const BILLS_AS = {
   get_company_earnings: 'earnings_company',
   draft_linkedin_post: 'linkedin_post',
   draft_linkedin_article: 'linkedin_article',
+  verify_market_claim: 'topic_research',
+  get_intelligence_dossier: 'topic_research',
 };
 
 const CATEGORY = {
@@ -49,6 +51,7 @@ const CATEGORY = {
   get_earnings_intelligence: 'Financial', get_earnings_divergence: 'Financial', get_company_earnings: 'Financial', get_validated_trends: 'Financial',
   consult_analyst: 'Expert', consult_human_agent: 'Expert', verify_claim: 'Expert', list_analysts: 'Expert', find_expert: 'Expert', request_expert_intro: 'Expert',
   get_specialist_intelligence: 'Intelligence', get_expert_intelligence: 'Intelligence',
+  verify_market_claim: 'Intelligence', get_intelligence_dossier: 'Intelligence',
   request_deliverable: 'Expert', check_deliverable_status: 'Status',
   brainstorm_topic: 'Ideation', discover_adjacent_trends: 'Ideation',
   read_url: 'Web', get_domain_intelligence: 'Intelligence', get_report_intelligence: 'Intelligence',

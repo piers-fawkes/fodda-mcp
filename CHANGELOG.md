@@ -5,6 +5,31 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.81] - 2026-09-23
+
+### Added
+- **Anti-Hallucination Market Claim Verifier (`verify_market_claim`, `src/toolHandlers.ts`)**:
+  - Exposes `POST /v1/verify/claim` as a first-class MCP tool for Claude and Copilot Studio makers.
+  - Evaluates market, consumer, or industry claims against Fodda's 5 Anti-Hallucination Kill Gates:
+    1. Adversarial Counter-Thesis (Gemini stress-testing)
+    2. Multi-Source Corroboration (verifies across distinct primary evidence sources)
+    3. Numeric Spine (tests quantitative metric substantiation)
+    4. Entity Verification (grounds entities to graph nodes/taxonomies)
+    5. Supporting Commentary (expert interviews & consulting citations)
+  - Returns structured verdicts (`[VERIFIED]`, `[REFUTED BY EVIDENCE]`, `[INSUFFICIENT EVIDENCE]`, `[UNGROUNDED SPECULATION]`), kill reasons, gate breakdowns, and citable supporting and contradictory evidence.
+  - Published price: $0.50 per query, billed internally as `topic_research`.
+
+- **Unified Evidence Dossier Assembler (`get_intelligence_dossier`, `src/toolHandlers.ts`)**:
+  - Exposes `POST /v1/intelligence/dossier` as a consolidated MCP tool replacing 4–6 fragmented research calls.
+  - Assembles multi-source dossiers across domain knowledge graphs, consulting reports (McKinsey, PwC), expert quotes, and macroeconomic metrics (Census, FRED, BEA, BLS) with contrarian adversarial testing.
+  - Supports `include_editorial: true` for publication-ready 4-beat PSFK executive briefings (Beat 1: Market Condition & The Numbers, Beat 2: Core Tension & Published Research, Beat 3: Competing Corporate Playbooks, Beat 4: Strategic Stakes & Quick Links).
+  - Published price: $0.50 per query, billed internally as `topic_research`.
+
+- **Pricing Cache & Manifest Registration (`src/pricingCache.ts`, `tools-manifest.json`)**:
+  - Registered `verify_market_claim` and `intelligence_dossier` in `DEFAULT_PRICING` with `meterInteractionType: 'topic_research'` and 1 API call ($0.50 equivalent).
+  - Preserved hardcoded defaults across Airtable query pricing overrides.
+  - Updated `tools-manifest.json` with 55 callable tools (26 billable, 29 free) with 0 token/SPT mentions.
+
 ## [1.46.80] - 2026-09-22
 
 ### Changed

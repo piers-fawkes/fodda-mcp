@@ -1,8 +1,8 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 53,
-  "billable": 24,
+  "count": 55,
+  "billable": 26,
   "tools": [
     {
       "name": "begin_expert_onboarding",
@@ -310,6 +310,16 @@
         "mcp"
       ],
       "description": "Parallel search across top strategist agency frameworks and specialist strategist graphs. (1 registry lookup + 8 parallel Cypher queries across specialist strategist graphs + 1 merge pass.)"
+    },
+    {
+      "name": "get_intelligence_dossier",
+      "kind": "tool",
+      "bills_as": "topic_research",
+      "category": "Intelligence",
+      "profiles": [
+        "mcp"
+      ],
+      "description": "Assembles a certified multi-source Evidence Dossier on any market topic or emerging theme in a single call. Synthesizes domain graph case studies, consulting reports (McKinsey, PwC), expert quotes, and macroeconomic metrics (Census, FRED, BEA, BLS) with contrarian adversarial testing. Optionally includes an executive 4-beat PSFK journalistic briefing. ($0.50)"
     },
     {
       "name": "get_label_values",
@@ -657,6 +667,16 @@
         "grok-brand-context"
       ],
       "description": "Verify a factual claim, hypothesis, or strategic assertion against primary evidence held in Fodda's expert knowledge graphs. Supported by an authorized Human Agent (a verified, living practitioner) who stands behind the structured verdict (\"confirms\", \"contradicts\", \"partial\", or \"no_coverage\") with cited evidence and rationale. When analyst_id is provided, routes to that specific Human Agent. When omitted, automatically routes to the best matching Human Agent based on domain relevance; if no Human Agent covers the domain, fails honestly without falling back to synthetic personas. Returns structured verdict, confidence level (full, partial, thin), one_line summary, rationale, sources, expert details, and booking information. If confidence is thin, present this to the user as limited domain coverage in plain language without echoing technical tags."
+    },
+    {
+      "name": "verify_market_claim",
+      "kind": "tool",
+      "bills_as": "topic_research",
+      "category": "Intelligence",
+      "profiles": [
+        "mcp"
+      ],
+      "description": "Evaluates any market, consumer, or industry claim against Fodda's 5 Anti-Hallucination Kill Gates (Adversarial Counter-Thesis, Multi-Source Corroboration, Numeric Spine, Entity Verification, and Supporting Commentary). Tests whether attached knowledge graph records substantiate or contradict the assertion, and detects ungrounded metadata or speculative hype. ($0.50)"
     }
   ]
 }

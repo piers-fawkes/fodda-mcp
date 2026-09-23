@@ -122,5 +122,7 @@ export const TOOL_VERSIONS = {
     confirm_themes: "1.0.0",
     get_onboarding_status: "1.0.0",
     schedule_interview: "1.0.0",
+    verify_market_claim: "1.0.0",
+    get_intelligence_dossier: "1.0.0",
 };
 

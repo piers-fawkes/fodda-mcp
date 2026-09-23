@@ -346,6 +346,30 @@ const DEFAULT_PRICING: QueryPricing[] = [
         includesSupplementals: false,
         absorbsGeminiCost: false,
     },
+    {
+        queryTypeCode: 'verify_market_claim',
+        queryTypeName: 'Market Claim Verification',
+        apiCallsCharged: 1,
+        researchCalls: 1,
+        overheadCalls: 0,
+        mcpToolName: 'verify_market_claim',
+        meterInteractionType: 'topic_research',
+        isActive: true,
+        includesSupplementals: true,
+        absorbsGeminiCost: false,
+    },
+    {
+        queryTypeCode: 'intelligence_dossier',
+        queryTypeName: 'Unified Intelligence Dossier',
+        apiCallsCharged: 1,
+        researchCalls: 1,
+        overheadCalls: 0,
+        mcpToolName: 'get_intelligence_dossier',
+        meterInteractionType: 'topic_research',
+        isActive: true,
+        includesSupplementals: true,
+        absorbsGeminiCost: false,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -424,6 +448,9 @@ async function fetchFromAirtable(): Promise<void> {
 
     const records = response.data.records || [];
     const newMap = new Map<string, QueryPricing>();
+    for (const p of DEFAULT_PRICING) {
+        newMap.set(p.queryTypeCode, p);
+    }
 
     for (const record of records) {
         const fields = record.fields;
@@ -594,8 +621,9 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
 
     // All accounts (paid and new individual trial planCode 13) use the meter endpoint.
     // sk_trial_ specific Firestore metering removed — those keys are retired.
+    const meterType = getMeterInteractionType(queryTypeCode) || queryTypeCode;
     const meterBody: Record<string, any> = {
-        type: queryTypeCode,
+        type: meterType,
         billable_units: price,
     };
     if (query) meterBody.query = query;

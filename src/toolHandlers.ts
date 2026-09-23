@@ -3563,6 +3563,226 @@ export async function createServer(
         }
     );
 
+    // --- verify_market_claim ---
+    server.tool(
+        'verify_market_claim',
+        "Evaluates any market, consumer, or industry claim against Fodda's 5 Anti-Hallucination Kill Gates (Adversarial Counter-Thesis, Multi-Source Corroboration, Numeric Spine, Entity Verification, and Supporting Commentary). Tests whether attached knowledge graph records substantiate or contradict the assertion, and detects ungrounded metadata or speculative hype. ($0.50)",
+        {
+            claim: z.string().describe("The exact market thesis or assertion to evaluate (e.g. 'Casual golf venues are losing momentum' or 'Gen Z is trading down on essentials to protect beauty spending')."),
+            context: z.string().optional().describe("Optional category, brand, or operational context to sharpen evidence retrieval (e.g. 'golf entertainment venues Topgolf Off Golf' or 'beauty personal care')."),
+            sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
+            strict_gates: z.boolean().optional().default(true).describe("Whether all 5 gates must pass strictly. Defaults to true."),
+            userId: z.string().optional().describe('Optional user identifier.'),
+        },
+        { title: 'Verify Market Claim Against Kill Gates', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        async ({ claim, context, sector, strict_gates, userId: uid }) => {
+            try {
+                logUserQuery(claim, 'verify_market_claim');
+
+                const guard = sptGuard('topic_research');
+                if (guard) return guard;
+
+                const body: Record<string, any> = {
+                    claim,
+                    ...(context ? { context } : {}),
+                    ...(sector ? { sector } : {}),
+                    strict_gates: strict_gates !== false,
+                };
+
+                const data = await foddaRequest('POST', '/v1/verify/claim', apiKey, resolveUserId(userId, uid), body);
+
+                const withheld = await settleOrWithhold({
+                    queryTypeCode: 'topic_research',
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    query: claim,
+                }, 'verify_market_claim');
+                if (withheld) return withheld;
+
+                const verdictBanners: Record<string, string> = {
+                    'VERIFIED': '[VERIFIED]',
+                    'REFUTED_BY_EVIDENCE': '[REFUTED BY EVIDENCE]',
+                    'INSUFFICIENT_EVIDENCE': '[INSUFFICIENT EVIDENCE]',
+                    'UNGROUNDED_METADATA_OR_SPECULATION': '[UNGROUNDED SPECULATION]',
+                };
+                const banner = verdictBanners[data?.verdict] || `[${data?.verdict || 'UNVERIFIED'}]`;
+
+                let markdown = `# ${banner}: "${claim}"\n\n`;
+                if (data?.kill_reason) {
+                    markdown += `**Kill Reason / Summary:** ${data.kill_reason}\n\n`;
+                } else if (data?.verdict === 'VERIFIED') {
+                    markdown += `**Summary:** Claim successfully passed Anti-Hallucination Kill Gates with confidence score ${data.confidence_score ?? '1.0'}.\n\n`;
+                }
+
+                markdown += `### Anti-Hallucination Kill Gates Breakdown\n`;
+                if (data?.gates) {
+                    for (const [key, gate] of Object.entries(data.gates as Record<string, any>)) {
+                        const icon = gate?.passed ? '✅ PASS' : '❌ FAIL';
+                        markdown += `- **${gate?.name || key}**: ${icon} — ${gate?.details || ''}\n`;
+                    }
+                    markdown += `\n`;
+                }
+
+                if (Array.isArray(data?.contradictory_evidence) && data.contradictory_evidence.length > 0) {
+                    markdown += `### Contradictory Evidence (Refuting Thesis)\n`;
+                    for (const item of data.contradictory_evidence) {
+                        const url = item?.source_url || item?.url;
+                        const link = url ? `([Source](${url}))` : '';
+                        markdown += `- **${item?.title || 'Evidence'}** ${link}: ${item?.snippet || item?.content || item?.summary || ''}\n`;
+                    }
+                    markdown += `\n`;
+                }
+
+                if (Array.isArray(data?.supporting_evidence) && data.supporting_evidence.length > 0) {
+                    markdown += `### Supporting Evidence\n`;
+                    for (const item of data.supporting_evidence) {
+                        const url = item?.source_url || item?.url;
+                        const link = url ? `([Source](${url}))` : '';
+                        markdown += `- **${item?.title || 'Evidence'}** ${link}: ${item?.snippet || item?.content || item?.summary || ''}\n`;
+                    }
+                    markdown += `\n`;
+                }
+
+                if (data?.adversarial_critique) {
+                    markdown += `### Contrarian Adversarial Critique\n${data.adversarial_critique}\n\n`;
+                }
+
+                const responsePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                return {
+                    ...responsePayload,
+                    formatted_markdown: markdown.trim(),
+                    content: [{ type: 'text' as const, text: markdown.trim() }],
+                };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+            }
+        }
+    );
+
+    // --- get_intelligence_dossier ---
+    server.tool(
+        'get_intelligence_dossier',
+        'Assembles a certified multi-source Evidence Dossier on any market topic or emerging theme in a single call. Synthesizes domain graph case studies, consulting reports (McKinsey, PwC), expert quotes, and macroeconomic metrics (Census, FRED, BEA, BLS) with contrarian adversarial testing. Optionally includes an executive 4-beat PSFK journalistic briefing. ($0.50)',
+        {
+            topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
+            sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
+            tickers: z.array(z.string()).optional().describe("Optional corporate tickers to cross-reference against earnings call Q&A intelligence (e.g. ['NKE', 'DECK'])."),
+            include_editorial: z.boolean().optional().describe("Set to true to generate a publication-ready 4-beat PSFK executive briefing (lens-first, dual-layer hooks, inline Fodda Claude query links, zero em dashes)."),
+            userId: z.string().optional().describe('Optional user identifier.'),
+        },
+        { title: 'Assemble Unified Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        async ({ topic, sector, tickers, include_editorial, userId: uid }) => {
+            try {
+                logUserQuery(topic, 'intelligence_dossier');
+
+                const guard = sptGuard('topic_research');
+                if (guard) return guard;
+
+                const body: Record<string, any> = {
+                    topic,
+                    ...(sector ? { sector } : {}),
+                    ...(Array.isArray(tickers) && tickers.length > 0 ? { tickers } : {}),
+                    ...(include_editorial !== undefined ? { include_editorial } : {}),
+                };
+
+                const data = await foddaRequest('POST', '/v1/intelligence/dossier', apiKey, resolveUserId(userId, uid), body);
+
+                const withheld = await settleOrWithhold({
+                    queryTypeCode: 'topic_research',
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    query: topic,
+                }, 'get_intelligence_dossier');
+                if (withheld) return withheld;
+
+                const dossier = data?.dossier || {};
+                let markdown = `# Intelligence Dossier: ${topic}\n\n`;
+
+                if (dossier.adversarial_critique) {
+                    markdown += `### Dossier Overview & Adversarial Verdict\n`;
+                    markdown += `${dossier.adversarial_critique}\n\n`;
+                    if (dossier.adversarial_rebuttal_notes) {
+                        markdown += `**Adversarial Rebuttal Notes:** ${dossier.adversarial_rebuttal_notes}\n\n`;
+                    }
+                }
+
+                if (Array.isArray(dossier.evidence_items) && dossier.evidence_items.length > 0) {
+                    markdown += `### Verified Case Studies & Domain Evidence\n`;
+                    for (const item of dossier.evidence_items) {
+                        const url = item?.source_url || item?.url;
+                        const link = url ? `([Source](${url}))` : '';
+                        markdown += `- **${item?.title || 'Evidence Item'}** ${link}: ${item?.snippet || item?.content || item?.summary || ''}\n`;
+                    }
+                    markdown += `\n`;
+                }
+
+                if (Array.isArray(dossier.statistics) && dossier.statistics.length > 0) {
+                    markdown += `### Quantitative Spine & Macroeconomic Metrics\n`;
+                    markdown += `| Metric / Indicator | Value | Period | Source |\n`;
+                    markdown += `| :--- | :--- | :--- | :--- |\n`;
+                    for (const stat of dossier.statistics) {
+                        const val = stat?.unit ? `${stat.value} ${stat.unit}` : `${stat?.value ?? ''}`;
+                        markdown += `| ${stat?.metric || stat?.name || 'Indicator'} | ${val} | ${stat?.period || 'Latest'} | ${stat?.source || 'Supplemental Macro'} |\n`;
+                    }
+                    markdown += `\n`;
+                }
+
+                const citations = dossier.report_citations || [];
+                const quotes = dossier.expert_quotes || [];
+                if ((Array.isArray(citations) && citations.length > 0) || (Array.isArray(quotes) && quotes.length > 0)) {
+                    markdown += `### Consulting Citations & Expert Quotes\n`;
+                    for (const c of citations) {
+                        const url = c?.source_url || c?.url;
+                        const link = url ? `([Report](${url}))` : '';
+                        markdown += `- **${c?.firm || 'Consulting Report'}** ${link}: "${c?.title || c?.finding || ''}" (${c?.year || ''})\n`;
+                    }
+                    for (const q of quotes) {
+                        const url = q?.source_url || q?.url;
+                        const link = url ? `([Source](${url}))` : '';
+                        markdown += `- **${q?.expert_name || 'Expert'}** (${q?.title || q?.organization || 'Specialist'}) ${link}: "${q?.quote || ''}"\n`;
+                    }
+                    markdown += `\n`;
+                }
+
+                if (data?.editorial) {
+                    const ed = data.editorial;
+                    markdown += `## 4-Beat PSFK Executive Briefing: ${ed.headline || topic}\n\n`;
+                    if (ed.subtitle) markdown += `*${ed.subtitle}*\n\n`;
+
+                    if (ed.sections?.structured) {
+                        const s = ed.sections.structured;
+                        if (s.market_lede?.content) {
+                            markdown += `### Beat 1: Market Condition & The Numbers (${s.market_lede.section_title || 'Market Lede'})\n${s.market_lede.content}\n\n`;
+                        }
+                        if (s.core_debate?.content) {
+                            markdown += `### Beat 2: Core Tension & Published Research (${s.core_debate.section_title || 'Core Tension'})\n${s.core_debate.content}\n\n`;
+                        }
+                        if (s.competing_playbooks?.content) {
+                            markdown += `### Beat 3: Competing Corporate Playbooks (${s.competing_playbooks.section_title || 'Playbooks'})\n${s.competing_playbooks.content}\n\n`;
+                        }
+                        if (s.strategic_stakes?.content) {
+                            markdown += `### Beat 4: Strategic Stakes & Quick Links (${s.strategic_stakes.section_title || 'Strategic Stakes'})\n${s.strategic_stakes.content}\n\n`;
+                        }
+                    } else if (ed.bodyMarkdown) {
+                        markdown += `${ed.bodyMarkdown}\n\n`;
+                    }
+                }
+
+                const responsePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                return {
+                    ...responsePayload,
+                    formatted_markdown: markdown.trim(),
+                    content: [{ type: 'text' as const, text: markdown.trim() }],
+                };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+            }
+        }
+    );
 
     // --- search_statistics ---
     server.tool(
