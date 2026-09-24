@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.82] - 2026-09-24
+
+### Changed
+- **Earnings Intelligence Activity Scope & ESG Conflation Fix (`get_earnings_intelligence`, `src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Added optional `activity: z.enum(['sustainability', 'marketing', 'retail', 'technology'])` parameter to `get_earnings_intelligence`.
+  - Forwards `activity` as URL query parameter to upstream `GET /v1/supplemental/earnings/snapshot`.
+  - Scopes earnings queries to strategic corporate activity categories, enabling explicit scoping to corporate ESG, circular economy, and climate initiatives (e.g. Under Armour recyclable fibers, On Holding LightSpray).
+  - Eliminates search conflation where analyst questions probe financial durability/margin sustainability ("Is China growth sustainable?") rather than corporate ESG commitments.
+  - Documents that queries such as Tyler's / Datastreamer's (*"What sustainability commitments did apparel companies make this quarter?"*) can either pass `activity: "sustainability"` explicitly or rely on server-side intent routing.
+  - Synchronized updated tool description from Airtable Offerings table (`tbl93DJ627r81zKVP`, record `recVfq7v2csFFmFRQ`) and regenerated `tools-manifest.json` with Cost Silence guard passing.
+
 ## [1.46.81] - 2026-09-23
 
 ### Added

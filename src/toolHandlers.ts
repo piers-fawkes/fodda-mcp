@@ -4064,12 +4064,15 @@ export async function createServer(
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
     server.tool(
         'get_earnings_intelligence',
-        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, or sector filters. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance.',
+        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, sector filters, or strategic corporate activity categories (activity: "sustainability" | "marketing" | "retail" | "technology"). For corporate ESG, circular economy, and climate initiatives (e.g. "What sustainability commitments did apparel companies make this quarter?"), pass activity="sustainability" or rely on server-side intent routing to avoid conflation with analyst margin sustainability questions. For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance.',
         {
             ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
             brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
             industry: z.string().optional().describe("Industry filter (e.g., 'hotels', 'sportswear', 'consumer electronics')"),
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'technology', 'travel')"),
+            activity: z.enum(['sustainability', 'marketing', 'retail', 'technology']).optional().describe(
+                "Scope query to a strategic corporate activity category. Use 'sustainability' for corporate ESG, circular economy, and climate initiatives (avoids conflation with analyst margin sustainability questions)."
+            ),
             search: z.string().optional().describe("Free text search in earnings summaries (e.g., 'labor costs', 'tariff guidance', 'AI investment')"),
             dateFrom: z.string().optional().describe("ISO date range start (e.g., '2025-01-01')"),
             dateTo: z.string().optional().describe("ISO date range end (e.g., '2026-06-01')"),
@@ -4077,16 +4080,17 @@ export async function createServer(
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
         { title: 'Query Earnings Call Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ ticker, brand, industry, sector, search, dateFrom, dateTo, limit, userId: uid }) => {
+        async ({ ticker, brand, industry, sector, activity, search, dateFrom, dateTo, limit, userId: uid }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(search || brand || ticker || industry || sector || 'earnings snapshot', 'earnings_intelligence');
+                logUserQuery(search || brand || ticker || industry || sector || activity || 'earnings snapshot', 'earnings_intelligence');
 
                 const params = new URLSearchParams();
                 if (ticker) params.set('ticker', ticker);
                 if (brand) params.set('brand', brand);
                 if (industry) params.set('industry', industry);
                 if (sector) params.set('sector', sector);
+                if (activity) params.set('activity', activity);
                 if (search) params.set('search', search);
                 if (dateFrom) params.set('dateFrom', dateFrom);
                 if (dateTo) params.set('dateTo', dateTo);
@@ -4099,7 +4103,7 @@ export async function createServer(
                 const data = await foddaRequest('GET', `/v1/supplemental/earnings/snapshot${qs ? '?' + qs : ''}`, apiKey, resolveUserId(userId, uid));
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
-                const earningsWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || brand || ticker || sector || '' }, 'get_earnings_intelligence');
+                const earningsWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || brand || ticker || sector || activity || '' }, 'get_earnings_intelligence');
                 if (earningsWithheld) return earningsWithheld;
 
                 const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
