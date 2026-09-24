@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.83] - 2026-09-24
+
+### Changed
+- **Earnings Intelligence Gap Closures & Confirmed Absence Support (`get_earnings_intelligence`, `src/toolHandlers.ts`, `tools-manifest.json`)**:
+  - Updated `get_earnings_intelligence` description in Airtable Offerings (`tbl93DJ627r81zKVP`, `recVfq7v2csFFmFRQ`) and `tools-manifest.json` documenting `confirmed_absent` (brands with confirmed silence / no discussed initiatives) on multi-company and sector sweeps.
+  - Verified MCP response payload pass-through preserves `confirmed_absent`, `activity_inferred`, and `source_url` attributes returned from `GET /v1/supplemental/earnings/snapshot`.
+  - Staged cross-repo gap closures brief (`briefs/Brief API & MCP — Earnings Intelligence Gap Closures.md`).
+
 ## [1.46.82] - 2026-09-24
 
 ### Changed
