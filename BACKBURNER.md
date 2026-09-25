@@ -2,6 +2,16 @@
 
 Deferred features and tasks. Items here are designed, scoped, and in some cases code-complete but not yet active.
 
+## 🔒 Public GitHub Repo Holds Full Source (split to private + public README/server.json)
+**Status:** Backburner — added 2026-09-25 (no urgency; no secrets found)
+**What:** `piers-fawkes/fodda-mcp` is PUBLIC and contains the full source (354 files: `src/`, `briefs/`, `docs/`, `.agents/`). The App repo's `.agents/workflows/github-publishing.md` says the public repo should hold only `README.md` + `server.json`. A secret scan on 2026-09-25 (live/test keys, webhook secrets, private keys, admin secrets) found nothing, so this is hygiene, not an incident.
+**Fix:** Move the source to a new private repo (make it the dev `origin`). Keep the public `fodda-mcp` repo with only `README.md` + `server.json`, and update `server.json` `repository.url` if needed.
+**Does NOT affect the ChatGPT plugin:** the listing depends only on `mcp.fodda.ai/chatgpt`, Clerk OAuth, `/.well-known/openai-apps-challenge` and the reviewer account. Cloud Run deploys from local source, not GitHub, and the MCP Registry authenticates by DNS. The only visible effects are the registry "repository" link and the website footer GitHub link, and both keep working if the public repo stays.
+**When:** Any quiet week. Re-run the secret scan first.
+**Agent:** MCP agent (+ Piers for GitHub settings)
+
+---
+
 ## 🧹 Instructions Optimization: Secondary Catalog Routing Block Trim
 **Status:** Backburner — added 2026-07-27
 **What:** The graphId naming table was evicted (0 inline entries) and platform capabilities front-loaded (~600 chars). A secondary catalog block (`buildExpertRoutingBlock()` and `buildSupplementalPairingBlock()`) still serializes topic->graph routing keywords and supplemental pairings (~47k chars live). Move these routing maps to a dynamic tool or resource (`fodda://catalog/routing`) in a future optimization pass to reduce connect-time token overhead even further.
