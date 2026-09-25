@@ -41,7 +41,7 @@ Nothing is live yet. Git push does **not** deploy either repo.
 - **Key entry** — masked password input with show/hide. Key persisted in `localStorage` under `fodda_api_key`, **only** ever sent to `api.fodda.ai`. On mount, a stored key auto-loads (reuses an existing session, per brief).
 - **200** — the main panel:
   - *Identity*: portrait (falls back to a Bot glyph), name, description, **status chip** (Active vs In review), backing-graph pills, and **tabs** when `analysts[]` has more than one entry.
-  - *Connect block* rendered from the API's `connect` object: MCP URL (copy), masked API key (reveal + copy), a collapsible **ready-to-paste connector URL** (`mcp_url?api_key=…`), and short per-client steps (Claude / ChatGPT / any MCP client). Copy stays sourced from the API, not hardcoded.
+  - *Connect block* rendered from the API's `connect` object: MCP URL (copy), masked API key (reveal + copy), a collapsible **ready-to-paste connector URL** (`mcp_url` with token/key), and short per-client steps (Claude / ChatGPT / any MCP client). Copy stays sourced from the API, not hardcoded.
   - *Try it*: prompt chips from `connect.example_prompt` + the analyst's `exampleQueries`, de-duped, click-to-copy.
   - *The deal*: from `self_use.note`, with a `daily_cap` fallback sentence.
   - *Status nudge*: an in-review banner telling the expert to set the connector up now so approval day is activation day.

@@ -6,7 +6,6 @@
  */
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import crypto from 'crypto';
 import axios from 'axios';
 import { initCatalogCache } from './catalogCache.js';
@@ -109,11 +108,73 @@ export function isIncomingHmacValid(req: express.Request): boolean {
     return false;
 }
 
+// ---------------------------------------------------------------------------
+// Service URL & RFC 9728 401 Helper
+// ---------------------------------------------------------------------------
+
+function getServiceUrl(): string {
+    if (process.env.FODDA_SERVICE_URL) return process.env.FODDA_SERVICE_URL;
+    if (process.env.NODE_ENV === 'production' || process.env.K_SERVICE) {
+        return 'https://mcp.fodda.ai';
+    }
+    return `http://localhost:${process.env.PORT || 8080}`;
+}
+
+export interface SendAuth401Options {
+    offeringSlug?: string;
+    message: string;
+    invalidToken?: boolean;
+    id?: any;
+    data?: any;
+}
+
+export function sendAuth401(res: express.Response, options: SendAuth401Options) {
+    const rawSlug = options.offeringSlug;
+    const metadataSlug = (!rawSlug || rawSlug === 'c') ? 'mcp' : rawSlug;
+    const resourceMetadata = `${getServiceUrl()}/.well-known/oauth-protected-resource/${metadataSlug}`;
+
+    if (options.invalidToken) {
+        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadata}", error="invalid_token"`);
+    } else {
+        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${resourceMetadata}"`);
+    }
+
+    const errorPayload: Record<string, any> = {
+        code: -32000,
+        message: options.message,
+    };
+    if (options.invalidToken) {
+        errorPayload.error = 'invalid_token';
+        errorPayload.data = { error: 'invalid_token', ...(options.data || {}) };
+    } else if (options.data) {
+        errorPayload.data = options.data;
+    }
+
+    return res.status(401).json({
+        jsonrpc: '2.0',
+        error: errorPayload,
+        id: options.id ?? null,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Retired SSE transport (v1.46.85) — explicitly return 410 Gone
+// ---------------------------------------------------------------------------
+
+app.all(['/sse', '/messages'], (_req, res) => {
+    res.status(410).json({
+        error: 'sse_retired',
+        message: 'Use Streamable HTTP at https://mcp.fodda.ai/mcp',
+        source: 'fodda-mcp'
+    });
+});
+
 // Deprecation middleware for legacy URL parameters (?api_key=... / ?user_id=...)
 const LEGACY_DEPRECATION_PATHS = [
-    '/sse', '/mcp', '/messages', '/copilot', '/chatgpt',
+    '/mcp', '/copilot', '/chatgpt',
     '/brand-intelligence', '/topic-research', '/deep-research',
-    '/earnings-intelligence', '/expert-consult'
+    '/earnings-intelligence', '/expert-consult',
+    '/grok-brand-context', '/c/:token', '/c'
 ];
 
 app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
@@ -140,10 +201,12 @@ app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
             return next();
         }
 
-        const message = 'Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Account → MCP Integration) and update your connector.';
+        const message = 'Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Connections) and update your connector.';
         const accept = req.headers['accept'] || '';
         const contentType = req.headers['content-type'] || '';
         const isJson = accept.includes('application/json') || contentType.includes('application/json') || (req.method === 'POST' && req.body && typeof req.body === 'object');
+
+        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/mcp"`);
 
         if (isJson && req.method === 'POST') {
             const bodyId = (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null;
@@ -152,7 +215,7 @@ app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
                 error: {
                     code: -32001,
                     message,
-                    data: { docs: 'https://fodda.ai/platform-integration-anthropic-claude' }
+                    data: { docs: 'https://www.fodda.ai/connect' }
                 },
                 id: bodyId,
             });
@@ -412,7 +475,6 @@ app.get([
             ],
             endpoints: {
                 mcpStreamableHttp: `${getServiceUrl()}/${matchedOffering}`,
-                mcpSse: `${getServiceUrl()}/sse`,
                 telemetry: `${getServiceUrl()}/telemetry`,
                 feedback: `${getServiceUrl()}/v1/feedback`,
             },
@@ -441,7 +503,6 @@ app.get([
         ],
         endpoints: {
             mcpStreamableHttp: `${getServiceUrl()}/mcp`,
-            mcpSse: `${getServiceUrl()}/sse`,
             telemetry: `${getServiceUrl()}/telemetry`,
             feedback: `${getServiceUrl()}/v1/feedback`,
         },
@@ -532,21 +593,6 @@ setInterval(() => {
         }
     }
 }, CLEANUP_INTERVAL_MS).unref();
-
-// ---------------------------------------------------------------------------
-// Service URL helper
-// ---------------------------------------------------------------------------
-
-// M2: FODDA_SERVICE_URL must be set in Cloud Run env vars.
-// Fallback to localhost for local dev only. The hardcoded project hash
-// was removed — if it was being used, the URL was silently wrong.
-function getServiceUrl(): string {
-    if (process.env.FODDA_SERVICE_URL) return process.env.FODDA_SERVICE_URL;
-    if (process.env.NODE_ENV === 'production' || process.env.K_SERVICE) {
-        return 'https://mcp.fodda.ai';
-    }
-    return `http://localhost:${process.env.PORT || 8080}`;
-}
 
 // ---------------------------------------------------------------------------
 // Authenticated API caller — checks query cache first
@@ -1150,9 +1196,10 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                     (req as any).__resolvedApiKey = resolveResp.data.api_key;
                     (req as any).__resolvedUserId = resolveResp.data.user_id || 'oauth_user';
                 } else {
-                    return res.status(401).json({
-                        jsonrpc: '2.0',
-                        error: { code: -32000, message: 'OAuth token could not be resolved to a Fodda account. Visit https://app.fodda.ai to reconnect.' },
+                    return sendAuth401(res, {
+                        offeringSlug,
+                        message: 'OAuth token could not be resolved to a Fodda account. Visit https://app.fodda.ai to reconnect.',
+                        invalidToken: true,
                         id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
                     });
                 }
@@ -1165,9 +1212,10 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                         id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
                     });
                 }
-                return res.status(401).json({
-                    jsonrpc: '2.0',
-                    error: { code: -32000, message: 'OAuth token validation failed. Please reconnect at https://app.fodda.ai.' },
+                return sendAuth401(res, {
+                    offeringSlug,
+                    message: 'OAuth token validation failed. Please reconnect at https://app.fodda.ai.',
+                    invalidToken: true,
                     id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
                 });
             }
@@ -1186,7 +1234,12 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 resolvedEntryId = resolved.analystId;
             } catch (err: any) {
                 console.error(`[token-resolver] Failed to resolve connection token:`, err.message);
-                return res.status(401).json({ error: 'Invalid or expired connection token' });
+                return sendAuth401(res, {
+                    offeringSlug,
+                    message: 'Invalid or expired connection token. Visit https://app.fodda.ai to reconnect.',
+                    invalidToken: true,
+                    id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                });
             }
         }
 
@@ -1231,11 +1284,10 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // 401 + WWW-Authenticate (RFC 9728) so MCP clients auto-start the OAuth
                 // flow. Set MCP_ALLOW_ANONYMOUS=true to re-open the anonymous trial lane.
                 if (!isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
-                    const metadataSlug = offeringSlug || 'mcp';
-                    res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/${metadataSlug}"`);
-                    return res.status(401).json({
-                        jsonrpc: '2.0',
-                        error: { code: -32000, message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.' },
+                    return sendAuth401(res, {
+                        offeringSlug,
+                        message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.',
+                        invalidToken: false,
                         id: body?.id ?? null,
                     });
                 }
@@ -1301,11 +1353,10 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // Non-initialize POST without an existing sessionId:
                 // Support stateless single-shot JSON-RPC execution (e.g. direct tools/list via curl or script)
                 if (!isSpt && !apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
-                    const metadataSlug = offeringSlug || 'mcp';
-                    res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/${metadataSlug}"`);
-                    return res.status(401).json({
-                        jsonrpc: '2.0',
-                        error: { code: -32000, message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.' },
+                    return sendAuth401(res, {
+                        offeringSlug,
+                        message: 'Authentication required. Connect via OAuth, or use your personal connection URL or API key from https://app.fodda.ai.',
+                        invalidToken: false,
                         id: body?.id ?? null,
                     });
                 }
@@ -1367,58 +1418,6 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         console.error('Error:', error);
         if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
     }
-});
-
-// Legacy SSE transport
-app.get('/sse', async (req, res) => {
-    const rawSseAuth = (req.headers['authorization'] as string) || '';
-    const rawBearer = /^Bearer\s+/i.test(rawSseAuth) ? rawSseAuth.replace(/^Bearer\s+/i, '').trim() : '';
-    const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
-    const internalKeyHeader = (req.headers['x-internal-key'] as string) || '';
-    const hasValidHmac = isIncomingHmacValid(req);
-    const isInternalAuth = hasValidHmac || !!(internalKey && (
-        internalKeyHeader === internalKey ||
-        rawBearer === internalKey ||
-        (req.headers['x-api-key'] as string) === internalKey ||
-        (req.query.api_key as string) === internalKey
-    ));
-
-    const apiKey = (req.headers['x-api-key'] as string)
-        || rawBearer
-        || (isInternalAuth ? (internalKey || 'sk_internal_service') : '')
-        || (req.query.api_key as string) || '';
-    // No anonymous use of any offering (Piers, 2026-09-02): the legacy SSE lane
-    // gets the same gate as the Streamable HTTP routes.
-    if (!apiKey && process.env.MCP_ALLOW_ANONYMOUS !== 'true') {
-        res.setHeader('WWW-Authenticate', `Bearer resource_metadata="${getServiceUrl()}/.well-known/oauth-protected-resource/mcp"`);
-        return res.status(401).json({ error: 'Authentication required. Use https://mcp.fodda.ai/mcp with OAuth, or your personal connection URL or API key from https://app.fodda.ai.' });
-    }
-    const entryId = (req.query.id as string) || '';
-    const isEmailId = entryId.includes('@') && entryId.includes('.');
-    const headerUserId = (req.headers['x-user-id'] as string) || (req.headers['x-user-email'] as string) || '';
-    const userId = (req.query.user_id as string)
-        || headerUserId
-        || (isEmailId ? entryId : 'anonymous');
-    const defaultSessionKind = isInternalAuth ? 'internal-test' : 'customer';
-    const sessionKind = (req.headers['x-fodda-session-kind'] as string) || (req.query.session_kind as string) || defaultSessionKind;
-    const isInternalTest = sessionKind === 'internal-test';
-    const source = isInternalTest ? 'mcp-internal-test' : ((req.headers['x-fodda-source'] as string) || (req.query.source as string) || '');
-    const sessionId = crypto.randomUUID();
-    const transport = new SSEServerTransport('/messages', res);
-
-    // Bind source parameter to foddaRequest to forward it upstream as X-Fodda-Source
-    const boundFoddaRequest = source
-        ? ((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest
-        : foddaRequest;
-
-    const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, undefined, undefined, source || undefined);
-    await server.connect(transport as any);
-    console.error(`SSE session: ${sessionId}`);
-});
-
-app.post('/messages', async (req, res) => {
-    // SSE message handler would go here
-    res.status(404).json({ error: 'Use /mcp endpoint' });
 });
 
 // Favicon — required for Anthropic Connectors Directory (Google favicon API)

@@ -10,7 +10,7 @@ Fodda is a marketplace of expert knowledge graphs accessible via MCP. Once conne
 It is not a chatbot or a generative tool. It returns structured data. Outputs are deterministic and traceable to named sources.
 
 **MCP endpoint:** `https://mcp.fodda.ai/mcp`  
-**Auth:** API key via URL param (`?api_key=YOUR_KEY&user_id=YOUR_EMAIL`)  
+**Auth:** Bearer token (`Authorization: Bearer sk_live_...`) or personal connector URL (`https://mcp.fodda.ai/c/<token>`)  
 **Trial key:** `[TRIAL_KEY_HERE]`
 
 ---
@@ -92,14 +92,14 @@ task_profiles:
 ## Setup & Configuration
 
 **1. Claude Web App (Pro / Team / Enterprise)**
+- Get your personal connection URL at [app.fodda.ai/connections](https://app.fodda.ai/connections) (format: `https://mcp.fodda.ai/c/<token>`)
 - Go to Settings > Connectors > Add custom connector
-- Paste: `https://mcp.fodda.ai/mcp?api_key=[TRIAL_KEY_HERE]&user_id=emmett@littleplains.co`
-- Leave OAuth fields blank.
+- Paste your connector URL
 
 **2. Claude Code (CLI) / Cursor Config**
-For agentic workflows, use the SSE endpoint:
+For agentic workflows, connect via Streamable HTTP:
 ```bash
-claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp \
   --header "Authorization: Bearer [TRIAL_KEY_HERE]"
 ```
 

@@ -5,6 +5,68 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.85] - 2026-09-25
+
+### Changed
+- **Connection Surface Cleanup (SSE retirement, RFC 9728 401s, remote-only manifests, docs)**:
+  - **30-Day Cloud Run Log Audit**:
+    - `/sse`: 10,000+ requests observed over the last 30 days. Breakdown confirmed 99% are automated monitoring bots (`mcpbeat`, `YellowMCP-HealthChecker`, `aisec-registry`, `litellm`, Python crawlers) returning 404/401; in the last 7 days only 3 requests returned 200 (health checks); `POST /messages` had 0 requests in the last 22 days (last request Sept 3, 2026, returning 404). Real customer traffic is 0.
+    - `?api_key=` on `/c/:token` and `/grok-brand-context`: 0 requests over 30 days. No Grok template or active connector relies on query-parameter keys on these paths.
+  - **Retire `/sse` and `/messages` explicitly (`src/index.ts`)**:
+    - `GET /sse` and `POST /messages` (and any other HTTP method) now return **410 Gone** with JSON payload `{ error: "sse_retired", message: "Use Streamable HTTP at https://mcp.fodda.ai/mcp", source: "fodda-mcp" }`.
+    - Removed `mcpSse` endpoint from both server card definitions (`/.well-known/mcp/server.json`).
+    - Removed `SSEServerTransport` import and legacy SSE session handling from server codebase.
+  - **RFC 9728-Consistent 401 Responses (`sendAuth401`, `src/index.ts`)**:
+    - Standardized 401 authentication error helper `sendAuth401(res, options)`.
+    - Invalid or expired Clerk OAuth tokens (`:1153-1172`) and invalid `/c/:token` (`:1189`) now return 401 with `WWW-Authenticate: Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp", error="invalid_token"` and JSON-RPC error body with `code: -32000` and `error: "invalid_token"`.
+    - Fixed slug mapping so requests to `/c/...` point at `/mcp` protected resource metadata rather than non-existent `/.../c`.
+    - Missing credentials on `/mcp`, offering routes, and `/c/` return 401 + `WWW-Authenticate: Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp"` without `invalid_token`.
+    - Preserved 402 (payment) and 501 (resolver unavailable) semantics.
+  - **Closed `?api_key=` Gap on `/c/:token` and `/grok-brand-context`**:
+    - Added `'/grok-brand-context'`, `'/c/:token'`, and `'/c'` to `LEGACY_DEPRECATION_PATHS`.
+    - Updated deprecation message to: `Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Connections) and update your connector.`
+    - Deprecation 401 responses now include `WWW-Authenticate: Bearer resource_metadata=".../mcp"`.
+    - Updated documentation link in error data to `https://www.fodda.ai/connect`.
+  - **Stale App Navigation String Fixed (`src/index.ts`, `src/test_dcr_and_legacy_deprecation.ts`, docs)**:
+    - Replaced all instances of `Account → MCP Integration` with `Connections` (`app.fodda.ai/connections`).
+  - **Remote-Only Server Manifests (`server.json`, `smithery.yaml`)**:
+    - `server.json`: deleted `packages` stdio array and legacy `authorizationServerMetadataUrl`; configured `remotes: [{ "type": "streamable-http", "url": "https://mcp.fodda.ai/mcp" }]`; synced `version` to 1.46.85.
+    - `smithery.yaml`: switched to remote HTTP format (`startCommand: { type: "http", url: "https://mcp.fodda.ai/mcp" }`).
+  - **Documentation Surface Cleanup**:
+    - Updated `README.md`, `CLAUDE_CONNECTORS_README.md`, `Enterprise_MCP_Setup.md`, `docs/claude-tag-setup.md`, `docs/chatgpt-submission.md`, `integration-brand-kits.md`, and `integration-deep-research.md`.
+    - Documented Claude Code connection as `claude mcp add --transport http fodda https://mcp.fodda.ai/mcp` (OAuth) or `--header "Authorization: Bearer sk_live_..."`.
+    - Removed `transport sse`, `mcp.fodda.ai/sse`, `?api_key=`, `fod_...`, and "once live" mentions.
+    - Replaced "All tools are read-only" with accurate safe operations phrasing.
+    - Updated README version badge to 1.46.85.
+  - **Tests (`src/test_connection_surface_cleanup.ts`)**:
+    - Added comprehensive automated test suite verifying `GET /sse` → 410, `POST /messages` → 410, invalid `/c/` → 401 + `WWW-Authenticate` pointing at `/mcp` with `error="invalid_token"`, invalid bearer → 401 + `WWW-Authenticate`, query key deprecation on `/c/:token` and `/grok-brand-context`, unauthenticated initialize, and server card endpoint schemas.
+  - **Deployment & Live Verification**:
+    - Cloud Run Revision: `fodda-mcp-00565-5bc` deployed to region `us-east4` (serving 100% of traffic).
+    - Live Probe 1 (`GET /sse`):
+      `curl -si https://mcp.fodda.ai/sse`
+      Returned `HTTP/2 410` with:
+      `{"error":"sse_retired","message":"Use Streamable HTTP at https://mcp.fodda.ai/mcp","source":"fodda-mcp"}`
+    - Live Probe 2 (`POST /c/invalid`):
+      `curl -si -X POST https://mcp.fodda.ai/c/invalid -d '{}' -H 'content-type: application/json' | grep -i www-authenticate`
+      Returned:
+      `www-authenticate: Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/mcp", error="invalid_token"`
+      Full JSON-RPC body:
+      `{"jsonrpc":"2.0","error":{"code":-32000,"message":"Invalid or expired connection token. Visit https://app.fodda.ai to reconnect.","error":"invalid_token","data":{"error":"invalid_token"}},"id":null}`
+    - Live Probe 3 (Authenticated `initialize` + `tools/list` on `/mcp` and `/chatgpt`):
+      - `/mcp`: 200 OK, 55 tools returned.
+      - `/chatgpt`: 200 OK, 24 tools returned.
+    - Forbidden pattern check:
+      `grep -rnE "transport sse|mcp\.fodda\.ai/sse|\?api_key=|fod_|All tools are read-only|once live" README.md *.md docs/ server.json smithery.yaml | grep -v CHANGELOG | grep -v "briefs/"` returned 0 hits.
+
+### Manual Steps for Piers
+- **npm Deprecation**:
+  Run in terminal:
+  ```bash
+  npm deprecate fodda-mcp "Fodda is a hosted MCP server: use https://mcp.fodda.ai/mcp (see https://www.fodda.ai/connect)"
+  ```
+- **MCP Registry Publish**:
+  Publish `ai.fodda/mcp-server` to the MCP Registry following the established manual process with the updated remote-only `server.json` v1.46.85.
+
 ## [1.46.84] - 2026-09-25
 
 ### Changed

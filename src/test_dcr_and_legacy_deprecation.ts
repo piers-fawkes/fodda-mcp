@@ -26,7 +26,7 @@ async function runVerificationTest() {
 
     app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
         if (req.query.api_key !== undefined || req.query.user_id !== undefined) {
-            const message = 'Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Account → MCP Integration) and update your connector.';
+            const message = 'Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai (Connections) and update your connector.';
             const accept = req.headers['accept'] || '';
             const contentType = req.headers['content-type'] || '';
             const isJson = accept.includes('application/json') || contentType.includes('application/json') || (req.method === 'POST' && req.body && typeof req.body === 'object');

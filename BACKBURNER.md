@@ -62,12 +62,12 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 ## 🔑 C3: Remove API Keys from URL Query Params
 **Status:** Not started — requires MCP client coordination; higher priority than most backburner items  
 **Severity:** CRITICAL (per claude-opus-4-8 review, June 2026)  
-**Problem:** `?api_key=YOUR_KEY` in URL query params means API keys appear in Cloud Run access logs, proxy logs, browser history, and referrer headers. For a paid product this is a direct credential-leak risk.  
+**Problem:** `api_key` in URL query params means API keys appear in Cloud Run access logs, proxy logs, browser history, and referrer headers. For a paid product this is a direct credential-leak risk.  
 **What's involved:**
-1. **MCP Server:** Auth already reads from `Authorization: Bearer`, `X-API-Key`, AND `?api_key` query param. The header paths already work. The fix is to stop documenting/using query params as the primary method.
-2. **Documentation + onboarding:** The MCP connection URL distributed to customers is `https://mcp.fodda.ai/mcp?api_key=YOUR_KEY`. This needs to change to require `Authorization: Bearer YOUR_KEY` — but not all MCP clients support custom headers.
+1. **MCP Server:** Auth already reads from `Authorization: Bearer`, `X-API-Key`, AND query params. The header paths already work. The fix is to stop documenting/using query params as the primary method.
+2. **Documentation + onboarding:** The MCP connection URL distributed to customers previously used query params. This needs to change to require `Authorization: Bearer YOUR_KEY` — but not all MCP clients support custom headers.
 3. **MCP client landscape:** As of mid-2026, Claude Desktop and Cursor support `Authorization` headers. Windsurf does. Some older clients (ChatGPT Connector) do not. A phased approach: move docs to headers-first, keep query-param support as a deprecated fallback, set a deprecation date.
-4. **`/v1/graphs/mine` API response (v1Router.ts:320):** Currently constructs `mcp_url: \`https://mcp.fodda.ai/mcp?api_key=${trialKey}\`` — this also needs updating to use a header-based auth instruction instead.
+4. **`/v1/graphs/mine` API response (v1Router.ts:320):** Currently constructs `mcp_url` with query params — this also needs updating to use a header-based auth instruction instead.
 5. **Short-lived tokens (longer-term):** Instead of distributing the primary API key directly, issue short-lived signed tokens for MCP sessions. Leaked tokens are scoped and expire.  
 **Migration path:**
 - Phase 1: Update docs to recommend headers. Keep query param working. Log a deprecation warning when query param is used.
@@ -105,11 +105,11 @@ Deferred features and tasks. Items here are designed, scoped, and in some cases 
 ## 🪪 MCP Identity & Connection-URL Scheme (Unique Key, Not API Key + Email)
 **Status:** Designed for consideration — not scheduled (captured June 2026)  
 **Priority:** P2 — design now, build later; subsumes C3  
-**Problem:** The connection URL carries both the API key and the user's email (`?api_key=…&user_id=<email>`, `index.ts:519/527`), conflating authentication, identity, and billing into two leaky values. Symptoms: secret-in-URL (C3), PII-in-URL, and email-as-identity coupling that produced `profile.name = "recZ1FemUPoLtuIuF"` in the P0 audit. Rotating an API key breaks every URL that embeds it.  
+**Problem:** The connection URL carries both the API key and the user's email (`api_key` & `user_id` query params, `index.ts:519/527`), conflating authentication, identity, and billing into two leaky values. Symptoms: secret-in-URL (C3), PII-in-URL, and email-as-identity coupling that produced `profile.name = "recZ1FemUPoLtuIuF"` in the P0 audit. Rotating an API key breaks every URL that embeds it.  
 **Recommendation (two phases):**
 1. **Phase 1 — opaque per-connection token in the path** (`https://mcp.fodda.ai/c/{token}`) resolving server-side to `{ internal_user_id, billing_account_id, scopes }`. The token is neither the API key nor the email; introduce a stable internal `user_id` and demote email to an attribute. Per-connection revocable. Delivers C3 as a side effect. Start opaque/DB-backed (Firestore) over JWT so revocation is free.
 2. **Phase 2 — OAuth 2.1 remote-MCP auth** (Claude connector supports it natively): short-lived bearer + refresh, no static secret, real scopes. Phase 1's `internal_user_id` maps onto OAuth claims, so it's the foundation, not throwaway.  
-**Migration:** dual-accept legacy `?api_key=&user_id=` during a window → mint `/c/{token}` per user, update onboarding + the `mcp_url` from `/v1/graphs/mine` → sunset the legacy form.  
+**Migration:** dual-accept legacy query params during a window → mint `/c/{token}` per user, update onboarding + the `mcp_url` from `/v1/graphs/mine` → sunset the legacy form.  
 **Open decisions for Piers:** token format (opaque vs JWT), OAuth now vs later, scope granularity, per-user vs per-connection tokens.  
 **Full brief:** `briefs/Brief MCP Identity and URL Scheme.md`  
 **Agent:** MCP agent + API agent (token issuance + identity store) + App agent (onboarding/URL distribution)

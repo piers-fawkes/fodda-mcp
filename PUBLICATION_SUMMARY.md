@@ -102,10 +102,9 @@ gemini mcp add fodda npx fodda-mcp
 
 ## Known Limitations
 
-1. **Remote SSE Endpoint:** Temporarily removed from registry listing due to namespace conflicts
-   - The SSE endpoint (`https://mcp.fodda.ai/sse`) is still functional
-   - It's just not advertised in the registry listing
-   - Users can still connect to it directly if needed
+1. **Remote SSE Endpoint:** Retired in v1.46.85 in favor of Streamable HTTP (`https://mcp.fodda.ai/mcp`).
+   - The SSE endpoint returns 410 Gone.
+   - Streamable HTTP is the canonical transport for remote connections.
 
 2. **Namespace:** Currently published under personal GitHub namespace (`io.github.piers-fawkes`)
    - Can be migrated to organization namespace later if needed

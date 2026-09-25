@@ -86,8 +86,7 @@ Expected behaviour: each prompt resolves to one profile tool (`search_graph`, `g
   - Credit exhaustion returns `QUOTA_EXHAUSTED` with `manage_url: https://app.fodda.ai/account` and no Stripe URLs.
   - Search results and queries do not include `$0.50/API call` overage notes.
   - Response payloads strip internal `_`, `record_id`, `airtable_*`, and Airtable `rec*` strings while preserving all chainable IDs (`analyst_id`, `node_id`, `job_id`, etc.).
-- [ ] **OAuth flow**: Complete end-to-end OAuth flow in ChatGPT custom app connection UI and verify tools can be invoked without manual header injection.
-- [ ] **Anonymous gate on production**: after deploy, unauthenticated `initialize` returns 401 on all eight routes **and** on `/sse` (`curl -si https://mcp.fodda.ai/sse | head -1`).
+- [ ] **Anonymous gate on production**: after deploy, unauthenticated `initialize` returns 401 on all offering routes (e.g. `/mcp`, `/chatgpt`), and retired endpoints (`/sse`, `/messages`) return 410 Gone.
 
 ---
 

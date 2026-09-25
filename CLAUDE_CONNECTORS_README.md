@@ -89,9 +89,9 @@ Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK cover
 | `sign_up_free_account` | Create a free Base account (100 calls/month) |
 
 ### Key properties
-- **Read-only** — no tools create, modify, or delete user data
+- Most tools are read-only. A few act on your account (updating your profile or graph preferences, scheduling reports, requesting an expert intro or deliverable, onboarding) and are annotated `readOnlyHint: false`, so clients can ask before running them.
 - **Source-backed** — every insight is traceable to articles with URLs
-- **All tools have MCP spec annotations** — `readOnlyHint: true`, `title`, etc.
+- **All tools have MCP spec annotations** — titles, descriptions, parameter schemas, and execution hints
 
 ---
 
@@ -99,26 +99,30 @@ Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK cover
 
 ### For Individual Users (Pro / Max)
 
-1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration (format: `https://mcp.fodda.ai/c/<your-token>`)
+1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Connections (format: `https://mcp.fodda.ai/c/<your-token>`)
 2. Go to [Settings → Connectors](https://claude.ai/settings/connectors) → **"Add custom connector"** → paste the URL → **"Add"**
 3. In a new conversation, click **"+"** → **Connectors** → enable **Fodda**
 4. Start prompting — e.g. *"What are the top emerging trends in omnichannel retail?"*
 
-> **Legacy `?api_key=` URLs are retired** — the server rejects them (raw keys in URLs leak into logs and browser history) with a message pointing users to [app.fodda.ai](https://app.fodda.ai) for a fresh MCP URL. Developer clients can use an `Authorization: Bearer` header instead.
+> **Legacy query parameter URLs are retired** — the server rejects them with a message pointing users to [app.fodda.ai](https://app.fodda.ai) for a fresh MCP URL. Developer clients can use an `Authorization: Bearer` header instead.
 
 ### For Enterprise / Team (Admin-Managed)
 
 1. Workspace **Owner** goes to [Organization Settings → Connectors](https://claude.ai/admin-settings/connectors)
-2. Click **"Add custom connector"** and enter `https://mcp.fodda.ai/mcp` (auth via the OAuth connector once live; URL-embedded API keys are no longer accepted)
+2. Click **"Add custom connector"** and enter `https://mcp.fodda.ai/mcp` (auth via OAuth (live) or Bearer token; URL-embedded API keys are no longer accepted)
 3. Team members then go to [Settings → Connectors](https://claude.ai/settings/connectors) → find Fodda → click **"Connect"**
 
-> Owners control which tools are available. All tools are read-only — safe for enterprise governance.
+> Owners control which tools are available. Safe operations — safe for enterprise governance.
 
 ### For Claude Code (CLI)
 
 ```bash
-claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
-  --header "Authorization: Bearer YOUR_API_KEY"
+# Connect via OAuth:
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp
+
+# Or with an API key:
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp \
+  --header "Authorization: Bearer sk_live_..."
 ```
 
 ### For Claude Tag (Slack)
@@ -127,7 +131,7 @@ Claude Tag embeds Claude as a persistent team member in Slack. Admins connect Fo
 
 1. In Claude Tag admin, add Fodda as an MCP connector
 2. Set endpoint to `https://mcp.fodda.ai/mcp`
-3. Set auth type to **Bearer Token** with your Fodda API key
+3. Set auth type to **Bearer Token** with your Fodda API key (`sk_live_...`)
 4. Assign tools to channels (start with `search_graph`, `brand_tracker`, `deep_research_topic`)
 
 > **Full setup guide:** [docs/claude-tag-setup.md](docs/claude-tag-setup.md) — covers tool selection by team type, async tool pairing, billing, and troubleshooting.
@@ -139,7 +143,7 @@ Claude Tag embeds Claude as a persistent team member in Slack. Admins connect Fo
 | Item | Status |
 |---|---|
 | MCP server live at `mcp.fodda.ai` | ✅ Production |
-| Streamable HTTP + SSE transports | ✅ Both supported |
+| Streamable HTTP transport | ✅ Production (remote) |
 | Tool annotations (MCP spec) | ✅ All 30 tools |
 | Claude Tag readiness (Slack) | ✅ Verified — [setup guide](docs/claude-tag-setup.md) |
 | Connectors Directory submission | ✅ Submitted (March 2026) |

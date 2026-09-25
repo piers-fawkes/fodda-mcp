@@ -66,20 +66,23 @@ gcloud run deploy fodda-mcp \
 ```
 
 ### Claude (Web — Pro, Max, Team)
-1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration (format: `https://mcp.fodda.ai/c/<your-token>`)
+1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Connections (format: `https://mcp.fodda.ai/c/<your-token>`)
 2. Go to **Settings → Connectors → Add custom connector**, paste the URL, click **Add**
 
-> **Legacy `?api_key=` URLs are retired.** The server rejects them — raw keys in URLs leak into server logs, browser history, and referrers — and tells the user to get a new MCP URL at app.fodda.ai. Connection tokens are opaque and revocable; one-click OAuth arrives with the Anthropic directory listing.
+> **Legacy query parameter URLs are retired.** The server rejects them with an explicit 401 response and tells the user to get a new MCP URL at [app.fodda.ai/connections](https://app.fodda.ai/connections). Connection tokens are opaque and revocable; OAuth authentication is also live for supported clients.
 
 ### Claude Enterprise (Admin-Managed Connectors)
 Enterprise workspace admins can register the Fodda MCP server via the Admin Console:
-- **URL:** `https://mcp.fodda.ai/mcp` (authentication via `Authorization: Bearer` header or the OAuth connector once live — never in the URL)
-- **Fallback (SSE):** `https://mcp.fodda.ai/sse` with an `Authorization: Bearer YOUR_ORG_API_KEY` header
+- **URL:** `https://mcp.fodda.ai/mcp` (authentication via `Authorization: Bearer` header or the OAuth connector — never in the URL)
 
 ### Claude Code (CLI)
 ```bash
-claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
-  --header "Authorization: Bearer YOUR_API_KEY"
+# Connect via OAuth:
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp
+
+# Or with an API key:
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp \
+  --header "Authorization: Bearer sk_live_..."
 ```
 
 ## 5. Security & Error Handling

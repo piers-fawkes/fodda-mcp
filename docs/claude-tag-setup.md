@@ -53,9 +53,6 @@ https://mcp.fodda.ai/mcp
 
 This is a **Streamable HTTP** endpoint (the primary transport Fodda supports). No additional transport configuration is needed.
 
-> [!NOTE]
-> Fodda also exposes a legacy SSE endpoint at `https://mcp.fodda.ai/sse`. Use the primary `/mcp` endpoint unless Anthropic's documentation specifically requires SSE.
-
 ### Authentication
 
 Set the authentication type to **Bearer Token** and paste your Fodda API key:
@@ -70,19 +67,15 @@ Claude Tag sends this as the `Authorization: Bearer <API_KEY>` header on every M
 #### Example header (for reference)
 
 ```
-Authorization: Bearer fod_a1b2c3d4e5f6...
+Authorization: Bearer sk_live_a1b2c3d4e5f6...
 ```
 
-#### Alternative auth methods (advanced)
+#### Alternative auth headers (advanced)
 
-Fodda also accepts credentials via query string or a custom header. These are useful if your proxy or gateway strips `Authorization` headers:
+Fodda also accepts credentials via a custom header if your proxy or gateway strips `Authorization` headers:
 
 ```
-# Query string
-https://mcp.fodda.ai/mcp?api_key=YOUR_KEY&user_id=admin@yourcompany.com
-
-# Custom header
-X-API-Key: YOUR_KEY
+X-API-Key: sk_live_...
 ```
 
 In most Claude Tag setups, the Bearer Token method is sufficient.
@@ -338,7 +331,7 @@ This happens automatically — the Slack user just sees a short wait followed by
 **Key points:**
 - All traffic flows through a single MCP endpoint.
 - Authentication is per-key, not per-user. One key covers the whole channel.
-- All tools are **read-only** — Fodda never modifies your data or systems.
+- Most tools are read-only. A few act on your account (updating your profile or graph preferences, scheduling reports, requesting an expert intro or deliverable, onboarding) and are annotated `readOnlyHint: false`, so clients can ask before running them.
 - Async tools (deep research, supplemental context) require Claude to poll for results before responding.
 
 ---
@@ -348,11 +341,9 @@ This happens automatically — the Slack user just sees a short wait followed by
 | Item | Value |
 |---|---|
 | **MCP Endpoint** | `https://mcp.fodda.ai/mcp` |
-| **Legacy SSE Endpoint** | `https://mcp.fodda.ai/sse` |
 | **Auth Header** | `Authorization: Bearer <API_KEY>` |
-| **Alt Auth (query string)** | `?api_key=KEY&user_id=EMAIL` |
-| **Alt Auth (header)** | `X-API-Key: KEY` |
+| **Alt Auth (header)** | `X-API-Key: <API_KEY>` |
 | **Transport** | Streamable HTTP |
 | **Total Tools** | 31 |
-| **Tool Access** | Read-only |
+| **Tool Access** | Safe operations |
 | **Dashboard** | [app.fodda.ai](https://app.fodda.ai) |

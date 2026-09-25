@@ -15,43 +15,15 @@
       ]
     }
   ],
-  "version": "1.46.35",
+  "version": "1.46.85",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"
   },
   "remotes": [
     {
-      "transportType": "streamable-http",
-      "url": "https://mcp.fodda.ai/mcp",
-      "authorizationServerMetadataUrl": "https://mcp.fodda.ai/.well-known/oauth-authorization-server",
-      "clientAuthentication": {
-        "type": "oauth2"
-      }
-    }
-  ],
-  "packages": [
-    {
-      "registryType": "npm",
-      "identifier": "fodda-mcp",
-      "version": "1.46.35",
-      "transport": {
-        "type": "stdio"
-      },
-      "environmentVariables": [
-        {
-          "name": "FODDA_API_KEY",
-          "description": "Your Fodda API key",
-          "isRequired": true,
-          "isSecret": true
-        },
-        {
-          "name": "FODDA_API_URL",
-          "description": "Upstream Fodda API URL",
-          "isRequired": false,
-          "default": "https://api.fodda.ai"
-        }
-      ]
+      "type": "streamable-http",
+      "url": "https://mcp.fodda.ai/mcp"
     }
   ]
 }

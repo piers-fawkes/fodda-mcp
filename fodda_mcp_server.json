@@ -4,6 +4,9 @@
   "title": "Fodda Knowledge Graphs",
   "description": "Expert-curated knowledge, brand, research & earnings intelligence — 46 tools, 220+ graphs.",
   "websiteUrl": "https://www.fodda.ai",
+  "privacyPolicyUrl": "https://www.fodda.ai/privacy",
+  "termsOfServiceUrl": "https://www.fodda.ai/terms",
+  "supportContact": "support@fodda.ai",
   "icons": [
     {
       "src": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
@@ -12,7 +15,7 @@
       ]
     }
   ],
-  "version": "1.46.35",
+  "version": "1.46.85",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"
@@ -20,51 +23,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://mcp.fodda.ai/mcp",
-      "headers": [
-        {
-          "name": "Authorization",
-          "description": "Bearer token with your Fodda API key (e.g. 'Bearer sk_live_...')",
-          "isRequired": true,
-          "isSecret": true
-        }
-      ]
-    },
-    {
-      "type": "sse",
-      "url": "https://mcp.fodda.ai/sse",
-      "headers": [
-        {
-          "name": "Authorization",
-          "description": "Bearer token with your Fodda API key (e.g. 'Bearer sk_live_...')",
-          "isRequired": true,
-          "isSecret": true
-        }
-      ]
-    }
-  ],
-  "packages": [
-    {
-      "registryType": "npm",
-      "identifier": "fodda-mcp",
-      "version": "1.46.35",
-      "transport": {
-        "type": "stdio"
-      },
-      "environmentVariables": [
-        {
-          "name": "FODDA_API_KEY",
-          "description": "Your Fodda API key",
-          "isRequired": true,
-          "isSecret": true
-        },
-        {
-          "name": "FODDA_API_URL",
-          "description": "Upstream Fodda API URL",
-          "isRequired": false,
-          "default": "https://api.fodda.ai"
-        }
-      ]
+      "url": "https://mcp.fodda.ai/mcp"
     }
   ]
 }

@@ -7,7 +7,7 @@
 
   [![MCP Registry](https://img.shields.io/badge/MCP_Registry-ai.fodda%2Fmcp--server-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server)
   [![npm](https://img.shields.io/npm/v/fodda-mcp)](https://www.npmjs.com/package/fodda-mcp)
-  [![Version](https://img.shields.io/badge/version-1.30.0-green)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.46.85-green)](./CHANGELOG.md)
   [![License](https://img.shields.io/badge/license-Proprietary-red)](https://fodda.ai)
 
 </div>
@@ -18,105 +18,26 @@
 
 ### Claude (Web — Pro, Max, Team, Enterprise)
 
-1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration (format: `https://mcp.fodda.ai/c/<your-token>`)
+1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Connections (format: `https://mcp.fodda.ai/c/<your-token>`)
 2. In Claude, go to **Settings → Connectors → Add custom connector**, paste the URL, and click **Add**
 3. Start chatting with your Fodda knowledge graphs
 
-> **Note:** legacy `?api_key=` or `?user_id=` query string URLs are deprecated and return HTTP 401 with explicit instructions (`Fodda: this connection URL is outdated. Get your new MCP URL at https://app.fodda.ai...`). Get your fresh MCP URL or connect via OAuth at [app.fodda.ai](https://app.fodda.ai).
+> **Note:** Legacy URL query-string parameter authentication is deprecated and returns HTTP 401 with instructions. Get your fresh MCP URL or connect via OAuth at [app.fodda.ai](https://app.fodda.ai).
 
-
-### Claude Code (CLI — SSE)
+### Claude Code (CLI)
 
 ```bash
-claude mcp add --transport sse fodda https://mcp.fodda.ai/sse \
-  --header "Authorization: Bearer YOUR_API_KEY"
+# Connect via OAuth:
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp
+
+# Or with an API key:
+claude mcp add --transport http fodda https://mcp.fodda.ai/mcp \
+  --header "Authorization: Bearer sk_live_..."
 ```
 
-### Claude Enterprise
+### Client Setup Guides
 
-For Claude Enterprise with admin-managed connectors, your workspace admin can register the Fodda MCP server using the same Streamable HTTP endpoint (`https://mcp.fodda.ai/mcp`) via the Admin Console. See [Enterprise MCP Setup](./Enterprise_MCP_Setup.md) for full details.
-
-### OpenAI (Responses API — Recommended)
-
-Use OpenAI's native MCP support — no function definitions needed:
-
-```python
-from openai import OpenAI
-client = OpenAI()
-
-resp = client.responses.create(
-    model="gpt-5",
-    tools=[{
-        "type": "mcp",
-        "server_label": "fodda",
-        "server_description": "Expert-curated knowledge graphs for retail, beauty, sports trends and earnings intelligence.",
-        "server_url": "https://mcp.fodda.ai/mcp",
-        "authorization": "Bearer YOUR_API_KEY",
-        "require_approval": "never",
-    }],
-    input="What are the top emerging retail trends?",
-)
-print(resp.output_text)
-```
-
-```javascript
-import OpenAI from "openai";
-const client = new OpenAI();
-
-const resp = await client.responses.create({
-  model: "gpt-5",
-  tools: [{
-    type: "mcp",
-    server_label: "fodda",
-    server_description: "Expert-curated knowledge graphs for retail, beauty, sports trends and earnings intelligence.",
-    server_url: "https://mcp.fodda.ai/mcp",
-    authorization: "Bearer YOUR_API_KEY",
-    require_approval: "never",
-  }],
-  input: "What are the top emerging retail trends?",
-});
-console.log(resp.output_text);
-```
-
-> **Tip:** To reduce latency with 30+ tools, use `allowed_tools` to filter:
-> `"allowed_tools": ["search_graph", "search_statistics", "brand_tracker"]`
-
-> **Legacy:** If you're using `chat.completions.create()` with function calling, define a custom function that calls the Fodda REST API. See [fodda.ai/connect](https://app.fodda.ai) for details.
-
-### Connect from ChatGPT (ChatGPT Apps Directory)
-
-To connect Fodda to ChatGPT (Apps Directory listing or a custom MCP connection):
-- Server URL: `https://mcp.fodda.ai/chatgpt`
-- Authentication: OAuth 2.1 (PKCE S256, Dynamic Client Registration) — authorization server `https://clerk.fodda.ai` (metadata at `https://clerk.fodda.ai/.well-known/oauth-authorization-server`)
-- Resource metadata discovery: `https://mcp.fodda.ai/.well-known/oauth-protected-resource/chatgpt`
-- Curated tool profile: 24 tools covering trends, brand tracking, earnings intelligence, expert intelligence, and visual generation.
-
-### Generic Streamable HTTP Client
-
-Connect to the `/mcp` endpoint using HTTP `POST` (Streamable HTTP) with `Authorization: Bearer YOUR_API_KEY`:
-```
-https://mcp.fodda.ai/mcp
-```
-
-### Gemini / Antigravity
-
-Add to `~/.gemini/config/mcp_config.json`:
-```json
-{
-  "mcpServers": {
-    "fodda": {
-      "serverUrl": "https://mcp.fodda.ai/mcp",
-      "headers": {
-        "Authorization": "Bearer YOUR_API_KEY"
-      }
-    }
-  }
-}
-```
-
-### Generic SSE Client
-
-Connect to `https://mcp.fodda.ai/sse` with an `Authorization: Bearer YOUR_API_KEY` header.
+For complete setup guides across all supported clients — Claude Web, Claude Code, Claude Enterprise, ChatGPT, OpenAI Responses API, Cursor, Gemini, and custom agents — visit **[https://www.fodda.ai/connect](https://www.fodda.ai/connect)**.
 
 ---
 
@@ -205,11 +126,7 @@ In MCP request `_meta`:
 { "_meta": { "authorization": "Bearer sk_live_..." } }
 ```
 
-**Fallback — URL query parameter.** Some clients (e.g. the Claude.ai web *custom
-connector* UI) cannot set custom request headers. For those, the key may be passed as
-`?api_key=...`. This is provided only for compatibility; prefer header-based auth
-wherever the client supports it, since URLs are more likely to be logged by
-intermediaries. The server never returns your API key in tool output.
+**Connection URLs.** Web connector clients use personal tokenized connection URLs (`https://mcp.fodda.ai/c/<token>`) generated in your [Connections dashboard](https://app.fodda.ai/connections). Raw keys in URLs are not accepted.
 
 ---
 
@@ -217,7 +134,7 @@ intermediaries. The server never returns your API key in tool output.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PORT` | HTTP server port (omit for stdio mode) | — |
+| `PORT` | HTTP server port | `8080` |
 | `FODDA_API_URL` | Upstream API base URL | `https://api.fodda.ai` |
 | `FODDA_MCP_SECRET` | HMAC signing secret for API requests | — |
 | `NODE_ENV` | Environment (`development` / `production`) | `production` |
@@ -229,12 +146,7 @@ intermediaries. The server never returns your API key in tool output.
 ```bash
 npm install
 npm run build
-
-# Stdio mode
 npm start
-
-# SSE mode
-PORT=8080 npm start
 ```
 
 ## Self-Hosting
@@ -291,7 +203,7 @@ June 16, 2026) for the complete, authoritative terms.
 ## Support
 
 - **Email:** [hello@fodda.ai](mailto:hello@fodda.ai)
-- **Account & API keys:** [app.fodda.ai](https://app.fodda.ai) → Account → MCP Integration
+- **Account & API keys:** [app.fodda.ai](https://app.fodda.ai) → Connections
 - **Documentation:** [fodda.ai](https://www.fodda.ai)
 
 To report a security issue, email **[hello@fodda.ai](mailto:hello@fodda.ai)** with

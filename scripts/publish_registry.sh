@@ -10,7 +10,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SERVER_JSON="$ROOT_DIR/fodda_mcp_server.json"
+SERVER_JSON="$ROOT_DIR/server.json"
 
 echo "=== Fodda MCP Registry Publisher ==="
 echo ""
