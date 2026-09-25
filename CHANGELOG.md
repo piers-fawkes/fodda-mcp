@@ -5,6 +5,12 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.84] - 2026-09-25
+
+### Changed
+- **Widget logo moved off the public `fodda-demo` GitHub repo (`src/widgetShell.ts`)**: `FODDA_LOGO_URL` now points at `https://app.fodda.ai/fodda-mini-logo-claude.png` instead of `cdn.jsdelivr.net/gh/piers-fawkes/fodda-demo@main/...`. jsDelivr only serves public repos, so this unblocks making `fodda-demo` private (the App repo, which had an admin secret committed in `.agents/workflows/lookup-user-mcp.md`; the secret has been rotated). Verified: both URLs return the same 41,543-byte `image/png` (curl, 2026-09-25). Not yet deployed.
+- Filed `briefs/Brief — MCP Agent — Connection Surface Cleanup (sse, server.json, docs).md` (retire `/sse`, remote-only `server.json`/`smithery.yaml`, RFC 9728-consistent 401s, doc fixes).
+
 ## [1.46.83] - 2026-09-24
 
 ### Changed

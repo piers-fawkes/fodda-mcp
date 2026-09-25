@@ -7,7 +7,7 @@
 
 // Logo (CDN-hosted — saves ~5KB per widget)
 // ---------------------------------------------------------------------------
-export const FODDA_LOGO_URL = 'https://cdn.jsdelivr.net/gh/piers-fawkes/fodda-demo@main/public/fodda-mini-logo-claude.png';
+export const FODDA_LOGO_URL = 'https://app.fodda.ai/fodda-mini-logo-claude.png';
 
 // Playfair Display italic — brand display font (removed, using Claude's built-in serif)
 export const PLAYFAIR_LINK = '';
