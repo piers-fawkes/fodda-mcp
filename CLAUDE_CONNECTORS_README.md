@@ -112,7 +112,7 @@ Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK cover
 2. Click **"Add custom connector"** and enter `https://mcp.fodda.ai/mcp` (auth via OAuth (live) or Bearer token; URL-embedded API keys are no longer accepted)
 3. Team members then go to [Settings → Connectors](https://claude.ai/settings/connectors) → find Fodda → click **"Connect"**
 
-> Owners control which tools are available. Safe operations — safe for enterprise governance.
+> Owners control which tools are available.
 
 ### For Claude Code (CLI)
 
