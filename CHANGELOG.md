@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Tests (`src/test_connection_surface_cleanup.ts`)**:
     - Added comprehensive automated test suite verifying `GET /sse` → 410, `POST /messages` → 410, invalid `/c/` → 401 + `WWW-Authenticate` pointing at `/mcp` with `error="invalid_token"`, invalid bearer → 401 + `WWW-Authenticate`, query key deprecation on `/c/:token` and `/grok-brand-context`, unauthenticated initialize, and server card endpoint schemas.
   - **Deployment & Live Verification**:
-    - Cloud Run Revision: `fodda-mcp-00565-5bc` deployed to region `us-east4` (serving 100% of traffic).
+    - Cloud Run Revision: `fodda-mcp-00566-9f4` (superceding initial `fodda-mcp-00565-5bc`) deployed to region `us-east4` (serving 100% of traffic).
     - Live Probe 1 (`GET /sse`):
       `curl -si https://mcp.fodda.ai/sse`
       Returned `HTTP/2 410` with:
