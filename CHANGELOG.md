@@ -10,20 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Dynamic API-Driven `get_capabilities` with Topic Reconnaissance (`src/toolHandlers.ts`)**:
   - Added optional `topic` argument to `get_capabilities`:
-    - When `topic` is provided, fetches topic reconnaissance dynamically from Fodda API (`GET /v1/capabilities?topic={topic}`). Cleanly falls back to local candidate expert scoring (`findCandidateExperts`) and canonical workflow recipes if network fails.
+    - When `topic` is provided, fetches topic reconnaissance dynamically from Fodda API (`GET /v1/capabilities?topic={topic}`). Cleanly falls back to local candidate expert scoring (`findCandidateExperts`), coverage boundary detection, and canonical workflow recipes if network fails.
     - When `topic` is omitted, fetches dynamic capabilities from `GET /v1/capabilities` with a 1-hour in-memory cache (`CAPABILITIES_CACHE_TTL_MS`), falling back to a static catalog structure if unavailable.
-    - Embedded the 4 canonical Fodda workflows (`research`, `challenge`, `ask_experts`, `track`), research recipes, and Airtable source-of-truth pricing invariants ($0.50 per call, SPT machine-only).
-- **Workflow Next-Actions Engine in `coverageRelevance.ts`**:
-  - Extended `NextMoves` interface with `actions?: NextMovesAction[]` (`NextMovesAction`: `action: 'pressure_test' | 'create_brief' | 'track_topic' | 'ask_expert'`, `name`, `description`, `suggested_prompt`, `target_tool`).
-  - Updated `generateNextMoves()` and `generateConsultNextMoves()` to populate contextually relevant second-step actions targeting `verify_market_claim`, `find_expert`, `request_deliverable`, and `manage_scheduled_reports`.
+    - Embedded the 4 canonical Fodda workflows (`research`, `challenge`, `ask_experts`, `track`), research recipes, Airtable source-of-truth pricing invariants ($0.50 per call, SPT machine-only), and platform scale.
+    - **Specialist Classification Breakdown**: Embedded `platform_scale.specialists.breakdown` strictly distinguishing `human_agents` (verified living practitioners), `synthetic_domain_analysts` (grounded AI personas), `c_suite_agents` (executive strategy personas), and `classic_agents` (historical thinkers), alongside explicit `classification_guidance` instructing host models never to flatten the roster into generic human experts.
+    - **Coverage Assessment & Boundary Detection**: Returned `coverage_assessment` (`strong_coverage`, `limited_coverage`, `boundary_advisory`) flagging technical, chemical, and clinical formulation boundaries and advising specialist Human Agent consultation.
+- **Workflow Next-Actions Engine with Executable Continuations (`src/coverageRelevance.ts`)**:
+  - Extended `NextMoves` interface with `actions?: NextMovesAction[]` (`NextMovesAction`: `action: 'pressure_test' | 'create_brief' | 'track_topic' | 'ask_expert' | 'research'`, `name`, `description`, `reason`, `suggested_prompt`, `target_tool`, `suggested_parameters: Record<string, any>`, `available: boolean`).
+  - Updated `generateNextMoves()` and `generateConsultNextMoves()` to populate contextually relevant, executable continuation actions with prepopulated arguments targeting `verify_market_claim`, `find_expert`, `consult_human_agent`, `request_deliverable`, and `manage_scheduled_reports`.
 - **System Prompt Updates (`src/systemPrompt.ts`)**:
   - Updated `RULE: StructuredNextMoves` allowing host models to surface strategic workflow next actions from `next_moves.actions`.
+  - Updated `RULE: ResearchHonesty` to honestly communicate technical/formulation boundaries: *"Fodda's knowledge graphs specialize in consumer trends and market adoption. For technical formulation depth, consulting a specialist Human Agent is recommended before drawing conclusions."*
   - Added `RULE: ResearchMethodologyRecipes` providing guidelines for formulating queries across research, pressure-testing (counter-evidence, executive divergence), and expert consultations (3-part attribution arc for Human Agents).
-- **Automated Test Suite (`src/test_capabilities_guidance.ts`)**:
-  - Verifies dynamic/fallback retrieval for `get_capabilities` without parameters (4 canonical workflows).
-  - Verifies topic reconnaissance execution on `get_capabilities({ topic: "clean beauty" })`.
-  - Verifies clean network fallback for `get_capabilities`.
-  - Verifies `coverageRelevance` produces structured `next_moves.actions`.
+- **Automated Test Suite & Zero-Mention Prompt Probe (`src/test_capabilities_guidance.ts`)**:
+  - Verifies dynamic/fallback retrieval for `get_capabilities` without parameters (4 canonical workflows and `specialists.breakdown`).
+  - Verifies topic reconnaissance execution on `get_capabilities({ topic: "clean beauty" })` with `coverage_assessment` and executable `available_next_actions`.
+  - Verifies clean network fallback for `get_capabilities` with local boundary detection.
+  - Verifies `coverageRelevance` produces structured `next_moves.actions` with executable parameters (`reason`, `suggested_parameters`, `available: true`).
+  - Implements **Headless UX Zero-Mention Prompt Probe** testing 4 canonical natural user prompts and validating intent routing to `search_graph`, `verify_market_claim`, `find_expert`/`consult_human_agent` (with formulation boundary advisory), and `manage_scheduled_reports`.
   - Verifies strict maintenance of total registered tools count (55 tools, no tool proliferation).
   - Verifies all 9 updated tool descriptions lead with "Use when...".
 

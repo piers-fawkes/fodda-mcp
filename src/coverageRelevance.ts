@@ -698,11 +698,14 @@ export interface NextMovesConsultEnvelope {
 }
 
 export interface NextMovesAction {
-    action: 'pressure_test' | 'create_brief' | 'track_topic' | 'ask_expert';
+    action: 'pressure_test' | 'create_brief' | 'track_topic' | 'ask_expert' | 'research';
     name: string;
     description: string;
-    suggested_prompt: string;
+    reason: string;
     target_tool: string;
+    suggested_prompt: string;
+    suggested_parameters: Record<string, any>;
+    available: boolean;
 }
 
 export interface NextMoves {
@@ -1597,36 +1600,58 @@ export async function generateNextMoves(
         : `If you tell me the brand or brief you're working on, I'll cut this to that.`;
 
     const cleanTopic = options?.knownBrand || options?.brandDisplayName || nextMoves.thread?.theme || query.trim();
+    const isExpertHuman = specific.expert?.category === 'human_agent' || specific.expert?.consult_tool === 'consult_human_agent';
+    const expertTargetTool = isExpertHuman ? 'consult_human_agent' : 'find_expert';
+    const expertParams = specific.expert
+        ? (isExpertHuman
+            ? { analyst_id: specific.expert.analyst_id, query: `How should we evaluate the strategic opportunity and risks in ${cleanTopic}?` }
+            : { query: cleanTopic })
+        : { query: cleanTopic };
+
     const actions: NextMovesAction[] = [
         {
             action: 'pressure_test',
             name: 'Pressure-test thesis',
             description: 'Evaluate assertions against counter-evidence and executive divergence.',
-            suggested_prompt: `Pressure-test the thesis that ${cleanTopic} is driving market growth.`,
+            reason: 'Evaluate whether findings rely on untested assumptions',
             target_tool: 'verify_market_claim',
+            suggested_prompt: `Pressure-test whether the market momentum around ${cleanTopic} holds up against counter-evidence.`,
+            suggested_parameters: { claim: `Pressure-test whether ${cleanTopic} strategy and market momentum holds up` },
+            available: true,
         },
         {
             action: 'ask_expert',
-            name: 'Consult specialist',
+            name: specific.expert ? `Consult ${specific.expert.display_name}` : 'Consult specialist',
             description: 'Get practitioner judgment and domain depth on this topic.',
+            reason: specific.expert
+                ? `Consult ${specific.expert.display_name} for authoritative interpretation and practitioner depth.`
+                : 'Consult a domain specialist to interpret qualitative nuances.',
+            target_tool: expertTargetTool,
             suggested_prompt: specific.expert
                 ? `Ask ${specific.expert.display_name} about ${cleanTopic}`
                 : `Who should I consult about ${cleanTopic}?`,
-            target_tool: 'find_expert',
+            suggested_parameters: expertParams,
+            available: true,
         },
         {
             action: 'create_brief',
             name: 'Commission executive brief',
             description: 'Turn this intelligence into a finished strategic deliverable.',
-            suggested_prompt: `Commission an executive brief on ${cleanTopic}`,
+            reason: `Package verified evidence, quantitative statistics, and executive quotes on ${cleanTopic} into a deliverable.`,
             target_tool: 'request_deliverable',
+            suggested_prompt: `Commission an executive brief on ${cleanTopic}`,
+            suggested_parameters: { skill_slug: 'research_brief', brief: `Synthesize verified findings, market metrics, and strategic implications for ${cleanTopic}` },
+            available: true,
         },
         {
             action: 'track_topic',
             name: 'Track topic shifts',
             description: 'Establish automated weekly monitoring on this subject.',
-            suggested_prompt: `Set up weekly tracking on ${cleanTopic}`,
+            reason: `Detect newly emerging signals, shifts in executive tone, and trend momentum on ${cleanTopic} weekly.`,
             target_tool: 'manage_scheduled_reports',
+            suggested_prompt: `Set up weekly tracking on ${cleanTopic}`,
+            suggested_parameters: { action: 'create', topic: cleanTopic, cadence: 'weekly' },
+            available: true,
         },
     ];
     nextMoves.actions = actions;
@@ -1877,22 +1902,31 @@ export function generateConsultNextMoves(
             action: 'pressure_test',
             name: 'Pressure-test perspective',
             description: "Verify expert assertions and claims against broader market data.",
-            suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${query.trim()}`,
+            reason: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
             target_tool: 'verify_market_claim',
+            suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${query.trim()}`,
+            suggested_parameters: { claim: `Pressure-test ${expertDisplayName}'s thesis and assertions on ${query.trim()}` },
+            available: true,
         },
         {
             action: 'create_brief',
             name: 'Commission deliverable',
             description: `Commission a finished deliverable from ${expertDisplayName}.`,
-            suggested_prompt: `Commission a strategic briefing from ${expertDisplayName} on ${query.trim()}`,
+            reason: `Turn ${expertDisplayName}'s insights and framework into a formatted deliverable.`,
             target_tool: 'request_deliverable',
+            suggested_prompt: `Commission a strategic briefing from ${expertDisplayName} on ${query.trim()}`,
+            suggested_parameters: { analyst_id: cleanAnalystId || expertGraphId, skill_slug: 'research_brief', brief: `Strategic brief incorporating ${expertDisplayName}'s framework on ${query.trim()}` },
+            available: true,
         },
         {
             action: 'track_topic',
             name: 'Track topic shifts',
             description: 'Establish automated weekly monitoring on this subject.',
-            suggested_prompt: `Set up weekly tracking on ${query.trim()}`,
+            reason: `Monitor new signals and developments in ${expertDisplayName}'s coverage area.`,
             target_tool: 'manage_scheduled_reports',
+            suggested_prompt: `Set up weekly tracking on ${query.trim()}`,
+            suggested_parameters: { action: 'create', topic: query.trim(), cadence: 'weekly' },
+            available: true,
         },
     ];
     nextMoves.actions = consultActions;

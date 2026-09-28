@@ -889,6 +889,20 @@ export async function createServer(
         pricing_url: "https://fodda.ai/pricing",
         pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is $0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
         scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
+        platform_scale: {
+            knowledge_graphs: 100,
+            supplemental_sources: 8,
+            specialists: {
+                total: 4150,
+                breakdown: {
+                    human_agents: 4,
+                    synthetic_domain_analysts: 4100,
+                    c_suite_agents: 30,
+                    classic_agents: 16
+                },
+                classification_guidance: "Only 'human_agents' are verified living practitioners (e.g. Ben Dietz, Peter Abraham). 'synthetic_domain_analysts' are AI personas grounded in specific domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe all specialists as living human experts."
+            }
+        },
         workflows: [
             {
                 id: 'research',
@@ -1104,7 +1118,7 @@ export async function createServer(
         'get_capabilities',
         'Returns Fodda\'s capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what\'s available, or how much something costs. (Platform capability and pricing catalogue read (free).)',
         {
-            topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview and workflow recipes."),
+            topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview, workflow recipes, and specialist breakdown."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'Get Fodda Capabilities', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -1121,23 +1135,112 @@ export async function createServer(
                     console.warn(`[get_capabilities] API recon fetch failed, using local fallback:`, err?.message);
                 }
 
-                // Fallback to local candidate experts and hardcoded recipes if network fails
+                // Fallback to local candidate experts, coverage boundary detection, and hardcoded recipes if network fails
                 let matchedCandidates: any[] = [];
                 try {
                     matchedCandidates = findCandidateExperts(cleanTopic, { limit: 2 });
                 } catch {}
 
+                const qLower = cleanTopic.toLowerCase();
+                const technicalKeywords = [
+                    "formulation", "ingredients", "chemical", "chemistry", "dermatological", "molecular",
+                    "toxicology", "clinical", "biochem", "synthesis", "patent", "litigation", "dcf", "lbo",
+                    "clean beauty"
+                ];
+                const hitTechnical = technicalKeywords.filter(kw => qLower.includes(kw));
+
+                const strongCoverage: string[] = [
+                    `Consumer trends, category dynamics, and brand footprints related to ${cleanTopic}`
+                ];
+                const limitedCoverage: string[] = [];
+                let boundaryAdvisory: string | null = null;
+
+                if (hitTechnical.length > 0) {
+                    limitedCoverage.push(`Deep technical, chemical, or clinical domain depth (${hitTechnical.join(", ")})`);
+                    boundaryAdvisory = "Fodda's knowledge graphs specialize in consumer trends and market adoption. For technical formulation depth, consulting a specialist Human Agent is recommended before drawing conclusions.";
+                }
+
+                // Determine recommended workflow
+                let recommendedId = 'research';
+                let recommendedName = 'Research something';
+                let whyRecommended = 'Query requests market evidence, consumer trends, and corporate signals.';
+                let suggestedFormulation = `Investigate key market drivers and emerging signals for ${cleanTopic}. Identify observed evidence and specialist perspectives.`;
+
+                if (/\b(challenge|pressure[\s-]?test|counter|contrary|flaw|missing|risk|disagree|sure whether|not sure)\b/i.test(cleanTopic)) {
+                    recommendedId = 'challenge';
+                    recommendedName = 'Challenge something (Pressure-test)';
+                    whyRecommended = 'Query asks to evaluate, challenge, or pressure-test a strategy or hypothesis against counter-evidence.';
+                    suggestedFormulation = `Pressure-test the thesis around ${cleanTopic}. Identify disconfirming market evidence, management divergence, and structural vulnerabilities.`;
+                } else if (/\b(who|experts?|specialists?|analysts?|ask|consult|practitioners?|frameworks?|view on|perspective on|make of)\b/i.test(cleanTopic) || hitTechnical.length > 0) {
+                    recommendedId = 'ask_experts';
+                    recommendedName = 'Ask the experts';
+                    whyRecommended = hitTechnical.length > 0
+                        ? `Topic involves technical/formulation depth (${hitTechnical.join(", ")}). Because trend graphs focus on commercial adoption rather than lab chemistry, consulting a specialist Human Agent is strongly recommended.`
+                        : 'Query seeks authoritative specialist judgment, analytical frameworks, or practitioner interpretation.';
+                    suggestedFormulation = `Consult candidate specialists on ${cleanTopic}, framing the question around their unique domain methodology.`;
+                } else if (/\b(track|monitor|update|recurring|weekly|alert|cadence|keep an eye|keep me updated)\b/i.test(cleanTopic)) {
+                    recommendedId = 'track';
+                    recommendedName = 'Track something';
+                    whyRecommended = 'Query indicates desire for continuous monitoring or recurring intelligence updates over time.';
+                    suggestedFormulation = `Establish weekly intelligence tracking for ${cleanTopic} to monitor signal shifts and earnings statements.`;
+                }
+
+                const topCandidate = matchedCandidates[0];
+                const availableNextActions = [
+                    {
+                        action: 'pressure_test',
+                        name: 'Pressure-test this assertion',
+                        description: 'Search for counter-evidence, disconfirming signals, and untested assumptions.',
+                        reason: `Evaluate whether strategic assumptions regarding ${cleanTopic} hold up against contrarian data and earnings divergence.`,
+                        target_tool: 'verify_market_claim',
+                        suggested_prompt: `Pressure-test whether current assumptions regarding ${cleanTopic} are supported or challenged by market evidence.`,
+                        suggested_parameters: { claim: `Market strategy and consumer demand assumptions for ${cleanTopic}` },
+                        available: true
+                    },
+                    {
+                        action: 'ask_expert',
+                        name: topCandidate ? `Consult ${topCandidate.display_name}` : 'Consult a specialist',
+                        description: 'Gain practitioner calibration, proprietary frameworks, and strategic guidance.',
+                        reason: topCandidate ? `Consult ${topCandidate.display_name} for authoritative interpretation.` : 'Consult a domain specialist to interpret qualitative nuances.',
+                        target_tool: topCandidate ? topCandidate.consult_tool : 'find_expert',
+                        suggested_prompt: topCandidate ? `Ask ${topCandidate.display_name} about ${cleanTopic}` : `Find candidate specialists who understand ${cleanTopic}`,
+                        suggested_parameters: topCandidate ? { agent_id: topCandidate.analyst_id, question: `How should we evaluate the strategic opportunity and risks in ${cleanTopic}?` } : { q: cleanTopic },
+                        available: true
+                    },
+                    {
+                        action: 'track_topic',
+                        name: 'Track this topic',
+                        description: 'Establish recurring intelligence updates for ongoing monitoring.',
+                        reason: `Detect newly emerging signals, shifts in executive tone, and trend momentum on ${cleanTopic} weekly.`,
+                        target_tool: 'manage_scheduled_reports',
+                        suggested_prompt: `Set up weekly tracking on ${cleanTopic}.`,
+                        suggested_parameters: { action: 'create', topic: cleanTopic, cadence: 'weekly' },
+                        available: true
+                    },
+                    {
+                        action: 'create_brief',
+                        name: 'Create an executive brief',
+                        description: 'Turn completed research into a structured, executive-ready deliverable or article.',
+                        reason: `Package verified evidence, quantitative statistics, and executive quotes on ${cleanTopic} into a deliverable.`,
+                        target_tool: 'request_deliverable',
+                        suggested_prompt: `Create an executive research brief on ${cleanTopic}`,
+                        suggested_parameters: { skill_slug: 'research_brief', brief: `Synthesize verified findings, market metrics, and strategic implications for ${cleanTopic}` },
+                        available: true
+                    }
+                ];
+
                 const localRecon = {
                     ok: true,
                     pricing_url: "https://fodda.ai/pricing",
                     pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is $0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+                    platform_scale: STATIC_CAPABILITIES_FALLBACK.platform_scale,
                     topic_reconnaissance: {
                         query: cleanTopic,
                         recommended_workflow: {
-                            id: 'research',
-                            name: 'Research something',
-                            why_recommended: 'Query requests market evidence, consumer trends, and corporate signals.',
-                            suggested_formulation: `Investigate key market drivers and emerging signals for ${cleanTopic}. Identify observed evidence and specialist perspectives.`
+                            id: recommendedId,
+                            name: recommendedName,
+                            why_recommended: whyRecommended,
+                            suggested_formulation: suggestedFormulation
                         },
                         candidate_experts: matchedCandidates.map(c => ({
                             id: c.analyst_id,
@@ -1145,13 +1248,19 @@ export async function createServer(
                             agent_class: c.category || 'Specialist',
                             why_matched: [c.reason]
                         })),
-                        available_next_actions: [
-                            { action: 'challenge', name: 'Pressure-test this', description: 'Search for counter-evidence and disconfirming signals.', target_tool: 'verify_market_claim' },
-                            { action: 'ask_experts', name: 'Ask an expert', description: 'Consult a candidate specialist.', target_tool: 'find_expert' },
-                            { action: 'track', name: 'Track this topic', description: 'Establish recurring intelligence updates.', target_tool: 'manage_scheduled_reports' },
-                            { action: 'create_brief', name: 'Create a brief', description: 'Turn research into an executive deliverable.', target_tool: 'request_deliverable' }
-                        ]
+                        coverage_assessment: {
+                            strong_coverage: strongCoverage,
+                            limited_coverage: limitedCoverage,
+                            boundary_advisory: boundaryAdvisory
+                        },
+                        available_next_actions: availableNextActions
                     },
+                    coverage_assessment: {
+                        strong_coverage: strongCoverage,
+                        limited_coverage: limitedCoverage,
+                        boundary_advisory: boundaryAdvisory
+                    },
+                    available_next_actions: availableNextActions,
                     workflows: STATIC_CAPABILITIES_FALLBACK.workflows,
                     capabilities: STATIC_CAPABILITIES_FALLBACK.capabilities
                 };
