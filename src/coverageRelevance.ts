@@ -697,6 +697,14 @@ export interface NextMovesConsultEnvelope {
     scope_line: string;
 }
 
+export interface NextMovesAction {
+    action: 'pressure_test' | 'create_brief' | 'track_topic' | 'ask_expert';
+    name: string;
+    description: string;
+    suggested_prompt: string;
+    target_tool: string;
+}
+
 export interface NextMoves {
     thread?: NextMovesThread | undefined;
     specific?: NextMovesSpecific | undefined;
@@ -706,6 +714,7 @@ export interface NextMoves {
     known_brand?: string | undefined;
     presentation?: 'internal' | undefined;
     consult_envelope?: NextMovesConsultEnvelope | undefined;
+    actions?: NextMovesAction[] | undefined; // ADDED: Strategic workflow second-steps
 }
 
 export interface NextMovesOptions {
@@ -1587,6 +1596,41 @@ export async function generateNextMoves(
         ? `Want this cut to ${options.knownBrand} specifically?`
         : `If you tell me the brand or brief you're working on, I'll cut this to that.`;
 
+    const cleanTopic = options?.knownBrand || options?.brandDisplayName || nextMoves.thread?.theme || query.trim();
+    const actions: NextMovesAction[] = [
+        {
+            action: 'pressure_test',
+            name: 'Pressure-test thesis',
+            description: 'Evaluate assertions against counter-evidence and executive divergence.',
+            suggested_prompt: `Pressure-test the thesis that ${cleanTopic} is driving market growth.`,
+            target_tool: 'verify_market_claim',
+        },
+        {
+            action: 'ask_expert',
+            name: 'Consult specialist',
+            description: 'Get practitioner judgment and domain depth on this topic.',
+            suggested_prompt: specific.expert
+                ? `Ask ${specific.expert.display_name} about ${cleanTopic}`
+                : `Who should I consult about ${cleanTopic}?`,
+            target_tool: 'find_expert',
+        },
+        {
+            action: 'create_brief',
+            name: 'Commission executive brief',
+            description: 'Turn this intelligence into a finished strategic deliverable.',
+            suggested_prompt: `Commission an executive brief on ${cleanTopic}`,
+            target_tool: 'request_deliverable',
+        },
+        {
+            action: 'track_topic',
+            name: 'Track topic shifts',
+            description: 'Establish automated weekly monitoring on this subject.',
+            suggested_prompt: `Set up weekly tracking on ${cleanTopic}`,
+            target_tool: 'manage_scheduled_reports',
+        },
+    ];
+    nextMoves.actions = actions;
+
     return nextMoves;
 }
 
@@ -1827,6 +1871,31 @@ export function generateConsultNextMoves(
         shelf_line: shelfSentence || undefined,
         scope_line: scopeSentence,
     };
+
+    const consultActions: NextMovesAction[] = [
+        {
+            action: 'pressure_test',
+            name: 'Pressure-test perspective',
+            description: "Verify expert assertions and claims against broader market data.",
+            suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${query.trim()}`,
+            target_tool: 'verify_market_claim',
+        },
+        {
+            action: 'create_brief',
+            name: 'Commission deliverable',
+            description: `Commission a finished deliverable from ${expertDisplayName}.`,
+            suggested_prompt: `Commission a strategic briefing from ${expertDisplayName} on ${query.trim()}`,
+            target_tool: 'request_deliverable',
+        },
+        {
+            action: 'track_topic',
+            name: 'Track topic shifts',
+            description: 'Establish automated weekly monitoring on this subject.',
+            suggested_prompt: `Set up weekly tracking on ${query.trim()}`,
+            target_tool: 'manage_scheduled_reports',
+        },
+    ];
+    nextMoves.actions = consultActions;
 
     return nextMoves;
 }

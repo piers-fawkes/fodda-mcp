@@ -881,91 +881,319 @@ export async function createServer(
         }
     );
 
+    let cachedCapabilitiesData: any = null;
+    let lastCapabilitiesFetchTime: number = 0;
+    const CAPABILITIES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+    const STATIC_CAPABILITIES_FALLBACK = {
+        pricing_url: "https://fodda.ai/pricing",
+        pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is $0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+        scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
+        workflows: [
+            {
+                id: 'research',
+                name: 'Research something',
+                headline: 'Synthesize market evidence, trends, and corporate signals on any topic or brand',
+                description: 'Research a market, category, company, or emerging issue using 100+ curated knowledge graphs, published corporate reports, and multi-source market evidence.',
+                use_when: 'User needs an objective landscape, market shift analysis, competitor footprint, consumer behavior change, or broad subject investigation.',
+                sample_prompts: [
+                    "What's changing in prestige beauty?",
+                    "Research Nike's current positioning.",
+                    "Help me understand the GLP-1 opportunity for food brands.",
+                    "I'm researching circularity in sportswear."
+                ],
+                research_recipe: {
+                    objective: "Synthesize verified market evidence and authoritative perspectives on the subject.",
+                    formulation_guidance: "Investigate core market drivers; isolate supporting evidence and quantitative metrics; capture corporate executive disclosures; distinguish observed data from speculation; cite specific source graphs and reports.",
+                    steps: [
+                        "1. Query domain intelligence or topic graphs for emerging consumer trends and signals.",
+                        "2. Extract quantitative statistics and hard numbers to validate market magnitude.",
+                        "3. Check corporate earnings for executive disclosure and strategy reality.",
+                        "4. Synthesize findings, citing specific graph names, lifecycle stages, and evidence nodes."
+                    ]
+                },
+                underlying_capabilities: [
+                    { endpoint: "POST /v1/search/domain", mcp_tool: "get_domain_intelligence", description: "Search curated domain graphs (travel, retail, tech, beauty, food, sports)" },
+                    { endpoint: "POST /v1/graphs/:graph_id/search", mcp_tool: "search_graph", description: "Multi-graph semantic search across all accessible knowledge graphs" },
+                    { endpoint: "POST /v1/search/report", mcp_tool: "get_report_intelligence", description: "Published corporate research, forecast reports, and market decks" },
+                    { endpoint: "POST /v1/brand-intelligence/:brand", mcp_tool: "brand_tracker", description: "Multi-graph brand footprint, Google Trends & Wikipedia pageviews" },
+                    { endpoint: "GET /v1/statistics", mcp_tool: "search_statistics", description: "Hard numbers and quantitative metrics data layer" },
+                    { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Certified multi-source Evidence Dossier on any topic" }
+                ],
+                possible_next_actions: [
+                    { action: 'challenge', name: 'Pressure-test this', description: 'Search for counter-evidence, disconfirming signals, and untested assumptions.', target_tool: 'verify_market_claim' },
+                    { action: 'ask_experts', name: 'Ask an expert', description: 'Consult a named Human Agent or specialist analyst to interpret the findings.', target_tool: 'find_expert' },
+                    { action: 'track', name: 'Track this topic', description: 'Establish recurring intelligence updates for ongoing monitoring.', target_tool: 'manage_scheduled_reports' },
+                    { action: 'create_brief', name: 'Create a brief', description: 'Turn completed research into a structured, executive-ready deliverable or article.', target_tool: 'request_deliverable' }
+                ]
+            },
+            {
+                id: 'challenge',
+                name: 'Challenge something (Pressure-test)',
+                headline: 'Pressure-test a strategy, hypothesis, or pitch against primary evidence and disagreements',
+                description: 'Challenge a strategy, proposition, pitch, or recommendation against Fodda research, primary evidence, analyst-executive divergence, and specialist counter-perspectives.',
+                use_when: 'User is evaluating a strategy, hypothesis, pitch, recommendation, market belief, or proposed course of action and asks to pressure-test, find flaws, uncover missing assumptions, or find counter-evidence.',
+                sample_prompts: [
+                    "We think Gen Z is moving away from traditional luxury. Pressure-test that.",
+                    "We're recommending our client launch a membership program. What might we be missing?",
+                    "Help me pressure-test our client's positioning.",
+                    "We're recommending that our client invest heavily in TikTok Shop. Pressure-test this proposition."
+                ],
+                research_recipe: {
+                    objective: "Deliberately challenge assertions with counter-evidence, executive divergence, and structural risks.",
+                    formulation_guidance: "Frame the inquiry to actively seek counter-evidence and disconfirming signals; contrast analyst expectations with executive reality; surface expert disagreements; isolate untested assumptions and structural risks; score claim truthfulness against verified evidence.",
+                    steps: [
+                        "1. Verify the core assertion against primary evidence using claim verification.",
+                        "2. Surface earnings divergence (where management remarks conflict with analyst questions or actual performance).",
+                        "3. Contrast with contrary or adjacent consumer trends.",
+                        "4. Highlight key vulnerabilities, untested assumptions, and counter-arguments."
+                    ]
+                },
+                underlying_capabilities: [
+                    { endpoint: "POST /v1/verify/claim", mcp_tool: "verify_claim", description: "Anti-hallucination factual claim and thesis verification" },
+                    { endpoint: "POST /v1/intelligence/verify-market-claim", mcp_tool: "verify_market_claim", description: "Evaluates market claim across Fodda's 5 Anti-Hallucination criteria" },
+                    { endpoint: "POST /v1/earnings/divergence", mcp_tool: "get_earnings_divergence", description: "Analyst line-of-questioning vs executive answer divergence analysis" }
+                ],
+                possible_next_actions: [
+                    { action: 'ask_experts', name: 'Consult an expert', description: 'Get a specialist practitioner\'s take on the strategic vulnerability.', target_tool: 'find_expert' },
+                    { action: 'research', name: 'Deepen research', description: 'Explore alternative angles or validated trends uncovered during the pressure-test.', target_tool: 'search_graph' },
+                    { action: 'create_brief', name: 'Create a risk assessment brief', description: 'Package the pressure-test into an executive risk memo.', target_tool: 'request_deliverable' }
+                ]
+            },
+            {
+                id: 'ask_experts',
+                name: 'Ask the experts',
+                headline: 'Consult verified Human Agents, C-Suite personas, and specialist analysts',
+                description: 'Consult verified Human Agents, C-Suite personas, and domain specialists for authoritative interpretation, proprietary frameworks, and practitioner advice.',
+                use_when: 'Specialist interpretation, subjective judgment, or industry practitioner depth would improve the answer; or when user asks "Who should I ask about X?" or "What would retail experts make of this?".',
+                sample_prompts: [
+                    "What would retail experts make of this?",
+                    "Who should I ask about clean beauty formulations?",
+                    "Get a specialist perspective on this conclusion.",
+                    "Consult Ben Dietz to evaluate our streetwear collaboration strategy."
+                ],
+                research_recipe: {
+                    objective: "Engage the most relevant domain specialists in their unique voice, framework, and curated knowledge base.",
+                    formulation_guidance: "Identify candidate specialists matching the domain and analytical lane; articulate the strategic dilemma; request their structured perspective; follow the mandatory 3-part attribution arc when citing living Human Agents.",
+                    steps: [
+                        "1. Call candidate search to identify 2-3 genuine specialists with high lane-fit and explicit search ask lines.",
+                        "2. Consult active Human Agents or synthetic domain analysts with deep background homework enabled.",
+                        "3. Frame the answer using the expert's conceptual lens and cited graph evidence.",
+                        "4. Surface optional intro / call-booking if human advisory is desired."
+                    ]
+                },
+                underlying_capabilities: [
+                    { endpoint: "GET /v1/experts/search", mcp_tool: "find_expert", description: "Candidate specialist search across 4,150+ roster (free discovery)" },
+                    { endpoint: "POST /v1/human-agents/consult", mcp_tool: "consult_human_agent", description: "Consult verified Human Agent twin with background research" },
+                    { endpoint: "POST /v1/analysts/consult", mcp_tool: "consult_analyst", description: "Consult synthetic analyst or C-Suite persona" },
+                    { endpoint: "POST /v1/analysts/request-intro", mcp_tool: "request_expert_intro", description: "Request advisory intro or book time with the real human" }
+                ],
+                possible_next_actions: [
+                    { action: 'challenge', name: 'Pressure-test their perspective', description: 'Verify claims made during the expert consultation against broader market data.', target_tool: 'verify_market_claim' },
+                    { action: 'create_brief', name: 'Commission a deliverable', description: 'Have the analyst generate a formatted executive deliverable or article.', target_tool: 'request_deliverable' },
+                    { action: 'track', name: 'Track expert domain', description: 'Monitor new signals in this specialist\'s domain.', target_tool: 'manage_scheduled_reports' }
+                ]
+            },
+            {
+                id: 'track',
+                name: 'Track something',
+                headline: 'Establish recurring intelligence updates around a company, brand, or category',
+                description: 'Establish recurring intelligence monitoring around a company, brand, category, or strategic theme to receive automated updates.',
+                use_when: 'User wants ongoing updates, recurring weekly briefings, or continuous monitoring of brand shifts, competitor moves, or market dynamics.',
+                sample_prompts: [
+                    "Keep me updated on AI search and retail.",
+                    "What's changed in luxury resale since my last briefing?",
+                    "Track Nike's DTC strategy.",
+                    "Set up weekly tracking on GLP-1 impact in grocery."
+                ],
+                research_recipe: {
+                    objective: "Monitor dynamic intelligence subjects and alert on significant shifts or earnings statements.",
+                    formulation_guidance: "Establish baseline footprint; specify cadence (weekly recommended); monitor trend trajectory across Neo4j graphs, corporate earnings, and search interest; deliver diff briefings.",
+                    steps: [
+                        "1. Run baseline brand or topic intelligence footprint.",
+                        "2. Create scheduled report entry with user email and preferred schedule.",
+                        "3. System evaluates diffs and sends recurring digest briefings."
+                    ]
+                },
+                underlying_capabilities: [
+                    { endpoint: "POST /v1/research/schedules", mcp_tool: "manage_scheduled_reports", description: "Create, update, pause, or cancel recurring briefings" },
+                    { endpoint: "POST /v1/brand-intelligence/:brand", mcp_tool: "brand_tracker", description: "Track multi-graph brand footprint, Google Trends & Wikipedia pageviews" }
+                ],
+                possible_next_actions: [
+                    { action: 'research', name: 'Drill down on fresh shift', description: 'Perform a deep research pass into an emerging signal detected in the tracker.', target_tool: 'search_graph' },
+                    { action: 'challenge', name: 'Pressure-test trend trajectory', description: 'Challenge whether an observed trend shift represents a durable market movement.', target_tool: 'verify_market_claim' },
+                    { action: 'create_brief', name: 'Create briefing report', description: 'Package the tracking summary into an executive brief.', target_tool: 'request_deliverable' }
+                ]
+            }
+        ],
+        capabilities: [
+            {
+                id: 'brand_intelligence',
+                name: 'Brand Intelligence',
+                value: 'Brand health, trend footprint & competitive landscape for any brand.',
+                tools: ['brand_tracker'],
+                audience: 'Brand strategists, market researchers, competitive intelligence teams',
+                example_prompts: [
+                    'Run a brand intelligence footprint for Patagonia focusing on circular economy signals.',
+                    'Audit Nike\'s competitive landscape across expert graphs.'
+                ]
+            },
+            {
+                id: 'deep_research',
+                name: 'Deep Research',
+                value: 'Autonomous multi-graph research briefing report with multi-source synthesis.',
+                tools: ['deep_research_topic'],
+                audience: 'Strategists needing exhaustive, executive-ready briefing decks',
+                example_prompts: [
+                    'Write a comprehensive briefing on how Gen Z is reshaping luxury retail in APAC.'
+                ]
+            },
+            {
+                id: 'earnings_intelligence',
+                name: 'Earnings Intelligence',
+                value: 'Earnings-call analysis, divergence & per-ticker canonical records.',
+                tools: ['get_company_earnings', 'get_earnings_intelligence', 'get_earnings_divergence', 'get_validated_trends'],
+                audience: 'Financial analysts, equity researchers, corporate strategy',
+                example_prompts: [
+                    'What are retail executives saying about inventory levels?',
+                    'Show analyst-management divergence for hotel companies in Q1.'
+                ]
+            },
+            {
+                id: 'topic_research',
+                name: 'Topic & Library Intelligence',
+                value: 'Multi-graph search across all 100+ graphs via search_graph, curated domain libraries (get_domain_intelligence), published reports (get_report_intelligence), and validated trends (get_validated_trends).',
+                tools: ['search_graph', 'get_domain_intelligence', 'get_report_intelligence', 'get_validated_trends'],
+                audience: 'Researchers, planners, innovation teams',
+                example_prompts: [
+                    'Pressure-test our sustainability strategy against Fodda\'s packaging trends.',
+                    'Search specialist graphs for youth culture and underground streetwear signals.',
+                    'Pull verified trends from recent earnings calls.'
+                ]
+            },
+            {
+                id: 'expert_consult',
+                name: 'Agent Consultation & Discovery',
+                value: 'Discovery and direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
+                tools: ['find_expert', 'consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable', 'request_expert_intro'],
+                audience: 'Teams seeking verified practitioner perspectives, executive strategy, or custom deliverables',
+                example_prompts: [
+                    'Who is the right expert to ask about clean beauty formulations? (find_expert)',
+                    'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
+                    'Consult Brand CMO on Nike\'s direct-to-consumer strategy.',
+                    'List available Human Agents and C-Suite analysts.'
+                ]
+            }
+        ],
+        additional_services: [
+            {
+                name: 'Scheduled Intelligence Briefings',
+                tool: 'manage_scheduled_reports',
+                description: 'Track brand positioning or topic trends on a weekly automated schedule.'
+            },
+            {
+                name: 'Executive Content Studio',
+                tools: ['draft_linkedin_post', 'draft_linkedin_article'],
+                description: 'Draft evidence-backed executive articles and posts from Fodda graph data.'
+            }
+        ]
+    };
+
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
         'Returns Fodda\'s capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what\'s available, or how much something costs. (Platform capability and pricing catalogue read (free).)',
-        { userId: z.string().optional().describe('Optional user identifier.') },
+        {
+            topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview and workflow recipes."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
         { title: 'Get Fodda Capabilities', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async () => {
+        async ({ topic, userId: uid }) => {
+            const targetUserId = resolveUserId(userId, uid);
+            if (topic && topic.trim()) {
+                const cleanTopic = topic.trim();
+                try {
+                    const data = await foddaRequest('GET', `/v1/capabilities?topic=${encodeURIComponent(cleanTopic)}`, apiKey, targetUserId);
+                    if (data && data.ok !== false) {
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                    }
+                } catch (err: any) {
+                    console.warn(`[get_capabilities] API recon fetch failed, using local fallback:`, err?.message);
+                }
+
+                // Fallback to local candidate experts and hardcoded recipes if network fails
+                let matchedCandidates: any[] = [];
+                try {
+                    matchedCandidates = findCandidateExperts(cleanTopic, { limit: 2 });
+                } catch {}
+
+                const localRecon = {
+                    ok: true,
+                    pricing_url: "https://fodda.ai/pricing",
+                    pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is $0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+                    topic_reconnaissance: {
+                        query: cleanTopic,
+                        recommended_workflow: {
+                            id: 'research',
+                            name: 'Research something',
+                            why_recommended: 'Query requests market evidence, consumer trends, and corporate signals.',
+                            suggested_formulation: `Investigate key market drivers and emerging signals for ${cleanTopic}. Identify observed evidence and specialist perspectives.`
+                        },
+                        candidate_experts: matchedCandidates.map(c => ({
+                            id: c.analyst_id,
+                            name: c.display_name,
+                            agent_class: c.category || 'Specialist',
+                            why_matched: [c.reason]
+                        })),
+                        available_next_actions: [
+                            { action: 'challenge', name: 'Pressure-test this', description: 'Search for counter-evidence and disconfirming signals.', target_tool: 'verify_market_claim' },
+                            { action: 'ask_experts', name: 'Ask an expert', description: 'Consult a candidate specialist.', target_tool: 'find_expert' },
+                            { action: 'track', name: 'Track this topic', description: 'Establish recurring intelligence updates.', target_tool: 'manage_scheduled_reports' },
+                            { action: 'create_brief', name: 'Create a brief', description: 'Turn research into an executive deliverable.', target_tool: 'request_deliverable' }
+                        ]
+                    },
+                    workflows: STATIC_CAPABILITIES_FALLBACK.workflows,
+                    capabilities: STATIC_CAPABILITIES_FALLBACK.capabilities
+                };
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify(localRecon, null, 2)
+                    }]
+                };
+            }
+
+            // Omitted topic: fetch /v1/capabilities with 1-hour in-memory cache
+            const now = Date.now();
+            if (cachedCapabilitiesData && (now - lastCapabilitiesFetchTime) < CAPABILITIES_CACHE_TTL_MS) {
+                return {
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify(cachedCapabilitiesData, null, 2)
+                    }]
+                };
+            }
+
+            try {
+                const data = await foddaRequest('GET', '/v1/capabilities', apiKey, targetUserId);
+                if (data && data.ok !== false) {
+                    cachedCapabilitiesData = data;
+                    lastCapabilitiesFetchTime = now;
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: JSON.stringify(data, null, 2)
+                        }]
+                    };
+                }
+            } catch (err: any) {
+                console.warn(`[get_capabilities] API capabilities fetch failed, falling back to static structure:`, err?.message);
+            }
+
             return {
                 content: [{
                     type: 'text' as const,
-                    text: JSON.stringify({
-                        pricing_url: "https://fodda.ai/pricing",
-                        scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
-                        capabilities: [
-                            {
-                                id: 'brand_intelligence',
-                                name: 'Brand Intelligence',
-                                value: 'Brand health, trend footprint & competitive landscape for any brand.',
-                                tools: ['brand_tracker'],
-                                audience: 'Brand strategists, market researchers, competitive intelligence teams',
-                                example_prompts: [
-                                    'Run a brand intelligence footprint for Patagonia focusing on circular economy signals.',
-                                    'Audit Nike\'s competitive landscape across expert graphs.'
-                                ]
-                            },
-                            {
-                                id: 'deep_research',
-                                name: 'Deep Research',
-                                value: 'Autonomous multi-graph research briefing report with multi-source synthesis.',
-                                tools: ['deep_research_topic'],
-                                audience: 'Strategists needing exhaustive, executive-ready briefing decks',
-                                example_prompts: [
-                                    'Write a comprehensive briefing on how Gen Z is reshaping luxury retail in APAC.'
-                                ]
-                            },
-                            {
-                                id: 'earnings_intelligence',
-                                name: 'Earnings Intelligence',
-                                value: 'Earnings-call analysis, divergence & per-ticker canonical records.',
-                                tools: ['get_company_earnings', 'get_earnings_intelligence', 'get_earnings_divergence', 'get_validated_trends'],
-                                audience: 'Financial analysts, equity researchers, corporate strategy',
-                                example_prompts: [
-                                    'What are retail executives saying about inventory levels?',
-                                    'Show analyst-management divergence for hotel companies in Q1.'
-                                ]
-                            },
-                            {
-                                id: 'topic_research',
-                                name: 'Topic & Library Intelligence',
-                                value: 'Multi-graph search across all 312+ graphs via search_graph, curated domain libraries (get_domain_intelligence), published reports (get_report_intelligence), and validated trends (get_validated_trends).',
-                                tools: ['search_graph', 'get_domain_intelligence', 'get_report_intelligence', 'get_validated_trends'],
-                                audience: 'Researchers, planners, innovation teams',
-                                example_prompts: [
-                                    'Pressure-test our sustainability strategy against Fodda\'s packaging trends.',
-                                    'Search specialist graphs for youth culture and underground streetwear signals.',
-                                    'Pull verified trends from recent earnings calls.'
-                                ]
-                            },
-                            {
-                                id: 'expert_consult',
-                                name: 'Agent Consultation & Discovery',
-                                value: 'Discovery and direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
-                                tools: ['find_expert', 'consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable', 'request_expert_intro'],
-                                audience: 'Teams seeking verified practitioner perspectives, executive strategy, or custom deliverables',
-                                example_prompts: [
-                                    'Who is the right expert to ask about clean beauty formulations? (find_expert)',
-                                    'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
-                                    'Consult Brand CMO on Nike\'s direct-to-consumer strategy.',
-                                    'List available Human Agents and C-Suite analysts.'
-                                ]
-                            }
-                        ],
-                        additional_services: [
-                            {
-                                name: 'Scheduled Intelligence Briefings',
-                                tool: 'manage_scheduled_reports',
-                                description: 'Track brand positioning or topic trends on a weekly automated schedule.'
-                            },
-                            {
-                                name: 'Executive Content Studio',
-                                tools: ['draft_linkedin_post', 'draft_linkedin_article'],
-                                description: 'Draft evidence-backed executive articles and posts from Fodda graph data.'
-                            }
-                        ]
-                    }, null, 2)
+                    text: JSON.stringify(STATIC_CAPABILITIES_FALLBACK, null, 2)
                 }]
             };
         }
@@ -1185,7 +1413,7 @@ export async function createServer(
     // --- find_expert (Visible Expert Matching — Brief 3 & Expert Search API) ---
     server.tool(
         'find_expert',
-        'Find 2–3 genuine candidate experts for a question, brief, or situation with domain-grounded rationale. Discovery tool ("who should I ask") across Human Agents (living practitioners), Classic Agents (historical thinkers), C-Suite, and Synthetic domain specialists. Evaluates lane overlap, filters out declared blind spots, and fails honestly when no expert matches. Call this when deciding which expert to consult, then pass the matched analyst_id to consult_human_agent or consult_analyst.',
+        'Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth (\'Who should I ask about X?\' or \'What would retail experts make of this?\'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched.',
         {
             query: z.string().describe('The question, brief, topic, or situation to find candidate experts for.'),
             limit: z.number().optional().default(3).describe('Maximum candidate experts to return (default: 3, max: 3).'),
@@ -1333,7 +1561,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Find trends, signals, and expert insights across 100+ curated knowledge graphs covering retail, beauty, tech, food, travel, sports, and 30+ specialist domains. Returns trend data with cited evidence, source attribution, lifecycle stage (emerging/building/mature/fading), and structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs that can be surfaced to the user. If graphId is omitted, searches ALL accessible graphs in parallel (recommended default). When the query names a company or brand, brand_tracker is the entry point. Use for market trends, competitor analysis, innovation signals, consumer behavior, cultural shifts, or any topic where you want curated, cited expert intelligence.',
+        'Use when researching market trends, category dynamics, consumer behavior shifts, competitor intelligence, or broad topic investigation across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. If query names a company/brand, prefer brand_tracker.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -3056,7 +3284,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Comprehensive brand footprint combining 100+ Neo4j graphs, Google Trends, Wikipedia, Amazon commerce data, and earnings transcripts into a single deliverable.',
+        'Use when auditing a brand\'s health, competitive footprint, trend associations, and market momentum across 100+ graphs, Google Trends, and Wikipedia pageviews.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -3566,7 +3794,7 @@ export async function createServer(
     // --- verify_market_claim ---
     server.tool(
         'verify_market_claim',
-        "Evaluates any market, consumer, or industry claim against Fodda's 5 Anti-Hallucination Kill Gates (Adversarial Counter-Thesis, Multi-Source Corroboration, Numeric Spine, Entity Verification, and Supporting Commentary). Tests whether attached knowledge graph records substantiate or contradict the assertion, and detects ungrounded metadata or speculative hype. ($0.50)",
+        "Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence.",
         {
             claim: z.string().describe("The exact market thesis or assertion to evaluate (e.g. 'Casual golf venues are losing momentum' or 'Gen Z is trading down on essentials to protect beauty spending')."),
             context: z.string().optional().describe("Optional category, brand, or operational context to sharpen evidence retrieval (e.g. 'golf entertainment venues Topgolf Off Golf' or 'beauty personal care')."),
@@ -4906,7 +5134,7 @@ export async function createServer(
     // --- manage_scheduled_reports ---
     server.tool(
         'manage_scheduled_reports',
-        'Create, list, cancel, update, pause, or resume scheduled intelligence briefings. Users can set up autonomous research that runs weekly (Mondays) or daily (Mon-Fri) at 9am in their timezone, delivered via email or Slack. Costs 20 API calls per run. Supports topic research or brand intelligence report types. (Scheduled report CRUD operation.)',
+        'Use when establishing recurring intelligence tracking, setting up automated briefings, or monitoring category/brand shifts on a recurring schedule.',
         {
             action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']),
             query: z.string().optional().describe('For "create": the research query to run'),
@@ -5051,7 +5279,7 @@ export async function createServer(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Full multi-pass autonomous research agent producing an executive narrative brief complete with quantitative data tables and inline citations. (Multi-pass autonomous research agent (Plan -> 6 Graph queries -> 8 Supplemental APIs -> 2 Earnings DB queries -> 2 LLM synthesis & citation passes).)',
+        'Use when the user needs an exhaustive, autonomous multi-pass briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives.',
         {
             query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
             sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
@@ -6014,7 +6242,7 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Consult an authorized Human Agent (created directly with the named expert\'s consent, participation, and curated knowledge graph). The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Supports deep homework mode (pass deep: true or ask to "do your homework" to trigger background research across specialist graphs and market data). Call list_analysts or find_expert first to find the right expert ID. Responses include structured next_moves containing recommended follow-up angles, adjacent graphs, and drill-downs, and may include coverage status, source attribution, referrals, or `book_a_call` for booking time with the real person.',
+        'Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. Supports deep homework mode (deep: true). Returns cited insights and next_moves.',
         {
             analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts or find_expert). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
@@ -6049,7 +6277,7 @@ export async function createServer(
     // --- verify_claim ---
     server.tool(
         'verify_claim',
-        'Verify a factual claim, hypothesis, or strategic assertion against primary evidence held in Fodda\'s expert knowledge graphs. Supported by an authorized Human Agent (a verified, living practitioner) who stands behind the structured verdict ("confirms", "contradicts", "partial", or "no_coverage") with cited evidence and rationale. When analyst_id is provided, routes to that specific Human Agent. When omitted, automatically routes to the best matching Human Agent based on domain relevance; if no Human Agent covers the domain, fails honestly without falling back to synthetic personas. Returns structured verdict, confidence level (full, partial, thin), one_line summary, rationale, sources, expert details, and booking information. If confidence is thin, present this to the user as limited domain coverage in plain language without echoing technical tags.',
+        'Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence.',
         {
             claim: z.string().describe("The factual claim, hypothesis, or statement to verify against expert evidence."),
             analyst_id: z.string().optional().describe("Optional internal expert ID of the Human Agent (from find_expert or list_analysts). If omitted, automatically discovers and routes to the most relevant Human Agent."),
@@ -6464,7 +6692,7 @@ export async function createServer(
     // --- request_deliverable (Agentic Analysts Phase C) ---
     server.tool(
         'request_deliverable',
-        'Commission a finished document from an analyst — a skill-based deliverable like a marketing plan, deck review, or trend briefing. Specify offering_key (see the `offerings` list on each analyst from list_analysts), a brief (2–5 sentences: audience, goal, constraints), and optional attachments. The analyst researches on your behalf, then produces the document in the background. Returns a job_id — poll with check_deliverable_status until status is "completed" to get the artifact links. The offering price is charged on acceptance; the analyst\'s research is included, not billed separately. Example brief: "Marketing plan for a DTC skincare launch targeting Gen-Z, $50k budget, 90-day horizon." (Expert analyst workflow dispatch, research query execution, and deliverable template rendering.)',
+        'Use when commissioning a finished document from an analyst — an executive briefing, research memo, strategic assessment, or publication-ready article.',
         {
             analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),

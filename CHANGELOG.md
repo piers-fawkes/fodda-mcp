@@ -5,6 +5,41 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.86] - 2026-09-28
+
+### Added
+- **Dynamic API-Driven `get_capabilities` with Topic Reconnaissance (`src/toolHandlers.ts`)**:
+  - Added optional `topic` argument to `get_capabilities`:
+    - When `topic` is provided, fetches topic reconnaissance dynamically from Fodda API (`GET /v1/capabilities?topic={topic}`). Cleanly falls back to local candidate expert scoring (`findCandidateExperts`) and canonical workflow recipes if network fails.
+    - When `topic` is omitted, fetches dynamic capabilities from `GET /v1/capabilities` with a 1-hour in-memory cache (`CAPABILITIES_CACHE_TTL_MS`), falling back to a static catalog structure if unavailable.
+    - Embedded the 4 canonical Fodda workflows (`research`, `challenge`, `ask_experts`, `track`), research recipes, and Airtable source-of-truth pricing invariants ($0.50 per call, SPT machine-only).
+- **Workflow Next-Actions Engine in `coverageRelevance.ts`**:
+  - Extended `NextMoves` interface with `actions?: NextMovesAction[]` (`NextMovesAction`: `action: 'pressure_test' | 'create_brief' | 'track_topic' | 'ask_expert'`, `name`, `description`, `suggested_prompt`, `target_tool`).
+  - Updated `generateNextMoves()` and `generateConsultNextMoves()` to populate contextually relevant second-step actions targeting `verify_market_claim`, `find_expert`, `request_deliverable`, and `manage_scheduled_reports`.
+- **System Prompt Updates (`src/systemPrompt.ts`)**:
+  - Updated `RULE: StructuredNextMoves` allowing host models to surface strategic workflow next actions from `next_moves.actions`.
+  - Added `RULE: ResearchMethodologyRecipes` providing guidelines for formulating queries across research, pressure-testing (counter-evidence, executive divergence), and expert consultations (3-part attribution arc for Human Agents).
+- **Automated Test Suite (`src/test_capabilities_guidance.ts`)**:
+  - Verifies dynamic/fallback retrieval for `get_capabilities` without parameters (4 canonical workflows).
+  - Verifies topic reconnaissance execution on `get_capabilities({ topic: "clean beauty" })`.
+  - Verifies clean network fallback for `get_capabilities`.
+  - Verifies `coverageRelevance` produces structured `next_moves.actions`.
+  - Verifies strict maintenance of total registered tools count (55 tools, no tool proliferation).
+  - Verifies all 9 updated tool descriptions lead with "Use when...".
+
+### Changed
+- **Semantic Intent Upgrades in Tool Descriptions (`src/toolHandlers.ts`, `tools-manifest.json`, Airtable `tbl93DJ627r81zKVP`)**:
+  - Refactored 9 key tool descriptions to lead with explicit intent triggers ("Use when...") rather than technical mechanics:
+    - `search_graph`: "Use when researching market trends, category dynamics, consumer behavior shifts, competitor intelligence..."
+    - `verify_market_claim` & `verify_claim`: "Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions..."
+    - `find_expert`: "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth..."
+    - `consult_human_agent`: "Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance..."
+    - `brand_tracker`: "Use when auditing a brand's health, competitive footprint, trend associations, and market momentum..."
+    - `manage_scheduled_reports`: "Use when establishing recurring intelligence tracking, setting up automated briefings, or monitoring category/brand shifts..."
+    - `deep_research_topic`: "Use when the user needs an exhaustive, autonomous multi-pass briefing report..."
+    - `request_deliverable`: "Use when commissioning a finished document from an analyst — an executive briefing, research memo..."
+  - Synchronized Airtable Offerings table (`tbl93DJ627r81zKVP`) and regenerated `tools-manifest.json`.
+
 ## [1.46.85] - 2026-09-25
 
 ### Changed
