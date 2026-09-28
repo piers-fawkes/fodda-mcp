@@ -98,7 +98,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Direct 1-on-1 consultation with named human or synthetic expert analysts grounded in specialist knowledge graphs."
+      "description": "Use when consulting synthetic domain analysts, C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. (For living practitioners e.g. Ben Dietz, use consult_human_agent or request_expert_intro.)"
     },
     {
       "name": "consult_human_agent",
@@ -111,7 +111,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. Supports deep homework mode (deep: true). Returns cited insights and next_moves."
+      "description": "Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. For active Human Agents, queries their verified digital twin; for On-Request Human Agents undergoing onboarding, returns domain-grounded intelligence and advisory profile. Supports deep homework mode (deep: true). Returns cited insights and next_moves."
     },
     {
       "name": "deep_research_topic",
@@ -188,7 +188,7 @@
         "copilot",
         "grok-brand-context"
       ],
-      "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched."
+      "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched, distinguishing active Human Agents (consultable twin) from On-Request Human Agents (advisory introduction)."
     },
     {
       "name": "generate_visual",
@@ -531,7 +531,7 @@
         "expert-consult",
         "copilot"
       ],
-      "description": "Capture and submit an inquiry or advisory request to connect with a human expert on Fodda (for 1-on-1 consultations, advisory projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email."
+      "description": "Use when requesting an advisory introduction or consultation with an On-Request Human Agent or active domain specialist (for 1-on-1 advisory, strategic projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email."
     },
     {
       "name": "schedule_interview",

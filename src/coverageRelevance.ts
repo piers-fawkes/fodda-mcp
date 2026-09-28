@@ -686,6 +686,7 @@ export interface NextMovesSpecific {
         display_name: string;
         reason: string;
         category?: string | undefined;
+        status?: 'active' | 'on_request' | undefined;
         consult_tool?: string | undefined;
     } | undefined;
     shelf_graphs?: NextMovesShelfGraph[] | undefined;
@@ -905,6 +906,7 @@ export interface CandidateExpert {
     analyst_id: string;
     display_name: string;
     category: 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent';
+    status?: 'active' | 'on_request';
     consult_tool: 'consult_human_agent' | 'consult_analyst';
     reason: string;
     out_of_lane?: boolean;
@@ -934,7 +936,7 @@ export function findCandidateExperts(
     const rawAnalysts = options?.analysts || getAnalysts();
     const activeAnalysts = rawAnalysts.filter(a => {
         const st = (a.status || a.Status || '').toLowerCase().trim();
-        return !st || st === 'active';
+        return !st || st === 'active' || st === 'unclaimed' || st === 'on_request' || st === 'on request';
     });
 
     const isCurrentAnalyst = (a: CatalogAnalyst) => {
@@ -1181,6 +1183,10 @@ export function findCandidateExperts(
             : (lane && lane.length > 3 ? `covers ${lane} directly` : 'covers this domain directly');
 
         const cat = matchedAnalyst.category || getCategory(matchedAnalyst);
+        const statusRaw = (matchedAnalyst.status || (matchedAnalyst as any).Status || '').toLowerCase().trim();
+        const isOnRequest = statusRaw === 'unclaimed' || statusRaw === 'on request' || statusRaw === 'on_request';
+        const expertStatus: 'active' | 'on_request' = isOnRequest ? 'on_request' : 'active';
+
         const consult_tool: 'consult_human_agent' | 'consult_analyst' = (matchedAnalyst.consult_tool === 'consult_human_agent' || matchedAnalyst.consult_tool === 'consult_analyst')
             ? matchedAnalyst.consult_tool
             : (cat === 'human_agent' ? 'consult_human_agent' : 'consult_analyst');
@@ -1189,6 +1195,7 @@ export function findCandidateExperts(
             analyst_id: matchedAnalyst.analyst_id,
             display_name: cleanDisplayName(matchedAnalyst.name),
             category: cat,
+            status: expertStatus,
             consult_tool,
             reason,
             out_of_lane: false
@@ -1600,13 +1607,40 @@ export async function generateNextMoves(
         : `If you tell me the brand or brief you're working on, I'll cut this to that.`;
 
     const cleanTopic = options?.knownBrand || options?.brandDisplayName || nextMoves.thread?.theme || query.trim();
+    const isOnRequestExpert = specific.expert?.status === 'on_request';
     const isExpertHuman = specific.expert?.category === 'human_agent' || specific.expert?.consult_tool === 'consult_human_agent';
-    const expertTargetTool = isExpertHuman ? 'consult_human_agent' : 'find_expert';
-    const expertParams = specific.expert
-        ? (isExpertHuman
-            ? { analyst_id: specific.expert.analyst_id, query: `How should we evaluate the strategic opportunity and risks in ${cleanTopic}?` }
-            : { query: cleanTopic })
-        : { query: cleanTopic };
+
+    let expertTargetTool = 'find_expert';
+    let expertName = 'Consult specialist';
+    let expertDescription = 'Get practitioner judgment and domain depth on this topic.';
+    let expertReason = 'Consult a domain specialist to interpret qualitative nuances.';
+    let expertPrompt = `Who should I consult about ${cleanTopic}?`;
+    let expertParams: Record<string, any> = { query: cleanTopic };
+
+    if (specific.expert) {
+        if (isOnRequestExpert) {
+            expertTargetTool = 'request_expert_intro';
+            expertName = `Request intro to ${specific.expert.display_name}`;
+            expertDescription = 'Request an advisory introduction or consultation with this prospective Human Agent.';
+            expertReason = `Connect with ${specific.expert.display_name} for human advisory or consultation.`;
+            expertPrompt = `Request an introduction or advisory consultation with ${specific.expert.display_name} regarding ${cleanTopic}.`;
+            expertParams = { expert_id: specific.expert.analyst_id, query: cleanTopic };
+        } else if (isExpertHuman) {
+            expertTargetTool = 'consult_human_agent';
+            expertName = `Consult ${specific.expert.display_name}`;
+            expertDescription = 'Consult this verified Human Agent twin for practitioner depth and proprietary frameworks.';
+            expertReason = `Consult ${specific.expert.display_name} for authoritative interpretation and practitioner depth.`;
+            expertPrompt = `Ask ${specific.expert.display_name} about ${cleanTopic}`;
+            expertParams = { analyst_id: specific.expert.analyst_id, query: `How should we evaluate the strategic opportunity and risks in ${cleanTopic}?` };
+        } else {
+            expertTargetTool = specific.expert.consult_tool || 'consult_analyst';
+            expertName = `Consult ${specific.expert.display_name}`;
+            expertDescription = 'Consult this specialist analyst for domain intelligence.';
+            expertReason = `Consult ${specific.expert.display_name} for authoritative interpretation and practitioner depth.`;
+            expertPrompt = `Ask ${specific.expert.display_name} about ${cleanTopic}`;
+            expertParams = { analyst_id: specific.expert.analyst_id, query: cleanTopic };
+        }
+    }
 
     const actions: NextMovesAction[] = [
         {
@@ -1621,15 +1655,11 @@ export async function generateNextMoves(
         },
         {
             action: 'ask_expert',
-            name: specific.expert ? `Consult ${specific.expert.display_name}` : 'Consult specialist',
-            description: 'Get practitioner judgment and domain depth on this topic.',
-            reason: specific.expert
-                ? `Consult ${specific.expert.display_name} for authoritative interpretation and practitioner depth.`
-                : 'Consult a domain specialist to interpret qualitative nuances.',
+            name: expertName,
+            description: expertDescription,
+            reason: expertReason,
             target_tool: expertTargetTool,
-            suggested_prompt: specific.expert
-                ? `Ask ${specific.expert.display_name} about ${cleanTopic}`
-                : `Who should I consult about ${cleanTopic}?`,
+            suggested_prompt: expertPrompt,
             suggested_parameters: expertParams,
             available: true,
         },

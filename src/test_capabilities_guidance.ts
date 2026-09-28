@@ -24,12 +24,13 @@ async function runTests() {
                         specialists: {
                             total: 4150,
                             breakdown: {
-                                human_agents: 4,
-                                synthetic_domain_analysts: 4100,
+                                active_human_agents: 4,
+                                on_request_human_agents: 4000,
+                                synthetic_domain_analysts: 100,
                                 c_suite_agents: 30,
                                 classic_agents: 16
                             },
-                            classification_guidance: "Only 'human_agents' are verified living practitioners (e.g. Ben Dietz, Peter Abraham). 'synthetic_domain_analysts' are AI personas grounded in specific domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe all specialists as living human experts."
+                            classification_guidance: "Both 'active_human_agents' and 'on_request_human_agents' represent real living practitioners and domain leaders (NOT synthetic personas). Active Human Agents have verified digital twins consultable via consult_human_agent. On-Request Human Agents are prospective twins indexed across 4,000+ topics whose advisory introductions or bookings can be requested via request_expert_intro. 'synthetic_domain_analysts' are AI personas grounded in domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe synthetic personas as living human experts, nor mislabel On-Request prospective Human Agents as synthetic."
                         }
                     },
                     topic_reconnaissance: {
@@ -44,7 +45,7 @@ async function runTests() {
                             { id: 'beauty', name: 'Beauty & Wellness', description: 'Curated beauty graph' }
                         ],
                         candidate_experts: [
-                            { id: 'anu-lingala', name: 'Anu Lingala', agent_class: 'Human Agent', search_ask_line: 'Ask Anu about clean beauty' }
+                            { id: 'anu-lingala', name: 'Anu Lingala', agent_class: 'Human Agent', status: 'active', search_ask_line: 'Ask Anu about clean beauty' }
                         ],
                         coverage_assessment: {
                             strong_coverage: ['Consumer trends, category dynamics, and brand footprints related to clean beauty'],
@@ -117,12 +118,13 @@ async function runTests() {
                     specialists: {
                         total: 4150,
                         breakdown: {
-                            human_agents: 4,
-                            synthetic_domain_analysts: 4100,
+                            active_human_agents: 4,
+                            on_request_human_agents: 4000,
+                            synthetic_domain_analysts: 100,
                             c_suite_agents: 30,
                             classic_agents: 16
                         },
-                        classification_guidance: "Only 'human_agents' are verified living practitioners (e.g. Ben Dietz, Peter Abraham). 'synthetic_domain_analysts' are AI personas grounded in specific domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe all specialists as living human experts."
+                        classification_guidance: "Both 'active_human_agents' and 'on_request_human_agents' represent real living practitioners and domain leaders (NOT synthetic personas). Active Human Agents have verified digital twins consultable via consult_human_agent. On-Request Human Agents are prospective twins indexed across 4,000+ topics whose advisory introductions or bookings can be requested via request_expert_intro. 'synthetic_domain_analysts' are AI personas grounded in domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe synthetic personas as living human experts, nor mislabel On-Request prospective Human Agents as synthetic."
                     }
                 },
                 workflows: [
@@ -140,8 +142,8 @@ async function runTests() {
     const server = await createServer('dummy_key', 'test_user', mockFoddaRequest as any, async () => ({}), () => '', () => '');
     const registeredTools = (server as any)._registeredTools;
 
-    // Test 1: get_capabilities without parameters returns 4 canonical workflows and specialists breakdown
-    console.log('Test 1: get_capabilities without parameters returns canonical workflows and specialists.breakdown...');
+    // Test 1: get_capabilities without parameters returns 4 canonical workflows and specialists breakdown (active vs on-request)
+    console.log('Test 1: get_capabilities without parameters returns canonical workflows and specialists.breakdown (active vs on-request)...');
     const getCapabilitiesHandler = registeredTools['get_capabilities'].handler;
     const res1 = await getCapabilitiesHandler({});
     assert.strictEqual(res1.content[0].type, 'text');
@@ -158,12 +160,15 @@ async function runTests() {
     assert.strictEqual(data1.platform_scale.specialists.total, 4150);
     const breakdown = data1.platform_scale.specialists.breakdown;
     assert.ok(breakdown, 'Must contain specialists.breakdown');
-    assert.strictEqual(typeof breakdown.human_agents, 'number');
+    assert.strictEqual(typeof breakdown.active_human_agents, 'number');
+    assert.strictEqual(typeof breakdown.on_request_human_agents, 'number');
     assert.strictEqual(typeof breakdown.synthetic_domain_analysts, 'number');
     assert.strictEqual(typeof breakdown.c_suite_agents, 'number');
     assert.strictEqual(typeof breakdown.classic_agents, 'number');
-    assert.ok(data1.platform_scale.specialists.classification_guidance.includes("Only 'human_agents' are verified living practitioners"));
-    console.log('✅ Test 1 Passed: get_capabilities returns 4 canonical workflows and specialists.breakdown.\n');
+    assert.strictEqual(breakdown.active_human_agents, 4);
+    assert.ok(breakdown.on_request_human_agents > 0, 'Must have on_request_human_agents count');
+    assert.ok(data1.platform_scale.specialists.classification_guidance.includes("Both 'active_human_agents' and 'on_request_human_agents' represent real living practitioners"));
+    console.log('✅ Test 1 Passed: get_capabilities returns 4 canonical workflows and specialists.breakdown with active vs on-request distinction.\n');
 
     // Test 2: get_capabilities with { topic: "clean beauty" } performs topic reconnaissance with coverage assessment
     console.log('Test 2: get_capabilities with topic reconnaissance and coverage_assessment...');
@@ -199,7 +204,8 @@ async function runTests() {
     assert.ok(fallbackData.workflows && Array.isArray(fallbackData.workflows), 'Fallback must contain workflows');
     const fallbackIds = fallbackData.workflows.map((w: any) => w.id);
     assert.ok(fallbackIds.includes('research') && fallbackIds.includes('challenge') && fallbackIds.includes('ask_experts') && fallbackIds.includes('track'));
-    assert.ok(fallbackData.platform_scale.specialists.breakdown.human_agents > 0, 'Fallback must have human_agents count');
+    assert.strictEqual(fallbackData.platform_scale.specialists.breakdown.active_human_agents, 4);
+    assert.strictEqual(fallbackData.platform_scale.specialists.breakdown.on_request_human_agents, 4000);
 
     // Fallback with topic reconnaissance
     const fallbackTopicRes = await fallbackHandler({ topic: 'clean beauty formulation' });
@@ -208,7 +214,7 @@ async function runTests() {
     assert.ok(fallbackTopicData.topic_reconnaissance.coverage_assessment, 'Fallback must have coverage_assessment');
     assert.ok(fallbackTopicData.topic_reconnaissance.coverage_assessment.boundary_advisory.includes('formulation depth'));
     assert.ok(fallbackTopicData.topic_reconnaissance.available_next_actions[0].suggested_parameters, 'Fallback actions must have suggested_parameters');
-    console.log('✅ Test 3 Passed: get_capabilities clean fallback has all 4 workflows, specialist breakdown, and local coverage boundary detection.\n');
+    console.log('✅ Test 3 Passed: get_capabilities clean fallback has all 4 workflows, specialist breakdown (active + on_request), and local coverage boundary detection.\n');
 
     // Test 4: coverageRelevance next_moves.actions contains executable continuations
     console.log('Test 4: coverageRelevance next_moves.actions populated with executable continuations...');
@@ -246,10 +252,67 @@ async function runTests() {
     }
     console.log('✅ Test 4 Passed: next_moves.actions correctly structured with executable parameters.\n');
 
+    // Test 4b: next_moves.actions routing on active vs on-request Human Agents
+    console.log('Test 4b: next_moves.actions routing for on_request vs active Human Agents...');
+    
+    // Simulate On-Request Expert
+    const onRequestMoves = await generateNextMoves(
+        [{ title: 'Clean Cosmetics Formulation', graph_id: 'beauty', trend_name: 'Clean Formulas' }],
+        'clean beauty formulation',
+        ['beauty'],
+        'ok',
+        undefined,
+        undefined,
+        undefined,
+        [
+            {
+                analyst_id: 'roxane-prieux',
+                name: 'Roxane Prieux',
+                category: 'human_agent',
+                status: 'Unclaimed', // On-Request
+                expert_in: ['clean beauty formulation', 'sustainable packaging'],
+                description: 'Specialist in clean beauty formulation'
+            } as any
+        ]
+    );
+    assert.ok(onRequestMoves.actions, 'Must have actions');
+    const onRequestExpertAction = onRequestMoves.actions.find(a => a.action === 'ask_expert');
+    assert.ok(onRequestExpertAction, 'Must have ask_expert action');
+    assert.strictEqual(onRequestExpertAction.target_tool, 'request_expert_intro', 'On-Request expert must route to request_expert_intro');
+    assert.ok(onRequestExpertAction.suggested_parameters.expert_id, 'Must include expert_id in parameters');
+    console.log(`  ✓ On-Request expert routed to target_tool: ${onRequestExpertAction.target_tool} with prompt: "${onRequestExpertAction.suggested_prompt}"`);
+
+    // Simulate Active Human Agent
+    const activeMoves = await generateNextMoves(
+        [{ title: 'Culture and Streetwear Collaboration', graph_id: 'sic', trend_name: 'Streetwear Traps' }],
+        'streetwear brand strategy',
+        ['sic'],
+        'ok',
+        undefined,
+        undefined,
+        undefined,
+        [
+            {
+                analyst_id: 'ben-dietz',
+                name: 'Ben Dietz',
+                category: 'human_agent',
+                status: 'active', // Active Human Agent
+                expert_in: ['streetwear brand strategy', 'youth culture'],
+                description: 'Culture strategist and founder of [SIC]'
+            } as any
+        ]
+    );
+    assert.ok(activeMoves.actions, 'Must have actions');
+    const activeExpertAction = activeMoves.actions.find(a => a.action === 'ask_expert');
+    assert.ok(activeExpertAction, 'Must have ask_expert action');
+    assert.strictEqual(activeExpertAction.target_tool, 'consult_human_agent', 'Active Human Agent must route to consult_human_agent');
+    assert.ok(activeExpertAction.suggested_parameters.analyst_id, 'Must include analyst_id in parameters');
+    console.log(`  ✓ Active Human Agent routed to target_tool: ${activeExpertAction.target_tool} with prompt: "${activeExpertAction.suggested_prompt}"`);
+    console.log('✅ Test 4b Passed: next_moves.actions accurately distinguishes active vs on-request Human Agent routing.\n');
+
     // Test 5: Headless UX Zero-Mention Prompt Probe
     console.log('Test 5: Headless UX Zero-Mention Prompt Probe (intent routing & boundary detection)...');
     
-    // Simulate host AI semantic intent matcher against MCP registered tool descriptions
     function routeIntent(prompt: string, tools: Record<string, any>): string[] {
         const scores: { tool: string; score: number }[] = [];
         const p = prompt.toLowerCase();
@@ -297,7 +360,6 @@ async function runTests() {
     const probe3 = "I'd like a specialist's view on clean beauty formulation.";
     const routes3 = routeIntent(probe3, registeredTools);
     assert.ok(routes3.includes('find_expert') || routes3.includes('consult_human_agent'), 'Probe 3 must route to find_expert or consult_human_agent');
-    // Verify formulation boundary is triggered
     const reconProbe3 = await fallbackHandler({ topic: 'clean beauty formulation' });
     const reconData3 = JSON.parse(reconProbe3.content[0].text);
     assert.ok(reconData3.topic_reconnaissance.coverage_assessment.boundary_advisory.includes('formulation depth'), 'Probe 3 must trigger formulation boundary advisory');
@@ -318,8 +380,8 @@ async function runTests() {
     assert.strictEqual(toolNames.length, 55, 'Total registered tools count must remain 55 (no bloat)');
     console.log('✅ Test 6 Passed: Total registered tools count strictly maintained at 55.\n');
 
-    // Test 7: Semantic Intent Upgrades in Tool Descriptions
-    console.log('Test 7: Verify semantic intent descriptions lead with "Use when..."');
+    // Test 7: Semantic Intent Upgrades & Human Agent Distinctions in Tool Descriptions
+    console.log('Test 7: Verify semantic intent descriptions lead with "Use when..." and reflect distinctions');
     const toolsToCheck = [
         'search_graph',
         'verify_market_claim',
@@ -329,7 +391,9 @@ async function runTests() {
         'brand_tracker',
         'manage_scheduled_reports',
         'deep_research_topic',
-        'request_deliverable'
+        'request_deliverable',
+        'request_expert_intro',
+        'consult_analyst'
     ];
     for (const toolName of toolsToCheck) {
         const tool = registeredTools[toolName];
@@ -340,7 +404,11 @@ async function runTests() {
             `Tool ${toolName} description must start with "Use when", got: "${desc.slice(0, 40)}..."`
         );
     }
-    console.log('✅ Test 7 Passed: All 9 tool descriptions lead with "Use when...".\n');
+    // Verify explicit active vs on-request distinction in find_expert, consult_human_agent, and request_expert_intro
+    assert.ok(registeredTools['find_expert'].description.includes('active Human Agents') && registeredTools['find_expert'].description.includes('On-Request Human Agents'));
+    assert.ok(registeredTools['consult_human_agent'].description.includes('active Human Agents') && registeredTools['consult_human_agent'].description.includes('On-Request Human Agents'));
+    assert.ok(registeredTools['request_expert_intro'].description.includes('On-Request Human Agent'));
+    console.log('✅ Test 7 Passed: All tool descriptions lead with "Use when..." and reflect active vs on-request distinction.\n');
 
     console.log('All Capabilities, Guidance & Workflow Next-Actions Tests Passed Successfully!');
 }

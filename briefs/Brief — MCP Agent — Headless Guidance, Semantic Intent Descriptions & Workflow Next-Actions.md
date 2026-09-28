@@ -28,13 +28,19 @@ A naive Copilot proposed adding 5 brand new standalone discovery tools (`what_ca
    - `GET /v1/capabilities`: Canonical self-description of Fodda's 4 core jobs (`research`, `challenge`, `ask_experts`, `track`), research recipes (prompting methodology), and live platform scale.
    - `GET /v1/capabilities/recon?q={topic}`: Topic reconnaissance ("What does Fodda know about [topic]?").
    MCP's `get_capabilities` must fetch dynamically from the API (with in-memory cache and static fallback) rather than keeping stale hardcoded strings.
-3. **Specialist Classification Invariant (Crucial):** Never flatten the roster into "4,150 human experts." Fodda strictly distinguishes:
-   - **Human Agents** (verified living practitioners e.g. Ben Dietz, Peter Abraham)
-   - **Synthetic Domain Analysts** (AI personas grounded in domain graphs)
-   - **C-Suite Agents** (corporate executive strategy personas)
-   - **Classic Agents** (historical thinkers)
-   The API exposes `platform_scale.specialists.breakdown`. Ensure tool outputs and prompts preserve this distinction.
-4. **Money & Pricing Invariants:** Airtable is the source of truth for pricing. Standard price is $0.50 USD per call. SPT is machine-only. **NEVER use "tokens" or "via SPT" in tool descriptions or outputs.**
+3. **Specialist Classification Invariant (Crucial):** Never flatten the roster into "4,150 human experts" or mislabel prospective experts as synthetic. Fodda strictly distinguishes:
+   - **Active Human Agents** (verified living practitioners who have activated their digital twin, e.g. Ben Dietz, Peter Abraham — consulted via `consult_human_agent`).
+   - **On-Request Human Agents** (prospective living practitioners and industry leaders indexed across 4,000+ topics whose twin is unclaimed — engaged via `request_expert_intro` for human advisory/call-booking. **They are real living people, NOT synthetic personas.**)
+   - **Synthetic Domain Analysts** (automated AI personas grounded in specific domain graphs).
+   - **C-Suite Agents** (corporate executive strategy personas e.g. `brand-cmo`, `brand-ceo`).
+   - **Classic Agents** (historical thinkers and classic personas).
+   The API exposes `platform_scale.specialists.breakdown` with `active_human_agents` and `on_request_human_agents`. Ensure tool outputs and prompts preserve this distinction.
+4. **Candidate Expert Routing Rule:**
+   - Candidate experts return `status: "active" | "on_request"`.
+   - If `status === "on_request"`: the recommended next action MUST route to `request_expert_intro` (`POST /v1/analysts/request-intro` / MCP tool `request_expert_intro`), NOT direct digital twin consult.
+   - If `status === "active"` and `agent_class === "human_agent"`: routes to `consult_human_agent`.
+   - If synthetic or c-suite: routes to `consult_analyst`.
+5. **Money & Pricing Invariants:** Airtable is the source of truth for pricing. Standard price is $0.50 USD per call. SPT is machine-only. **NEVER use "tokens" or "via SPT" in tool descriptions or outputs.**
 
 ---
 
@@ -51,7 +57,7 @@ A naive Copilot proposed adding 5 brand new standalone discovery tools (`what_ca
    - If `topic` is provided: call `foddaReq('GET', `/v1/capabilities?topic=${encodeURIComponent(topic)}`, apiKey, userId)` (fallback to local `findCandidateExperts` and hardcoded recipes if network fails).
    - If `topic` is omitted: fetch `foddaReq('GET', '/v1/capabilities', apiKey, userId)` with a 1-hour in-memory cache. Fall back to current static JSON structure if the API call fails.
 3. Keep `pricing_url: "https://fodda.ai/pricing"` and published prices from Airtable.
-4. Preserve the `specialists.breakdown` (`human_agents`, `synthetic_domain_analysts`, `c_suite_agents`, `classic_agents`) and its explicit `classification_guidance`.
+4. Preserve the `specialists.breakdown` (`active_human_agents`, `on_request_human_agents`, `synthetic_domain_analysts`, `c_suite_agents`, `classic_agents`) and its explicit `classification_guidance`.
 
 ### B. Semantic Intent Upgrades in Tool Descriptions (`src/toolHandlers.ts` & `tools-manifest.json`)
 Rewrite tool descriptions to lead with **intent triggers ("Use when...")** rather than technical mechanics. Host models trigger on user intent:
@@ -61,9 +67,11 @@ Rewrite tool descriptions to lead with **intent triggers ("Use when...")** rathe
 - **`verify_market_claim` & `verify_claim`**:
   *Update description to lead with:* `"Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence."*
 - **`find_expert`**:
-  *Update description to lead with:* `"Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched."*
+  *Update description to lead with:* `"Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster (including active Human Agents, on-request prospective Human Agents, and synthetic analysts) with action lines, status, and why matched."*
 - **`consult_human_agent`**:
-  *Update description to lead with:* `"Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. Supports deep homework mode (deep: true). Returns cited insights and next_moves."*
+  *Update description to lead with:* `"Use when consulting an active, verified living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. Supports deep homework mode (deep: true). Returns cited insights and next_moves. For on-request prospective Human Agents, use request_expert_intro instead."*
+- **`request_expert_intro`**:
+  *Update description to lead with:* `"Use when seeking advisory introductions, consultation requests, or booking time with living practitioners and On-Request Human Agents."*
 - **`brand_tracker`**:
   *Update description to lead with:* `"Use when auditing a brand's health, competitive footprint, trend associations, and market momentum across 100+ graphs, Google Trends, and Wikipedia pageviews."*
 - **`manage_scheduled_reports`**:
@@ -71,7 +79,6 @@ Rewrite tool descriptions to lead with **intent triggers ("Use when...")** rathe
 - **`deep_research_topic`**:
   *Update description to lead with:* `"Use when the user needs an exhaustive, autonomous multi-pass briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives."*
 - **`request_deliverable`**:
-  *Update description to lead with:* `"Use when commissioning a finished document from an analyst — an executive briefing, research memo, strategic assessment, or publication-ready article."*
 
 Ensure `tools-manifest.json` is updated to match.
 

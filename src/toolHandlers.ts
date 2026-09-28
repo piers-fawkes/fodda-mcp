@@ -895,12 +895,13 @@ export async function createServer(
             specialists: {
                 total: 4150,
                 breakdown: {
-                    human_agents: 4,
-                    synthetic_domain_analysts: 4100,
+                    active_human_agents: 4,
+                    on_request_human_agents: 4000,
+                    synthetic_domain_analysts: 100,
                     c_suite_agents: 30,
                     classic_agents: 16
                 },
-                classification_guidance: "Only 'human_agents' are verified living practitioners (e.g. Ben Dietz, Peter Abraham). 'synthetic_domain_analysts' are AI personas grounded in specific domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe all specialists as living human experts."
+                classification_guidance: "Both 'active_human_agents' and 'on_request_human_agents' represent real living practitioners and domain leaders (NOT synthetic personas). Active Human Agents have verified digital twins consultable via consult_human_agent. On-Request Human Agents are prospective twins indexed across 4,000+ topics whose advisory introductions or bookings can be requested via request_expert_intro. 'synthetic_domain_analysts' are AI personas grounded in domain graphs. 'c_suite_agents' represent corporate executive strategy roles. 'classic_agents' represent historical thinkers. Host models must NEVER describe synthetic personas as living human experts, nor mislabel On-Request prospective Human Agents as synthetic."
             }
         },
         workflows: [
@@ -988,10 +989,10 @@ export async function createServer(
                 ],
                 research_recipe: {
                     objective: "Engage the most relevant domain specialists in their unique voice, framework, and curated knowledge base.",
-                    formulation_guidance: "Identify candidate specialists matching the domain and analytical lane; articulate the strategic dilemma; request their structured perspective; follow the mandatory 3-part attribution arc when citing living Human Agents.",
+                    formulation_guidance: "Identify candidate specialists matching the domain and analytical lane; distinguish active Human Agents (consultable twin) from On-Request Human Agents (advisory introduction); articulate the strategic dilemma; request their structured perspective; follow the mandatory 3-part attribution arc when citing living Human Agents.",
                     steps: [
                         "1. Call candidate search to identify 2-3 genuine specialists with high lane-fit and explicit search ask lines.",
-                        "2. Consult active Human Agents or synthetic domain analysts with deep background homework enabled.",
+                        "2. Consult active Human Agents via consult_human_agent, or request an advisory introduction to On-Request Human Agents via request_expert_intro.",
                         "3. Frame the answer using the expert's conceptual lens and cited graph evidence.",
                         "4. Surface optional intro / call-booking if human advisory is desired."
                     ]
@@ -1000,7 +1001,7 @@ export async function createServer(
                     { endpoint: "GET /v1/experts/search", mcp_tool: "find_expert", description: "Candidate specialist search across 4,150+ roster (free discovery)" },
                     { endpoint: "POST /v1/human-agents/consult", mcp_tool: "consult_human_agent", description: "Consult verified Human Agent twin with background research" },
                     { endpoint: "POST /v1/analysts/consult", mcp_tool: "consult_analyst", description: "Consult synthetic analyst or C-Suite persona" },
-                    { endpoint: "POST /v1/analysts/request-intro", mcp_tool: "request_expert_intro", description: "Request advisory intro or book time with the real human" }
+                    { endpoint: "POST /v1/analysts/request-intro", mcp_tool: "request_expert_intro", description: "Request advisory intro or book time with On-Request or active human experts" }
                 ],
                 possible_next_actions: [
                     { action: 'challenge', name: 'Pressure-test their perspective', description: 'Verify claims made during the expert consultation against broader market data.', target_tool: 'verify_market_claim' },
@@ -1088,12 +1089,13 @@ export async function createServer(
             {
                 id: 'expert_consult',
                 name: 'Agent Consultation & Discovery',
-                value: 'Discovery and direct multi-turn consultation across 4 agent categories: Human Agents (verified living figures), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
+                value: 'Discovery and direct multi-turn consultation across specialist categories: active Human Agents (verified living twins), On-Request Human Agents (advisory intros across 4,000+ topics), C-Suite Agents (corporate executive strategy), Classic Agents (historical thinkers), and Synthetic Domain Analysts.',
                 tools: ['find_expert', 'consult_human_agent', 'consult_analyst', 'list_analysts', 'request_deliverable', 'request_expert_intro'],
                 audience: 'Teams seeking verified practitioner perspectives, executive strategy, or custom deliverables',
                 example_prompts: [
                     'Who is the right expert to ask about clean beauty formulations? (find_expert)',
                     'Consult Ben Dietz to pressure-test our luxury fashion tech roadmap.',
+                    'Request an introduction to Roxane Prieux for clean beauty advisory.',
                     'Consult Brand CMO on Nike\'s direct-to-consumer strategy.',
                     'List available Human Agents and C-Suite analysts.'
                 ]
@@ -1186,6 +1188,38 @@ export async function createServer(
                 }
 
                 const topCandidate = matchedCandidates[0];
+                const isTopCandidateOnRequest = topCandidate?.status === 'on_request';
+                const expertAction = topCandidate ? (
+                    isTopCandidateOnRequest ? {
+                        action: 'ask_expert' as const,
+                        name: `Request intro to ${topCandidate.display_name}`,
+                        description: 'Request an advisory introduction or consultation with this prospective Human Agent.',
+                        reason: `Connect with ${topCandidate.display_name} for human advisory or consultation.`,
+                        target_tool: 'request_expert_intro',
+                        suggested_prompt: `Request an introduction or advisory consultation with ${topCandidate.display_name} regarding ${cleanTopic}.`,
+                        suggested_parameters: { expert_id: topCandidate.analyst_id, query: cleanTopic },
+                        available: true
+                    } : {
+                        action: 'ask_expert' as const,
+                        name: `Consult ${topCandidate.display_name}`,
+                        description: 'Gain practitioner calibration, proprietary frameworks, and strategic guidance.',
+                        reason: `Consult ${topCandidate.display_name} for authoritative interpretation.`,
+                        target_tool: topCandidate.category === 'human_agent' ? 'consult_human_agent' : 'consult_analyst',
+                        suggested_prompt: `Ask ${topCandidate.display_name} about ${cleanTopic}`,
+                        suggested_parameters: { agent_id: topCandidate.analyst_id, question: `How should we evaluate the strategic opportunity and risks in ${cleanTopic}?` },
+                        available: true
+                    }
+                ) : {
+                    action: 'ask_expert' as const,
+                    name: 'Consult a specialist',
+                    description: 'Gain practitioner calibration, proprietary frameworks, and strategic guidance.',
+                    reason: 'Consult a domain specialist to interpret qualitative nuances.',
+                    target_tool: 'find_expert',
+                    suggested_prompt: `Find candidate specialists who understand ${cleanTopic}`,
+                    suggested_parameters: { q: cleanTopic },
+                    available: true
+                };
+
                 const availableNextActions = [
                     {
                         action: 'pressure_test',
@@ -1197,16 +1231,7 @@ export async function createServer(
                         suggested_parameters: { claim: `Market strategy and consumer demand assumptions for ${cleanTopic}` },
                         available: true
                     },
-                    {
-                        action: 'ask_expert',
-                        name: topCandidate ? `Consult ${topCandidate.display_name}` : 'Consult a specialist',
-                        description: 'Gain practitioner calibration, proprietary frameworks, and strategic guidance.',
-                        reason: topCandidate ? `Consult ${topCandidate.display_name} for authoritative interpretation.` : 'Consult a domain specialist to interpret qualitative nuances.',
-                        target_tool: topCandidate ? topCandidate.consult_tool : 'find_expert',
-                        suggested_prompt: topCandidate ? `Ask ${topCandidate.display_name} about ${cleanTopic}` : `Find candidate specialists who understand ${cleanTopic}`,
-                        suggested_parameters: topCandidate ? { agent_id: topCandidate.analyst_id, question: `How should we evaluate the strategic opportunity and risks in ${cleanTopic}?` } : { q: cleanTopic },
-                        available: true
-                    },
+                    expertAction,
                     {
                         action: 'track_topic',
                         name: 'Track this topic',
@@ -1246,6 +1271,7 @@ export async function createServer(
                             id: c.analyst_id,
                             name: c.display_name,
                             agent_class: c.category || 'Specialist',
+                            status: c.status || 'active',
                             why_matched: [c.reason]
                         })),
                         coverage_assessment: {
@@ -1522,7 +1548,7 @@ export async function createServer(
     // --- find_expert (Visible Expert Matching — Brief 3 & Expert Search API) ---
     server.tool(
         'find_expert',
-        'Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth (\'Who should I ask about X?\' or \'What would retail experts make of this?\'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched.',
+        'Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth (\'Who should I ask about X?\' or \'What would retail experts make of this?\'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched, distinguishing active Human Agents (consultable twin) from On-Request Human Agents (advisory introduction).',
         {
             query: z.string().describe('The question, brief, topic, or situation to find candidate experts for.'),
             limit: z.number().optional().default(3).describe('Maximum candidate experts to return (default: 3, max: 3).'),
@@ -6316,7 +6342,7 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Direct 1-on-1 consultation with named human or synthetic expert analysts grounded in specialist knowledge graphs.',
+        'Use when consulting synthetic domain analysts, C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. (For living practitioners e.g. Ben Dietz, use consult_human_agent or request_expert_intro.)',
         {
             analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
@@ -6351,7 +6377,7 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. Supports deep homework mode (deep: true). Returns cited insights and next_moves.',
+        'Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. For active Human Agents, queries their verified digital twin; for On-Request Human Agents undergoing onboarding, returns domain-grounded intelligence and advisory profile. Supports deep homework mode (deep: true). Returns cited insights and next_moves.',
         {
             analyst_id: z.string().describe("The internal expert ID of the Human Agent (from list_analysts or find_expert). This is an internal identifier; the expert's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
@@ -6700,7 +6726,7 @@ export async function createServer(
     // --- request_expert_intro (Inquiry & Advisory Intro Capture) ---
     server.tool(
         'request_expert_intro',
-        'Capture and submit an inquiry or advisory request to connect with a human expert on Fodda (for 1-on-1 consultations, advisory projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email.',
+        'Use when requesting an advisory introduction or consultation with an On-Request Human Agent or active domain specialist (for 1-on-1 advisory, strategic projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email.',
         {
             expert_id: z.string().describe("The expert's display name or analyst ID (e.g., 'Peter Abraham' or 'peter-abraham-bicycles-cycling')."),
             requester_email: z.string().describe("The email address of the person requesting the introduction or consultation."),
