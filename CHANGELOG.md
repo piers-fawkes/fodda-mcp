@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.46.88] - 2026-09-29
 
 ### Fixed
+- **`find_expert` Results Partitioning & Local Fallback (`src/toolHandlers.ts`, `src/queryCache.ts`)**:
+  - Replaced legacy `candidates[]` key with partition: active consultable twins in `results[]` and prospective specialists in `on_request_experts[]` with next-step CTA: `Use request_expert_intro(...)`.
+  - Added `/v1/experts/search` and `/v1/analysts/search` to `UNCACHEABLE_PATTERNS` in `queryCache.ts` so live candidate rankings are never served from stale 5-minute in-memory cache.
+  - Increased upstream `foddaRequest` timeout from 3s to 8s to prevent premature local fallbacks.
+- **Word-Boundary Matching & Consult Referral Shelf Discipline (`src/catalogCache.ts`, `src/coverageRelevance.ts`)**:
+  - Replaced substring matching (`searchText.includes(term)`) with exact word-boundary token matching (`words.has(term)`) in `scoreClauseRelevance` to eliminate false positives (e.g. `app` matching `happiness` in `world-happiness-social-media` or `apparel` in fashion reports).
+  - Restricted consult referral shelf candidates strictly to published research/trend data graphs (`report`, `domain`), excluding other individual expert profiles.
+  - Enforced that candidate shelf graphs must match >= 2 specific domain tokens. When no research graph matches the consult topic, `next_moves.shelf` is cleanly omitted (`undefined`), falling back to pitching the expert's deliverable offerings rather than forcing off-topic nearest neighbors.
+  - Expanded `next_angle` grounding validation in `generateConsultNextMoves` to accept queries and expert topics when only profile metadata is returned, preserving specific follow-up offers (e.g. Brand Decay Rate) over generic thread lines.
 - **`find_expert` Limit Enforcement (`src/toolHandlers.ts`)**:
   - Enforced candidate array slicing (`results.slice(0, effectiveLimit)`) on candidate experts returned by upstream search API, ensuring MCP output returns at most `limit` items (default: 3) even when upstream API returns unsliced candidates.
 - **Vocabulary & Stage-One Graph Routing Overrides (`src/catalogCache.ts`, `src/services/graphRouter.ts`)**:
