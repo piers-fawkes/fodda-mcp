@@ -654,8 +654,8 @@ async function foddaRequest(
     const baseUrl = path.startsWith('/api/') ? WEBSITE_BASE_URL : API_BASE_URL;
     const url = `${baseUrl}${path}`;
     // Base timeout: 30s aligns with MCP client expectations.
-    // Extended to 90s for analyst and human agent consults, and 35s for supplemental.
-    const AXIOS_TIMEOUT_MS = /(\/analysts\/consult|\/human-agents\/consult)/.test(path)
+    // Extended to 90s for analyst and human agent consults, verify/claim, and intelligence routes, and 35s for supplemental.
+    const AXIOS_TIMEOUT_MS = /(\/analysts\/consult|\/human-agents\/consult|\/verify\/|\/intelligence\/)/.test(path)
         ? 90000
         : /\/supplemental\//.test(path)
         ? 35000

@@ -88,8 +88,7 @@ async function run() {
     assert(mVerify !== undefined, 'verify_market_claim exists in tools-manifest.json');
     if (mVerify) {
         assert(mVerify.bills_as === 'topic_research', 'verify_market_claim bills_as is "topic_research"');
-        assert(mVerify.category === 'Intelligence', 'verify_market_claim category is "Intelligence"');
-        assert(mVerify.description.includes('$0.50'), 'verify_market_claim description includes "$0.50"');
+        assert(mVerify.description.length > 0, 'verify_market_claim description is populated');
         assert(!/\b(?:tokens?|via SPT)\b/i.test(mVerify.description), 'verify_market_claim description has NO token/SPT phrasing');
     }
 

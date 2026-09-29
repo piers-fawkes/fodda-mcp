@@ -1588,7 +1588,8 @@ export async function createServer(
                 }
 
                 if (usedApi && apiData) {
-                    const results: any[] = apiData.results || [];
+                    const rawResults: any[] = apiData.results || [];
+                    const results = rawResults.slice(0, effectiveLimit);
                     const candidates = results.map((r: any) => {
                         const analystId = r.slug || r.id;
                         const displayName = cleanDisplayName(r.name);

@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.88] - 2026-09-29
+
+### Fixed
+- **`find_expert` Limit Enforcement (`src/toolHandlers.ts`)**:
+  - Enforced candidate array slicing (`results.slice(0, effectiveLimit)`) on candidate experts returned by upstream search API, ensuring MCP output returns at most `limit` items (default: 3) even when upstream API returns unsliced candidates.
+- **Vocabulary & Stage-One Graph Routing Overrides (`src/catalogCache.ts`, `src/services/graphRouter.ts`)**:
+  - Added explicit phrase routing guard for `"creator economy"`, `"content creator"`, `"creator monetization"`: automatically routes queries to `visa-creators_report-2025`, `youtube`, and `tiktok` creator graphs while explicitly filtering out `mary-shelley` (Frankenstein's "Creator's Duty of Care").
+  - Added phrase routing overrides for `"nightlife"`, `"going out"`, `"shared experiences"`, `"shared social experiences"`: automatically includes `bompasparr` nightlife graphs in candidate `_routed_graphs`.
+  - Exported `src/services/graphRouter.ts` re-exporting `getRelevantGraphs` stage-one graph routing.
+- **Automated Verification Suite (`src/test_mcp_find_expert_and_vocabulary_routing.ts`)**:
+  - Verified `find_expert` candidate limit enforcement when API returns 24 items (output correctly sliced to 3 candidates).
+  - Verified `"creator economy"` phrase routing includes `visa-creators_report-2025` and `youtube` while excluding `mary-shelley`.
+  - Verified `"nightlife"` and `"going out"` phrase routing includes `bompasparr` nightlife graph.
+
+## [1.46.87] - 2026-09-28
+
+### Fixed
+- **Extended HTTP Timeout for Claim Verification and Intelligence Endpoints (`src/index.ts`)**:
+  - Extended `AXIOS_TIMEOUT_MS` in `foddaRequest()` from 30s to 90s for `/verify/` and `/intelligence/` paths (matching `/analysts/consult` and `/human-agents/consult`).
+  - Resolves 30-second client-side timeout in `verify_market_claim` (`POST /v1/verify/claim`) and `get_intelligence_dossier` (`POST /v1/intelligence/dossier`) during complex multi-graph evidence retrieval and 5-gate anti-hallucination verification.
+
 ## [1.46.86] - 2026-09-28
 
 ### Added

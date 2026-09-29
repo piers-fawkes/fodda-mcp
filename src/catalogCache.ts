@@ -1226,9 +1226,33 @@ export function getRelevantGraphs(
         console.error(`[graphRouter] Skipped ${skippedShells} unsynced graph shell(s) (trend_count=0, last_synced=null): ${shellGraphs.map(g => g.graph_id).join(', ')}`);
     }
 
-    // ── Phase 0: Direct name matching ──
+    // ── Phase 0: Direct name matching & phrase routing overrides ──
     const queryLower = query.toLowerCase();
     const directMatchIds = new Set<string>();
+
+    const isCreatorQuery = /creator economy|content creator|creator monetization|creators report/i.test(queryLower);
+    const isNightlifeQuery = /nightlife|going out|shared experiences|shared social experiences/i.test(queryLower);
+
+    const eligibleGraphs = syncedGraphs.filter(g => {
+        if (isCreatorQuery && g.graph_id === 'mary-shelley') return false;
+        return true;
+    });
+
+    if (isCreatorQuery) {
+        for (const g of eligibleGraphs) {
+            if (g.graph_id === 'visa-creators_report-2025' || g.graph_id.includes('youtube') || g.graph_id.includes('tiktok')) {
+                directMatchIds.add(g.graph_id);
+            }
+        }
+    }
+
+    if (isNightlifeQuery) {
+        for (const g of eligibleGraphs) {
+            if (g.graph_id.includes('bompasparr')) {
+                directMatchIds.add(g.graph_id);
+            }
+        }
+    }
 
     const matchesWordBoundary = (text: string, term: string): boolean => {
         if (!term || term.length < 3) return false;
@@ -1243,7 +1267,7 @@ export function getRelevantGraphs(
         return rx.test(text);
     };
 
-    for (const g of syncedGraphs) {
+    for (const g of eligibleGraphs) {
         // Check graph_id (e.g., "alyson-stevens-macro", "sic")
         if (g.graph_id.length > 3 && matchesWordBoundary(queryLower, g.graph_id)) {
             directMatchIds.add(g.graph_id);
@@ -1291,7 +1315,7 @@ export function getRelevantGraphs(
     }
 
     // Score ALL graph types together — domain, expert, industry report compete on merit
-    const scored: GraphRelevanceResult[] = syncedGraphs.map(g => {
+    const scored: GraphRelevanceResult[] = eligibleGraphs.map(g => {
         const isDirect = directMatchIds.has(g.graph_id);
         return {
             graph: g,
