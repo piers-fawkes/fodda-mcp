@@ -1566,7 +1566,7 @@ export async function createServer(
                 try {
                     let timer: NodeJS.Timeout | undefined;
                     const timeoutPromise = new Promise((_, reject) => {
-                        timer = setTimeout(() => reject(new Error('Expert search API timed out (>3s)')), 3000);
+                        timer = setTimeout(() => reject(new Error('Expert search API timed out (>8s)')), 8000);
                     });
                     const fetchPromise = foddaRequest(
                         'GET',
@@ -1588,9 +1588,7 @@ export async function createServer(
                 }
 
                 if (usedApi && apiData) {
-                    const rawResults: any[] = apiData.results || [];
-                    const results = rawResults.slice(0, effectiveLimit);
-                    const candidates = results.map((r: any) => {
+                    const formatCandidate = (r: any) => {
                         const analystId = r.slug || r.id;
                         const displayName = cleanDisplayName(r.name);
                         const category = r.agent_class || 'human_agent';
@@ -1615,7 +1613,7 @@ export async function createServer(
                             candidateObj.status = 'on_request';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
                             if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
-                            candidateObj.next_step = `This verified specialist is available On Request. You can introduce the user by calling request_expert_intro(analyst_id: '${analystId}') or consult domain knowledge with consult_human_agent(analyst_id: '${analystId}').`;
+                            candidateObj.next_step = `Use request_expert_intro(analyst_id: '${analystId}') to introduce the user to this verified specialist.`;
                         } else {
                             candidateObj.status = 'active';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
@@ -1624,25 +1622,36 @@ export async function createServer(
                         }
 
                         return candidateObj;
-                    });
+                    };
+
+                    const rawResults: any[] = apiData.results || [];
+                    const results = rawResults.slice(0, effectiveLimit).map(formatCandidate);
+                    
+                    const rawOnRequest: any[] = apiData.on_request_experts || [];
+                    const onRequestExperts = rawOnRequest.slice(0, effectiveLimit).map(formatCandidate);
 
                     const relatedGraphs = Array.isArray(apiData.related_knowledge_graphs) ? apiData.related_knowledge_graphs : [];
 
                     const payload: any = {
                         query,
-                        candidates,
-                        total_matches: candidates.length,
+                        results,
                     };
+                    if (onRequestExperts.length > 0) {
+                        payload.on_request_experts = onRequestExperts;
+                    }
+                    payload.total_matches = results.length + onRequestExperts.length;
 
-                    if (candidates.length === 0) {
+                    if (results.length === 0 && onRequestExperts.length === 0) {
                         payload.note = relatedGraphs.length > 0
                             ? `No dedicated Human Agent covers this domain yet. However, this topic is covered in Fodda Knowledge Graphs: ${relatedGraphs.map((g: any) => g.name).join(', ')}. Query them using search_graph(graphId: '${relatedGraphs[0].id}', query: '${query}').`
                             : 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.';
                         if (relatedGraphs.length > 0) {
                             payload.related_knowledge_graphs = relatedGraphs;
                         }
-                    } else {
-                        payload.next_step = candidates[0].next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them.";
+                    } else if (results.length > 0) {
+                        payload.next_step = results[0].next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them.";
+                    } else if (onRequestExperts.length > 0) {
+                        payload.next_step = onRequestExperts[0].next_step || "Use request_expert_intro to request an introduction.";
                     }
 
                     return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
@@ -1676,7 +1685,8 @@ export async function createServer(
 
                 const payload = {
                     query,
-                    candidates,
+                    results: candidates,
+                    on_request_experts: [],
                     total_matches: candidates.length,
                     ...(candidates.length === 0 ? {
                         note: 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.'

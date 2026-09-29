@@ -986,28 +986,11 @@ export function findCandidateExperts(
     for (const a of activeAnalysts) {
         if (isCurrentAnalyst(a)) continue;
 
-        let score = 0;
+        let baseScore = 0;
         let directMatch = false;
         let hasExplicitMatch = false;
 
         const category = getCategory(a);
-
-        // ── Tier Intent Weighting ──
-        if (category === 'c_suite_agent') {
-            if (isBrandOrCorporateQuery) {
-                score += 6.0;
-            } else {
-                score -= 5.0;
-            }
-        } else if (category === 'classic_agent') {
-            if (isPhilosophicalQuery) {
-                score += 5.0;
-            } else {
-                score -= 10.0; // Classic thinkers must never outrank living practitioners on contemporary queries
-            }
-        } else if (category === 'human_agent' || a.is_verified_real_person) {
-            score += 3.0; // Prioritize living human practitioners over synthetic agents
-        }
 
         // Extract expert name and slug parts for direct identification and blindspot immunity
         const aName = (a.name || '').toLowerCase().trim();
@@ -1028,14 +1011,14 @@ export function findCandidateExperts(
                 if (nameParts.has(t)) continue; // Never disqualify an expert for matching their own name or slug!
                 if (t.length >= 3 && rawBlindSpots.includes(t)) {
                     hasBlindSpot = true;
-                    score -= 20;
+                    baseScore -= 20;
                 }
             }
             for (const w of allQueryWords) {
                 if (nameParts.has(w)) continue; // Never disqualify an expert for matching their own name or slug!
                 if (w.length >= 4 && rawBlindSpots.includes(w)) {
                     hasBlindSpot = true;
-                    score -= 10;
+                    baseScore -= 10;
                 }
             }
         }
@@ -1047,20 +1030,20 @@ export function findCandidateExperts(
         ].join(' ').toLowerCase();
         if (expertIn.length > 0) {
             if (qLower.length > 5 && expertIn.includes(qLower)) {
-                score += 8;
+                baseScore += 8;
                 hasExplicitMatch = true;
             }
             for (const t of queryTokens) {
                 if (expertIn.includes(t)) {
                     const isDomainToken = queryDomainWords.length === 0 || queryDomainWords.includes(t) || !CROSS_CUTTING_MODIFIERS.has(t);
-                    score += isDomainToken ? 4 : 1.5;
+                    baseScore += isDomainToken ? 4 : 1.5;
                     if (t.length >= 4 && isDomainToken) hasExplicitMatch = true;
                 }
             }
             for (const w of allQueryWords) {
                 if (expertIn.includes(w)) {
                     const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
-                    score += isDomainWord ? 1.5 : 0.5;
+                    baseScore += isDomainWord ? 1.5 : 0.5;
                     if (w.length >= 4 && isDomainWord) hasExplicitMatch = true;
                 }
             }
@@ -1068,17 +1051,17 @@ export function findCandidateExperts(
 
         // 2b. Positive signal: direct name or analyst_id match (for lookup/booking/hiring intent)
         if (qLower.includes(aName) && aName.length >= 4) {
-            score += 15;
+            baseScore += 15;
             hasExplicitMatch = true;
             directMatch = true;
         } else if (aSlug && (qLower.includes(aSlug) || aSlug.includes(qLower))) {
-            score += 15;
+            baseScore += 15;
             hasExplicitMatch = true;
             directMatch = true;
         } else {
             for (const part of nameParts) {
                 if (queryTokens.includes(part) || allQueryWords.includes(part)) {
-                    score += 10;
+                    baseScore += 10;
                     hasExplicitMatch = true;
                     directMatch = true;
                     break;
@@ -1090,20 +1073,20 @@ export function findCandidateExperts(
         const aTopics = (Array.isArray(a.topics) ? a.topics : []).map((t: any) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean);
         for (const tp of aTopics) {
             if (qLower.includes(tp) || tp.includes(qLower)) {
-                score += 5;
+                baseScore += 5;
                 hasExplicitMatch = true;
             }
             for (const t of queryTokens) {
                 if (tp.includes(t) || t.includes(tp)) {
                     const isDomainToken = queryDomainWords.length === 0 || queryDomainWords.includes(t) || !CROSS_CUTTING_MODIFIERS.has(t);
-                    score += isDomainToken ? 3 : 1;
+                    baseScore += isDomainToken ? 3 : 1;
                     if (t.length >= 3 && tp.length >= 3 && isDomainToken) hasExplicitMatch = true;
                 }
             }
             for (const w of allQueryWords) {
                 if (tp.includes(w) || w.includes(tp)) {
                     const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
-                    score += isDomainWord ? 1.5 : 0.5;
+                    baseScore += isDomainWord ? 1.5 : 0.5;
                     if (w.length >= 3 && tp.length >= 3 && isDomainWord) hasExplicitMatch = true;
                 }
             }
@@ -1113,16 +1096,16 @@ export function findCandidateExperts(
         const desc = (typeof a.description === 'string' ? a.description : '').toLowerCase();
         if (desc.length > 0) {
             if (qLower.length > 5 && desc.includes(qLower)) {
-                score += 4;
+                baseScore += 4;
             }
             for (const t of queryTokens) {
                 if (desc.includes(t)) {
-                    score += 2;
+                    baseScore += 2;
                 }
             }
             for (const w of allQueryWords) {
                 if (desc.includes(w)) {
-                    score += 1;
+                    baseScore += 1;
                 }
             }
         }
@@ -1142,10 +1125,33 @@ export function findCandidateExperts(
                     ? g.relevanceScore
                     : (rowsForGraph.length > 0 ? 0.8 : 0);
                 if (relScore > 0) {
-                    score += relScore * 5.0;
+                    baseScore += relScore * 5.0;
                     hasExplicitMatch = true;
                     if (relScore >= 0.5) directMatch = true;
                 }
+            }
+        }
+
+        let score = baseScore;
+
+        // ── Tier Intent Weighting ──
+        // Require base token relevance score >= 6 before applying any status preference boost
+        // so irrelevant profiles (sam-horn, taxtalk-online) are excluded on local fallback.
+        if (baseScore >= 6) {
+            if (category === 'c_suite_agent') {
+                if (isBrandOrCorporateQuery) {
+                    score += 6.0;
+                } else {
+                    score -= 5.0;
+                }
+            } else if (category === 'classic_agent') {
+                if (isPhilosophicalQuery) {
+                    score += 5.0;
+                } else {
+                    score -= 10.0; // Classic thinkers must never outrank living practitioners on contemporary queries
+                }
+            } else if (category === 'human_agent' || a.is_verified_real_person) {
+                score += 3.0; // Prioritize living human practitioners over synthetic agents
             }
         }
 
@@ -1844,7 +1850,8 @@ export function generateConsultNextMoves(
         if ((matchedAnalyst as any).slug) expertOwnIds.add(String((matchedAnalyst as any).slug).toLowerCase());
     }
 
-    const SHELF_RELEVANCE_FLOOR = 0.10;
+    const SHELF_RELEVANCE_FLOOR = 0.50;
+    const queryTokens = specificQueryTokens(query);
     const shelfCandidateGraphs: CatalogGraph[] = [];
     for (const cand of relevantCandidates) {
         if ((cand.score ?? 0) < SHELF_RELEVANCE_FLOOR) continue;
@@ -1854,6 +1861,22 @@ export function generateConsultNextMoves(
         if (expertOwnIds.has(gid)) continue;
         if (g.curator && g.curator.toLowerCase() === expertDisplayName.toLowerCase()) continue;
         if (g.name && g.name.toLowerCase() === expertDisplayName.toLowerCase()) continue;
+
+        let hasTokenMatch = false;
+        if (queryTokens.length > 0) {
+            const graphText = `${g.name || ''} ${g.domain || ''} ${(Array.isArray(g.topics) ? g.topics : []).join(' ')} ${g.headline || ''} ${g.one_liner || ''} ${g.description || ''}`.toLowerCase();
+            const words = new Set(graphText.split(/[^a-z0-9]+/));
+            for (const t of queryTokens) {
+                if (t.length >= 3) {
+                    if (words.has(t)) {
+                        hasTokenMatch = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (queryTokens.length > 0 && !hasTokenMatch) continue;
+
         if (shelfCandidateGraphs.length < 2 && !shelfCandidateGraphs.some(sg => sg.graph_id === g.graph_id)) {
             shelfCandidateGraphs.push(g);
         }

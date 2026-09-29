@@ -39,6 +39,8 @@ const UNCACHEABLE_PATTERNS: RegExp[] = [
     /\/widget\//,           // widget serving
     /\/register$/,          // OAuth
     /\/analysts\/consult/,  // identity-sensitive, never cache
+    /\/v1\/experts\/search/,// never cache expert searches
+    /\/v1\/analysts\/search/// never cache analyst searches
 ];
 
 // ---------------------------------------------------------------------------
