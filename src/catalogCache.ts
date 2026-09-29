@@ -1024,13 +1024,17 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     const topicsText = [...(g.topics || []), ...(g.routing_keywords || []), g.name || '', g.graph_id || ''].join(' ').toLowerCase();
     const domainText = (g.domain || '').toLowerCase();
 
+    const words = new Set(searchText.split(/[^a-z0-9]+/));
+    const topicWords = new Set(topicsText.split(/[^a-z0-9]+/));
+    const domainWords = new Set(domainText.split(/[^a-z0-9]+/));
+
     let matchedTerms = 0;
     let highValueMatches = 0;
 
     for (const term of terms) {
-        if (searchText.includes(term)) {
+        if (words.has(term)) {
             matchedTerms++;
-            if (topicsText.includes(term) || domainText.includes(term)) {
+            if (topicWords.has(term) || domainWords.has(term)) {
                 highValueMatches++;
             }
         }
@@ -1054,9 +1058,9 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
         let expMatches = 0;
         let expHighValueMatches = 0;
         for (const exp of expandedSet) {
-            if (searchText.includes(exp)) {
+            if (words.has(exp)) {
                 expMatches++;
-                if (topicsText.includes(exp) || domainText.includes(exp)) {
+                if (topicWords.has(exp) || domainWords.has(exp)) {
                     expHighValueMatches++;
                 }
             }

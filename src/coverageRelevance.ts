@@ -1774,13 +1774,16 @@ export function generateConsultNextMoves(
             };
         }
     } else {
-        // Next angle token check per §2.A.5: must share >=1 content token (>=3 chars) with sources_used or uncited_themes
+        // Next angle token check per §2.A.5: must share >=1 content token (>=3 chars) with sources_used, uncited_themes, query, or expert topics
         let nextAngleValid = false;
         if (typeof nextAngleRaw === 'string' && nextAngleRaw.trim().length > 0) {
             const angleTokens = specificQueryTokens(nextAngleRaw);
-            const sourceTitles = (result?.sources_used || []).map((s: any) => (s.title || s.name || '').toLowerCase());
+            const sourceTitles = (result?.sources_used || [])
+                .filter((s: any) => s.origin !== 'profile' && !(s.title || '').includes('Official Profile'))
+                .map((s: any) => (s.title || s.name || '').toLowerCase());
             const themeTexts = uncitedThemes.map((t: string) => t.toLowerCase());
-            const groundingCorpus = [...sourceTitles, ...themeTexts].join(' ');
+            const expertTopics = Array.isArray(matchedAnalyst?.topics) ? matchedAnalyst.topics.join(' ').toLowerCase() : '';
+            const groundingCorpus = [...sourceTitles, ...themeTexts, expertTopics, query.toLowerCase()].join(' ');
 
             const hasSharedToken = angleTokens.some(tok => tok.length >= 3 && groundingCorpus.includes(tok));
             if (hasSharedToken || (sourceTitles.length === 0 && themeTexts.length === 0)) {
@@ -1862,20 +1865,26 @@ export function generateConsultNextMoves(
         if (g.curator && g.curator.toLowerCase() === expertDisplayName.toLowerCase()) continue;
         if (g.name && g.name.toLowerCase() === expertDisplayName.toLowerCase()) continue;
 
-        let hasTokenMatch = false;
+        // Shelf on an expert consult must only suggest published research/trend graphs (report, domain),
+        // never other individual expert agents or classic historical figures.
+        const gType = (g.graph_type || '').toLowerCase();
+        if (gType === 'expert' || gType === 'analyst' || cand.graphTier === 'static_expert' || cand.graphTier === 'living') {
+            continue;
+        }
+
+        // Must match at least 2 distinct domain tokens from the query, or have a direct topic match
+        let tokenMatchCount = 0;
         if (queryTokens.length > 0) {
             const graphText = `${g.name || ''} ${g.domain || ''} ${(Array.isArray(g.topics) ? g.topics : []).join(' ')} ${g.headline || ''} ${g.one_liner || ''} ${g.description || ''}`.toLowerCase();
             const words = new Set(graphText.split(/[^a-z0-9]+/));
             for (const t of queryTokens) {
-                if (t.length >= 3) {
-                    if (words.has(t)) {
-                        hasTokenMatch = true;
-                        break;
-                    }
+                if (t.length >= 3 && words.has(t)) {
+                    tokenMatchCount++;
                 }
             }
         }
-        if (queryTokens.length > 0 && !hasTokenMatch) continue;
+        const minMatchesNeeded = queryTokens.length >= 2 ? 2 : 1;
+        if (tokenMatchCount < minMatchesNeeded) continue;
 
         if (shelfCandidateGraphs.length < 2 && !shelfCandidateGraphs.some(sg => sg.graph_id === g.graph_id)) {
             shelfCandidateGraphs.push(g);
