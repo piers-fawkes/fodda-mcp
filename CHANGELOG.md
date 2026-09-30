@@ -5,6 +5,22 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.91] - 2026-09-30
+
+### Fixed
+- **Forward Caller Identity in On-Request Demand Webhooks (`src/toolHandlers.ts`)**:
+  - In `sendOnRequestDemandWebhook()`, replaced hardcoded `'anonymous@mcp.fodda.ai'` with dynamically resolved caller identity.
+  - Passes `userId` directly in the webhook payload (`email` and `userId`) when authenticated via OAuth or connection token (and stamps `parameters.clerkUserId` when user ID begins with `user_`).
+  - Passes `key:sk_live_...` directly in the webhook payload (`email` and `userId`) when using an API key, allowing Fodda Sales to attribute unclaimed expert demand to specific API keys.
+  - Retains fallback to `'anonymous@mcp.fodda.ai'` for unauthenticated trial/placeholder sessions.
+  - Updated `consult_human_agent` and `verify_claim` call sites to forward `userId: uid` to `sendOnRequestDemandWebhook()`.
+  - Added test suite `src/test_on_request_caller_identity.ts` verifying all 6 caller authentication scenarios.
+- **Human Agent Methodology & Prepared Answers Guidance Routing (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Updated `get_capabilities` tool description in `src/toolHandlers.ts` and synced with Airtable Offerings (`tbl93DJ627r81zKVP`) to explicitly include "how Human Agents work, expert recruitment/onboarding, and pricing".
+  - Added steering directive to `src/systemPrompt.ts` directing host models to call `get_capabilities(topic: "human_agents")` when asked conceptual or FAQ questions regarding Human Agent methodology, capturing expert knowledge, or differences with chatbots.
+  - Added `human_agents_guidance` to `STATIC_CAPABILITIES_FALLBACK` in `src/toolHandlers.ts` with prepared answers for offline and cold-start fallback resilience.
+  - Verified with `test_capabilities_guidance.ts`.
+
 ## [1.46.90] - 2026-09-29
 
 ### Added

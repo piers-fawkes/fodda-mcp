@@ -1115,13 +1115,38 @@ export async function createServer(
                 tools: ['draft_linkedin_post', 'draft_linkedin_article'],
                 description: 'Draft evidence-backed executive articles and posts from Fodda graph data.'
             }
-        ]
+        ],
+        human_agents_guidance: {
+            overview: "A Human Agent is built on an expert's own knowledge graph, reviewed by PSFK analysts before going live. It represents a real, living person who opted in, and they are paid each time their knowledge is used.",
+            rules_for_ai: [
+                "Use the full answer by default and the short version when the answer sits inside a longer response.",
+                "Any question about how experts are paid routes to https://www.fodda.ai/join-experts. Do not state split percentages or prices in conversation.",
+                "Do not describe features beyond what is written here as live.",
+                "Keep wording as written (no em dashes, US spelling, 'Human Agent' not 'digital twin')."
+            ],
+            prepared_answers: [
+                {
+                    id: "expert_vs_chatbot",
+                    question: "What makes an expert worth encoding as a Human Agent rather than a chatbot?",
+                    full_answer: "A chatbot answers anything. A Human Agent answers from a lane.\n\nAn expert is worth encoding when they hold a point of view the base model doesn't have, and the evidence behind it. Years of work in one field. Calls that differ from the consensus. Published research, talks and client work to back those calls up.\n\nOn Fodda, a Human Agent is built on that person's own knowledge graph, and PSFK analysts review it before it goes live. It represents a real, living person who opted in, and they're paid each time their knowledge is used. Experts with questions about payment can find details at https://www.fodda.ai/join-experts.\n\nYou can check every answer. Each response lists the sources it drew on and carries a coverage label, full or partial. When a question falls outside the expert's lane, it says so in plain words and suggests someone better placed. It won't cite a fact that isn't in the evidence it retrieved. You can also hand it a claim to test, and it returns a verdict: confirms, contradicts, partial or no coverage.\n\nA chatbot fills gaps with plausible text. A Human Agent shows you where its knowledge ends. That's what lets you stand behind what it tells you.\n\nHuman Agents also take on delegated work, like a trend briefing or a deck review, and return a finished piece.",
+                    short_version: "A Human Agent is worth building when an expert has a distinct point of view and the evidence to back it. It answers from that person's own knowledge graph, reviewed by PSFK analysts before launch. It lists its sources, labels its coverage and says plainly when a question is outside its lane. The expert opted in and is paid when their knowledge is used. Payment details: https://www.fodda.ai/join-experts.",
+                    payment_policy_url: "https://www.fodda.ai/join-experts"
+                },
+                {
+                    id: "capturing_expert_knowledge",
+                    question: "How do you capture a busy expert's knowledge without them writing anything down?",
+                    full_answer: "Most experts have already written plenty down. It's spread across reports, articles, talks and interviews. So that's where we start.\n\nFodda researches the expert's public work and proposes the themes that define their thinking. The expert confirms or corrects them. Their Human Agent only covers what they sign off on.\n\nThen comes a spoken interview of about 15 to 20 minutes with Fodda's AI interviewer. The questions come from the confirmed themes, so the expert talks about what they actually know. The interview shapes how their Human Agent sounds. What it knows still comes only from their own material.\n\nExperts can also upload a report, deck or transcript they already have, or have a colleague run the onboarding for them. Experts who maintain a live data source can connect their own MCP server, and Fodda queries it directly at answer time.\n\nWhichever path an expert takes, PSFK analysts review their Human Agent before it goes live. Every answer traces back to the expert's own work.\n\nQuestions about how experts are paid go to https://www.fodda.ai/join-experts.",
+                    short_version: "We start with what they've already published. Fodda researches their public work and proposes the themes that define their thinking. They confirm those, then talk for 15 to 20 minutes with an AI interviewer. PSFK analysts review everything before it goes live, and every answer traces back to the expert's own material. Payment questions: https://www.fodda.ai/join-experts.",
+                    payment_policy_url: "https://www.fodda.ai/join-experts"
+                }
+            ]
+        }
     };
 
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
-        'Returns Fodda\'s capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what\'s available, or how much something costs. (Platform capability and pricing catalogue read (free).)',
+        'Returns Fodda\'s capabilities, offerings, how Human Agents work, expert recruitment/onboarding, and pricing. Call this for any question about what Fodda can do, how experts work, what\'s available, or how much something costs. (Platform capability and pricing catalogue read (free).)',
         {
             topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview, workflow recipes, and specialist breakdown."),
             userId: z.string().optional().describe('Optional user identifier.')
@@ -1138,6 +1163,19 @@ export async function createServer(
                     }
                 } catch (err: any) {
                     console.warn(`[get_capabilities] API recon fetch failed, using local fallback:`, err?.message);
+                }
+
+                if (cleanTopic === 'human_agents' || /human[-_ ]?agents?|recruitment|onboarding/i.test(cleanTopic)) {
+                    return {
+                        content: [{
+                            type: 'text' as const,
+                            text: JSON.stringify({
+                                ok: true,
+                                topic: cleanTopic,
+                                human_agents_guidance: STATIC_CAPABILITIES_FALLBACK.human_agents_guidance
+                            }, null, 2)
+                        }]
+                    };
                 }
 
                 // Fallback to local candidate experts, coverage boundary detection, and hardcoded recipes if network fails
@@ -5618,22 +5656,38 @@ export async function createServer(
         expertName: string;
         expertIn: string;
         query: string;
-        source?: string;
+        source?: string | undefined;
+        userId?: string | undefined;
     }): Promise<void> => {
         const webhookUrls = [
             'https://fodda-sales-agent-p3uz7zw7ja-uc.a.run.app/webhooks/intent',
             'https://fodda-sales-agent-p3uz7zw7ja-uc.a.run.app/api/intent-webhook',
         ];
         const secret = process.env.INTENT_WEBHOOK_SECRET || 'fodda_intent_secret_x9281';
-        const payload = {
+
+        // Caller identity resolution:
+        // Pass userId (when authenticated via OAuth/connection token) or key:sk_live_... (when using an API key)
+        const effectiveUser = resolveUserId(userId, params.userId);
+        let callerIdentity = 'anonymous@mcp.fodda.ai';
+        if (effectiveUser && !isPlaceholderUserId(effectiveUser)) {
+            callerIdentity = effectiveUser;
+        } else if (apiKey && apiKey.trim() && !isPlaceholderUserId(apiKey)) {
+            const cleanKey = apiKey.trim();
+            callerIdentity = cleanKey.startsWith('key:') ? cleanKey : `key:${cleanKey}`;
+        }
+
+        const payload: Record<string, any> = {
             intent_event: 'unclaimed_expert_request',
-            email: 'anonymous@mcp.fodda.ai',
+            email: callerIdentity,
+            userId: callerIdentity,
             parameters: {
                 expertId: params.expertId,
                 expertName: params.expertName,
                 expertIn: params.expertIn,
                 requestedQuestion: params.query,
                 source: params.source || 'mcp_claude',
+                userId: callerIdentity,
+                ...(callerIdentity.startsWith('user_') ? { clerkUserId: callerIdentity } : {}),
             },
         };
         for (const url of webhookUrls) {
@@ -5788,7 +5842,8 @@ export async function createServer(
                     expertName,
                     expertIn: topicLabel,
                     query,
-                    source: 'mcp_claude'
+                    source: 'mcp_claude',
+                    userId: uid
                 }).catch(err => console.warn('[OnRequestWebhook] Failed to notify sales:', err.message));
 
                 if (!reportText.includes('undergoing onboarding verification')) {
@@ -6032,7 +6087,8 @@ export async function createServer(
                     expertName,
                     expertIn: topicLabel,
                     query,
-                    source: 'mcp_claude'
+                    source: 'mcp_claude',
+                    userId: uid
                 }).catch(e => console.warn('[OnRequestWebhook] Failed to notify sales:', e.message));
 
                 // 2. Retrieve domain fallback intelligence
@@ -6546,7 +6602,8 @@ export async function createServer(
                     expertName: expName,
                     expertIn: topicLabel,
                     query: claim,
-                    source: 'mcp_claude'
+                    source: 'mcp_claude',
+                    userId: uid
                 }).catch(err => console.warn('[OnRequestWebhook] Failed to notify sales:', err.message));
             }
 

@@ -123,6 +123,11 @@ compliance: RFC-2119
 - Ongoing project → keep passing the session_id from the previous consult response; the analyst remembers prior turns and working files
 - Finished document (plan, review, briefing) → request_deliverable with an offering_key (see the offerings on each analyst from list_analysts), then poll check_deliverable_status until it is completed
 - Hire / book / call the real expert → surface the booking link and rate from \`book_a_call\` if available, or offer to capture an introduction request via \`request_expert_intro\` (or direct to their profile at https://www.fodda.ai/experts/{slug}) per HIRE / BOOK / SPEAK-TO-THE-PERSON INTENT
+- HUMAN AGENT METHODOLOGY & RECRUITMENT QUESTIONS:
+  When asked conceptual or FAQ questions about how Human Agents work, how expert recruitment/onboarding works, or differences between chatbots and verified Human Agents (e.g. "What makes an expert worth encoding as a Human Agent rather than a chatbot?", "How do you capture a busy expert's knowledge without them writing anything down?"):
+  1. Call get_capabilities(topic: "human_agents") to retrieve the verified prepared answers.
+  2. Present the answer using the retrieved text. Use the full answer by default, or the short version if part of a larger response. Keep wording as written (US spelling, no em dashes, "Human Agent" not "digital twin").
+  3. Rules: Any question about how experts are paid routes to https://www.fodda.ai/join-experts. Do not state split percentages or prices in conversation. Do not describe features beyond what is written as live.
 
 ### RULE: EvidenceCitation
 - When presenting trends, the agent MUST call get_evidence.

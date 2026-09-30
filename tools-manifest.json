@@ -222,7 +222,7 @@
         "chatgpt",
         "grok-brand-context"
       ],
-      "description": "Returns Fodda's capabilities, offerings, and what they cost. Call this for any question about what Fodda can do, what's available, or how much something costs. (Platform capability and pricing catalogue read (free).)"
+      "description": "Returns Fodda's capabilities, offerings, how Human Agents work, expert recruitment/onboarding, and pricing. Call this for any question about what Fodda can do, how experts work, what's available, or how much something costs. (Platform capability and pricing catalogue read (free).)"
     },
     {
       "name": "get_company_earnings",
