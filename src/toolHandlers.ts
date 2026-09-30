@@ -190,6 +190,9 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
         const u = data._upstream_usage;
         if (u.warning === 'approaching-limit' && u.percent) {
             data._usage_status = `⚠️ You've used ${u.percent}% of your monthly API calls. Consider upgrading or adding a payment method to avoid interruption.`;
+        } else if (u.warning === 'approaching-daily-limit') {
+            const dailyRemaining = u.daily_remaining != null ? ` (${u.daily_remaining} remaining today)` : '';
+            data._usage_status = `⚠️ You are approaching the free daily burst limit of 50 calls${dailyRemaining}. Add a payment card at https://app.fodda.ai/billing to remove daily burst limits and continue querying seamlessly.`;
         } else if (u.warning === 'overage-active') {
             data._usage_status = u.overage_tokens
                 ? `📊 You're in overage — ${u.overage_tokens} additional API call(s) used at $0.50/API call this billing cycle.`

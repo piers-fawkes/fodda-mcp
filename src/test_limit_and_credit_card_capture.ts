@@ -99,7 +99,32 @@ async function runTests() {
     assert.strictEqual(parsedTrialPlan.setup_url, 'https://app.fodda.ai/api/account/setup-url?email=baseuser%40example.com');
     console.log('✅ Test 5 Passed\n');
 
-    console.log('All 5 Credit Card capture & limit enforcement tests passed successfully!');
+    // ── 3. Top-Up 200 API calls checkout copy ──
+    const legacyExhaustionErr = {
+        response: {
+            status: 403,
+            data: {
+                ok: false,
+                error: 'CREDITS_EXHAUSTED',
+                agent_checkout: {
+                    url: 'https://app.fodda.ai/api/account/checkout/agent-session',
+                    api_calls: 100 // outdated API payload should be corrected to 200
+                }
+            }
+        }
+    };
+
+    console.log('Test 6: handleTrialCreditExhaustion formats top-up message with 200 calls ($100 at 50¢/call)');
+    const trialTopupRes = await handleTrialCreditExhaustion(legacyExhaustionErr, 'sk_live_baseuser', 'baseuser@example.com');
+    assert.ok(trialTopupRes, 'handleTrialCreditExhaustion must return a response');
+    const parsedTrialTopup = JSON.parse(trialTopupRes!.content![0]!.text);
+    assert.strictEqual(parsedTrialTopup.status, 'CREDITS_EXHAUSTED');
+    assert.strictEqual(parsedTrialTopup.action, 'CHECKOUT_AVAILABLE');
+    assert.ok(parsedTrialTopup.message.includes('Buy 200 more API calls'), 'Message must reference 200 calls');
+    assert.ok(parsedTrialTopup.message.includes('200 API calls at 50¢/call'), 'Message must state 200 API calls at 50¢/call');
+    console.log('✅ Test 6 Passed\n');
+
+    console.log('All 6 Credit Card capture & limit enforcement tests passed successfully!');
 }
 
 runTests().catch((err) => {

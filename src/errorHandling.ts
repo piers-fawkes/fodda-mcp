@@ -437,10 +437,11 @@ export async function handleTrialCreditExhaustion(
     }
 
     const portalUrl = buildPortalUpgradeUrl(email);
+    const topUpCalls = (agentCheckout?.api_calls === 100 || !agentCheckout?.api_calls) ? 200 : agentCheckout.api_calls;
     const response: Record<string, any> = {
         status: 'CREDITS_EXHAUSTED',
         message: checkoutUrl
-            ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy 100 more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page. After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at ${portalUrl}`
+            ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy ${topUpCalls} more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page (\$100 for ${topUpCalls} API calls at 50¢/call). After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at ${portalUrl}`
             : apiMsg,
         action: checkoutUrl ? 'CHECKOUT_AVAILABLE' : 'VISIT_APP',
         manage_url: 'https://app.fodda.ai/account',

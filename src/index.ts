@@ -681,6 +681,10 @@ async function foddaRequest(
         if (pct) response.data._upstream_usage.percent = parseInt(pct, 10);
         const overageTokens = response.headers['x-usage-overage-tokens'];
         if (overageTokens) response.data._upstream_usage.overage_tokens = parseInt(overageTokens, 10);
+        const dailyRemaining = response.headers['x-usage-daily-remaining'];
+        if (dailyRemaining) response.data._upstream_usage.daily_remaining = parseInt(dailyRemaining, 10);
+        const dailyCalls = response.headers['x-usage-daily-calls'];
+        if (dailyCalls) response.data._upstream_usage.daily_calls = parseInt(dailyCalls, 10);
     }
 
     // ── Billing-mode trust check (Option C) ──

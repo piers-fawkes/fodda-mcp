@@ -5,6 +5,18 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.90] - 2026-09-29
+
+### Fixed
+- **Top-Up Call Count & Rate Alignment (`src/errorHandling.ts`)**:
+  - Aligned top-up credit bundle messaging with Stripe Price `price_1TLaiOAYuoIyU8CG2rjxhylB` (Airtable PlanCode 7: \$100 for 200 API calls).
+  - Corrected legacy copy from "Buy 100 more API calls" to "Buy 200 more API calls (\$100 for 200 API calls at 50¢/call)" so clients receive the accurate 50¢/call unit rate instead of an erroneous \$1.00/call implication.
+- **Approaching Daily Burst Warning Support (`src/index.ts`, `src/toolHandlers.ts`)**:
+  - In `src/index.ts`, added parsing for `x-usage-daily-remaining` and `x-usage-daily-calls` into `_upstream_usage`.
+  - In `src/toolHandlers.ts:appendUsageWarning()`, added handler for `u.warning === 'approaching-daily-limit'` notifying users when approaching the 50-call free daily ceiling with direct link to add a payment card to remove burst limits.
+- **Automated Verification Suite (`src/test_limit_and_credit_card_capture.ts`)**:
+  - Added Test 6 verifying `handleTrialCreditExhaustion()` accurately formats top-up messages with 200 calls at \$100 (50¢/call). All 6/6 tests passing.
+
 ## [1.46.89] - 2026-09-29
 
 ### Fixed
