@@ -1,11 +1,11 @@
 # Brief (MCP Agent) — Package & Publish Fodda Action Provider for Coinbase AgentKit
 
 **Context:**  
-Coinbase AgentKit (`@coinbase/agentkit`) is the premier framework for building autonomous AI agents on Base with USDC wallets. We want to publish `@fodda/agentkit-action-provider` in the `Fodda MCP` monorepo (`packages/fodda-agentkit`) and submit a Pull Request to `coinbase/agentkit` on GitHub so that every AgentKit agent can query Fodda.
+Coinbase AgentKit (`@coinbase/agentkit`) is the premier framework for building autonomous AI agents on Base with USDC wallets. We want to publish `fodda-agentkit` in the `Fodda MCP` monorepo (`packages/fodda-agentkit`) and submit a Pull Request to `coinbase/agentkit` on GitHub so that every AgentKit agent can query Fodda.
 
 **What to build:**
 1. In `packages/fodda-agentkit/`:
-   - `package.json`: `@fodda/agentkit-action-provider` with peer dependency `@coinbase/agentkit: ">=0.1.0"`.
+   - `package.json`: `fodda-agentkit` with peer dependency `@coinbase/agentkit: ">=0.1.0"`.
    - `src/schemas.ts`: Zod schemas for `search_market_intelligence`, `search_earnings_intelligence`, and `consult_human_agent`.
    - `src/foddaActionProvider.ts`: `FoddaActionProvider` extending `ActionProvider<WalletProvider>`. Supports dual-mode settlement:
      * Mode A: Autonomous x402 (\$0.05 USDC per query) via `walletProvider.transfer()` upon receiving HTTP 402 challenge.

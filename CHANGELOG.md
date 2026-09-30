@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.46.90] - 2026-09-29
 
+### Added
+- **Coinbase AgentKit Action Provider Package (`packages/fodda-agentkit/`)**:
+  - Implemented `fodda-agentkit` action provider for Coinbase AgentKit (`@coinbase/agentkit`), enabling autonomous AI agents on Base to query Fodda's knowledge graphs, earnings call disclosures, and Human Agents.
+  - Implemented dual-mode settlement: Mode A autonomous x402 micropayments (USDC on Base) via `walletProvider.transfer()` / ERC-20 `sendTransaction` upon receiving HTTP 402 challenge, and Mode B pre-authenticated enterprise `FODDA_API_KEY`.
+  - Added actions: `search_market_intelligence`, `search_earnings_intelligence`, and `consult_human_agent` with complete Zod schemas.
+  - Added unit test suite (`packages/fodda-agentkit/src/test.ts`) verifying network validation, Mode B pre-auth execution, Mode A autonomous x402 settlement retry loop, and Human Agent consultation. All 4/4 tests passing.
+
 ### Fixed
 - **Top-Up Call Count & Rate Alignment (`src/errorHandling.ts`)**:
   - Aligned top-up credit bundle messaging with Stripe Price `price_1TLaiOAYuoIyU8CG2rjxhylB` (Airtable PlanCode 7: \$100 for 200 API calls).
