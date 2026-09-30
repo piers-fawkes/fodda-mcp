@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "fodda": {
+      "command": "npx",
+      "args": ["-y", "fodda-mcp"],
+      "env": {
+        "FODDA_API_KEY": ""
+      }
+    }
+  }
+}

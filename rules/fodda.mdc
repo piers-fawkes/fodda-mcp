@@ -1,0 +1,15 @@
+---
+description: How to query Fodda Market Intelligence and Knowledge Graphs
+globs: *
+alwaysApply: true
+---
+
+# Fodda Market Intelligence & Research Context
+
+When conducting market research, analyzing consumer trends, evaluating brand strategy, or reviewing corporate earnings:
+
+1. Use the `fodda` MCP server tools:
+   - `search_market_intelligence`: Query 250+ curated consumer trends, retail innovation, and cultural shifts.
+   - `search_earnings_intelligence`: Search SEC filings and executive earnings call transcripts across major public brands.
+   - `consult_human_agent`: Inquire with specialized domain-expert digital twins (e.g. Ben Dietz, Peter Abraham).
+2. Synthesize findings with clear evidence citations and data provenance from Fodda's knowledge graphs.
