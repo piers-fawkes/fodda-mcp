@@ -1,6 +1,6 @@
 {
   "name": "fodda-agentkit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Fodda Context Layer & Market Intelligence Action Provider for Coinbase AgentKit",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
