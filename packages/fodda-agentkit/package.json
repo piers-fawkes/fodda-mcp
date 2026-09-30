@@ -4,6 +4,12 @@
   "description": "Fodda Context Layer & Market Intelligence Action Provider for Coinbase AgentKit",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist/index.*",
+    "dist/foddaActionProvider.*",
+    "dist/schemas.*",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "tsc && node dist/test.js"
