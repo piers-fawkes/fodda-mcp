@@ -222,7 +222,7 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
         } else if (stripeLink) {
             msg += ` You can top up your API calls here: ${stripeLink}`;
         } else {
-            msg += ` You can add more at ${portalUrl}, or your balance resets next month.`;
+            msg += ` You can add a payment method at ${portalUrl} to enable pay-as-you-go overage ($0.50/call) and activate monthly allowance resets.`;
         }
         data._credit_warning = msg;
     }

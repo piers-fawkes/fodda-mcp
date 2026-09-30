@@ -214,8 +214,10 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
             message: 'Monthly credit limit reached. To continue immediately, the account can top up, enable pay-as-you-go, or upgrade — see the structured fields for the relevant links and rate.',
             upgrade_url: upgradeUrl,
             action: topUpUrl ? 'CHECKOUT_AVAILABLE' : 'UPGRADE_REQUIRED',
-            note: 'Payment options are structured fields (top_up_url, overage_rate_usd, upgrade_url, renews_at). Surface them only if appropriate for your interface — do not paste raw payment URLs into user-facing text unless the user explicitly asked to pay.',
+            note: 'Payment options are structured fields (setup_url, top_up_url, overage_rate_usd, upgrade_url, renews_at). To unlock pay-as-you-go overage without purchasing a bundle, use setup_url to attach a card.',
         };
+        const setupUrl = data.setupUrl || null;
+        if (setupUrl) response.setup_url = setupUrl;
         if (topUpUrl) response.top_up_url = topUpUrl;
         if (overageRateUsd != null) response.overage_rate_usd = overageRateUsd;
         if (renewsAt) response.renews_at = renewsAt;
@@ -354,8 +356,7 @@ export async function handleTrialCreditExhaustion(
 
     // Non-trial credit exhaustion — handles both legacy CREDITS_EXHAUSTED and new PLAN_LIMIT_EXCEEDED
     const errorData = err.response?.data?.error || err.response?.data || {};
-    const errCode = (errorData.code || err.response?.data?.code || '').toString().toUpperCase();
-    const apiMsg = errorData.message || "You've used all your API calls for this month.";
+    const apiMsg = (typeof errorData === 'object' ? errorData.message : null) || err.response?.data?.message || "You've used all your API calls for this month.";
     const upsell = errorData.upsell || null;
     const usage = err.response?.data?.usage || null;
     const payg = err.response?.data?.payg || null;
@@ -364,9 +365,37 @@ export async function handleTrialCreditExhaustion(
     // Resolve email: session userId (if it's an email), or null
     const email = sessionUserId && sessionUserId.includes('@') ? sessionUserId : null;
 
+    const rawCode = typeof errorData === 'string'
+        ? errorData
+        : (errorData.code || err.response?.data?.code || err.response?.data?.error_code || '');
+    const errCode = rawCode.toString().toUpperCase();
+    const msg = (err.response?.data?.message || errorData.message || (typeof errorData === 'string' ? errorData : '') || err.message || '').toString().toLowerCase();
+    const isDailyLimit = errCode === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call');
+
+    // ── DAILY_LIMIT_EXCEEDED — daily burst limit (Base without card) ──
+    if (isDailyLimit) {
+        const setupUrl = err.response?.data?.setupUrl || errorData.setupUrl || null;
+        const upgradeUrl = err.response?.data?.upgradeUrl || `${APP_BASE_URL}/billing`;
+        return {
+            isError: true,
+            content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                    status: 'DAILY_LIMIT_EXCEEDED',
+                    error_code: 'daily_limit',
+                    message: 'Daily call limit reached on free Base tier (50 calls/day). Add a payment card to remove daily burst limits and continue querying without interruption.',
+                    setup_url: setupUrl,
+                    upgrade_url: upgradeUrl,
+                    action: setupUrl ? 'SETUP_CARD' : 'UPGRADE_REQUIRED',
+                    note: 'Card setup link is in setup_url. Adding a card removes daily burst limits.'
+                }, null, 2)
+            }]
+        };
+    }
+
     // ── PLAN_LIMIT_EXCEEDED — overage billing (no card on file) ──
     // The upstream API returns setupUrl directly; if missing, fetch it ourselves
-    if (errCode === 'PLAN_LIMIT_EXCEEDED') {
+    if (errCode === 'PLAN_LIMIT_EXCEEDED' || errCode === 'LIMIT_EXCEEDED' || msg.includes('monthly credit limit reached') || msg.includes('plan limit')) {
         let setupUrl = err.response?.data?.setupUrl || errorData.setupUrl || null;
         if (!setupUrl && (email || sessionUserId)) {
             setupUrl = await fetchSetupUrl(email || sessionUserId);
@@ -382,9 +411,14 @@ export async function handleTrialCreditExhaustion(
             action: setupUrl ? 'ADD_PAYMENT_METHOD' : 'VISIT_BILLING',
             note: 'Present the setupUrl prominently — it is a one-click card addition link. The upgradeUrl lets them manage billing.',
         };
-        if (setupUrl) response.setupUrl = setupUrl;
+        if (setupUrl) {
+            response.setupUrl = setupUrl;
+            response.setup_url = setupUrl;
+        }
         response.upgradeUrl = upgradeUrl;
+        response.upgrade_url = upgradeUrl;
         if (usage) response.usage = usage;
+        if (payg) response.payg = payg;
 
         return {
             isError: true,

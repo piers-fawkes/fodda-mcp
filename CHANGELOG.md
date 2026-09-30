@@ -5,6 +5,22 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.89] - 2026-09-29
+
+### Fixed
+- **Unified Daily Burst Limit & Plan Limit Error Handling (`src/errorHandling.ts`)**:
+  - Fixed `handleTrialCreditExhaustion()` to robustly parse error codes from string responses (e.g. `data.error = "PLAN_LIMIT_EXCEEDED"`).
+  - Added explicit handler for `DAILY_LIMIT_EXCEEDED` in `handleTrialCreditExhaustion()`, unifying behavior across all tools (`get_evidence`, `get_node`, `brand_tracker`, `discover_adjacent_trends`, `consult_human_agent`). Resolves bug where users hitting the 50-call/day burst limit were incorrectly prompted to buy a $100 credit bundle instead of adding a card.
+  - Added `setup_url` pass-through in `handleAccessError()` on `PLAN_LIMIT_EXCEEDED` so users exhausting their 100-call monthly allowance receive a direct card-capture setup link to unlock pay-as-you-go overage (50¢/call) without being forced into lump-sum top-ups.
+- **Accurate Card-Gated Monthly Allowance Reset Messaging (`src/toolHandlers.ts`)**:
+  - Updated `appendUsageWarning()` approaching-limit warning copy. Replaced misleading promise ("or your balance resets next month") with accurate explanation: adding a payment method enables pay-as-you-go overage ($0.50/call) and activates automatic monthly allowance resets (as free-tier monthly resets are card-gated).
+- **Automated Verification Suite (`src/test_limit_and_credit_card_capture.ts`)**:
+  - Test 1: Verified `classifyAccessError` identifies `DAILY_LIMIT_EXCEEDED` as `'credits'`.
+  - Test 2: Verified `handleAccessError` surfaces `SETUP_CARD` and `setup_url` on `DAILY_LIMIT_EXCEEDED`.
+  - Test 3: Verified `handleTrialCreditExhaustion` surfaces `SETUP_CARD` and `setup_url` on `DAILY_LIMIT_EXCEEDED`.
+  - Test 4: Verified `handleAccessError` includes `setup_url` on `PLAN_LIMIT_EXCEEDED`.
+  - Test 5: Verified `handleTrialCreditExhaustion` parses string `PLAN_LIMIT_EXCEEDED` and returns `ADD_PAYMENT_METHOD` with `setup_url`.
+
 ## [1.46.88] - 2026-09-29
 
 ### Fixed
