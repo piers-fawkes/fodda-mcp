@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `confirm_themes` (v1.2.0): Added optional `flaggedFindingIds?: string[]` and `flagNote?: string` schema parameters; forwards them in the POST body to `/api/generate-questions`.
   - Bumped all 4 tool versions to `1.2.0` in `src/tools.ts`.
   - Verification: `node dist/test_waitable_research_and_grounded_links.js` passed all 4 test suites.
+- **Deployment & Live Verification**:
+  - Cloud Run Revision: `fodda-mcp-00593-xvt` deployed to region `us-east4` (serving 100% of traffic).
+  - Production Health Check: `https://mcp.fodda.ai/health` returned HTTP 200 OK with server version `1.46.95`.
+  - Production CORS verification: `Access-Control-Allow-Headers` confirmed exposing `X-Fodda-Client`.
 
 ## [1.46.94] - 2026-10-02
 
