@@ -5,6 +5,16 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.96] - 2026-10-02
+
+### Added
+- **Parallel Research Execution & Zero Dead Pause Rule (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Enforced parallel non-blocking execution for `expert_onboarding_research`: background web research runs asynchronously (45–90s) while the host model is strictly instructed to immediately transition to the Tone of Voice & Expertise Study in chat with the expert.
+  - Eliminated the risk of a dead pause or waiting loop immediately after launching research; `get_onboarding_status(waitForResearch: true)` is reserved as a safety net when transitioning to `get_detected_themes`.
+- **Lane Selection Rule (Pick a Lane - 2 to 3 Themes Max) (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - In `get_detected_themes`, explicitly instructed host models to ask the expert to audit findings and **pick their primary lane (2 to 3 core themes max)** rather than confirming a broad diluted laundry list.
+  - Unselected topics define the expert's declared boundary (`outside_their_lane` / blind spots), keeping their Human Agent sharp and opinionated.
+
 ## [1.46.95] - 2026-10-02
 
 ### Fixed

@@ -7796,7 +7796,7 @@ export async function createServer(
 
     server.tool(
         'expert_onboarding_research',
-        'Initiate background research on the expert\'s public work and domain insights to support expertise and voice modeling. Research usually takes 1-2 minutes; use get_onboarding_status with waitForResearch: true to wait for completion.',
+        'Initiate background research on the expert\'s public work and domain insights to support expertise and voice modeling. Research runs asynchronously in the background for 1-2 minutes. Do NOT wait now; proceed immediately to the Tone of Voice study in chat.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
@@ -7807,7 +7807,7 @@ export async function createServer(
             }
             try {
                 const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
-                const statusText = `Background research has started. It usually takes a minute or two. To wait for it, call \`get_onboarding_status\` with \`waitForResearch: true\`. Each call waits up to 25 seconds. Between calls, give the expert a one-line 'still researching' update; there's no need to ask them before checking again. If research is still running after about six checks, carry on with the next step; research will fold in when it lands.`;
+                const statusText = `Background research has started in the background (takes 1-2 minutes). Do NOT pause or wait here: immediately transition to the Tone of Voice & Expertise Study in chat with the expert so they remain actively engaged while research runs. When you later reach theme confirmation, research will either already be finished or you can check it then via \`get_onboarding_status\` with \`waitForResearch: true\` (each call waits up to 25 seconds). Proceed now to discussing their frameworks and voice in chat.\n\n👉 **Next Step:** Engage the expert in chat to analyze their tone of voice, reasoning style, and core frameworks, then call \`submit_expertise_analysis\`.`;
                 const payload = {
                     status: 'research_started',
                     next_step: 'submit_expertise_analysis',
@@ -7933,7 +7933,7 @@ export async function createServer(
                     sections.push('');
                 }
 
-                sections.push('👉 **Next Step:** Present the findings and detected themes to the expert for review. If any findings are wrong, pass their IDs to `confirm_themes(flaggedFindingIds: [...])`. Then call `confirm_themes` with their confirmed themes.');
+                sections.push('👉 **Next Step:** Present the verified research findings and detected themes to the expert. Ask them to audit the findings (passing any incorrect IDs to `confirm_themes(flaggedFindingIds: [...])`) and **pick their core lane (recommend 2 to 3 themes max)** to keep their Human Agent sharp and opinionated rather than diluted. Unselected topics will define their outside-their-lane boundaries. Then call `confirm_themes` with their confirmed themes.');
 
                 const statusText = sections.join('\n');
                 return {

@@ -165,7 +165,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Initiate background research on the expert's public work and domain insights to support expertise and voice modeling. Research usually takes 1-2 minutes; use get_onboarding_status with waitForResearch: true to wait for completion."
+      "description": "Initiate background research on the expert's public work and domain insights to support expertise and voice modeling. Research runs asynchronously in the background for 1-2 minutes. Do NOT wait now; proceed immediately to the Tone of Voice study in chat."
     },
     {
       "name": "finalize_byo_mcp_onboarding",
