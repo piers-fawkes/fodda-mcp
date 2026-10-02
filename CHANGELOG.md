@@ -5,6 +5,29 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.93] - 2026-10-02
+
+### Added
+- **Sector Filtering & Optional Graph Scope in Evidence Search (`src/toolHandlers.ts`)**:
+  - Made `graph_id` optional in `search_statistics` and `search_insights`. When omitted, searches across all accessible knowledge graphs in parallel via `/v1/statistics`.
+  - Added optional `sector` parameter to `search_statistics`, `search_insights`, and `search_graph` (e.g. `'Alcoholic Drinks'`, `'Non-Alcoholic Drinks'`, `'Food & Beverage'`, `'Retail'`, `'Beauty'`, `'Sports'`, `'Technology'`, `'Luxury Goods'`). Enables direct scoping by graph taxonomy, bypassing specific graph IDs and structurally eliminating out-of-domain semantic drift.
+  - Forwarded `sector` and `topic` in query parameters to API endpoints.
+
+### Fixed
+- **Anti-Slug Product Labeling for Market Claim Verifier (`src/coverageRelevance.ts`, `src/systemPrompt.ts`)**:
+  - Added `tool_display_name: 'Market Claim Verifier'` to `pressure_test` action objects in both standard and consult `next_moves` generation (`src/coverageRelevance.ts`).
+  - Added `verify_market_claim` and `verify_claim` to the anti-slug translation directive in `src/systemPrompt.ts` line 65, translating raw tool slugs into "Fodda's Market Claim Verifier" or "pressure-test against counter-evidence".
+  - Pending ChatGPT resubmission note per OpenAI listing rules (purely additive optional parameters and display metadata, zero breaking contract changes).
+
+## [1.46.92] - 2026-10-02
+
+### Fixed
+- **Domain Graph Examples in Search Schemas (`src/toolHandlers.ts`, `src/agents/fodda-researcher/skills.ts`, `src/enrichment.ts`)**:
+  - Added `'food'`, `'tech'`, and `'travel'` to the canonical domain graph examples list in the `graph_id` parameter description for both `search_statistics` and `search_insights`.
+  - Fixes query routing ambiguity where models exploring beverage, food, or alcohol topics lacked `'food'` in the tool definition and misrouted queries to `'sports'`, resulting in low-similarity cross-domain noise (e-bikes, Airstream, apparel blanks).
+  - Synchronized `PSFK curated graphs` list in `skills.ts` and fallback domain graph set in `enrichment.ts`.
+  - Pending ChatGPT resubmission note per OpenAI listing rules (input schema description modification only, zero breaking contract changes).
+
 ## [1.46.91] - 2026-09-30
 
 ### Fixed

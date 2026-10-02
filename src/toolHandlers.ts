@@ -1755,6 +1755,7 @@ export async function createServer(
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             graph: z.string().optional().describe("Alias for graphId."),
             graph_id: z.string().optional().describe("Alias for graphId."),
+            sector: z.string().optional().describe("Optional sector focus (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes trend discovery to this sector."),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
@@ -1763,11 +1764,11 @@ export async function createServer(
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ mode, graphs, graphId, graph, graph_id, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }: any) => {
+        async ({ mode, graphs, graphId, graph, graph_id, sector, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }: any) => {
             try {
                 const targetGraphId = graphId || graph || graph_id;
                 // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(query, 'search', targetGraphId);
+                logUserQuery(query, 'search', targetGraphId || (sector ? `sector:${sector}` : 'all'));
 
                 const effectiveLimit = Math.min(limit || 10, 50);
                 const body: Record<string, any> = {
@@ -1778,6 +1779,7 @@ export async function createServer(
                     // do not drop on-topic trends whose titles lack literal query tokens or penalize scores.
                     // If the caller requested include_evidence === false, evidence is stripped in post-processing.
                     include_evidence: true,
+                    ...(sector ? { sector } : {}),
                 };
 
                 // ── Supplemental data is deferred until we know results are relevant ──
@@ -4204,7 +4206,8 @@ export async function createServer(
         'search_statistics',
         'Quantitative statistics and hard numbers layer only: returns specific figures, survey percentages, market sizes, growth rates, and quantitative data points linked to parent trends across Fodda knowledge graphs (domain, specialist, and report). Does NOT return narrative analysis, trends, or quotes — use search_insights for quotes/analysis, or get_domain_intelligence for full trends. When the query names a specific company or brand, brand_tracker is the entry point. Try this before external supplemental data tools.',
         {
-            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'fashion', 'beauty', 'sports', 'sic', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
+            graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'fashion', 'beauty', 'sports', 'sic', 'pew', 'ce-design'."),
+            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes evidence extraction to this sector across graphs."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold, 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ only for precise data lookups.'),
@@ -4212,44 +4215,51 @@ export async function createServer(
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
         },
         { title: 'Search Statistics & Data Points', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ graph_id, query, limit, min_score, include_signals, userId: uid }) => {
+        async ({ graph_id, sector, query, limit, min_score, include_signals, userId: uid }: any) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(query, 'search_statistics', graph_id);
+                logUserQuery(query, 'search_statistics', graph_id || (sector ? `sector:${sector}` : 'multi-graph'));
 
-                // Check graph_id in catalog
                 const catalog = getGraphs();
-                const matchedGraph = catalog.find(g => g.graph_id === graph_id);
-                if (!matchedGraph) {
-                    const gidLower = graph_id.toLowerCase().trim();
-                    const nearest = catalog.find(g =>
-                        g.graph_id.toLowerCase() === gidLower ||
-                        g.graph_id.toLowerCase().includes(gidLower) ||
-                        gidLower.includes(g.graph_id.toLowerCase()) ||
-                        g.name.toLowerCase().includes(gidLower)
-                    );
-                    const resp = {
-                        statistics: [],
-                        total: 0,
-                        dataStatus: 'SCOPE_UNAVAILABLE',
-                        unavailable_graphs: [
-                            {
-                                graph_id,
-                                reason: 'unknown graph id (not in catalog)',
-                                ...(nearest ? { suggestion: nearest.graph_id } : {})
+                let matchedGraph: CatalogGraph | undefined = undefined;
+                let searchedGraphs: CatalogGraph[] = [];
+
+                if (graph_id) {
+                    matchedGraph = catalog.find(g => g.graph_id === graph_id);
+                    if (!matchedGraph) {
+                        const gidLower = graph_id.toLowerCase().trim();
+                        const nearest = catalog.find(g =>
+                            g.graph_id.toLowerCase() === gidLower ||
+                            g.graph_id.toLowerCase().includes(gidLower) ||
+                            gidLower.includes(g.graph_id.toLowerCase()) ||
+                            g.name.toLowerCase().includes(gidLower)
+                        );
+                        const resp = {
+                            statistics: [],
+                            total: 0,
+                            dataStatus: 'SCOPE_UNAVAILABLE',
+                            unavailable_graphs: [
+                                {
+                                    graph_id,
+                                    reason: 'unknown graph id (not in catalog)',
+                                    ...(nearest ? { suggestion: nearest.graph_id } : {})
+                                }
+                            ],
+                            coverage: {
+                                status: 'empty',
+                                results_returned: 0,
+                                presentation: 'internal'
+                            },
+                            next_moves: {
+                                scope_prompt: true,
+                                presentation: 'internal'
                             }
-                        ],
-                        coverage: {
-                            status: 'empty',
-                            results_returned: 0,
-                            presentation: 'internal'
-                        },
-                        next_moves: {
-                            scope_prompt: true,
-                            presentation: 'internal'
-                        }
-                    };
-                    return { content: [{ type: 'text' as const, text: JSON.stringify(resp, null, 2) }] };
+                        };
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(resp, null, 2) }] };
+                    }
+                    searchedGraphs = [matchedGraph];
+                } else {
+                    searchedGraphs = getLiveGraphs();
                 }
 
                 const params = new URLSearchParams();
@@ -4257,16 +4267,20 @@ export async function createServer(
                 if (limit !== undefined) params.set('limit', String(limit));
                 if (min_score !== undefined) params.set('min_score', String(min_score));
                 if (include_signals) params.set('include_signals', 'true');
-                const path = `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`;
+                if (sector) {
+                    params.set('sector', sector);
+                    params.set('topic', sector);
+                }
+                const path = graph_id
+                    ? `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`
+                    : `/v1/statistics?${params.toString()}`;
                 const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
                 // Inject theme block for visualization branding
                 if (data && typeof data === 'object') {
-                    data.theme = getFoddaTheme(graph_id);
+                    data.theme = getFoddaTheme(graph_id || 'retail');
                 }
                 const statsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_statistics', apiKey, userId: resolveUserId(userId, uid), query }, 'search_statistics');
                 if (statsWithheld) return statsWithheld;
-
-                const searchedGraphs = [matchedGraph];
                 const isFallbackTrendNodes = Boolean(
                     data?._fallback_note ||
                     data?.fallback === 'trend_nodes' ||
@@ -4316,7 +4330,8 @@ export async function createServer(
         'search_insights',
         'Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Does NOT return raw statistics or market sizing — use search_statistics for hard numbers, or get_domain_intelligence for full trends with bundled evidence. When the query names a specific company or brand, brand_tracker is the entry point.',
         {
-            graph_id: z.string().describe("Graph ID to search. Works on ALL graphs — domain graphs ('retail', 'sic', 'beauty', 'sports', 'fashion', 'ce-design', 'pew') AND expert graphs. Search across multiple graphs for best coverage."),
+            graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'beauty', 'sports', 'fashion', 'sic', 'pew', 'ce-design'."),
+            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes insights extraction to this sector across graphs."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
             types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
@@ -4324,10 +4339,10 @@ export async function createServer(
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
         },
         { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ graph_id, query, types, limit, min_score, userId: uid }) => {
+        async ({ graph_id, sector, query, types, limit, min_score, userId: uid }: any) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
-                logUserQuery(query, 'search_insights', graph_id);
+                logUserQuery(query, 'search_insights', graph_id || (sector ? `sector:${sector}` : 'multi-graph'));
 
                 // Start supplemental suggest in parallel with insights search
                 const suggestPromise = fetchSupplementalSuggest(query, {
@@ -4343,12 +4358,20 @@ export async function createServer(
                 params.set('types', searchTypes);
                 if (limit !== undefined) params.set('limit', String(limit));
                 if (min_score !== undefined) params.set('min_score', String(min_score));
-                const path = `/v1/graphs/${graph_id}/statistics?${params.toString()}`;
+                if (sector) {
+                    params.set('sector', sector);
+                    params.set('topic', sector);
+                }
+                const path = graph_id
+                    ? `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`
+                    : `/v1/statistics?${params.toString()}`;
                 const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
                 const insightsWithheld = await settleOrWithhold({ queryTypeCode: 'standalone_insights', apiKey, userId: resolveUserId(userId, uid), query }, 'search_insights');
                 if (insightsWithheld) return insightsWithheld;
 
-                const searchedGraphs = [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean);
+                const searchedGraphs = graph_id
+                    ? [getGraphs().find(g => g.graph_id === graph_id)].filter(Boolean)
+                    : getLiveGraphs();
                 const annotatedData = await addCoverageAnnotation(data, query, searchedGraphs, limit, true, getGraphs(), {
                     total: data?.total,
                     onTopicTotal: data?.on_topic_total,

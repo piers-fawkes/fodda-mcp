@@ -127,7 +127,7 @@ compliance: RFC-2119
 - Industry report graphs are deep but narrow; excellent for specific verticals.
 
 ### TOKEN: GraphTypes
-- PSFK curated graphs: retail, beauty, fashion, sports, sic, ce-design, pew.
+- PSFK curated graphs: food, retail, tech, travel, beauty, fashion, sports, sic, ce-design, pew.
 - Expert graphs: individual specialist perspectives (e.g., ezra-eeman-wayfinder, alyson-stevens-macro).
 - Industry report graphs: single-report deep dives (e.g., pwc/sxsw-2026-key-insights, delta/the-connection-index).
 

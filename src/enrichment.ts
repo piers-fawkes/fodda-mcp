@@ -530,7 +530,7 @@ const GRAPH_COLOR_OVERRIDES: Record<string, string> = {
 export function getFoddaTheme(graphId: string) {
     const PSFK_DOMAIN_GRAPHS = getDomainGraphIds().size > 0
         ? getDomainGraphIds()
-        : new Set(['retail', 'beauty', 'fashion', 'sports', 'ce-design']); // fallback
+        : new Set(['food', 'retail', 'tech', 'travel', 'beauty', 'fashion', 'sports', 'ce-design']); // fallback
 
     let graphTypeColor: string;
     if (GRAPH_COLOR_OVERRIDES[graphId]) {

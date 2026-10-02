@@ -704,6 +704,7 @@ export interface NextMovesAction {
     description: string;
     reason: string;
     target_tool: string;
+    tool_display_name?: string;
     suggested_prompt: string;
     suggested_parameters: Record<string, any>;
     available: boolean;
@@ -1655,6 +1656,7 @@ export async function generateNextMoves(
             description: 'Evaluate assertions against counter-evidence and executive divergence.',
             reason: 'Evaluate whether findings rely on untested assumptions',
             target_tool: 'verify_market_claim',
+            tool_display_name: 'Market Claim Verifier',
             suggested_prompt: `Pressure-test whether the market momentum around ${cleanTopic} holds up against counter-evidence.`,
             suggested_parameters: { claim: `Pressure-test whether ${cleanTopic} strategy and market momentum holds up` },
             available: true,
@@ -1966,6 +1968,7 @@ export function generateConsultNextMoves(
             description: "Verify expert assertions and claims against broader market data.",
             reason: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
             target_tool: 'verify_market_claim',
+            tool_display_name: 'Market Claim Verifier',
             suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${query.trim()}`,
             suggested_parameters: { claim: `Pressure-test ${expertDisplayName}'s thesis and assertions on ${query.trim()}` },
             available: true,
