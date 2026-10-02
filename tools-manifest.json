@@ -85,7 +85,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for the audio interview."
+      "description": "Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for the audio interview. Can pass flaggedFindingIds and flagNote if the expert flagged any research findings as wrong or not theirs."
     },
     {
       "name": "consult_analyst",
@@ -165,7 +165,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Initiate background research on the expert's public work and domain insights to support expertise and voice modeling."
+      "description": "Initiate background research on the expert's public work and domain insights to support expertise and voice modeling. Research usually takes 1-2 minutes; use get_onboarding_status with waitForResearch: true to wait for completion."
     },
     {
       "name": "finalize_byo_mcp_onboarding",
@@ -175,7 +175,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding. This is the sole submission step; profile and MCP details are not saved to Fodda until this tool executes."
+      "description": "Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile for review. Creates the Human Agent record in Airtable with external_mcp live grounding. Profile is saved once terms are accepted; MCP details are verified and submitted for review here."
     },
     {
       "name": "find_expert",
@@ -245,7 +245,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Fetch the detected themes derived from the expertise analysis and background research for expert review and confirmation."
+      "description": "Fetch the detected themes derived from the expertise analysis and background research for expert review and confirmation. Shows verified research findings about the expert's work before themes; ask the expert if any findings are wrong or not theirs before asking them to confirm themes."
     },
     {
       "name": "get_domain_intelligence",
@@ -404,7 +404,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Check the current progress and status of the expert onboarding process."
+      "description": "Check the current progress and status of the expert onboarding process. Setting waitForResearch: true holds the call server-side (~25s) while background research is running, returning immediately once complete or failed. next_action describes the expert's next step in plain English; relay it in your own words."
     },
     {
       "name": "get_report_intelligence",
@@ -614,7 +614,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Submit basic expert details (name, role, knowledge area, consultation call rate, and optional bio/headshot) to initialize the Human Agent onboarding session."
+      "description": "Submit basic expert details (name, role, knowledge area, consultation call rate, and optional bio/headshot) to initialize the Human Agent onboarding session and begin saving progress. This is the step where Fodda starts saving the expert's onboarding. Before calling, show the Terms (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) links and get an explicit yes."
     },
     {
       "name": "submit_expertise_analysis",
@@ -624,7 +624,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Submit the analyzed voice study and expertise map. Requires explicit review and acceptance of Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."
+      "description": "Submit the analyzed voice study and expertise map to proceed to theme confirmation."
     },
     {
       "name": "submit_mcp_source",

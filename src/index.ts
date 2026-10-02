@@ -54,7 +54,7 @@ app.use((req, _res, next) => {
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-User-Email, X-Internal-Key, X-Fodda-Signature, X-Fodda-Timestamp, X-Stripe-SPT, Mcp-Session-Id, Accept, X-Fodda-Session-Kind, X-Fodda-Source');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-User-Id, X-User-Email, X-Internal-Key, X-Fodda-Signature, X-Fodda-Timestamp, X-Stripe-SPT, Mcp-Session-Id, Accept, X-Fodda-Session-Kind, X-Fodda-Source, X-Fodda-Client');
     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
     if (req.method === 'OPTIONS') return res.status(204).end();
     next();
@@ -560,12 +560,56 @@ const transports = new Map<string, StreamableHTTPServerTransport>();
 const sessionApiKeys = new Map<string, string>();
 const sessionUserIds = new Map<string, string>();
 const sessionSources = new Map<string, string>();
+export const sessionClients = new Map<string, string>();
 // SPT-paying anonymous sessions (no API key). Holds the token + the connect-time
 // validate result (cap + price map) so per-task coverage can be checked locally.
 const sessionSpts = new Map<string, { token: string; maxAmountCents: number | null; prices: Record<string, number> }>();
 // Track session creation time in our own Map (transport._createdAt is a private
 // field that is never set by the SDK — reading it always yields undefined).
 const sessionCreatedAt = new Map<string, number>();
+
+/**
+ * Normalize clientInfo from MCP initialize handshake to a short, canonical slug.
+ * E.g. Claude Desktop -> claude-desktop, Cursor -> cursor, VS Code -> vscode.
+ */
+export function normalizeClientSlug(name?: string, version?: string): string {
+    if (!name || typeof name !== 'string') return '';
+    const lower = name.toLowerCase().trim();
+    if (lower.includes('claude desktop') || lower.includes('claude-desktop') || lower.includes('claude for desktop')) {
+        return 'claude-desktop';
+    }
+    if (lower.includes('claude code') || lower.includes('claude-code')) {
+        return 'claude-code';
+    }
+    if (lower === 'claude' || lower.includes('claude.ai') || lower.startsWith('claude')) {
+        return 'claude';
+    }
+    if (lower.includes('cursor')) {
+        return 'cursor';
+    }
+    if (lower.includes('visual studio code') || lower.includes('vscode')) {
+        return 'vscode';
+    }
+    if (lower.includes('windsurf')) {
+        return 'windsurf';
+    }
+    if (lower.includes('chatgpt') || lower.includes('openai')) {
+        return 'chatgpt';
+    }
+    if (lower.includes('zed')) {
+        return 'zed';
+    }
+    if (lower.includes('librechat')) {
+        return 'librechat';
+    }
+    if (lower.includes('roo-code') || lower.includes('roo code') || lower.includes('roocode')) {
+        return 'roo-code';
+    }
+    if (lower.includes('cline')) {
+        return 'cline';
+    }
+    return lower.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 // ---------------------------------------------------------------------------
 // Periodic cleanup — prevent unbounded memory growth
@@ -588,6 +632,7 @@ setInterval(() => {
             sessionApiKeys.delete(sid);
             sessionUserIds.delete(sid);
             sessionSources.delete(sid);
+            sessionClients.delete(sid);
             sessionSpts.delete(sid);
             sessionCreatedAt.delete(sid);
         }
@@ -608,7 +653,7 @@ export function isPlaceholderUserId(id?: string | null): boolean {
     return PLACEHOLDER_USER_IDS.has(id.trim().toLowerCase());
 }
 
-async function foddaRequest(
+export async function foddaRequest(
     method: 'GET' | 'POST' | 'PATCH',
     path: string,
     apiKey: string,
@@ -616,7 +661,8 @@ async function foddaRequest(
     body?: any,
     requestId?: string,
     source?: string,
-    spt?: string
+    spt?: string,
+    client?: string
 ): Promise<any> {
     // ── Cache check ──
     const cached = cacheGet(method, path, body);
@@ -640,6 +686,7 @@ async function foddaRequest(
     }
     if (requestId) headers['X-Request-Id'] = requestId;
     if (source) headers['X-Fodda-Source'] = source;
+    if (client) headers['X-Fodda-Client'] = client;
 
     // HMAC sign the request
     const secret = process.env.FODDA_MCP_SECRET;
@@ -651,7 +698,7 @@ async function foddaRequest(
         headers['X-Fodda-Signature'] = signature;
     }
 
-    const baseUrl = path.startsWith('/api/') ? WEBSITE_BASE_URL : API_BASE_URL;
+    const baseUrl = path.startsWith('/api/') ? (process.env.WEBSITE_BASE_URL || WEBSITE_BASE_URL) : (process.env.FODDA_API_URL || API_BASE_URL);
     const url = `${baseUrl}${path}`;
     // Base timeout: 30s aligns with MCP client expectations.
     // Extended to 90s for analyst and human agent consults, verify/claim, and intelligence routes, and 35s for supplemental.
@@ -1282,6 +1329,9 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             transport = transports.get(sessionId)!;
         } else if (!sessionId && req.method === 'POST') {
             const body = req.body;
+            const clientInfo = body?.params?.clientInfo;
+            const declaredClientSlug = normalizeClientSlug(clientInfo?.name, clientInfo?.version);
+            const clientSlug = declaredClientSlug || (isChatGptUa ? 'chatgpt' : '');
             if (body?.method === 'initialize') {
                 // Directory connector policy: All offering routes require authentication — Clerk OAuth,
                 // an API key, or a /c/<token> connection URL. An anonymous handshake gets
@@ -1324,20 +1374,19 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 // internal service key (the SPT is spent ONCE at settlement, never on fan-out);
                 // otherwise bake in source attribution.
                 const boundFoddaRequest = isSpt
-                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg)) as typeof foddaRequest)
-                    : (source
-                        ? (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest)
-                        : foddaRequest);
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, clientSlug || undefined)) as typeof foddaRequest)
+                    : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source || undefined, undefined, clientSlug || undefined)) as typeof foddaRequest);
                 const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, source || undefined);
                 transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: () => crypto.randomUUID(),
                     onsessioninitialized: (sid) => {
-                        console.error(`Session created: ${sid}`);
+                        console.error(`Session created: ${sid} (source: ${source || 'none'}, client: ${clientSlug || 'unknown'})`);
                         transports.set(sid, transport);
                         sessionApiKeys.set(sid, apiKey);
                         sessionUserIds.set(sid, userId);
                         sessionCreatedAt.set(sid, Date.now()); // C2: track creation time
                         if (source) sessionSources.set(sid, source);
+                        if (clientSlug) sessionClients.set(sid, clientSlug);
                         if (sptInfo) sessionSpts.set(sid, sptInfo);
                     }
                 });
@@ -1348,6 +1397,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                         sessionApiKeys.delete(sid);
                         sessionUserIds.delete(sid);
                         sessionSources.delete(sid);
+                        sessionClients.delete(sid);
                         sessionSpts.delete(sid);
                         sessionCreatedAt.delete(sid); // C2: clean up creation time
                     }
@@ -1386,10 +1436,8 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 }
 
                 const boundFoddaRequest = isSpt
-                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg)) as typeof foddaRequest)
-                    : (source
-                        ? (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source)) as typeof foddaRequest)
-                        : foddaRequest);
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, clientSlug || undefined)) as typeof foddaRequest)
+                    : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source || undefined, undefined, clientSlug || undefined)) as typeof foddaRequest);
                 const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, source || undefined);
                 transport = new StreamableHTTPServerTransport();
                 await server.connect(transport as any);

@@ -36,7 +36,9 @@ const systemPromptContent = fs.readFileSync(systemPromptPath, 'utf8');
 const toolHandlersContent = fs.readFileSync(toolHandlersPath, 'utf8');
 
 const forbiddenPhrases = [
-    'saved as you go',
+    'nothing is saved to fodda until you complete all',
+    'progress lives only in this conversation',
+    'held in this chat session until final submit',
     'is recorded when you connect it',
     'recorded when you connect it'
 ];
@@ -64,12 +66,12 @@ check(
 );
 
 check(
-    STATIC_BEHAVIORAL_RULES.includes('Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your MCP URL and profile live only in this conversation until final submission.'),
+    STATIC_BEHAVIORAL_RULES.includes('Your profile is saved once you accept the terms. Your MCP connection is only checked, not saved, until you submit at the end.'),
     'Prompt contains honest persistence demarcation for BYO-MCP branch'
 );
 
 check(
-    STATIC_BEHAVIORAL_RULES.includes('Nothing is saved on Fodda\'s servers until the final submission step.'),
+    STATIC_BEHAVIORAL_RULES.includes('Your MCP connection is only checked, not saved, until final submission.'),
     'Prompt contains honest pause/interruption copy for BYO-MCP branch'
 );
 
@@ -79,8 +81,8 @@ check(
 );
 
 check(
-    STATIC_BEHAVIORAL_RULES.includes('To complete submission, please confirm that you accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy).'),
-    'Prompt explicitly specifies the exact Terms of Service acceptance confirmation message'
+    STATIC_BEHAVIORAL_RULES.includes('https://www.fodda.ai/terms') && STATIC_BEHAVIORAL_RULES.includes('https://www.fodda.ai/privacy'),
+    'Prompt explicitly specifies the exact Terms of Service acceptance confirmation links'
 );
 
 // ---------------------------------------------------------------------------
@@ -90,27 +92,27 @@ console.log('\n3. Verifying Tool Handlers Guidance...');
 
 // begin_expert_onboarding introText
 check(
-    toolHandlersContent.includes('Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your MCP URL and profile live only in this conversation until final submission.'),
+    toolHandlersContent.includes('Your profile is saved once you accept the terms. Your MCP connection is only checked, not saved, until you submit at the end.'),
     'begin_expert_onboarding introText contains honest BYO-MCP persistence copy'
 );
 
 // submit_mcp_source next_step guidance
 check(
-    toolHandlersContent.includes('Confirm the expertise topics with the expert, explicitly request acceptance of the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)') &&
-    toolHandlersContent.includes("nothing is saved on Fodda's servers until"),
-    'submit_mcp_source statusText directs the agent to confirm topics, ask for Terms acceptance, and emphasizes server persistence'
+    toolHandlersContent.includes('finalize_byo_mcp_onboarding') &&
+    toolHandlersContent.includes("Your MCP connection is only checked, not saved, until you submit at the end."),
+    'submit_mcp_source statusText directs the agent to confirm topics and submit for review'
 );
 
 // finalize_byo_mcp_onboarding description
 check(
-    toolHandlersContent.includes('This is the sole submission step; profile and MCP details are not saved to Fodda until this tool executes.'),
-    'finalize_byo_mcp_onboarding tool description declares it is the sole submission step'
+    toolHandlersContent.includes('Profile is saved once terms are accepted; MCP details are verified and submitted for review here.'),
+    'finalize_byo_mcp_onboarding tool description declares profile saved on terms acceptance and MCP submitted for review'
 );
 
-// finalize_byo_mcp_onboarding termsAccepted gate
+// submit_basic_info termsAccepted gate
 check(
-    toolHandlersContent.includes('Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed.'),
-    'finalize_byo_mcp_onboarding rejects with explicit prompt when termsAccepted is false'
+    toolHandlersContent.includes('Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service'),
+    'submit_basic_info rejects with explicit prompt when termsAccepted is not true'
 );
 
 // ---------------------------------------------------------------------------

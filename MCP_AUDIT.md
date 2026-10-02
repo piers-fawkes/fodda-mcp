@@ -78,6 +78,7 @@ graph LR
 1. Add `oneOf` or a `description` note to `psfk_overview` schema clarifying the industry/sector requirement
 2. Consider adding `outputSchema` to tool definitions for enterprise clients
 3. Design pagination for `search_graph` if result sets grow beyond 50
+4. **Structured error objects & `next_action` convention**: Adopted across expert onboarding tools (`code`, `cause`, and expert-facing `next_action` in fenced JSON alongside prose). Documented in `docs/tool-schema-guidelines.md` for rollout across consult and discovery tools.
 
 ---
 

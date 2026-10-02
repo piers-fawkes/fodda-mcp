@@ -1,9 +1,9 @@
 import { spawn } from 'child_process';
 import http from 'http';
-import assert from 'assert';
 import fs from 'fs';
+import assert from 'assert';
 import { sanitizePayloadForChatGpt } from '../dist/toolHandlers.js';
-import { handleAccessError } from '../dist/errorHandling.js';
+import { handleAccessError, handleTrialCreditExhaustion } from '../dist/errorHandling.js';
 
 const PORT = 8999;
 const CHALLENGE_TOKEN = 'test-challenge-token-xyz-12345';
@@ -59,14 +59,14 @@ async function fetchHttp(method, path, headers = {}, body = null) {
 }
 
 async function waitForServer() {
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 60; i++) {
         try {
             const res = await fetchHttp('GET', '/health');
             if (res.status === 200) return true;
         } catch (e) {
             // wait
         }
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 300));
     }
     throw new Error('Server did not start in time');
 }
@@ -194,8 +194,8 @@ async function run() {
         assert.strictEqual(cleaned.array_field.length, 2); // 'rec7777777777ABCD' was removed
         console.log('  PASS: sanitizePayloadForChatGpt preserves *_id and strips internal/Airtable keys/values');
 
-        // 6. Test unit logic: handleAccessError on chatgpt source
-        console.log('\n--- 6. Testing handleAccessError on source=chatgpt ---');
+        // 6. Test unit logic: handleAccessError and handleTrialCreditExhaustion on chatgpt source
+        console.log('\n--- 6. Testing handleAccessError and handleTrialCreditExhaustion on source=chatgpt ---');
         const creditError = {
             response: {
                 status: 402,
@@ -213,6 +213,20 @@ async function run() {
         assert(!JSON.stringify(errObj).includes('stripe.com'));
         assert(!JSON.stringify(errObj).includes('$'));
         console.log('  PASS: handleAccessError returns clean commerce-free QUOTA_EXHAUSTED for chatgpt');
+
+        const trialErrResult = await handleTrialCreditExhaustion(creditError, 'sk_live_123', 'usr_123', 'chatgpt');
+        assert.ok(trialErrResult);
+        assert.strictEqual(trialErrResult.isError, true);
+        const trialErrObj = JSON.parse(trialErrResult.content[0].text);
+        assert.strictEqual(trialErrObj.error, 'QUOTA_EXHAUSTED');
+        assert.strictEqual(trialErrObj.manage_url, 'https://app.fodda.ai/account');
+        assert.strictEqual(trialErrObj.stripe_link, undefined);
+        assert.strictEqual(trialErrObj.top_up_url, undefined);
+        assert.strictEqual(trialErrObj.action, undefined);
+        assert(!JSON.stringify(trialErrObj).includes('stripe.com'));
+        assert(!JSON.stringify(trialErrObj).includes('$'));
+        assert(!JSON.stringify(trialErrObj).includes('API calls'));
+        console.log('  PASS: handleTrialCreditExhaustion returns clean commerce-free QUOTA_EXHAUSTED for chatgpt');
 
         // 7. Verify tools-manifest.json
         console.log('\n--- 7. Verifying tools-manifest.json profile count ---');

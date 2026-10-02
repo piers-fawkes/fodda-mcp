@@ -194,9 +194,11 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
             const dailyRemaining = u.daily_remaining != null ? ` (${u.daily_remaining} remaining today)` : '';
             data._usage_status = `⚠️ You are approaching the free daily burst limit of 50 calls${dailyRemaining}. Add a payment card at https://app.fodda.ai/billing to remove daily burst limits and continue querying seamlessly.`;
         } else if (u.warning === 'overage-active') {
+            const overageRate = data?.overage_rate_usd != null ? `$${data.overage_rate_usd}` : (data?.payg?.pricePerCall != null ? `$${data.payg.pricePerCall}` : null);
+            const rateSuffix = overageRate ? ` at ${overageRate}/API call` : '';
             data._usage_status = u.overage_tokens
-                ? `📊 You're in overage — ${u.overage_tokens} additional API call(s) used at $0.50/API call this billing cycle.`
-                : `📊 Overage billing is active — additional queries are charged at $0.50/API call.`;
+                ? `📊 You're in overage — ${u.overage_tokens} additional API call(s) used${rateSuffix} this billing cycle.`
+                : `📊 Overage billing is active — additional queries are charged${rateSuffix}.`;
         }
     }
 
@@ -211,7 +213,8 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
     const noun = remaining === 1 ? 'API call' : 'API calls';
     const upsell = data.usage.upsell || data.upsell || (data._account?.upsell);
     const stripeLink = data.usage.stripeLink || (data._account?.stripe_link);
-    const price = data.usage.monthlyPriceUSD || (data._account?.monthly_price_usd);
+    const overageRate = data.overage_rate_usd ?? data.payg?.pricePerCall ?? data.usage?.overage_rate_usd;
+    const overageRateStr = overageRate != null ? `$${overageRate}` : null;
 
     // Build portal upgrade URL with pre-filled email
     const portalParams = new URLSearchParams({ action: 'upgrade' });
@@ -221,11 +224,23 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
     {
         let msg = `\u26a0\ufe0f You have ${remaining} ${noun} remaining this month.`;
         if (upsell) {
-            msg += ` You can get 100 more API calls for $${upsell.price || '50'} right now: ${upsell.link || portalUrl}`;
+            const upsellCalls = upsell.api_calls || upsell.calls || null;
+            const upsellPrice = upsell.price_usd ?? upsell.price ?? null;
+            const link = upsell.link || upsell.url || stripeLink || portalUrl;
+            if (upsellCalls && upsellPrice != null) {
+                msg += ` You can get ${upsellCalls} more API calls for $${upsellPrice} right now: ${link}`;
+            } else if (upsellCalls) {
+                msg += ` You can get ${upsellCalls} more API calls right now: ${link}`;
+            } else if (upsellPrice != null) {
+                msg += ` You can top up API calls for $${upsellPrice} right now: ${link}`;
+            } else {
+                msg += ` You can top up your API calls here: ${link}`;
+            }
         } else if (stripeLink) {
             msg += ` You can top up your API calls here: ${stripeLink}`;
         } else {
-            msg += ` You can add a payment method at ${portalUrl} to enable pay-as-you-go overage ($0.50/call) and activate monthly allowance resets.`;
+            const overageText = overageRateStr ? ` (${overageRateStr}/call)` : '';
+            msg += ` You can add a payment method at ${portalUrl} to enable pay-as-you-go overage${overageText} and activate monthly allowance resets.`;
         }
         data._credit_warning = msg;
     }
@@ -709,7 +724,7 @@ export async function createServer(
                         }
 
                         // Check for credit exhaustion
-                        const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                        const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                         if (trialResult) return trialResult;
 
                         // Generic error
@@ -771,7 +786,8 @@ export async function createServer(
                     if (!isChatGpt) {
                         status.overage_tokens = Math.abs(status.api_calls_remaining);
                         status.overage_api_calls = Math.abs(status.api_calls_remaining);
-                        status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply at $0.50/API call.`;
+                        const overageRate = account.overage_rate_usd != null ? `$${account.overage_rate_usd}` : null;
+                        status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply${overageRate ? ` at ${overageRate}/API call` : ''}.`;
                     }
                 }
                 if (account.tokens_used !== undefined) status.api_calls_used = account.tokens_used;
@@ -876,7 +892,7 @@ export async function createServer(
 
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -1578,7 +1594,7 @@ export async function createServer(
                 const fallbackResult = { company_query_guide, analysts: [] };
                 return { content: [{ type: 'text' as const, text: JSON.stringify(fallbackResult, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -2059,7 +2075,7 @@ export async function createServer(
                     // If the fan-out came back empty ONLY because credit/quota blocked the calls,
                     // surface that explicitly — never let it read as a "no coverage" gap.
                     if (allRows.length === 0 && creditRejection) {
-                        const trialResult = await handleTrialCreditExhaustion(creditRejection, apiKey, userId);
+                        const trialResult = await handleTrialCreditExhaustion(creditRejection, apiKey, userId, sessionSource);
                         if (trialResult) return trialResult;
                         return await handleAccessError(creditRejection, 'search_graph', userId, apiKey, sessionSource);
                     }
@@ -2546,7 +2562,7 @@ export async function createServer(
                 // Trial-aware credit exhaustion, then structured access/credit handling.
                 // (Routes credit errors through handleAccessError so payment details are
                 // returned as structured fields, not baked into a raw message string.)
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'search_graph', userId, apiKey, sessionSource);
             }
@@ -2581,7 +2597,7 @@ export async function createServer(
                 appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -2613,7 +2629,7 @@ export async function createServer(
                 if (withheld) return withheld;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -2642,7 +2658,7 @@ export async function createServer(
                 appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -2668,7 +2684,7 @@ export async function createServer(
                 const data = await foddaRequest('GET', `/v1/graphs/${encodeURIComponent(graphId)}/labels/${label}/values${propParam}`, apiKey, resolveUserId(userId, uid));
                 return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -2875,7 +2891,7 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -3623,7 +3639,7 @@ export async function createServer(
                 }
                 return { next_moves: brandNextMoves, content };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -3708,7 +3724,7 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -3724,34 +3740,37 @@ export async function createServer(
         },
         { title: 'Check Supplemental Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ job_id }) => {
-            const job = activeSupplementalJobs.get(job_id);
-            if (!job) {
-                return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
-            }
+            const startTime = Date.now();
+            const MAX_WAIT_MS = 28000;
+            const POLL_INTERVAL_MS = 1500;
 
-            if (job.status === 'RUNNING') {
-                return { content: [{ type: 'text' as const, text: `Job ${job_id} is still RUNNING. The server is waiting on external APIs. Please poll again in 5 seconds.` }] };
-            }
-
-            if (job.status === 'COMPLETE') {
-                activeSupplementalJobs.delete(job_id); // cleanup
-                if (job.nextMoves) {
-                    sessionTracker.recordNextMoves(job.nextMoves, job.query || '');
+            while (Date.now() - startTime < MAX_WAIT_MS) {
+                const job = activeSupplementalJobs.get(job_id);
+                if (!job) {
+                    return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
                 }
-                return { content: [{ type: 'text' as const, text: job.result }] };
+
+                if (job.status === 'FAILED') {
+                    activeSupplementalJobs.delete(job_id); // cleanup
+                    return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
+                }
+
+                if (job.status === 'COMPLETE') {
+                    activeSupplementalJobs.delete(job_id); // cleanup
+                    if (job.nextMoves) {
+                        sessionTracker.recordNextMoves(job.nextMoves, job.query || '');
+                    }
+                    return { content: [{ type: 'text' as const, text: job.result }] };
+                }
+
+                const elapsed = Date.now() - startTime;
+                if (elapsed + POLL_INTERVAL_MS >= MAX_WAIT_MS) {
+                    break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
             }
 
-            if (job.status === 'FAILED') {
-                activeSupplementalJobs.delete(job_id); // cleanup
-                return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
-            }
-
-            if (job.status === 'COMPLETE') {
-                activeSupplementalJobs.delete(job_id); // cleanup
-                return { content: [{ type: 'text' as const, text: job.result }] };
-            }
-
-            return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };
+            return { content: [{ type: 'text' as const, text: `Job ${job_id} is still RUNNING. The server is waiting on external APIs. Server waited ~28s; please continue polling until COMPLETE or FAILED.` }] };
         }
     );
 
@@ -3812,7 +3831,7 @@ export async function createServer(
                 }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -3868,7 +3887,7 @@ export async function createServer(
             }
             return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
         } catch (err: any) {
-            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
             if (trialResult) return trialResult;
             return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
         }
@@ -3973,7 +3992,7 @@ export async function createServer(
                 });
                 return { content: [{ type: 'text' as const, text: JSON.stringify(editorialPayload, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4071,7 +4090,7 @@ export async function createServer(
                     content: [{ type: 'text' as const, text: markdown.trim() }],
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4194,7 +4213,7 @@ export async function createServer(
                     content: [{ type: 'text' as const, text: markdown.trim() }],
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4318,7 +4337,7 @@ export async function createServer(
                 }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4390,7 +4409,7 @@ export async function createServer(
                 }
                 return { content: [{ type: 'text' as const, text: JSON.stringify(annotatedData, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4445,12 +4464,12 @@ export async function createServer(
                     type: 'text' as const,
                     text: `LINKEDIN_DRAFT_REFUSED: evidence retrieval hit the account's quota limit mid-run. No evidence pack was produced — do NOT draft a ${engineOpts.mode} from partial or remembered data. Resolve the quota state below, then call ${toolName} again.`,
                 };
-                const trialResult = await handleTrialCreditExhaustion(err.causeErr, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err.causeErr, apiKey, userId, sessionSource);
                 if (trialResult) return { ...trialResult, content: [refusal, ...trialResult.content] };
                 const accessResult = await handleAccessError(err.causeErr, toolName, userId, apiKey, sessionSource);
                 return { ...accessResult, content: [refusal, ...accessResult.content] };
             }
-            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
             if (trialResult) return trialResult;
             const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
             return { isError: true as const, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -4547,7 +4566,7 @@ export async function createServer(
                 const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4614,7 +4633,7 @@ export async function createServer(
                 const divergencePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(divergencePayload, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4714,7 +4733,7 @@ export async function createServer(
                 const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -4760,7 +4779,7 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
             }
@@ -5474,7 +5493,7 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.message || 'URL extraction failed.';
                 console.error('[read_url] Error:', msg);
@@ -5605,7 +5624,7 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -5618,36 +5637,65 @@ export async function createServer(
         'check_research_status',
         'Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED. (Async research job status poll.)',
         {
-            job_id: z.string().describe('The Job ID returned by deep_research_topic'),
+            job_id: z.string().describe('The Job ID returned by deep_research_topic, consult_analyst, or consult_human_agent'),
         },
         { title: 'Check Research Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ job_id }) => {
-            const job = activeResearchJobs.get(job_id);
-            if (!job) {
-                return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
+            const startTime = Date.now();
+            const MAX_WAIT_MS = 28000;
+            const POLL_INTERVAL_MS = 1500;
+
+            while (Date.now() - startTime < MAX_WAIT_MS) {
+                const job = activeResearchJobs.get(job_id);
+                if (!job) {
+                    return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
+                }
+
+                if (job.status === 'FAILED') {
+                    activeResearchJobs.delete(job_id); // cleanup
+                    return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
+                }
+
+                if (job.status === 'COMPLETE') {
+                    activeResearchJobs.delete(job_id); // cleanup
+                    if (job.isConsult) {
+                        const res = job.result;
+                        const text = typeof res === 'string'
+                            ? res
+                            : (res?.content?.[0]?.text || res?.text || (typeof res === 'object' ? JSON.stringify(res, null, 2) : String(res)));
+                        return {
+                            content: [{ type: 'text' as const, text }],
+                            ...(res?.coverage ? { coverage: res.coverage } : {}),
+                            ...(res?.next_moves ? { next_moves: res.next_moves } : {}),
+                            ...(res?.sources_used ? { sources_used: res.sources_used } : {}),
+                            ...(res?.speaker_note ? { speaker_note: res.speaker_note } : {}),
+                            ...(res?.billing ? { billing: res.billing } : {}),
+                            ...(res?.usage ? { usage: res.usage } : {}),
+                        };
+                    }
+
+                    const res = typeof job.result === 'object' && job.result !== null ? job.result : { report: String(job.result), sub_themes_used: [] };
+                    const payloadText = [
+                        `sub_themes_used:\n${JSON.stringify(res.sub_themes_used || [], null, 2)}`,
+                        '',
+                        res.report
+                    ].join('\n\n');
+                    return { content: [{ type: 'text' as const, text: payloadText }] };
+                }
+
+                const elapsed = Date.now() - startTime;
+                if (elapsed + POLL_INTERVAL_MS >= MAX_WAIT_MS) {
+                    break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
             }
 
-            if (job.status === 'RUNNING') {
-                return { content: [{ type: 'text' as const, text: `Job ${job_id} is still RUNNING. The agent is gathering and synthesizing data. Please poll again in 10 seconds.` }] };
-            }
-
-            if (job.status === 'FAILED') {
-                activeResearchJobs.delete(job_id); // cleanup
-                return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
-            }
-
-            if (job.status === 'COMPLETE') {
-                activeResearchJobs.delete(job_id); // cleanup
-                const res = typeof job.result === 'object' && job.result !== null ? job.result : { report: String(job.result), sub_themes_used: [] };
-                const payloadText = [
-                    `sub_themes_used:\n${JSON.stringify(res.sub_themes_used || [], null, 2)}`,
-                    '',
-                    res.report
-                ].join('\n\n');
-                return { content: [{ type: 'text' as const, text: payloadText }] };
-            }
-
-            return { isError: true, content: [{ type: 'text' as const, text: `Unknown status for job ${job_id}` }] };
+            return {
+                content: [{
+                    type: 'text' as const,
+                    text: `Job ${job_id} is still RUNNING. The agent is gathering and synthesizing data. Server waited ~28s; please continue polling until COMPLETE or FAILED.`
+                }]
+            };
         }
     );
 
@@ -5833,18 +5881,22 @@ export async function createServer(
             const isDeep = Boolean(deep || /do (your |the )?homework|deep dive|go deeper|detailed evidence|comprehensive breakdown|verify with data|substantiate|rigorous breakdown/i.test(query));
 
             const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
+            const sptGuardErr = sptGuard('expert_agent');
+            if (sptGuardErr) return sptGuardErr;
 
-            const requestPayload: Record<string, any> = {
-                analyst_id: targetAnalystId,
-                query,
-                company: resolvedCompany,
-                session_id
-            };
-            if (isDeep) {
-                requestPayload.deep = true;
-            }
+            const performConsult = async () => {
+                try {
+                    const requestPayload: Record<string, any> = {
+                    analyst_id: targetAnalystId,
+                    query,
+                    company: resolvedCompany,
+                    session_id
+                };
+                if (isDeep) {
+                    requestPayload.deep = true;
+                }
 
-            const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), requestPayload);
+                const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), requestPayload);
             
             const upstreamCoverage = result?.coverage;
 
@@ -6075,7 +6127,7 @@ export async function createServer(
                 content: [{ type: 'text' as const, text: parts.join('\n') }]
             };
         } catch (err: any) {
-            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
             if (trialResult) return trialResult;
             if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
@@ -6171,6 +6223,65 @@ export async function createServer(
         }
     };
 
+    if (isDeep) {
+        const jobId = crypto.randomUUID();
+        activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null, isConsult: true });
+
+        const jobTimeoutTimer = setTimeout(() => {
+            const current = activeResearchJobs.get(jobId);
+            if (current && current.status === 'RUNNING') {
+                console.error(`[consult_human_agent] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
+                activeResearchJobs.set(jobId, {
+                    status: 'FAILED',
+                    error: 'Human Agent consultation job exceeded the 240-second maximum execution timeout.',
+                    isConsult: true
+                });
+            }
+        }, 240000);
+
+        (async () => {
+            try {
+                const result = await performConsult();
+                clearTimeout(jobTimeoutTimer);
+                if (result && (result as any).isError) {
+                    activeResearchJobs.set(jobId, {
+                        status: 'FAILED',
+                        error: result.content?.[0]?.text || 'Human Agent consultation encountered an error',
+                        isConsult: true
+                    });
+                } else {
+                    activeResearchJobs.set(jobId, {
+                        status: 'COMPLETE',
+                        result,
+                        isConsult: true
+                    });
+                }
+            } catch (err: any) {
+                clearTimeout(jobTimeoutTimer);
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                activeResearchJobs.set(jobId, {
+                    status: 'FAILED',
+                    error: msg,
+                    isConsult: true
+                });
+            }
+        })();
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: `Deep consultation started! The expert is conducting deep background research across specialist graphs and market data.\nJob ID: ${jobId}\n\nIMPORTANT: Call check_research_status with this Job ID to retrieve the completed analysis. The tool will wait server-side (~30s) and return as soon as the expert finishes. Keep calling until status is COMPLETE or FAILED.`
+            }]
+        };
+    }
+
+    return await performConsult();
+} catch (outerErr: any) {
+    const msg = outerErr.response?.data?.error?.message || outerErr.response?.data?.message || outerErr.message;
+    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+}
+};
+
     const executeConsultAnalystCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
         try {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
@@ -6192,7 +6303,9 @@ export async function createServer(
 
             const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
 
-            const requestPayload: Record<string, any> = {
+            const performAnalystConsult = async () => {
+                try {
+                    const requestPayload: Record<string, any> = {
                 analyst_id: targetAnalystId,
                 query,
                 company: resolvedCompany,
@@ -6408,7 +6521,7 @@ export async function createServer(
                 content: [{ type: 'text' as const, text: parts.join('\n') }]
             };
         } catch (err: any) {
-            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+            const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
             if (trialResult) return trialResult;
             const errData = err.response?.data;
             const isTwinError = errData?.is_human_agent ||
@@ -6431,6 +6544,65 @@ export async function createServer(
             return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
         }
     };
+
+    if (isDeep) {
+        const jobId = crypto.randomUUID();
+        activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null, isConsult: true });
+
+        const jobTimeoutTimer = setTimeout(() => {
+            const current = activeResearchJobs.get(jobId);
+            if (current && current.status === 'RUNNING') {
+                console.error(`[consult_analyst] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
+                activeResearchJobs.set(jobId, {
+                    status: 'FAILED',
+                    error: 'Analyst consultation job exceeded the 240-second maximum execution timeout.',
+                    isConsult: true
+                });
+            }
+        }, 240000);
+
+        (async () => {
+            try {
+                const result = await performAnalystConsult();
+                clearTimeout(jobTimeoutTimer);
+                if (result && (result as any).isError) {
+                    activeResearchJobs.set(jobId, {
+                        status: 'FAILED',
+                        error: result.content?.[0]?.text || 'Analyst consultation encountered an error',
+                        isConsult: true
+                    });
+                } else {
+                    activeResearchJobs.set(jobId, {
+                        status: 'COMPLETE',
+                        result,
+                        isConsult: true
+                    });
+                }
+            } catch (err: any) {
+                clearTimeout(jobTimeoutTimer);
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                activeResearchJobs.set(jobId, {
+                    status: 'FAILED',
+                    error: msg,
+                    isConsult: true
+                });
+            }
+        })();
+
+        return {
+            content: [{
+                type: 'text' as const,
+                text: `Deep consultation started! The analyst is conducting deep background research across specialist graphs and market data.\nJob ID: ${jobId}\n\nIMPORTANT: Call check_research_status with this Job ID to retrieve the completed analysis. The tool will wait server-side (~30s) and return as soon as the analyst finishes. Keep calling until status is COMPLETE or FAILED.`
+            }]
+        };
+    }
+
+    return await performAnalystConsult();
+} catch (outerErr: any) {
+    const msg = outerErr.response?.data?.error?.message || outerErr.response?.data?.message || outerErr.message;
+    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+}
+};
 
     // --- consult_analyst ---
     server.tool(
@@ -6790,7 +6962,7 @@ export async function createServer(
                     }]
                 };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
                     return {
@@ -6954,7 +7126,7 @@ export async function createServer(
                 ].filter(Boolean);
                 return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -6972,16 +7144,46 @@ export async function createServer(
         },
         { title: 'Check Deliverable Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ job_id, userId: uid }) => {
+            const startTime = Date.now();
+            const MAX_WAIT_MS = 28000;
+            const POLL_INTERVAL_MS = 2000;
+
+            while (Date.now() - startTime < MAX_WAIT_MS) {
+                try {
+                    const result = await foddaRequest(
+                        'GET',
+                        `/v1/human-agents/deliverables/${encodeURIComponent(job_id)}`,
+                        apiKey,
+                        resolveUserId(userId, uid),
+                    );
+                    const status = (result?.status || '').toLowerCase();
+                    if (status === 'completed' || status === 'complete' || status === 'failed') {
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                    }
+                } catch (err: any) {
+                    const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
+                    if (trialResult) return trialResult;
+                    const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                }
+
+                const elapsed = Date.now() - startTime;
+                if (elapsed + POLL_INTERVAL_MS >= MAX_WAIT_MS) {
+                    break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+            }
+
             try {
-                const result = await foddaRequest(
+                const latest = await foddaRequest(
                     'GET',
                     `/v1/human-agents/deliverables/${encodeURIComponent(job_id)}`,
                     apiKey,
                     resolveUserId(userId, uid),
                 );
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                return { content: [{ type: 'text' as const, text: JSON.stringify(latest, null, 2) }] };
             } catch (err: any) {
-                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId);
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -6990,10 +7192,217 @@ export async function createServer(
     );
 
     // --- Expert Onboarding (Connector Flow) ---
+    interface StructuredOnboardingErrorPayload {
+        error: {
+            code: string;
+            cause: string;
+            next_action: string;
+        };
+    }
+
+    const ONBOARDING_ERROR_METADATA: Record<string, { defaultCause: string; defaultNextAction: string }> = {
+        credentials_missing: {
+            defaultCause: 'Fodda credentials missing or unauthorized.',
+            defaultNextAction: 'Add Fodda as a connector or sign in at https://www.fodda.ai/join-experts?return_to=connector&source=mcp, then retry.'
+        },
+        terms_required: {
+            defaultCause: 'Terms not accepted yet.',
+            defaultNextAction: 'Ask the expert to accept the Terms and Privacy Policy, then call submit_basic_info again.'
+        },
+        record_not_found: {
+            defaultCause: 'No onboarding record found for this expert account.',
+            defaultNextAction: 'Call begin_expert_onboarding or submit_basic_info to initialize onboarding.'
+        },
+        research_needs_basic_info: {
+            defaultCause: 'Basic info must be submitted before background research can begin.',
+            defaultNextAction: 'Call submit_basic_info first with the expert\'s name, role, and domain details.'
+        },
+        themes_not_ready: {
+            defaultCause: 'Expertise themes have not been generated or are not ready.',
+            defaultNextAction: 'Submit expertise analysis first using submit_expertise_analysis before fetching detected themes.'
+        },
+        questions_failed: {
+            defaultCause: 'Interview questionnaire could not be generated from the confirmed themes.',
+            defaultNextAction: 'Call confirm_themes again to retry theme confirmation and questionnaire generation. Do not proceed to schedule_interview yet.'
+        },
+        interview_slot_invalid: {
+            defaultCause: 'The requested interview time is outside the allowed scheduling window (between 15 minutes and 30 days from now).',
+            defaultNextAction: 'Choose a time slot between 15 minutes and 30 days from now, or set now: true for an instant interview.'
+        },
+        interview_already_scheduled: {
+            defaultCause: 'An interview is already scheduled for this profile.',
+            defaultNextAction: 'Check your existing booking using get_onboarding_status or check your email for the Google Meet link.'
+        },
+        mcp_probe_failed: {
+            defaultCause: 'Could not reach or probe the MCP endpoint.',
+            defaultNextAction: 'Ensure the endpoint is online, publicly accessible over HTTPS, and responds to JSON-RPC tools/list, or switch to standard onboarding.'
+        },
+        mcp_auth_unsupported: {
+            defaultCause: 'Only unauthenticated endpoints (authType: \'none\') are supported in Phase 1.',
+            defaultNextAction: 'Provide a public MCP endpoint URL with authType \'none\', or switch to the standard onboarding path.'
+        },
+        upstream_error: {
+            defaultCause: 'An upstream server error occurred.',
+            defaultNextAction: 'Check the error details and retry, or run get_onboarding_status to check your session state.'
+        }
+    };
+
+    const formatOnboardingError = (
+        err: any,
+        opts?: {
+            code?: string;
+            cause?: string;
+            nextAction?: string;
+            prose?: string;
+        }
+    ) => {
+        let code = opts?.code;
+        let cause = opts?.cause;
+        let nextAction = opts?.nextAction;
+        let prose = opts?.prose;
+
+        if (typeof err === 'string') {
+            cause = cause || err;
+            prose = prose || err;
+        } else if (err) {
+            const d = err.response?.data;
+            const status = err.response?.status;
+            const extractedErr = d?.error;
+            const extractedMsg = (typeof d?.message === 'string' ? d.message : (typeof extractedErr === 'string' ? extractedErr : extractedErr?.message)) || err.message || 'An upstream error occurred';
+
+            // Check if server returned a structured error code
+            if (typeof extractedErr === 'string' && ONBOARDING_ERROR_METADATA[extractedErr]) {
+                code = code || extractedErr;
+                cause = cause || extractedMsg;
+            } else if (extractedErr?.code && ONBOARDING_ERROR_METADATA[extractedErr.code]) {
+                code = code || extractedErr.code;
+                cause = cause || extractedErr.message || extractedMsg;
+            } else if (d?.code && ONBOARDING_ERROR_METADATA[d.code]) {
+                code = code || d.code;
+                cause = cause || extractedMsg;
+            } else if (status === 401) {
+                code = code || 'credentials_missing';
+                cause = cause || 'Your Fodda credentials are missing or unauthorized.';
+            } else if (status === 404) {
+                code = code || 'record_not_found';
+                cause = cause || 'No onboarding record found for this expert account.';
+            } else if (status === 409 && (extractedMsg.includes('basic') || extractedMsg.includes('research'))) {
+                code = code || 'research_needs_basic_info';
+                cause = cause || extractedMsg;
+            } else {
+                // Heuristic regex checks on error messages
+                const lower = `${extractedMsg} ${typeof extractedErr === 'string' ? extractedErr : ''}`.toLowerCase();
+                if (lower.includes('term') || lower.includes('terms accepted') || lower.includes('terms_required')) {
+                    code = code || 'terms_required';
+                } else if (lower.includes('15 min') || lower.includes('30 days') || lower.includes('slot invalid')) {
+                    code = code || 'interview_slot_invalid';
+                } else if (lower.includes('already scheduled') || lower.includes('double') || lower.includes('already booked')) {
+                    code = code || 'interview_already_scheduled';
+                } else if (lower.includes('theme') || lower.includes('topicsraw')) {
+                    code = code || 'themes_not_ready';
+                } else if (lower.includes('probe') || lower.includes('json-rpc') || lower.includes('mcp endpoint')) {
+                    code = code || 'mcp_probe_failed';
+                }
+            }
+
+            cause = cause || extractedMsg;
+            prose = prose || cause;
+        }
+
+        if (!code) {
+            code = 'upstream_error';
+        }
+
+        const meta = ONBOARDING_ERROR_METADATA[code] ?? {
+            defaultCause: 'An upstream server error occurred.',
+            defaultNextAction: 'Check the error details and retry, or run get_onboarding_status to check your session state.'
+        };
+        cause = cause || meta.defaultCause;
+        nextAction = nextAction || meta.defaultNextAction;
+        prose = prose || cause;
+
+        const errorPayload: StructuredOnboardingErrorPayload = {
+            error: {
+                code,
+                cause,
+                next_action: nextAction
+            }
+        };
+
+        return {
+            isError: true,
+            content: [{
+                type: 'text' as const,
+                text: `${prose}\n\n\`\`\`json\n${JSON.stringify(errorPayload, null, 2)}\n\`\`\``
+            }]
+        };
+    };
+
     const parseWebsiteError = (err: any): string => {
         const d = err.response?.data;
         return (typeof d?.error === 'string' ? d.error : d?.error?.message) || d?.message || err.message;
     };
+
+    const ONBOARDING_STATUS_FLOW: Record<string, { label: string; nextTool: string | null; nextAction: string }> = {
+        not_started: {
+            label: 'Not started',
+            nextTool: 'begin_expert_onboarding',
+            nextAction: 'Start onboarding to set up your Human Agent.'
+        },
+        basic_info_submitted: {
+            label: 'Basic information submitted',
+            nextTool: 'expert_onboarding_research',
+            nextAction: 'Next, Fodda researches your published work so your interview can focus on your thinking, not your CV.'
+        },
+        research_complete: {
+            label: 'Research complete',
+            nextTool: 'submit_expertise_analysis',
+            nextAction: 'Share your voice study and expertise map so we can find your core themes.'
+        },
+        analysis_submitted: {
+            label: 'Expertise analysis submitted',
+            nextTool: 'get_detected_themes',
+            nextAction: 'Review the themes Fodda found in your work and confirm the ones that fit, so we can prepare your interview questions.'
+        },
+        awaiting_interview: {
+            label: 'Awaiting interview scheduling',
+            nextTool: 'schedule_interview',
+            nextAction: 'Book your 15–20 minute expertise interview, now or at a time that suits you.'
+        },
+        pending_approval: {
+            label: 'Pending review',
+            nextTool: null,
+            nextAction: "You're done. Fodda is reviewing your Human Agent and will email you before it goes live."
+        },
+        active: {
+            label: 'Active',
+            nextTool: null,
+            nextAction: 'Your Human Agent is live.'
+        }
+    };
+
+    function deriveStatusFlow(result: any) {
+        const rawStatus = result?.status || 'not_started';
+        const flow = ONBOARDING_STATUS_FLOW[rawStatus] || {
+            label: rawStatus.replace(/_/g, ' '),
+            nextTool: null,
+            nextAction: 'Check your onboarding status or proceed with your next step.'
+        };
+
+        let label = flow.label;
+        let nextTool: string | null = result?.next_tool !== undefined ? result.next_tool : flow.nextTool;
+        let nextAction: string = result?.next_action || flow.nextAction;
+
+        const hasBotBooked = !!(result?.recallBotId || result?.bot_booked || result?.recallJoinAt || result?.booked);
+        if (rawStatus === 'awaiting_interview' && hasBotBooked) {
+            label = 'Interview scheduled';
+            nextTool = null;
+            const joinAt = result?.recallJoinAt ? ` for ${result.recallJoinAt}` : '';
+            nextAction = `Your interview is booked${joinAt}. The interviewer will join your Google Meet.`;
+        }
+
+        return { label, nextTool, nextAction };
+    }
 
     server.tool(
         'begin_expert_onboarding',
@@ -7005,12 +7414,12 @@ export async function createServer(
         { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ byoMcp, userId: uid }) => {
             if (!apiKey) {
-                return {
-                    content: [{
-                        type: 'text' as const,
-                        text: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your Human Agent directly inside Claude, your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
-                    }]
-                };
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Fodda credentials missing or unauthorized.',
+                    nextAction: 'Add Fodda as a connector or sign in at https://www.fodda.ai/join-experts?return_to=connector&source=mcp, then retry.',
+                    prose: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your Human Agent directly inside Claude, your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
+                });
             }
             try {
                 const userEmail = resolveUserId(userId, uid);
@@ -7024,12 +7433,46 @@ export async function createServer(
                     };
                 }
 
+                if (result.inProgress) {
+                    const inProg = result.inProgress;
+                    const { label, nextTool, nextAction } = deriveStatusFlow(inProg);
+                    const resumeStep = nextTool || inProg.next_step || 'submit_basic_info';
+                    const resumeText = [
+                        `Welcome back to Fodda Human Agent Onboarding!`,
+                        ``,
+                        `• Account: Linked to **${userEmail}**.`,
+                        `• Status: You've already started, so let's pick up at <${resumeStep}>.`,
+                        `• Persistence: Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later, in this chat or a new one, and I'll check where you left off. Anything I'm still drafting with you, like your voice study before you submit it, lives only in this chat until you submit that step. Your Human Agent only goes live after your interview and Fodda's review.`,
+                        ``,
+                        `👉 **Next Step:** ${nextAction}`
+                    ].join('\n');
+
+                    const resumePayload = {
+                        status: 'resumed',
+                        resume: {
+                            analystId: inProg.analystId,
+                            status: inProg.status,
+                            next_step: resumeStep,
+                            next_action: nextAction
+                        },
+                        linked_account: userEmail,
+                        onboarding_prompts: result
+                    };
+
+                    return {
+                        content: [
+                            { type: 'text' as const, text: resumeText },
+                            { type: 'text' as const, text: JSON.stringify(resumePayload, null, 2) }
+                        ]
+                    };
+                }
+
                 if (byoMcp) {
                     const introText = [
                         `Welcome to Fodda Human Agent Onboarding (Bring-Your-Own-MCP).`,
                         ``,
                         `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
-                        `• Process: Connect your live MCP endpoint to ground your agent directly in your live tools and data (skipping background research and interview). Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your MCP URL and profile live only in this conversation until final submission. Your Human Agent goes live after review.`,
+                        `• Process: Connect your live MCP endpoint to ground your agent directly in your live tools and data (skipping background research and interview). Your profile is saved once you accept the terms. Your MCP connection is only checked, not saved, until you submit at the end. Anything I'm still drafting with you lives only in this chat until you submit that step. Your Human Agent goes live after review.`,
                         `• Fallback: If you encounter issues connecting your MCP endpoint, you can switch back to the standard onboarding path at any time.`,
                         ``,
                         `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (or call \`submit_basic_info\` directly). Next, you'll provide your MCP endpoint URL for verification.`
@@ -7064,7 +7507,7 @@ export async function createServer(
                     `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
                     `• Process: You will share your core domain details in this chat, we will analyze your public work and domain insights, and you'll review and confirm detected themes before scheduling a short deep-dive interview.`,
                     `• Knowledge Base: Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer **No / I don't know** — most experts don't have one, and we'll set you up the standard way.`,
-                    `• Privacy & Control: Nothing is saved to Fodda until you complete all steps and explicitly submit at the end. Your progress lives only in this conversation.`,
+                    `• Privacy & Persistence: Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later, in this chat or a new one, and I'll check where you left off. Anything I'm still drafting with you, like your voice study before you submit it, lives only in this chat until you submit that step. Your Human Agent only goes live after your interview and Fodda's review.`,
                     ``,
                     `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (e.g. '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', '$2,000/hr', or 'No Calls'), or call \`submit_basic_info\` directly.`
                 ].join('\n');
@@ -7094,18 +7537,19 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
 
     server.tool(
         'submit_basic_info',
-        'Submit basic expert details (name, role, knowledge area, consultation call rate, and optional bio/headshot) to initialize the Human Agent onboarding session.',
+        'Submit basic expert details (name, role, knowledge area, consultation call rate, and optional bio/headshot) to initialize the Human Agent onboarding session and begin saving progress. This is the step where Fodda starts saving the expert\'s onboarding. Before calling, show the Terms (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) links and get an explicit yes.',
         {
             name: z.string().describe("The expert's full name"),
             role: z.string().describe("The expert's current role or title"),
             knowledgeArea: z.string().describe("The expert's primary knowledge area"),
+            termsAccepted: z.boolean().describe("The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after reviewing the links. Must be true to begin saving onboarding progress."),
             callPrice: z.string().optional().describe("The expert's preferred 1-hour video/telephone consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Recorded under callPrice."),
             bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
             description: z.string().optional().describe("Optional comprehensive description of the expert's background and domain focus."),
@@ -7113,9 +7557,17 @@ export async function createServer(
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ name, role, knowledgeArea, callPrice, bio, description, headshotUrl, userId: uid }) => {
+        async ({ name, role, knowledgeArea, termsAccepted, callPrice, bio, description, headshotUrl, userId: uid }) => {
+            if (termsAccepted !== true) {
+                return formatOnboardingError(null, {
+                    code: 'terms_required',
+                    cause: 'Terms not accepted yet.',
+                    nextAction: 'Ask the expert to accept the Terms and Privacy Policy, then call submit_basic_info again.',
+                    prose: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance: "To begin saving your onboarding progress, please confirm that you accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)." Then call submit_basic_info with termsAccepted: true.'
+                });
+            }
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), {
@@ -7124,11 +7576,12 @@ export async function createServer(
                     role,
                     knowledgeArea,
                     callPrice,
+                    termsAccepted: true,
                     ...(bio ? { bio } : {}),
                     ...(description ? { description } : {}),
                     ...(headshotUrl ? { headshotUrl } : {})
                 });
-                const statusText = `Basic info registered for **${name}** (${role} — ${knowledgeArea}). Progress is held in this chat session until final submit.\n\n👉 **Next Step:** Run \`expert_onboarding_research\` to begin background research on public work and publications (or \`submit_mcp_source\` if onboarding via BYO-MCP).`;
+                const statusText = `Basic info registered and terms accepted for **${name}** (${role} — ${knowledgeArea}). Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later in this chat or a new one.\n\n👉 **Next Step:** Run \`expert_onboarding_research\` to begin background research on public work and publications (or \`submit_mcp_source\` if onboarding via BYO-MCP).`;
                 const payload = {
                     status: 'basic_info_saved',
                     name,
@@ -7138,6 +7591,9 @@ export async function createServer(
                     bio,
                     description,
                     headshotUrl,
+                    terms_accepted: true,
+                    terms_url: 'https://www.fodda.ai/terms',
+                    privacy_url: 'https://www.fodda.ai/privacy',
                     next_step: 'expert_onboarding_research',
                     next_step_byo_mcp: 'submit_mcp_source',
                     result
@@ -7149,7 +7605,7 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
@@ -7166,28 +7622,26 @@ export async function createServer(
         async ({ mcpUrl, mcpAuthType, userId: uid }) => {
             const authType = mcpAuthType || 'none';
             if (authType !== 'none') {
-                return {
-                    isError: true,
-                    content: [{
-                        type: 'text' as const,
-                        text: `Authenticated MCP endpoints ('${authType}') are coming soon. Phase 1 supports open/public MCP endpoints with authType: 'none' only. Please provide a public MCP endpoint URL, or you can switch back to the standard onboarding path.`
-                    }]
-                };
+                return formatOnboardingError(null, {
+                    code: 'mcp_auth_unsupported',
+                    cause: `Authenticated MCP endpoints ('${authType}') are not supported in Phase 1.`,
+                    nextAction: 'Provide a public MCP endpoint URL with authType \'none\', or switch back to the standard onboarding path.',
+                    prose: `Authenticated MCP endpoints ('${authType}') are coming soon. Phase 1 supports open/public MCP endpoints with authType: 'none' only. Please provide a public MCP endpoint URL, or you can switch back to the standard onboarding path.`
+                });
             }
 
             const trimmedUrl = mcpUrl.trim();
             if (!/^https:\/\//i.test(trimmedUrl)) {
-                return {
-                    isError: true,
-                    content: [{
-                        type: 'text' as const,
-                        text: 'Invalid MCP URL: Only secure HTTPS endpoints (e.g., https://...) are supported for external MCP grounding.'
-                    }]
-                };
+                return formatOnboardingError(null, {
+                    code: 'mcp_probe_failed',
+                    cause: 'Invalid MCP URL: Only secure HTTPS endpoints are supported.',
+                    nextAction: 'Provide a valid HTTPS URL (e.g. https://...) for the MCP endpoint.',
+                    prose: 'Invalid MCP URL: Only secure HTTPS endpoints (e.g., https://...) are supported for external MCP grounding.'
+                });
             }
 
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
 
             try {
@@ -7199,13 +7653,12 @@ export async function createServer(
 
                 if (!probeResult || probeResult.error || probeResult.success === false) {
                     const errMsg = probeResult?.error || 'Endpoint probe did not succeed';
-                    return {
-                        isError: true,
-                        content: [{
-                            type: 'text' as const,
-                            text: `MCP Endpoint Probe Failed: ${errMsg}.\n\nPlease ensure the endpoint is online, publicly accessible, and responds to JSON-RPC tools/list. If you do not have a working MCP endpoint right now, you can switch to the standard onboarding path at any time without losing your basic info.`
-                        }]
-                    };
+                    return formatOnboardingError(null, {
+                        code: 'mcp_probe_failed',
+                        cause: errMsg,
+                        nextAction: 'Ensure the endpoint is online, publicly accessible, and responds to JSON-RPC tools/list, or switch to standard onboarding.',
+                        prose: `MCP Endpoint Probe Failed: ${errMsg}.\n\nPlease ensure the endpoint is online, publicly accessible, and responds to JSON-RPC tools/list. If you do not have a working MCP endpoint right now, you can switch to the standard onboarding path at any time without losing your basic info.`
+                    });
                 }
 
                 const toolsCount = probeResult.toolsCount || (Array.isArray(probeResult.tools) ? probeResult.tools.length : 0);
@@ -7220,7 +7673,7 @@ export async function createServer(
                         ? `• **Discovered Expertise Topics**: ${derivedTopics.join(', ')}`
                         : `• **Topics**: No automated topics could be extracted from tool schemas. Please summarize 3-5 core expertise topics covering your domain.`,
                     ``,
-                    `👉 **Next Step:** Confirm the expertise topics with the expert, explicitly request acceptance of the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy), and call \`finalize_byo_mcp_onboarding\` to complete onboarding. Remember: nothing is saved on Fodda's servers until \`finalize_byo_mcp_onboarding\` executes successfully.`
+                    `👉 **Next Step:** Confirm the expertise topics with the expert, then call \`finalize_byo_mcp_onboarding\` to submit your Human Agent for review. Note: Your MCP connection is only checked, not saved, until you submit at the end.`
                 ].join('\n');
 
                 const payload = {
@@ -7242,20 +7695,19 @@ export async function createServer(
                 };
             } catch (err: any) {
                 const errMsg = parseWebsiteError(err);
-                return {
-                    isError: true,
-                    content: [{
-                        type: 'text' as const,
-                        text: `Failed to probe MCP endpoint: ${errMsg}. Progression is blocked until the endpoint is reachable. If this URL cannot be reached, you can fall back to the standard onboarding path without losing your basic info.`
-                    }]
-                };
+                return formatOnboardingError(err, {
+                    code: 'mcp_probe_failed',
+                    cause: errMsg,
+                    nextAction: 'Ensure the endpoint is reachable over HTTPS and responds to JSON-RPC tools/list, or switch to standard onboarding.',
+                    prose: `Failed to probe MCP endpoint: ${errMsg}. Progression is blocked until the endpoint is reachable. If this URL cannot be reached, you can fall back to the standard onboarding path without losing your basic info.`
+                });
             }
         }
     );
 
     server.tool(
         'finalize_byo_mcp_onboarding',
-        'Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile to Fodda. Creates the Human Agent record in Airtable with external_mcp live grounding. This is the sole submission step; profile and MCP details are not saved to Fodda until this tool executes.',
+        'Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile for review. Creates the Human Agent record in Airtable with external_mcp live grounding. Profile is saved once terms are accepted; MCP details are verified and submitted for review here.',
         {
             name: z.string().describe("The expert's full name"),
             role: z.string().describe("The expert's current role or title"),
@@ -7267,23 +7719,22 @@ export async function createServer(
             bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
             description: z.string().optional().describe("Optional comprehensive description of the expert's background."),
             headshotUrl: z.string().optional().describe("Optional public HTTPS URL to the expert's headshot photo (URL only, no file upload)."),
-            termsAccepted: z.boolean().describe("Must be true. The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."),
+            termsAccepted: z.boolean().optional().describe("Optional if already accepted at basic info. The expert must have accepted the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the BYO-MCP onboarding final submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ name, role, knowledgeArea, mcpUrl, callPrice, expertTopicsRaw, voiceStudyRaw, bio, description, headshotUrl, termsAccepted, userId: uid }) => {
-            if (!termsAccepted) {
-                return {
-                    isError: true,
-                    content: [{
-                        type: 'text' as const,
-                        text: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance: "To complete submission, please confirm that you accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)." Then call finalize_byo_mcp_onboarding with termsAccepted: true.'
-                    }]
-                };
+            if (termsAccepted === false) {
+                return formatOnboardingError(null, {
+                    code: 'terms_required',
+                    cause: 'Terms not accepted yet.',
+                    nextAction: 'Ask the expert to accept the Terms and Privacy Policy, then call finalize_byo_mcp_onboarding again.',
+                    prose: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed.'
+                });
             }
 
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
 
             try {
@@ -7301,6 +7752,7 @@ export async function createServer(
                     bio: bio || undefined,
                     description: description || undefined,
                     headshotUrl: headshotUrl || undefined,
+                    termsAccepted: termsAccepted !== undefined ? termsAccepted : true,
                     onboardingMode: 'mcp_conversational',
                     intakeSource: 'mcp_conversational',
                     productionMode: true
@@ -7337,25 +7789,25 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
 
     server.tool(
         'expert_onboarding_research',
-        'Initiate background research on the expert\'s public work and domain insights to support expertise and voice modeling.',
+        'Initiate background research on the expert\'s public work and domain insights to support expertise and voice modeling. Research usually takes 1-2 minutes; use get_onboarding_status with waitForResearch: true to wait for completion.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the background research step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
                 const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
-                const statusText = `Background research initiated. Public signals and domain materials are being gathered.\n\n👉 **Next Step:** Synthesize the voice study and expertise map, review the Fodda Terms of Service and Privacy Policy, and call \`submit_expertise_analysis\` with termsAccepted: true.`;
+                const statusText = `Background research has started. It usually takes a minute or two. To wait for it, call \`get_onboarding_status\` with \`waitForResearch: true\`. Each call waits up to 25 seconds. Between calls, give the expert a one-line 'still researching' update; there's no need to ask them before checking again. If research is still running after about six checks, carry on with the next step; research will fold in when it lands.`;
                 const payload = {
                     status: 'research_started',
                     next_step: 'submit_expertise_analysis',
@@ -7368,47 +7820,52 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                if (err.response?.status === 409) {
+                    const msg = err.response?.data?.message || err.response?.data?.error?.message || 'Basic info required before running background research.';
+                    return formatOnboardingError(err, {
+                        code: 'research_needs_basic_info',
+                        cause: msg,
+                        nextAction: 'Call submit_basic_info with your name, role, and knowledgeArea first.',
+                        prose: `Basic information required before running research: ${msg}`
+                    });
+                }
+                return formatOnboardingError(err);
             }
         }
     );
 
     server.tool(
         'submit_expertise_analysis',
-        'Submit the analyzed voice study and expertise map. Requires explicit review and acceptance of Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy).',
+        'Submit the analyzed voice study and expertise map to proceed to theme confirmation.',
         {
             voiceStudy: z.string().describe("JSON string of the voice study"),
             expertTopics: z.string().describe("JSON string of the expertise topics"),
-            termsAccepted: z.boolean().describe("Must be true. The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after reviewing the links."),
+            termsAccepted: z.boolean().optional().describe("Optional if already accepted at basic info. The expert must have accepted the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the expertise analysis submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ voiceStudy, expertTopics, termsAccepted, userId: uid }) => {
-            if (!termsAccepted) {
-                return {
-                    isError: true,
-                    content: [{
-                        type: 'text' as const,
-                        text: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance, then call submit_expertise_analysis with termsAccepted: true.'
-                    }]
-                };
+            if (termsAccepted === false) {
+                return formatOnboardingError(null, {
+                    code: 'terms_required',
+                    cause: 'Terms not accepted yet.',
+                    nextAction: 'Ask the expert to accept the Terms and Privacy Policy, then call submit_expertise_analysis again.',
+                    prose: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed.'
+                });
             }
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
                 const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { 
                     action: 'expertise_analysis', 
                     voiceStudyRaw: voiceStudy, 
                     expertTopicsRaw: expertTopics,
-                    termsAccepted: true
+                    ...(termsAccepted !== undefined ? { termsAccepted } : {})
                 });
-                const statusText = `Expertise analysis submitted. Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) acceptance recorded.\n\n👉 **Next Step:** Call \`get_detected_themes\` to retrieve and review the detected expertise themes.`;
+                const statusText = `Expertise analysis submitted.\n\n👉 **Next Step:** Call \`get_detected_themes\` to retrieve and review the detected expertise themes.`;
                 const payload = {
                     status: 'expertise_analysis_submitted',
-                    terms_accepted: true,
-                    terms_url: 'https://www.fodda.ai/terms',
-                    privacy_url: 'https://www.fodda.ai/privacy',
                     next_step: 'get_detected_themes',
                     result
                 };
@@ -7419,25 +7876,66 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
 
     server.tool(
         'get_detected_themes',
-        'Fetch the detected themes derived from the expertise analysis and background research for expert review and confirmation.',
+        'Fetch the detected themes derived from the expertise analysis and background research for expert review and confirmation. Shows verified research findings about the expert\'s work before themes; ask the expert if any findings are wrong or not theirs before asking them to confirm themes.',
         {
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the detected expertise themes list', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
                 const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
-                const statusText = `Detected themes retrieved successfully.\n\n👉 **Next Step:** Present the detected themes to the expert for selection, then call \`confirm_themes\` with their confirmed themes array.`;
+
+                const sections: string[] = [];
+
+                if (result?.research_state === 'running') {
+                    sections.push('⚠️ Research is still running, so these themes may sharpen. Wait for it, or confirm now and continue.\n');
+                }
+
+                const rawFindings = Array.isArray(result?.research_findings)
+                    ? result.research_findings
+                    : (Array.isArray(result?.findings) ? result.findings : []);
+                const findings = rawFindings.slice(0, 8);
+
+                if (findings.length > 0) {
+                    sections.push('**What Fodda found about your work:**');
+                    findings.forEach((f: any, idx: number) => {
+                        const claim = f.claim || f.text || f.finding || f.title || '';
+                        let linkStr = '';
+                        if (Array.isArray(f.sources) && f.sources.length > 0) {
+                            linkStr = f.sources.filter((s: any) => s?.url).map((s: any) => `[${s.title || s.name || 'Source'}](${s.url})`).join(', ');
+                        } else if (f.url) {
+                            linkStr = `[${f.title || f.source || 'Source'}](${f.url})`;
+                        }
+                        const suffix = linkStr ? ` (${linkStr})` : '';
+                        sections.push(`${idx + 1}. ${claim}${suffix}`);
+                    });
+                    sections.push("\nAnything here that's wrong or not yours? I'll leave it out.\n");
+                }
+
+                const themes = Array.isArray(result?.themes) ? result.themes : [];
+                if (themes.length > 0) {
+                    sections.push('**Detected Themes for Confirmation:**');
+                    themes.forEach((t: any, idx: number) => {
+                        const themeName = typeof t === 'string' ? t : (t.name || t.theme || JSON.stringify(t));
+                        const themeDesc = typeof t === 'object' && t.description ? ` — ${t.description}` : '';
+                        sections.push(`${idx + 1}. **${themeName}**${themeDesc}`);
+                    });
+                    sections.push('');
+                }
+
+                sections.push('👉 **Next Step:** Present the findings and detected themes to the expert for review. If any findings are wrong, pass their IDs to `confirm_themes(flaggedFindingIds: [...])`. Then call `confirm_themes` with their confirmed themes.');
+
+                const statusText = sections.join('\n');
                 return {
                     content: [
                         { type: 'text' as const, text: statusText },
@@ -7445,33 +7943,41 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
 
     server.tool(
         'confirm_themes',
-        'Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for the audio interview.',
+        'Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for the audio interview. Can pass flaggedFindingIds and flagNote if the expert flagged any research findings as wrong or not theirs.',
         {
             themes: z.array(z.string()).describe("Array of confirmed theme names"),
+            flaggedFindingIds: z.array(z.string()).optional().describe("IDs of any research findings the expert flagged as incorrect, outdated, or not theirs."),
+            flagNote: z.string().optional().describe("Optional note from the expert explaining why certain findings were flagged."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the theme confirmation step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ themes, userId: uid }) => {
+        async ({ themes, flaggedFindingIds, flagNote, userId: uid }) => {
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
-                const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), { confirmedThemes: themes });
+                const body: Record<string, any> = { confirmedThemes: themes };
+                if (flaggedFindingIds && flaggedFindingIds.length > 0) {
+                    body.flaggedFindingIds = flaggedFindingIds;
+                }
+                if (flagNote) {
+                    body.flagNote = flagNote;
+                }
+                const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), body);
                 if (!result || result.success === false) {
-                    return {
-                        isError: true,
-                        content: [{
-                            type: 'text' as const,
-                            text: "Theme confirmation didn't complete — the interview questionnaire wasn't generated. Please call confirm_themes again to retry. Do NOT proceed to schedule_interview yet."
-                        }]
-                    };
+                    return formatOnboardingError(null, {
+                        code: 'questions_failed',
+                        cause: 'Theme confirmation did not complete — the interview questionnaire was not generated.',
+                        nextAction: 'Call confirm_themes again to retry theme confirmation and questionnaire generation. Do not proceed to schedule_interview yet.',
+                        prose: "Theme confirmation didn't complete — the interview questionnaire wasn't generated. Please call confirm_themes again to retry. Do NOT proceed to schedule_interview yet."
+                    });
                 }
                 const statusText = `Themes confirmed and questionnaire generated.\n\n👉 **Next Step:** Call \`schedule_interview\` to schedule the 15–20 minute deep-dive audio interview.`;
                 const extendedResult = {
@@ -7487,33 +7993,47 @@ export async function createServer(
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
 
     server.tool(
         'get_onboarding_status',
-        'Check the current progress and status of the expert onboarding process.',
+        'Check the current progress and status of the expert onboarding process. Setting waitForResearch: true holds the call server-side (~25s) while background research is running, returning immediately once complete or failed. next_action describes the expert\'s next step in plain English; relay it in your own words.',
         {
             analystId: z.string().optional().describe('Optional specific Analyst ID to check status for.'),
+            waitForResearch: z.boolean().optional().describe('When true, holds the call server-side (up to 25s) while background research is running, returning immediately once complete or failed.'),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         { title: 'the onboarding progress status check', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ analystId, userId: uid }) => {
+        async ({ analystId, waitForResearch, userId: uid }) => {
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
                 const userEmail = resolveUserId(userId, uid);
-                let path = '/api/onboarding-status';
-                if (analystId) {
-                    path += `?analystId=${encodeURIComponent(analystId)}`;
-                }
+                const params = new URLSearchParams();
+                if (analystId) params.set('analystId', analystId);
+                if (waitForResearch) params.set('wait', 'research');
+                const queryString = params.toString() ? `?${params.toString()}` : '';
+                const path = `/api/onboarding-status${queryString}`;
                 const result = await foddaRequest('GET', path, apiKey, userEmail);
-                return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
+                const { label, nextTool, nextAction } = deriveStatusFlow(result);
+                const proseText = `**Where you are:** ${label}. **Next step for you:** ${nextAction}`;
+                const payload = {
+                    ...result,
+                    next_tool: nextTool,
+                    next_action: nextAction
+                };
+                return {
+                    content: [
+                        { type: 'text' as const, text: proseText },
+                        { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
+                    ]
+                };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );
@@ -7530,7 +8050,7 @@ export async function createServer(
         { title: 'the interview scheduling step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ datetime, localTimeStr, now, userId: uid }) => {
             if (!apiKey) {
-                return { content: [{ type: 'text' as const, text: 'Your Fodda credentials are missing. Add Fodda as a connector to begin (or continue) onboarding: https://www.fodda.ai/join-experts?return_to=connector&source=mcp' }] };
+                return formatOnboardingError(null, { code: 'credentials_missing' });
             }
             try {
                 const userEmail = resolveUserId(userId, uid);
@@ -7539,15 +8059,19 @@ export async function createServer(
                     localTimeStr,
                     now
                 });
-                const statusText = `Interview request received. Please share the confirmed time and Google Meet join link with the expert.`;
+                const statusText = `Interview request received. Please share the confirmed time and Google Meet join link with the expert. After the interview, Fodda reviews your Human Agent and emails you. You can check progress any time with get_onboarding_status.`;
+                const payload = {
+                    ...result,
+                    next_step: null
+                };
                 return {
                     content: [
                         { type: 'text' as const, text: statusText },
-                        { type: 'text' as const, text: JSON.stringify(result, null, 2) }
+                        { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
                     ]
                 };
             } catch (err: any) {
-                return { isError: true, content: [{ type: 'text' as const, text: parseWebsiteError(err) }] };
+                return formatOnboardingError(err);
             }
         }
     );

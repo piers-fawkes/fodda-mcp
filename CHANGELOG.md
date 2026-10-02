@@ -5,6 +5,58 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.95] - 2026-10-02
+
+### Fixed
+- **Unified Limit Error + Upsell Parity + ChatGPT Commerce-Silence Fix (`src/errorHandling.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - Closed the ChatGPT leak: On `sessionSource === 'chatgpt'`, credit errors (`DAILY_LIMIT_EXCEEDED`, `PLAN_LIMIT_EXCEEDED`, `CREDITS_EXHAUSTED`, `TRIAL_EXHAUSTED`) now strictly return a clean, zero-commerce `{ error: 'QUOTA_EXHAUSTED', message, manage_url: 'https://app.fodda.ai/account' }` with no Stripe URLs, prices, or "API calls" wording.
+  - Added `buildUnifiedLimitError()` returning structured machine-readable fields `{ code, status, cause, next_action, action, setup_url, top_up_url, overage_rate_usd, upgrade_url, renews_at, usage, payg, agent_checkout, message }`.
+  - All 4 credit exhaustion paths now return `isError: true` so host models treat them as an actionable stop rather than data.
+  - Sourced all price figures, call allowances, and links strictly from upstream API payloads with zero hardcoded dollar amounts or volume numbers.
+  - Updated `TRIAL_EXHAUSTED` to point to `app.fodda.ai` and emphasize free Base account sign-up and email verification.
+  - Updated `### RULE: CostSilence` in `src/systemPrompt.ts` with Exception 2: models are directed to relay the verbatim offer, link, and price from `next_action` on credit exhaustion errors.
+  - Verification: `node dist/test_limit_and_credit_card_capture.js` passed all 8 scenarios; `node scripts/test_chatgpt_live.mjs` passed all route and unit tests.
+
+### Added
+- **Long-Poll Slow Calls + Deep Consults as Jobs (`src/toolHandlers.ts`, `deploy_cloud_run.sh`)**:
+  - Converted `check_research_status`, `check_supplemental_status`, and `check_deliverable_status` into long-pollers holding server-side up to ~28s and returning immediately upon completion or failure.
+  - Updated tool descriptions to instruct host models to hold server-side and continue polling until status is COMPLETE or FAILED with a single brief "still working" line between calls.
+  - Converted `deep: true` (and natural language "do your homework") consults in `consult_analyst` and `consult_human_agent` into async jobs returning a Job ID immediately and resolving via `check_research_status`.
+  - Preserved instant, inline execution for all normal (non-deep) consults across ChatGPT, Copilot, Grok, and AgentKit.
+  - Preserved tool count at exactly 55 tools (26 billable, 29 free; 24 in `/chatgpt` profile).
+  - Added `--session-affinity` flag to Cloud Run deployment script (`deploy_cloud_run.sh`) to align with Streamable-HTTP session-to-instance affinity.
+  - Verification: `node dist/test_longpoll_status.js` passed all 5 scenarios (inline consult regression, deep consult immediate dispatch, server-side long-poll retrieval, homework natural language intent, and not-found error handling).
+- **Client-App Provenance from MCP Handshake (`src/index.ts`)**:
+  - Extracted `params.clientInfo.name` and `.version` from the `initialize` JSON-RPC handshake in `src/index.ts`.
+  - Implemented `normalizeClientSlug()` mapping client identifiers to canonical slugs (`claude`, `claude-desktop`, `claude-code`, `cursor`, `vscode`, `chatgpt`, `windsurf`, `zed`, `librechat`, `roo-code`, `cline`).
+  - Stored client slug in `sessionClients` map across session lifecycle with automatic cleanup on close and timeout sweep.
+  - Forwarded `X-Fodda-Client: <slug>` upstream via `foddaRequest` alongside existing `X-Fodda-Source` on both session-based and stateless executions without altering route or commercial channel attribution.
+  - Added `X-Fodda-Client` to CORS `Access-Control-Allow-Headers`.
+  - Verification: `node dist/test_client_provenance.js` passed all 3 scenarios; `npm test` passed 200 OK.
+- **Waitable Deep Research & Grounded Source Links (`src/toolHandlers.ts`, `src/tools.ts`)**:
+  - `expert_onboarding_research` (v1.2.0): Updated result guidance to instruct agents to call `get_onboarding_status` with `waitForResearch: true` (~25s server-side hold). Explicitly mapped HTTP 409 responses from `/api/deep-research` to the structured `research_needs_basic_info` error code.
+  - `get_onboarding_status` (v1.2.0): Added optional `waitForResearch?: boolean` schema parameter. When `true`, passes `?wait=research` to `/api/onboarding-status` to hold the connection server-side while research is running and return immediately on completion or failure.
+  - `get_detected_themes` (v1.2.0): Reads `research_state`, `research_findings`, and `themes` from `/api/onboarding-themes`. Prepends a warning if `research_state === 'running'`. Renders verified findings before themes with lead-in *"What Fodda found about your work:"*, clickable markdown links `[Title](url)`, and closing exclusion prompt *"Anything here that's wrong or not yours? I'll leave it out."* Updated description to instruct agents to show findings before asking the expert to confirm themes.
+  - `confirm_themes` (v1.2.0): Added optional `flaggedFindingIds?: string[]` and `flagNote?: string` schema parameters; forwards them in the POST body to `/api/generate-questions`.
+  - Bumped all 4 tool versions to `1.2.0` in `src/tools.ts`.
+  - Verification: `node dist/test_waitable_research_and_grounded_links.js` passed all 4 test suites.
+
+## [1.46.94] - 2026-10-02
+
+### Added
+- **Onboarding Consent at Step One & Truthful Persistence Copy (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `src/tools.ts`)**:
+  - Implemented Option A spec from Brief 2026-10-02: `submit_basic_info` is now the sole initial consent point (bumped to v1.2.0). Requires `termsAccepted: boolean` in schema and hard-refuses with structured code `terms_required` if false.
+  - Relaxed subsequent consent gates in `submit_expertise_analysis` (v1.1.0) and `finalize_byo_mcp_onboarding` (v1.1.0) by making `termsAccepted` optional so experts are not prompted for consent multiple times.
+  - Replaced all false persistence lines (`"nothing is saved to Fodda"`, `"held in this chat session"`, `"lives only in this conversation"`) across `toolHandlers.ts` and `systemPrompt.ts` with truthful copy: progress is honestly "saved as you go" once terms are accepted; in-chat drafts (e.g. voice study, expertise map) live only in chat until submitted; BYO-MCP profile is saved once terms are accepted while MCP connection is verified and submitted for review at finalization.
+  - Added in-progress resumption to `begin_expert_onboarding` (v1.1.0): when `inProgress` is detected, returns `status: 'resumed'` and intro copy *"You've already started, so let's pick up at <step>"*.
+- **Structured Error Blocks & Workflow Next Actions Across All Ten Onboarding Tools (`src/toolHandlers.ts`, `docs/tool-schema-guidelines.md`, `MCP_AUDIT.md`)**:
+  - Added structured machine-readable error blocks (`code`, `cause`, `next_action`) in fenced JSON alongside human-readable prose across all ten onboarding tools (`begin_expert_onboarding`, `submit_basic_info`, `submit_mcp_source`, `finalize_byo_mcp_onboarding`, `expert_onboarding_research`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `get_onboarding_status`, `schedule_interview`).
+  - Standardized error codes: `credentials_missing`, `terms_required`, `record_not_found`, `research_needs_basic_info`, `themes_not_ready`, `questions_failed`, `interview_slot_invalid`, `interview_already_scheduled`, `mcp_probe_failed`, `mcp_auth_unsupported`, `upstream_error`.
+  - `get_onboarding_status` (v1.1.0): renders prose as `**Where you are:** <status label>. **Next step for you:** <next_action>` with `next_tool` and `next_action` in the JSON payload block. Supports Recall Bot booking detection.
+  - `schedule_interview` (v1.1.0): returns `next_step: null` on success and adds closing reassurance guiding the expert to check progress with `get_onboarding_status`.
+  - Documented structured error and `next_action` convention in `docs/tool-schema-guidelines.md`, `MCP_AUDIT.md`, and Agent Bible `product_and_system_reference.md`.
+  - Prepared Website Agent handoff brief in `Fodda Website/briefs/Brief Website — Onboarding Consent at Step One, Next-Step Line & Structured Errors.md`.
+
 ## [1.46.93] - 2026-10-02
 
 ### Added

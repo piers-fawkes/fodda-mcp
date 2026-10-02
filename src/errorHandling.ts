@@ -103,6 +103,185 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
 }
 
 // ---------------------------------------------------------------------------
+// Unified Limit Error Builder
+// ---------------------------------------------------------------------------
+
+export interface UnifiedLimitErrorOptions {
+    code: 'DAILY_LIMIT_EXCEEDED' | 'PLAN_LIMIT_EXCEEDED' | 'CREDITS_EXHAUSTED' | 'TRIAL_EXHAUSTED';
+    setupUrl?: string | null;
+    topUpUrl?: string | null;
+    overageRateUsd?: number | null;
+    upgradeUrl?: string | null;
+    renewsAt?: string | null;
+    usage?: any;
+    payg?: any;
+    agentCheckout?: { url?: string; api_calls?: number; price_usd?: number; price?: number } | null;
+}
+
+export function buildChatGptQuotaExhausted(): { isError: boolean; content: { type: 'text'; text: string }[] } {
+    return {
+        isError: true,
+        content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+                error: 'QUOTA_EXHAUSTED',
+                message: 'Monthly limit reached. Manage your Fodda account at https://app.fodda.ai/account.',
+                manage_url: 'https://app.fodda.ai/account'
+            }, null, 2)
+        }]
+    };
+}
+
+export function buildUnifiedLimitError(options: UnifiedLimitErrorOptions): {
+    isError: boolean;
+    content: { type: 'text'; text: string }[];
+} {
+    let cause = '';
+    let next_action = '';
+    let action = '';
+
+    const overageRateStr = options.overageRateUsd != null ? `$${options.overageRateUsd}` : null;
+    const rateSuffix = overageRateStr ? ` at ${overageRateStr} per call` : '';
+
+    if (options.code === 'DAILY_LIMIT_EXCEEDED') {
+        cause = 'Daily call limit reached on free Base tier.';
+        action = options.setupUrl ? 'SETUP_CARD' : 'UPGRADE_REQUIRED';
+        if (options.setupUrl) {
+            next_action = `Daily call limit reached on free Base tier. Add a card to keep going without daily limits${rateSuffix}: ${options.setupUrl}`;
+        } else {
+            const upUrl = options.upgradeUrl || `${APP_BASE_URL}/billing`;
+            next_action = `Daily call limit reached on free Base tier. Manage your billing at ${upUrl} to remove daily limits${rateSuffix}.`;
+        }
+    } else if (options.code === 'PLAN_LIMIT_EXCEEDED') {
+        cause = 'Monthly plan API call limit exceeded.';
+        action = options.setupUrl ? 'ADD_PAYMENT_METHOD' : 'VISIT_BILLING';
+        if (options.setupUrl) {
+            next_action = `You're out of monthly calls. Add a card to keep going${rateSuffix}: ${options.setupUrl}`;
+        } else {
+            const upUrl = options.upgradeUrl || `${APP_BASE_URL}?view=billing`;
+            next_action = `You're out of monthly calls. Manage your billing at ${upUrl} to continue.`;
+        }
+    } else if (options.code === 'TRIAL_EXHAUSTED') {
+        cause = 'Trial query allowance exhausted.';
+        action = 'UPGRADE_REQUIRED';
+        const upUrl = options.upgradeUrl || APP_BASE_URL;
+        next_action = `Your trial queries have ended. Sign up or verify your email for a free Base account at ${upUrl}.`;
+    } else {
+        // CREDITS_EXHAUSTED
+        cause = 'Monthly credit limit exhausted.';
+        const checkoutUrl = options.topUpUrl || options.agentCheckout?.url || null;
+        const calls = options.agentCheckout?.api_calls || options.usage?.top_up_calls || null;
+        const price = options.agentCheckout?.price_usd ?? options.agentCheckout?.price ?? options.usage?.top_up_price_usd ?? null;
+
+        if (checkoutUrl) {
+            action = 'CHECKOUT_AVAILABLE';
+            if (calls && price != null) {
+                next_action = `Top up ${calls} calls for $${price}: ${checkoutUrl}`;
+            } else if (calls) {
+                next_action = `Top up ${calls} calls: ${checkoutUrl}`;
+            } else if (price != null) {
+                next_action = `Top up calls for $${price}: ${checkoutUrl}`;
+            } else {
+                next_action = `Top up calls: ${checkoutUrl}`;
+            }
+        } else if (options.setupUrl) {
+            action = 'ADD_PAYMENT_METHOD';
+            next_action = `You're out of credits this cycle. Add a card to keep going${rateSuffix}: ${options.setupUrl}`;
+        } else {
+            action = 'UPGRADE_REQUIRED';
+            const upUrl = options.upgradeUrl || `${APP_BASE_URL}/account`;
+            next_action = `You've used all your credits this cycle. Manage your account or upgrade your plan at ${upUrl}.`;
+        }
+    }
+
+    const payload: Record<string, any> = {
+        code: options.code,
+        status: options.code,
+        cause,
+        next_action,
+        action,
+        message: next_action,
+    };
+    if (options.setupUrl) {
+        payload.setup_url = options.setupUrl;
+        payload.setupUrl = options.setupUrl;
+    }
+    if (options.topUpUrl) {
+        payload.top_up_url = options.topUpUrl;
+    }
+    if (options.overageRateUsd != null) {
+        payload.overage_rate_usd = options.overageRateUsd;
+    }
+    if (options.upgradeUrl) {
+        payload.upgrade_url = options.upgradeUrl;
+        payload.upgradeUrl = options.upgradeUrl;
+    }
+    if (options.renewsAt) {
+        payload.renews_at = options.renewsAt;
+    }
+    if (options.usage) {
+        payload.usage = options.usage;
+    }
+    if (options.payg) {
+        payload.payg = options.payg;
+    }
+    if (options.agentCheckout) {
+        payload.agent_checkout = options.agentCheckout;
+    }
+
+    return {
+        isError: true,
+        content: [{
+            type: 'text' as const,
+            text: JSON.stringify(payload, null, 2)
+        }]
+    };
+}
+
+function extractLimitDetails(err: any, sessionUserId?: string) {
+    const data = err.response?.data || {};
+    const errorData = (data.error && typeof data.error === 'object') ? data.error : {};
+    const rawCode = typeof data.error === 'string'
+        ? data.error
+        : (errorData.code || data.code || data.error_code || '');
+    const code = rawCode.toString().toUpperCase();
+    const msg = (data.message || errorData.message || (typeof data.error === 'string' ? data.error : '') || err.message || '').toString().toLowerCase();
+
+    const isDaily = code === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call');
+    const isTrial = isIndividualTrial(err);
+    const isPlan = code === 'PLAN_LIMIT_EXCEEDED' || code === 'LIMIT_EXCEEDED' || msg.includes('monthly api call limit') || msg.includes('monthly credit limit reached') || msg.includes('plan limit');
+
+    let limitCode: 'DAILY_LIMIT_EXCEEDED' | 'PLAN_LIMIT_EXCEEDED' | 'CREDITS_EXHAUSTED' | 'TRIAL_EXHAUSTED';
+    if (isDaily) limitCode = 'DAILY_LIMIT_EXCEEDED';
+    else if (isTrial) limitCode = 'TRIAL_EXHAUSTED';
+    else if (isPlan) limitCode = 'PLAN_LIMIT_EXCEEDED';
+    else limitCode = 'CREDITS_EXHAUSTED';
+
+    const email = sessionUserId && sessionUserId.includes('@') ? sessionUserId : null;
+    const setupUrl = data.setupUrl || errorData.setupUrl || data.setup_url || null;
+    const agentCheckout = data.agent_checkout || errorData.agent_checkout || null;
+    const payg = data.payg || errorData.payg || null;
+    const topUpUrl = agentCheckout?.url || data.top_up_url || payg?.checkoutUrl || payg?.url || payg?.link || null;
+    const overageRateUsd = data.overage_rate_usd ?? payg?.pricePerCall ?? errorData.overage_rate_usd ?? null;
+    const renewsAt = data.renews_at || data.nextRenewalDate || data.usage?.nextRenewalDate || null;
+    const upgradeUrl = data.upgradeUrl || data.upgrade_url || errorData.upgradeUrl || (isTrial ? buildPortalUpgradeUrl(email) : (limitCode === 'DAILY_LIMIT_EXCEEDED' ? `${APP_BASE_URL}/billing` : `${APP_BASE_URL}?view=billing`));
+
+    return {
+        limitCode,
+        email,
+        setupUrl,
+        agentCheckout,
+        payg,
+        topUpUrl,
+        overageRateUsd,
+        renewsAt,
+        upgradeUrl,
+        usage: data.usage || null,
+        isTrial,
+    };
+}
+
+// ---------------------------------------------------------------------------
 // Access error response builder
 // ---------------------------------------------------------------------------
 
@@ -129,17 +308,7 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
     }
     if (accessType === 'credits') {
         if (source === 'chatgpt') {
-            return {
-                isError: true,
-                content: [{
-                    type: 'text' as const,
-                    text: JSON.stringify({
-                        error: 'QUOTA_EXHAUSTED',
-                        message: 'Monthly limit reached. Manage your Fodda account at https://app.fodda.ai/account.',
-                        manage_url: 'https://app.fodda.ai/account'
-                    }, null, 2)
-                }]
-            };
+            return buildChatGptQuotaExhausted();
         }
 
         const isUnauthenticated = (!apiKey || apiKey === '') && (!userId || userId === 'anonymous' || userId === 'spt_agent');
@@ -162,75 +331,29 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
             };
         }
 
-        // Payment details are returned as STRUCTURED FIELDS, never baked into the
-        // human-readable message. This keeps live Stripe URLs / prices out of the
-        // string that gets fed to the model, and lets the client decide how/whether
-        // to surface a payment CTA. (Do not echo the API's raw URL-laden message.)
-        const data = err.response?.data || {};
-        const rawCode = typeof data.error === 'string' ? data.error : (data.error?.code || data.code || '');
-        const code = rawCode.toString().toUpperCase();
-        const msg = (data.message || data.error?.message || (typeof data.error === 'string' ? data.error : '') || err.message || '').toString().toLowerCase();
-        const isDailyLimit = code === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call');
-
-        if (isDailyLimit) {
-            const setupUrl = data.setupUrl || null;
-            const upgradeUrl = data.upgradeUrl || 'https://app.fodda.ai/billing';
-            return {
-                isError: true,
-                content: [{
-                    type: 'text' as const,
-                    text: JSON.stringify({
-                        status: 'DAILY_LIMIT_EXCEEDED',
-                        error_code: 'daily_limit',
-                        message: 'Daily call limit reached on free Base tier (50 calls/day). Add a payment card to remove daily burst limits and continue querying without interruption.',
-                        setup_url: setupUrl,
-                        upgrade_url: upgradeUrl,
-                        action: setupUrl ? 'SETUP_CARD' : 'UPGRADE_REQUIRED',
-                        note: 'Card setup link is in setup_url. Adding a card removes daily burst limits.'
-                    }, null, 2)
-                }]
-            };
+        const details = extractLimitDetails(err, userId);
+        let setupUrl = details.setupUrl;
+        const targetUser = details.email || userId;
+        if (!setupUrl && details.limitCode !== 'TRIAL_EXHAUSTED' && targetUser) {
+            setupUrl = await fetchSetupUrl(targetUser);
         }
 
-        const errorData = (data.error && typeof data.error === 'object') ? data.error : {};
-        const usage = data.usage || null;
-        const payg = data.payg || null;
-        const agentCheckout = data.agent_checkout || null;
-
-        // Best-effort inline top-up link
-        let topUpUrl = agentCheckout?.url || payg?.checkoutUrl || payg?.url || payg?.link || data.setupUrl || null;
-        if (!topUpUrl) {
-            topUpUrl = await fetchAgentCheckoutLink(null, 'mcp');
+        let topUpUrl = details.topUpUrl;
+        if (!topUpUrl && details.limitCode === 'CREDITS_EXHAUSTED') {
+            topUpUrl = await fetchAgentCheckoutLink(details.email, 'mcp');
         }
 
-        const overageRateUsd = payg?.pricePerCall ?? data.overage_rate_usd ?? null;
-        const renewsAt = data.renews_at || data.nextRenewalDate || usage?.nextRenewalDate || null;
-        const upgradeUrl = data.upgradeUrl || errorData.upgradeUrl || 'https://app.fodda.ai';
-
-        const response: Record<string, any> = {
-            status: 'CREDITS_EXHAUSTED',
-            error_code: 'credit_limit',
-            // Clean, URL-free, price-free message. The CTA lives in the fields below.
-            message: 'Monthly credit limit reached. To continue immediately, the account can top up, enable pay-as-you-go, or upgrade — see the structured fields for the relevant links and rate.',
-            upgrade_url: upgradeUrl,
-            action: topUpUrl ? 'CHECKOUT_AVAILABLE' : 'UPGRADE_REQUIRED',
-            note: 'Payment options are structured fields (setup_url, top_up_url, overage_rate_usd, upgrade_url, renews_at). To unlock pay-as-you-go overage without purchasing a bundle, use setup_url to attach a card.',
-        };
-        const setupUrl = data.setupUrl || null;
-        if (setupUrl) response.setup_url = setupUrl;
-        if (topUpUrl) response.top_up_url = topUpUrl;
-        if (overageRateUsd != null) response.overage_rate_usd = overageRateUsd;
-        if (renewsAt) response.renews_at = renewsAt;
-        if (usage) response.usage = usage;
-        if (payg) response.payg = payg;
-
-        return {
-            isError: true,
-            content: [{
-                type: 'text' as const,
-                text: JSON.stringify(response, null, 2)
-            }]
-        };
+        return buildUnifiedLimitError({
+            code: details.limitCode,
+            setupUrl,
+            topUpUrl,
+            overageRateUsd: details.overageRateUsd,
+            upgradeUrl: details.upgradeUrl,
+            renewsAt: details.renewsAt,
+            usage: details.usage,
+            payg: details.payg,
+            agentCheckout: details.agentCheckout,
+        });
     }
     // Not an access error — fall through to generic handling
     const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
@@ -284,24 +407,23 @@ function isIndividualTrial(err: any): boolean {
  *   2. Individual trial accounts  — apiKey is `sk_live_` but backend returns
  *      planCode 13 / isTrial / TRIAL_EXHAUSTED in the error response.
  *
- * When a trial user hits their limit (25 lifetime queries for individual,
- * 50 per-user for legacy):
- *   - If userId (email) is available → attempt auto-upgrade to Base account
- *   - If no userId → show upgrade portal link
- *   - If not a trial key → standard credit exhaustion message
+ * When a trial user hits their limit:
+ *   - If ChatGPT source → clean QUOTA_EXHAUSTED with zero commerce/pricing
+ *   - Non-ChatGPT → unified limit error payload with verbatim next_action
  * Falls through to generic error handling for non-credit errors.
  */
 export async function handleTrialCreditExhaustion(
     err: any,
     sessionApiKey: string,
-    sessionUserId: string
+    sessionUserId: string,
+    sessionSource?: string
 ): Promise<{ isError: boolean; content: { type: 'text'; text: string }[] } | null> {
     const accessType = classifyAccessError(err);
 
     // ── Legacy trial key retirement — surface API message directly ──
     if (accessType === 'legacy_retired') {
         const errorMsg = err.response?.data?.error?.message || err.response?.data?.error || err.response?.data?.message
-            || 'Legacy trial keys are no longer supported. Sign up for a free Base account at app.fodda.ai to get 100 API calls/month.';
+            || 'Legacy trial keys are no longer supported. Sign up for a free Base account at app.fodda.ai to get monthly API calls.';
         const signupUrl = err.response?.data?.signupUrl || err.response?.data?.error?.signupUrl || 'https://app.fodda.ai';
 
         return {
@@ -321,151 +443,32 @@ export async function handleTrialCreditExhaustion(
 
     if (accessType !== 'credits') return null; // Not a credit error — let caller handle
 
-    // sk_trial_ keys are retired — isLegacyTrial always false.
-    // Individual trial accounts (planCode 13) use sk_live_ keys; detected from the error response.
-    const isNewTrial = isIndividualTrial(err);
-    const isTrial = isNewTrial;
-
-    // Extract usage metadata from the error response (backend may include it)
-    const errUsage = err.response?.data?.usage || null;
-    const usedCount = errUsage?.used ?? errUsage?.queries_used ?? null;
-    const limitCount = errUsage?.limit ?? errUsage?.query_limit ?? (isNewTrial ? 25 : null);
-
-    if (isTrial) {
-        const portalUrl = buildPortalUpgradeUrl(
-            sessionUserId && sessionUserId !== 'anonymous' ? sessionUserId : null
-        );
-        const usageNote = (usedCount !== null && limitCount !== null)
-            ? ` (${usedCount}/${limitCount} queries used)`
-            : '';
-
-        return {
-            isError: false,
-            content: [{
-                type: 'text' as const,
-                text: JSON.stringify({
-                    status: 'TRIAL_EXHAUSTED',
-                    message: `I'd love to help analyze this macro shift with additional insights in the Fodda graph, but I noticed your account is currently out of research credits. While you can still keep asking me questions, if you want to get deeper insights you can quickly top up your balance at https://fodda.ai/account/billing to continue our consultation.`,
-                    action: 'UPGRADE_REQUIRED',
-                    upgrade_url: 'https://fodda.ai/account/billing',
-                    note: 'Present the upgrade link prominently. The Base plan is FREE and gives 100 queries/month after email verification.',
-                }, null, 2)
-            }]
-        };
+    // ── ChatGPT guard: zero commerce/Stripe/prices ──
+    if (sessionSource === 'chatgpt') {
+        return buildChatGptQuotaExhausted();
     }
 
-    // Non-trial credit exhaustion — handles both legacy CREDITS_EXHAUSTED and new PLAN_LIMIT_EXCEEDED
-    const errorData = err.response?.data?.error || err.response?.data || {};
-    const apiMsg = (typeof errorData === 'object' ? errorData.message : null) || err.response?.data?.message || "You've used all your API calls for this month.";
-    const upsell = errorData.upsell || null;
-    const usage = err.response?.data?.usage || null;
-    const payg = err.response?.data?.payg || null;
-    const agentCheckout = err.response?.data?.agent_checkout || null;
-
-    // Resolve email: session userId (if it's an email), or null
-    const email = sessionUserId && sessionUserId.includes('@') ? sessionUserId : null;
-
-    const rawCode = typeof errorData === 'string'
-        ? errorData
-        : (errorData.code || err.response?.data?.code || err.response?.data?.error_code || '');
-    const errCode = rawCode.toString().toUpperCase();
-    const msg = (err.response?.data?.message || errorData.message || (typeof errorData === 'string' ? errorData : '') || err.message || '').toString().toLowerCase();
-    const isDailyLimit = errCode === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call');
-
-    // ── DAILY_LIMIT_EXCEEDED — daily burst limit (Base without card) ──
-    if (isDailyLimit) {
-        const setupUrl = err.response?.data?.setupUrl || errorData.setupUrl || null;
-        const upgradeUrl = err.response?.data?.upgradeUrl || `${APP_BASE_URL}/billing`;
-        return {
-            isError: true,
-            content: [{
-                type: 'text' as const,
-                text: JSON.stringify({
-                    status: 'DAILY_LIMIT_EXCEEDED',
-                    error_code: 'daily_limit',
-                    message: 'Daily call limit reached on free Base tier (50 calls/day). Add a payment card to remove daily burst limits and continue querying without interruption.',
-                    setup_url: setupUrl,
-                    upgrade_url: upgradeUrl,
-                    action: setupUrl ? 'SETUP_CARD' : 'UPGRADE_REQUIRED',
-                    note: 'Card setup link is in setup_url. Adding a card removes daily burst limits.'
-                }, null, 2)
-            }]
-        };
+    const details = extractLimitDetails(err, sessionUserId);
+    let setupUrl = details.setupUrl;
+    const targetUser = details.email || sessionUserId;
+    if (!setupUrl && details.limitCode !== 'TRIAL_EXHAUSTED' && targetUser) {
+        setupUrl = await fetchSetupUrl(targetUser);
     }
 
-    // ── PLAN_LIMIT_EXCEEDED — overage billing (no card on file) ──
-    // The upstream API returns setupUrl directly; if missing, fetch it ourselves
-    if (errCode === 'PLAN_LIMIT_EXCEEDED' || errCode === 'LIMIT_EXCEEDED' || msg.includes('monthly credit limit reached') || msg.includes('plan limit')) {
-        let setupUrl = err.response?.data?.setupUrl || errorData.setupUrl || null;
-        if (!setupUrl && (email || sessionUserId)) {
-            setupUrl = await fetchSetupUrl(email || sessionUserId);
-        }
-        const upgradeUrl = `${APP_BASE_URL}?view=billing`;
-
-        const response: Record<string, any> = {
-            status: 'PLAN_LIMIT_EXCEEDED',
-            code: 'PLAN_LIMIT_EXCEEDED',
-            message: setupUrl
-                ? `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.50/API call.\n\n💳 **[Add payment method →](${setupUrl})**\n\nThis is a one-click Stripe link to add a card. After adding, queries resume immediately with overage billing.\n\nOr manage your billing at ${upgradeUrl}`
-                : `⚡ Monthly API call limit exceeded. Add a payment method to continue at $0.50/API call.\n\nManage your billing at ${upgradeUrl}`,
-            action: setupUrl ? 'ADD_PAYMENT_METHOD' : 'VISIT_BILLING',
-            note: 'Present the setupUrl prominently — it is a one-click card addition link. The upgradeUrl lets them manage billing.',
-        };
-        if (setupUrl) {
-            response.setupUrl = setupUrl;
-            response.setup_url = setupUrl;
-        }
-        response.upgradeUrl = upgradeUrl;
-        response.upgrade_url = upgradeUrl;
-        if (usage) response.usage = usage;
-        if (payg) response.payg = payg;
-
-        return {
-            isError: true,
-            content: [{
-                type: 'text' as const,
-                text: JSON.stringify(response, null, 2)
-            }]
-        };
+    let topUpUrl = details.topUpUrl;
+    if (!topUpUrl && details.limitCode === 'CREDITS_EXHAUSTED') {
+        topUpUrl = await fetchAgentCheckoutLink(details.email, 'mcp');
     }
 
-    // ── Legacy credit exhaustion — checkout link + upsell (Base users) ──
-    // Try to get an inline checkout link (best-effort, non-blocking)
-    let checkoutUrl = agentCheckout?.url || null;
-    if (!checkoutUrl) {
-        checkoutUrl = await fetchAgentCheckoutLink(email, 'mcp');
-    }
-
-    const portalUrl = buildPortalUpgradeUrl(email);
-    const topUpCalls = (agentCheckout?.api_calls === 100 || !agentCheckout?.api_calls) ? 200 : agentCheckout.api_calls;
-    const response: Record<string, any> = {
-        status: 'CREDITS_EXHAUSTED',
-        message: checkoutUrl
-            ? `⚡ You've used all your Fodda credits this cycle.\n\n🛒 **Buy ${topUpCalls} more API calls →** ${checkoutUrl}\n\nThis opens a secure Stripe Checkout page (\$100 for ${topUpCalls} API calls at 50¢/call). After payment, your credits will be available immediately.\n\nAlternatively, you can upgrade your plan at ${portalUrl}`
-            : apiMsg,
-        action: checkoutUrl ? 'CHECKOUT_AVAILABLE' : 'VISIT_APP',
-        manage_url: 'https://app.fodda.ai/account',
-        upgrade_url: portalUrl,
-    };
-    if (upsell !== null && upsell !== undefined) response.upsell = upsell;
-    if (usage !== null && usage !== undefined) response.usage = usage;
-    if (checkoutUrl) {
-        response.checkout_url = checkoutUrl;
-        if (!email) {
-            response.checkout_note = "You'll be asked for your email during checkout.";
-        }
-    }
-    if (payg) {
-        response.payg = payg;
-        const paygUrl = payg.checkoutUrl || payg.url || payg.link;
-        response.message += `\n\n💳 **Pay-as-you-go:** keep querying without a plan — billed per API call.${paygUrl ? ` Set it up here: ${paygUrl}` : ''}`;
-    }
-
-    return {
-        isError: false,
-        content: [{
-            type: 'text' as const,
-            text: JSON.stringify(response, null, 2)
-        }]
-    };
+    return buildUnifiedLimitError({
+        code: details.limitCode,
+        setupUrl,
+        topUpUrl,
+        overageRateUsd: details.overageRateUsd,
+        upgradeUrl: details.upgradeUrl,
+        renewsAt: details.renewsAt,
+        usage: details.usage,
+        payg: details.payg,
+        agentCheckout: details.agentCheckout,
+    });
 }
