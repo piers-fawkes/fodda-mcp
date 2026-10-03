@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Expanded `GRAPH_LIST_ALLOWLIST` in `serializeGraphForList` to preserve essential routing fields (`suitable_questions`, `price_per_query`, `accessible`, `disabled`) alongside `routing_hint` (`agent_prompt`).
   - Confirmed `Accept-Encoding: gzip, compress, deflate, br` is sent on outbound requests via Axios and auto-decompressed.
   - Verification: Automated test suite `src/test_latency_mcp_brief5.ts` passed 11/11 checks (gzip headers, lightweight `/v1/account` payload shape, routing parity, fallback handling, live `api.fodda.ai` compatibility).
+  - Deployed Cloud Run revision `fodda-mcp-00596-rxt` (100% traffic, health check HTTP 200).
 
 ## [1.46.96] - 2026-10-02
 
