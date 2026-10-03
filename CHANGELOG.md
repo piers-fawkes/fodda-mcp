@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.97] - 2026-10-02
+
+### Changed
+- **MCP Client Slim Endpoints (Brief #5) (`src/toolHandlers.ts`, `package.json`)**:
+  - Pointed `get_my_account` at `GET /v1/account` instead of downloading the entire 100+ graph catalog (`GET /v1/graphs`), reducing payload size from ~1.44MB to ~350B–1KB with transparent fallback to `/v1/graphs?view=mcp` if `/v1/account` returns 404 during API deployment rollover.
+  - Formatted user-facing account status using existing human-safe presentation (`api_calls_remaining`, `api_calls_total`, `plan`, `queryRetention`) and purged legacy `overage_tokens` field to eliminate any token/SPT terminology in tool output.
+  - Appended `?view=mcp` to session init and `list_graphs` catalog fetches, requesting lightweight routing projections (~30KB vs ~1.44MB).
+  - Expanded `GRAPH_LIST_ALLOWLIST` in `serializeGraphForList` to preserve essential routing fields (`suitable_questions`, `price_per_query`, `accessible`, `disabled`) alongside `routing_hint` (`agent_prompt`).
+  - Confirmed `Accept-Encoding: gzip, compress, deflate, br` is sent on outbound requests via Axios and auto-decompressed.
+  - Verification: Automated test suite `src/test_latency_mcp_brief5.ts` passed 11/11 checks (gzip headers, lightweight `/v1/account` payload shape, routing parity, fallback handling, live `api.fodda.ai` compatibility).
+
 ## [1.46.96] - 2026-10-02
 
 ### Added

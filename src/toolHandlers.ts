@@ -320,11 +320,14 @@ const GRAPH_LIST_ALLOWLIST: ReadonlySet<string> = new Set([
     'domain', 'graph_type', 'trend_count', 'evidence_count',
     'status', 'last_updated',
     'topics', 'verticals',
+    'suitable_questions', 'price_per_query', 'accessible', 'disabled',
 ]);
 const SNAKE_TO_CAMEL: Record<string, string> = {
     'graph_id': 'graphId', 'one_liner': 'oneLiner', 'graph_type': 'graphType',
     'trend_count': 'trendCount', 'evidence_count': 'evidenceCount',
     'last_updated': 'lastUpdated',
+    'suitable_questions': 'suitableQuestions',
+    'price_per_query': 'pricePerQuery',
 };
 // Strip internal routing guidance that may be baked into a description — either
 // injected by us below or already present in the API/Airtable description field.
@@ -429,7 +432,7 @@ export async function createServer(
         // missing account profile means no persona-aware framing, but tools work.
         const INIT_TIMEOUT_MS = 5000;
         const graphsData = await Promise.race([
-            foddaRequest('GET', '/v1/graphs', apiKey, userId),
+            foddaRequest('GET', '/v1/graphs?view=mcp', apiKey, userId),
             new Promise<null>((resolve) => setTimeout(() => resolve(null), INIT_TIMEOUT_MS)),
         ]);
         if (graphsData?._account) {
@@ -747,8 +750,17 @@ export async function createServer(
         { title: 'Check Account Status', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async () => {
             try {
-                // Fetch fresh account data from /v1/graphs (which returns _account)
-                const data = await foddaRequest('GET', '/v1/graphs', apiKey, userId);
+                // Fetch fresh account data from /v1/account (with fallback to /v1/graphs?view=mcp during deployment rollover)
+                let data: any;
+                try {
+                    data = await foddaRequest('GET', '/v1/account', apiKey, userId);
+                } catch (e: any) {
+                    if (e.response?.status === 404) {
+                        data = await foddaRequest('GET', '/v1/graphs?view=mcp', apiKey, userId);
+                    } else {
+                        throw e;
+                    }
+                }
                 const account = data?._account;
 
                 if (!account) {
@@ -784,7 +796,6 @@ export async function createServer(
                 if (typeof status.api_calls_remaining === 'number' && status.api_calls_remaining < 0) {
                     status.overage_active = true;
                     if (!isChatGpt) {
-                        status.overage_tokens = Math.abs(status.api_calls_remaining);
                         status.overage_api_calls = Math.abs(status.api_calls_remaining);
                         const overageRate = account.overage_rate_usd != null ? `$${account.overage_rate_usd}` : null;
                         status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply${overageRate ? ` at ${overageRate}/API call` : ''}.`;
@@ -871,7 +882,7 @@ export async function createServer(
         { title: 'List Knowledge Graphs', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ userId: uid }) => {
             try {
-                const data = await foddaRequest('GET', '/v1/graphs', apiKey, resolveUserId(userId, uid));
+                const data = await foddaRequest('GET', '/v1/graphs?view=mcp', apiKey, resolveUserId(userId, uid));
 
                 // P0: Apply allowlist serializer — strips PII (owner_email) and CMS bloat fields,
                 // and sanitizes any routing text baked into description. Routing guidance is then
