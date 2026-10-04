@@ -24,8 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Truncated prompt topic strings (`cleanPromptTopic`, <= 8 words) preventing long user query repetition while keeping prompt lengths strictly <= 25 words.
   - **Assistant Guidance in Tool Text**:
     - Added `--- SUGGESTED NEXT MOVES (GUIDANCE FOR ASSISTANT) ---` block providing host models (Claude, ChatGPT) clear guidance to offer the 3 ranked next moves at the close of responses.
-    - Simplified metadata header from `── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──` to `── STRUCTURED NEXT MOVES ──` while maintaining full backwards compatibility for `consult_envelope` and existing test suites.
-  - Verification: Automated suite `src/test_dynamic_next_moves.ts` passed 8/8 checks; `src/test_next_moves.ts` passed 33/33 checks; `src/test_next_moves_transcripts.ts` passed 17/17 checks with 0 failures; `src/test_verify_deprecate_render_spec.ts` passed 27/27 checks; `npm test` passed cleanly. Deployment deferred per user request.
+  - Verification: Automated suite `src/test_dynamic_next_moves.ts` passed 8/8 checks; `src/test_next_moves.ts` passed 33/33 checks; `src/test_next_moves_transcripts.ts` passed 17/17 checks with 0 failures; `src/test_verify_deprecate_render_spec.ts` passed 27/27 checks; `npm test` passed cleanly.
+  - Deployed Cloud Run revision `fodda-mcp-00603-tnt` (100% traffic, health check HTTP 200).
 
 ## [1.46.98] - 2026-10-04
 
