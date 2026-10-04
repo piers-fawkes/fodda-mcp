@@ -85,6 +85,15 @@ export function specificQueryTokens(query: string): string[] {
     )];
 }
 
+/** Truncate and clean a query for crisp next-move prompts (<= 8 words, no punctuation). */
+export function cleanPromptTopic(raw: string, maxWords = 8): string {
+    if (!raw) return 'this topic';
+    const cleaned = raw.trim().replace(/[?.!]+$/, '');
+    const words = cleaned.split(/\s+/);
+    if (words.length <= maxWords) return words.join(' ');
+    return words.slice(0, maxWords).join(' ');
+}
+
 export function rowScore(row: any): number {
     return row.relevance_score || row.semantic_score || row._score || row.score || 0;
 }
@@ -710,16 +719,29 @@ export interface NextMovesAction {
     available: boolean;
 }
 
+export interface NextMoveItem {
+    id: string;
+    label: string;
+    why: string;
+    prompt: string;
+    tool?: string;
+    session_id?: string;
+    link?: string;
+    available?: boolean;
+}
+
 export interface NextMoves {
+    presentation?: 'user_facing' | 'internal' | undefined;
+    heading?: string | undefined;
+    moves?: NextMoveItem[] | undefined;
     thread?: NextMovesThread | undefined;
     specific?: NextMovesSpecific | undefined;
     shelf?: NextMovesShelfGraph[] | undefined;
     scope_prompt: boolean;
     scope?: string | undefined;
     known_brand?: string | undefined;
-    presentation?: 'internal' | undefined;
     consult_envelope?: NextMovesConsultEnvelope | undefined;
-    actions?: NextMovesAction[] | undefined; // ADDED: Strategic workflow second-steps
+    actions?: NextMovesAction[] | undefined;
 }
 
 export interface NextMovesOptions {
@@ -834,6 +856,8 @@ export interface ConsultNextMovesOptions {
     knownBrand?: string | undefined;
     currentAnalystId?: string | undefined;
     analysts?: CatalogAnalyst[] | undefined;
+    sessionId?: string | undefined;
+    turnCount?: number | undefined;
 }
 
 /**
@@ -909,6 +933,7 @@ export interface CandidateExpert {
     category: 'human_agent' | 'classic_agent' | 'c_suite_agent' | 'synthetic_agent';
     status?: 'active' | 'on_request';
     consult_tool: 'consult_human_agent' | 'consult_analyst';
+    credibility_anchor?: string | null;
     reason: string;
     out_of_lane?: boolean;
 }
@@ -1204,6 +1229,7 @@ export function findCandidateExperts(
             category: cat,
             status: expertStatus,
             consult_tool,
+            credibility_anchor: matchedAnalyst.credibility_anchor || (matchedAnalyst as any).credibilityAnchor || null,
             reason,
             out_of_lane: false
         };
@@ -1223,7 +1249,7 @@ export async function generateNextMoves(
 ): Promise<NextMoves> {
     const nextMoves: NextMoves = {
         scope_prompt: true,
-        presentation: 'internal',
+        presentation: 'user_facing',
     };
 
     if (options?.knownBrand) {
@@ -1694,6 +1720,57 @@ export async function generateNextMoves(
     ];
     nextMoves.actions = actions;
 
+    const move1: NextMoveItem = {
+        id: 'thread',
+        label: nextMoves.thread?.theme ? `Explore ${nextMoves.thread.theme}` : 'Pull additional trend signals',
+        why: nextMoves.thread?.text || 'Deepen findings with additional verified signals.',
+        prompt: `Pull more signals on ${cleanTopic}`,
+        tool: 'search_graph',
+        available: true,
+    };
+
+    let move2: NextMoveItem;
+    if (options?.knownBrand) {
+        move2 = {
+            id: 'competitor_compare',
+            label: 'Compare key competitor responses',
+            why: `See how competitor brands are positioning against this dynamic.`,
+            prompt: `How are ${options.knownBrand}'s key competitors positioning against this?`,
+            tool: 'brand_tracker',
+            available: true,
+        };
+    } else if (options?.sessionId) {
+        move2 = {
+            id: 'counter_thesis',
+            label: 'Explore counter-signals & risks',
+            why: 'Examine where this trend faces pushback or margin pressure.',
+            prompt: `What counter-trends or friction points challenge this dynamic?`,
+            tool: 'verify_market_claim',
+            available: true,
+        };
+    } else {
+        move2 = {
+            id: 'scope_brand',
+            label: 'Scope to your brand or brief',
+            why: 'Tailor these trend findings to your specific category or brief.',
+            prompt: 'Here is my brand and category — tailor these findings to it.',
+            tool: 'search_graph',
+            available: true,
+        };
+    }
+
+    const move3: NextMoveItem = {
+        id: specific.expert ? 'consult_expert' : 'pressure_test',
+        label: specific.expert ? expertName : 'Pressure-test this thesis',
+        why: specific.expert ? expertDescription : 'Evaluate assertions against counter-evidence.',
+        prompt: specific.expert ? expertPrompt : `Pressure-test whether ${cleanTopic} holds up against counter-evidence.`,
+        tool: specific.expert ? expertTargetTool : 'verify_market_claim',
+        available: true,
+    };
+
+    nextMoves.heading = 'Next moves';
+    nextMoves.moves = [move1, move2, move3];
+
     return nextMoves;
 }
 
@@ -1716,7 +1793,7 @@ export function generateConsultNextMoves(
 ): NextMoves {
     const nextMoves: NextMoves = {
         scope_prompt: true,
-        presentation: 'internal',
+        presentation: 'user_facing',
     };
 
     if (options?.knownBrand) {
@@ -1742,6 +1819,8 @@ export function generateConsultNextMoves(
 
     // ── Sentence 1: Thread (Expert's 1st Person / Referral on decline) ──
     let threadSentence = '';
+    let nextAngleValid = false;
+    let cleanNextAngle = '';
 
     if (isOutOfLane) {
         const activeReferrals = Array.isArray(result?.referrals)
@@ -1777,7 +1856,6 @@ export function generateConsultNextMoves(
         }
     } else {
         // Next angle token check per §2.A.5: must share >=1 content token (>=3 chars) with sources_used, uncited_themes, query, or expert topics
-        let nextAngleValid = false;
         if (typeof nextAngleRaw === 'string' && nextAngleRaw.trim().length > 0) {
             const angleTokens = specificQueryTokens(nextAngleRaw);
             const sourceTitles = (result?.sources_used || [])
@@ -1794,7 +1872,7 @@ export function generateConsultNextMoves(
         }
 
         if (nextAngleValid && typeof nextAngleRaw === 'string') {
-            let cleanNextAngle = nextAngleRaw.trim();
+            cleanNextAngle = nextAngleRaw.trim();
             if (!/[.!?]$/.test(cleanNextAngle)) {
                 cleanNextAngle += '.';
             }
@@ -1875,6 +1953,10 @@ export function generateConsultNextMoves(
         }
 
         // Must match at least 2 distinct domain tokens from the query, or have a direct topic match
+        let hasDirectTopicMatch = false;
+        if (Array.isArray(g.topics)) {
+            hasDirectTopicMatch = g.topics.some((tp: string) => queryTokens.includes(tp.toLowerCase()));
+        }
         let tokenMatchCount = 0;
         if (queryTokens.length > 0) {
             const graphText = `${g.name || ''} ${g.domain || ''} ${(Array.isArray(g.topics) ? g.topics : []).join(' ')} ${g.headline || ''} ${g.one_liner || ''} ${g.description || ''}`.toLowerCase();
@@ -1886,7 +1968,8 @@ export function generateConsultNextMoves(
             }
         }
         const minMatchesNeeded = queryTokens.length >= 2 ? 2 : 1;
-        if (tokenMatchCount < minMatchesNeeded) continue;
+        const hasHighRelevance = (cand.score ?? 0) >= 0.75;
+        if (!hasHighRelevance && !hasDirectTopicMatch && tokenMatchCount < minMatchesNeeded) continue;
 
         if (shelfCandidateGraphs.length < 2 && !shelfCandidateGraphs.some(sg => sg.graph_id === g.graph_id)) {
             shelfCandidateGraphs.push(g);
@@ -1945,10 +2028,23 @@ export function generateConsultNextMoves(
         nextMoves.specific = specific;
     }
 
-    // ── Sentence 3: Scope (Platform Voice, Render Spec 1.2 Copy) ──
+    // ── Sentence 3: Scope (Dynamic Pivot / Platform Voice) ──
+    const isClassic = matchedAnalyst?.category === 'classic_agent' ||
+        (matchedAnalyst as any)?.tier === 'static_expert' ||
+        cleanAnalystId === 'thorstein-veblen' ||
+        cleanAnalystId === 'jane-austen';
+
     let scopeSentence = '';
     if (options?.knownBrand) {
         scopeSentence = `Want this cut to ${options.knownBrand} specifically?`;
+    } else if (options?.sessionId || (options?.turnCount && options.turnCount > 1)) {
+        if (nextMoves.shelf && nextMoves.shelf.length > 0 && nextMoves.shelf[0]) {
+            scopeSentence = `Want to look at cross-category parallels in ${nextMoves.shelf[0].graph_display}?`;
+        } else {
+            scopeSentence = `Want to explore where this perspective faces pushback or counter-signals?`;
+        }
+    } else if (isClassic) {
+        scopeSentence = `Want to apply ${expertDisplayName}'s framework to a specific modern case study?`;
     } else {
         scopeSentence = `If you tell me the brand or brief you're working on, I'll cut this to that.`;
     }
@@ -1961,6 +2057,154 @@ export function generateConsultNextMoves(
         scope_line: scopeSentence,
     };
 
+    const cleanTopicPrompt = cleanPromptTopic(options?.knownBrand || query);
+
+    // ── Next Move Item 1: Thread (Expert continuity) ──
+    let move1: NextMoveItem;
+    if (isOutOfLane) {
+        if (nextMoves.thread?.kind === 'adjacent_room' && nextMoves.thread.adjacent) {
+            move1 = {
+                id: 'referral',
+                label: `Connect with ${nextMoves.thread.adjacent.graph_display}`,
+                why: threadSentence,
+                prompt: `Connect with ${nextMoves.thread.adjacent.graph_display} on ${cleanTopicPrompt}`,
+                tool: 'find_expert',
+                available: true,
+            };
+        } else {
+            move1 = {
+                id: 'thread',
+                label: `Explore related topics in ${expertDisplayName}'s graph`,
+                why: threadSentence,
+                prompt: `What related topics are covered in your graph, ${expertDisplayName}?`,
+                tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+                available: true,
+            };
+        }
+    } else if (nextAngleValid && typeof nextAngleRaw === 'string') {
+        let cleanAngle = nextAngleRaw.trim();
+        const labelText = cleanAngle.length > 50 ? `${cleanAngle.slice(0, 47)}...` : cleanAngle.replace(/[.!?]$/, '');
+        move1 = {
+            id: 'thread',
+            label: labelText,
+            why: threadSentence,
+            prompt: cleanAngle,
+            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            ...(options?.sessionId ? { session_id: options.sessionId } : {}),
+            available: true,
+        };
+    } else if (uncitedThemes.length > 0) {
+        const topTheme = uncitedThemes[0];
+        move1 = {
+            id: 'thread',
+            label: `Explore ${topTheme}`,
+            why: threadSentence,
+            prompt: `Explore ${topTheme} in your graph, ${expertDisplayName}`,
+            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            ...(options?.sessionId ? { session_id: options.sessionId } : {}),
+            available: true,
+        };
+    } else {
+        move1 = {
+            id: 'thread',
+            label: 'Pull additional trend signals',
+            why: threadSentence,
+            prompt: `Pull deeper trend signals from your graph on ${cleanTopicPrompt}`,
+            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            ...(options?.sessionId ? { session_id: options.sessionId } : {}),
+            available: true,
+        };
+    }
+
+    // ── Next Move Item 2: Dynamic Pivot ──
+    let move2: NextMoveItem;
+    if (options?.knownBrand) {
+        move2 = {
+            id: 'competitor_compare',
+            label: 'Compare key competitor responses',
+            why: `See how competitor brands are positioning against this dynamic.`,
+            prompt: `How are ${options.knownBrand}'s key competitors positioning against this?`,
+            tool: 'brand_tracker',
+            available: true,
+        };
+    } else if (options?.sessionId || (options?.turnCount && options.turnCount > 1)) {
+        if (nextMoves.shelf && nextMoves.shelf.length > 0 && nextMoves.shelf[0]) {
+            move2 = {
+                id: 'cross_category',
+                label: `Compare cross-category parallels in ${nextMoves.shelf[0].graph_display}`,
+                why: `Examine how adjacent industries or consumer spaces navigate this dynamic.`,
+                prompt: `What cross-category parallels does ${nextMoves.shelf[0].graph_display} show for this trend?`,
+                tool: 'search_graph',
+                available: true,
+            };
+        } else {
+            move2 = {
+                id: 'counter_signals',
+                label: 'Examine counter-signals & pushback',
+                why: 'Evaluate where this perspective faces operational friction or contrarian market signals.',
+                prompt: `What counter-trends, operational friction, or pushback challenge this dynamic?`,
+                tool: 'verify_market_claim',
+                available: true,
+            };
+        }
+    } else if (isClassic) {
+        move2 = {
+            id: 'modern_application',
+            label: 'Apply to modern culture & commerce',
+            why: 'Translate theoretical frameworks into actionable contemporary strategy.',
+            prompt: `How does ${expertDisplayName}'s framework apply to current consumer behavior?`,
+            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            ...(options?.sessionId ? { session_id: options.sessionId } : {}),
+            available: true,
+        };
+    } else {
+        move2 = {
+            id: 'scope_brand',
+            label: 'Scope to your brand or brief',
+            why: 'Tailor these insights to your specific category or brief.',
+            prompt: 'Here is my brand and category — tailor these findings to it.',
+            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            ...(options?.sessionId ? { session_id: options.sessionId } : {}),
+            available: true,
+        };
+    }
+
+    // ── Next Move Item 3: Commercial / Action ──
+    let move3: NextMoveItem;
+    const bookACall = result?.book_a_call || (matchedAnalyst as any)?.book_a_call;
+    if (bookACall?.url) {
+        const rateText = bookACall.rate_display ? ` (${bookACall.rate_display})` : '';
+        move3 = {
+            id: 'book_call',
+            label: `Book strategy call with ${expertDisplayName}`,
+            why: `Discuss strategic implications directly with ${expertDisplayName}${rateText}.`,
+            prompt: `Provide booking details to schedule a strategy session with ${expertDisplayName}`,
+            link: bookACall.url,
+            available: true,
+        };
+    } else if (hasDeliverableOffering) {
+        move3 = {
+            id: 'commission_deliverable',
+            label: `Commission deliverable from ${expertDisplayName}`,
+            why: `Turn these insights into an executive deliverable or research brief.`,
+            prompt: `Commission a strategic research brief from ${expertDisplayName} on ${cleanTopicPrompt}`,
+            tool: 'request_deliverable',
+            available: true,
+        };
+    } else {
+        move3 = {
+            id: 'pressure_test',
+            label: `Pressure-test ${expertDisplayName}'s perspective`,
+            why: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
+            prompt: `Pressure-test ${expertDisplayName}'s perspective on ${cleanTopicPrompt}`,
+            tool: 'verify_market_claim',
+            available: true,
+        };
+    }
+
+    nextMoves.heading = 'Next moves';
+    nextMoves.moves = [move1, move2, move3];
+
     const consultActions: NextMovesAction[] = [
         {
             action: 'pressure_test',
@@ -1969,8 +2213,8 @@ export function generateConsultNextMoves(
             reason: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
             target_tool: 'verify_market_claim',
             tool_display_name: 'Market Claim Verifier',
-            suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${query.trim()}`,
-            suggested_parameters: { claim: `Pressure-test ${expertDisplayName}'s thesis and assertions on ${query.trim()}` },
+            suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${cleanTopicPrompt}`,
+            suggested_parameters: { claim: `Pressure-test ${expertDisplayName}'s thesis and assertions on ${cleanTopicPrompt}` },
             available: true,
         },
         {
@@ -1979,8 +2223,8 @@ export function generateConsultNextMoves(
             description: `Commission a finished deliverable from ${expertDisplayName}.`,
             reason: `Turn ${expertDisplayName}'s insights and framework into a formatted deliverable.`,
             target_tool: 'request_deliverable',
-            suggested_prompt: `Commission a strategic briefing from ${expertDisplayName} on ${query.trim()}`,
-            suggested_parameters: { analyst_id: cleanAnalystId || expertGraphId, skill_slug: 'research_brief', brief: `Strategic brief incorporating ${expertDisplayName}'s framework on ${query.trim()}` },
+            suggested_prompt: `Commission a strategic briefing from ${expertDisplayName} on ${cleanTopicPrompt}`,
+            suggested_parameters: { analyst_id: cleanAnalystId || expertGraphId, skill_slug: 'research_brief', brief: `Strategic brief incorporating ${expertDisplayName}'s framework on ${cleanTopicPrompt}` },
             available: true,
         },
         {
@@ -1989,8 +2233,8 @@ export function generateConsultNextMoves(
             description: 'Establish automated weekly monitoring on this subject.',
             reason: `Monitor new signals and developments in ${expertDisplayName}'s coverage area.`,
             target_tool: 'manage_scheduled_reports',
-            suggested_prompt: `Set up weekly tracking on ${query.trim()}`,
-            suggested_parameters: { action: 'create', topic: query.trim(), cadence: 'weekly' },
+            suggested_prompt: `Set up weekly tracking on ${cleanTopicPrompt}`,
+            suggested_parameters: { action: 'create', topic: cleanTopicPrompt, cadence: 'weekly' },
             available: true,
         },
     ];

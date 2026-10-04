@@ -1671,6 +1671,7 @@ export async function createServer(
                             display_name: displayName,
                             category,
                             consult_tool: consultTool,
+                            credibility_anchor: r.credibility_anchor || r.credibilityAnchor || null,
                             reason: Array.isArray(r.why_matched) && r.why_matched.length > 0
                                 ? `covers ${r.why_matched.join(', ')} directly`
                                 : (r.role_title || 'covers this domain directly'),
@@ -1747,6 +1748,7 @@ export async function createServer(
 
                 const candidates = localCandidates.map(c => ({
                     ...c,
+                    credibility_anchor: c.credibility_anchor || null,
                     status: 'active',
                     next_step: `Call ${c.consult_tool} with analyst_id: '${c.analyst_id}'.`
                 }));
@@ -6020,7 +6022,13 @@ export async function createServer(
                 result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
             }
 
-            const parts: string[] = [reportText];
+            const credibility_anchor = result?.credibility_anchor || result?.analyst?.credibility_anchor || match?.credibility_anchor || null;
+
+            const parts: string[] = [];
+            if (credibility_anchor) {
+                parts.push(`--- EXPERT CREDIBILITY ANCHOR ---\n${credibility_anchor}\n(GUIDANCE FOR ASSISTANT:\n- FIRST TOUCH ONLY: If introducing this expert to the user for the first time in this conversation, frame their response using their official credibility anchor above.\n- FOLLOW-UP TURNS IN SAME SESSION: If this is an ongoing conversation or follow-up question with this expert, DO NOT repeat the pedigree or credibility anchor. Answer directly from their perspective.)`);
+            }
+            parts.push(reportText);
 
             if (result.timing_ms != null) {
                 parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
@@ -6111,6 +6119,7 @@ export async function createServer(
                 {
                     currentAnalystId: resolvedAnalystId || analyst_id,
                     knownBrand: resolvedCompany || getKnownBrand(),
+                    sessionId: session_id,
                 },
                 getGraphs(),
                 getAnalysts()
@@ -6118,7 +6127,11 @@ export async function createServer(
             sessionTracker.recordNextMoves(humanAgentNextMoves, query);
 
             if (humanAgentNextMoves) {
-                parts.push(`\n── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──\n${JSON.stringify(humanAgentNextMoves, null, 2)}`);
+                parts.push(`\n── STRUCTURED NEXT MOVES ──\n${JSON.stringify(humanAgentNextMoves, null, 2)}`);
+                if (humanAgentNextMoves.moves && humanAgentNextMoves.moves.length > 0) {
+                    const movesLines = humanAgentNextMoves.moves.map((m, idx) => `${idx + 1}. **${m.label}** — ${m.why}`).join('\n');
+                    parts.push(`\n--- SUGGESTED NEXT MOVES (GUIDANCE FOR ASSISTANT) ---\nOffer the user these next moves at the close of your response:\n${movesLines}`);
+                }
                 if (humanAgentNextMoves.consult_envelope) {
                     parts.push(`\n--- SUGGESTED FOLLOW-UPS ---\n- Thread: ${humanAgentNextMoves.consult_envelope.thread_line}\n- Shelf: ${humanAgentNextMoves.consult_envelope.shelf_line || 'None'}\n- Scope: ${humanAgentNextMoves.consult_envelope.scope_line}`);
                 }
@@ -6128,6 +6141,7 @@ export async function createServer(
             if (consultWithheld) return consultWithheld;
             return {
                 coverage: result.coverage,
+                credibility_anchor,
                 next_moves: humanAgentNextMoves,
                 sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.analyst ? { analyst: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
@@ -6203,6 +6217,7 @@ export async function createServer(
                         {
                             currentAnalystId: expertId,
                             knownBrand: resolvedCompany || getKnownBrand(),
+                            sessionId: session_id,
                         },
                         getGraphs(),
                         getAnalysts()
@@ -6210,7 +6225,11 @@ export async function createServer(
                     sessionTracker.recordNextMoves(humanAgentNextMoves, query);
 
                     if (humanAgentNextMoves) {
-                        parts.push(`\n── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──\n${JSON.stringify(humanAgentNextMoves, null, 2)}`);
+                        parts.push(`\n── STRUCTURED NEXT MOVES ──\n${JSON.stringify(humanAgentNextMoves, null, 2)}`);
+                        if (humanAgentNextMoves.moves && humanAgentNextMoves.moves.length > 0) {
+                            const movesLines = humanAgentNextMoves.moves.map((m, idx) => `${idx + 1}. **${m.label}** — ${m.why}`).join('\n');
+                            parts.push(`\n--- SUGGESTED NEXT MOVES (GUIDANCE FOR ASSISTANT) ---\nOffer the user these next moves at the close of your response:\n${movesLines}`);
+                        }
                     }
 
                     return {
@@ -6416,7 +6435,13 @@ export async function createServer(
                 result.coverage = (graphSources.length > 0 || execQuoteSources.length > 0) ? "FULL" : "PARTIAL";
             }
 
-            const parts: string[] = [reportText];
+            const credibility_anchor = result?.credibility_anchor || result?.analyst?.credibility_anchor || match?.credibility_anchor || null;
+
+            const parts: string[] = [];
+            if (credibility_anchor) {
+                parts.push(`--- EXPERT CREDIBILITY ANCHOR ---\n${credibility_anchor}\n(GUIDANCE FOR ASSISTANT:\n- FIRST TOUCH ONLY: If introducing this expert to the user for the first time in this conversation, frame their response using their official credibility anchor above.\n- FOLLOW-UP TURNS IN SAME SESSION: DO NOT repeat the pedigree or credibility anchor. Answer directly.)`);
+            }
+            parts.push(reportText);
 
             if (result.timing_ms != null) {
                 parts.push(`\n--- TIMING: ${result.timing_ms}ms server-side ---`);
@@ -6507,6 +6532,7 @@ export async function createServer(
                 {
                     currentAnalystId: resolvedAnalystId || analyst_id,
                     knownBrand: resolvedCompany || getKnownBrand(),
+                    sessionId: session_id,
                 },
                 getGraphs(),
                 getAnalysts()
@@ -6514,7 +6540,11 @@ export async function createServer(
             sessionTracker.recordNextMoves(analystNextMoves, query);
 
             if (analystNextMoves) {
-                parts.push(`\n── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──\n${JSON.stringify(analystNextMoves, null, 2)}`);
+                parts.push(`\n── STRUCTURED NEXT MOVES ──\n${JSON.stringify(analystNextMoves, null, 2)}`);
+                if (analystNextMoves.moves && analystNextMoves.moves.length > 0) {
+                    const movesLines = analystNextMoves.moves.map((m, idx) => `${idx + 1}. **${m.label}** — ${m.why}`).join('\n');
+                    parts.push(`\n--- SUGGESTED NEXT MOVES (GUIDANCE FOR ASSISTANT) ---\nOffer the user these next moves at the close of your response:\n${movesLines}`);
+                }
                 if (analystNextMoves.consult_envelope) {
                     parts.push(`\n--- SUGGESTED FOLLOW-UPS ---\n- Thread: ${analystNextMoves.consult_envelope.thread_line}\n- Shelf: ${analystNextMoves.consult_envelope.shelf_line || 'None'}\n- Scope: ${analystNextMoves.consult_envelope.scope_line}`);
                 }
@@ -6524,6 +6554,7 @@ export async function createServer(
             if (consultWithheld) return consultWithheld;
             return {
                 coverage: result.coverage,
+                credibility_anchor,
                 next_moves: analystNextMoves,
                 sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
@@ -6955,21 +6986,30 @@ export async function createServer(
 
                 const resolvedExpertName = result?.analyst?.name || result?.expert?.name || result?.analyst_name || expertName;
 
+                const credibility_anchor = result?.credibility_anchor || result?.analyst?.credibility_anchor || match?.credibility_anchor || null;
+
                 const payload = {
                     verdict,
                     confidence,
                     one_line,
+                    credibility_anchor,
                     rationale: narrative,
                     sources,
                     expert: resolvedExpertName,
                     book_a_call
                 };
 
+                const formattedSections: string[] = [];
+                if (credibility_anchor) {
+                    formattedSections.push(`--- EXPERT CREDIBILITY ANCHOR ---\n${credibility_anchor}\n(GUIDANCE FOR ASSISTANT:\n- FIRST TOUCH ONLY: If introducing this expert to the user for the first time in this conversation, frame their response using their official credibility anchor above.\n- FOLLOW-UP TURNS IN SAME SESSION: If this is an ongoing conversation or follow-up question with this expert, DO NOT repeat the pedigree or credibility anchor. Answer directly from their perspective.)`);
+                }
+                formattedSections.push(JSON.stringify(payload, null, 2));
+
                 return {
                     ...payload,
                     content: [{
                         type: 'text' as const,
-                        text: JSON.stringify(payload, null, 2)
+                        text: formattedSections.join('\n\n')
                     }]
                 };
             } catch (err: any) {

@@ -5,7 +5,47 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.99] - 2026-10-04
+
+### Changed
+- **Dynamic Next Moves Rotation & Assistant Guidance (`src/coverageRelevance.ts`, `src/toolHandlers.ts`, `package.json`)**:
+  - Replaced rigid hardcoded brand scoping default ("If you tell me the brand or brief you're working on...") with a dynamic, context-aware Slot 2 rotation across all consult and research workflows.
+  - **Dynamic Slot 2 Archetypes**:
+    - *Known brand*: Surfaces competitor comparison (`competitor_compare` / `brand_tracker`) to examine rival brand positioning.
+    - *Follow-up turn (`sessionId` present / `turnCount > 1`)*: Suppresses repetitive brand scoping prompt; pivots to cross-category parallels in adjacent graphs (`cross_category`) or counter-trends & operational friction (`counter_signals`).
+    - *Classic/Historical thinkers (e.g., Thorstein Veblen, Jane Austen)*: Suppresses brief scoping; pivots to modern cultural and commercial application (`modern_application`).
+    - *Turn 1 open query*: Offers initial brand/brief scoping (`scope_brand`).
+  - **Ranked 3-Move Array (`NextMoveItem[]`)**:
+    - Added structured `moves: [move1, move2, move3]` with `{ id, label, why, prompt, tool?, session_id?, link?, available? }` and `heading: 'Next moves'`, with `presentation: 'user_facing'`.
+    - Move 1 (Thread): Expert's authentic continuation or out-of-lane referral.
+    - Move 2 (Pivot): Context-aware dynamic pivot.
+    - Move 3 (Action): Prioritizes Direct Strategy Call Booking (Priority 1) -> Deliverable Commissioning (Priority 2) -> Market Claim Verification (Priority 3).
+  - **Prompt Hygiene**:
+    - Truncated prompt topic strings (`cleanPromptTopic`, <= 8 words) preventing long user query repetition while keeping prompt lengths strictly <= 25 words.
+  - **Assistant Guidance in Tool Text**:
+    - Added `--- SUGGESTED NEXT MOVES (GUIDANCE FOR ASSISTANT) ---` block providing host models (Claude, ChatGPT) clear guidance to offer the 3 ranked next moves at the close of responses.
+    - Simplified metadata header from `── STRUCTURED NEXT MOVES (Inert metadata for follow-up suggestions) ──` to `── STRUCTURED NEXT MOVES ──` while maintaining full backwards compatibility for `consult_envelope` and existing test suites.
+  - Verification: Automated suite `src/test_dynamic_next_moves.ts` passed 8/8 checks; `src/test_next_moves.ts` passed 33/33 checks; `src/test_next_moves_transcripts.ts` passed 17/17 checks with 0 failures; `src/test_verify_deprecate_render_spec.ts` passed 27/27 checks; `npm test` passed cleanly. Deployment deferred per user request.
+
+## [1.46.98] - 2026-10-04
+
+### Added
+- **Credibility Anchor Propagation & LLM First-Touch Guidance (`src/toolHandlers.ts`, `src/coverageRelevance.ts`, `src/catalogCache.ts`, `src/tools.ts`, `package.json`)**:
+  - Propagated official `credibility_anchor` returned by upstream Fodda API (`POST /v1/human-agents/consult`, `POST /v1/analysts/consult`, `GET /v1/experts/search`) through `consult_human_agent`, `consult_analyst`, `verify_claim`, and `find_expert`.
+  - In `consult_human_agent` and `consult_analyst`, prepended `--- EXPERT CREDIBILITY ANCHOR ---` and explicit `GUIDANCE FOR ASSISTANT` instructing host models (Claude, ChatGPT) to frame expert responses with their authoritative pedigree on first touch, while avoiding repetition on subsequent conversational turns in the same session.
+  - Added `credibility_anchor` to structured payload returns across `consult_human_agent`, `consult_analyst`, and `verify_claim`, ensuring downstream consumers and tool parsers have direct access to the anchor string.
+  - In `find_expert` (both API-backed and local candidate discovery in `src/coverageRelevance.ts`), surfaced `credibility_anchor` on candidate expert objects.
+  - Bumped tool versions in `src/tools.ts`: `consult_human_agent` to `1.3.0`, `consult_analyst` to `1.1.0`, and `find_expert` to `1.2.0`.
+  - Verification: Automated suite `src/test_credibility_anchors.ts` passed 5/5 checks (Thiago Bersou Human Agent, Thorstein Veblen Classic Agent, Retail Strategy & Innovation Synthetic Analyst, `find_expert` candidate formatting, and `verify_claim`). Regression test suites (`test_consult_routing.ts`, `test_capabilities_guidance.ts`) passed cleanly. Deployment deferred per user request.
+
 ## [1.46.97] - 2026-10-02
+
+### Security
+- **Deploy Security Hardening, Key Exclusion & Build Payload Reduction (`.gcloudignore`, `.dockerignore`)**:
+  - Excluded sensitive cryptographic private keys and GitHub tokens (`*.pem`, `*.key`, `*token*`, `.mcpregistry_github_token`, `fodda_mcp_registry_key.pem`) from Google Cloud Build source uploads and Docker build contexts.
+  - Excluded subprojects and extension binaries (`fodda-vscode/` with 9 `.vsix` binaries, `test-mcp-server/`), stale scrape datasets (`graph_profiles*`), and unserved static assets (`public/`).
+  - Reduced Cloud Build deploy payload from 194 files (3.63 MB) to 158 files (2.02 MB) with zero sensitive credentials or non-runtime binaries packaged.
+  - Verification: `gcloudignore.GetFileChooserForDir` verified 0 security-sensitive or binary files included; `npm run build` TypeScript compilation passed cleanly.
 
 ### Changed
 - **MCP Client Slim Endpoints (Brief #5) (`src/toolHandlers.ts`, `package.json`)**:

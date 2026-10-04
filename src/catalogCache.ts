@@ -81,6 +81,7 @@ export interface CatalogAnalyst {
     description: string;
     category?: AgentCategory;
     category_label?: string;
+    credibility_anchor?: string;
     twin_type?: string;
     type?: string;
     agent_type?: string;
@@ -180,6 +181,7 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
 
     const slug = a.expertSlug || a.expert_slug || a.slug || a.analyst_id || (is_human ? a.id : undefined);
     const consult_tool = is_human ? 'consult_human_agent' : 'consult_analyst';
+    const credibility_anchor = a.credibility_anchor || a.credibilityAnchor || undefined;
 
     return {
         ...a,
@@ -196,6 +198,7 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         is_verified_real_person: is_human,
         consult_tool,
         slug: slug ? String(slug).trim() : undefined,
+        ...(credibility_anchor ? { credibility_anchor } : {}),
         ...(expert_in ? { expert_in } : {}),
         ...(outside_their_lane ? { outside_their_lane } : {}),
         ...(topics ? { topics } : {}),

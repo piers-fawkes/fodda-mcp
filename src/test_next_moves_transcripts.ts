@@ -510,7 +510,7 @@ async function runTranscripts() {
         let closingBlock = '';
 
         assert.ok(nextMoves, `Tool ${tq.tool} must provide structured next_moves in payload or result`);
-        assert.strictEqual(nextMoves.presentation, 'internal', 'next_moves presentation must be internal');
+        assert.ok(nextMoves.presentation === 'user_facing' || nextMoves.presentation === 'internal', 'next_moves presentation must be user_facing or internal');
         assert.strictEqual(nextMoves.scope_prompt, true, 'scope_prompt must be true');
         assert.ok(nextMoves.scope, 'next_moves must include structured scope string');
 

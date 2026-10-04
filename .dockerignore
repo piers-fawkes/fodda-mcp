@@ -10,3 +10,20 @@ dist
 .agent
 scratch
 .secrets
+
+# Security: Private keys, registry credentials, and tokens
+*.pem
+*.key
+*token*
+.mcpregistry_github_token
+fodda_mcp_registry_key.pem
+
+# Subprojects & Extension binaries
+fodda-vscode/
+test-mcp-server/
+
+# Stale scrape fixtures & CSV dumps
+graph_profiles*
+
+# Unserved static assets (metadata routes are dynamically generated in code)
+public/
