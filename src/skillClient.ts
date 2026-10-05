@@ -18,7 +18,7 @@
  * - Structured input contract preserved for output-phase skills
  */
 
-import axios from 'axios';
+import { foddaRequest } from './foddaClient.js';
 
 // ---------------------------------------------------------------------------
 // Types — Discovered skill tools from the Core API
@@ -104,13 +104,6 @@ export interface SkillResult {
     durationMs: number;
 }
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const API_BASE_URL = process.env.FODDA_API_URL || 'https://api.fodda.ai';
-const DISCOVERY_TIMEOUT_MS = 10_000;
-const EXECUTION_TIMEOUT_MS = 15_000;
 
 // ---------------------------------------------------------------------------
 // Discovery: Get available tools for a skill via Core API
@@ -128,15 +121,9 @@ export async function discoverSkillTools(
     apiKey: string,
 ): Promise<DiscoveredSkill | null> {
     try {
-        const url = `${API_BASE_URL}/v1/skills/${encodeURIComponent(skillId)}/tools`;
-        const response = await axios.get(url, {
-            headers: {
-                'X-API-Key': apiKey,
-            },
-            timeout: DISCOVERY_TIMEOUT_MS,
-        });
+        const path = `/v1/skills/${encodeURIComponent(skillId)}/tools`;
+        const data = await foddaRequest('GET', path, apiKey, '');
 
-        const data = response.data;
         if (!data || !Array.isArray(data.tools)) {
             console.error(`[skillClient] Discovery for ${skillId}: invalid response shape`);
             return null;
@@ -184,29 +171,13 @@ export async function executeSkillTool(
     userId: string,
 ): Promise<{ output: string; durationMs: number }> {
     const startTime = Date.now();
-    const url = `${API_BASE_URL}/v1/skills/${encodeURIComponent(skillId)}/execute`;
-
-    const headers: Record<string, string> = {
-        'X-API-Key': apiKey,
-        'X-Fodda-Billing': 'mcp-orchestrated',
-        'Content-Type': 'application/json',
-    };
-    const PLACEHOLDER_USER_IDS = new Set(['', 'anonymous', 'undefined', 'null', 'oauth_user']);
-    // Never send placeholder user IDs upstream — let the API's account-label fallback apply
-    if (userId && !PLACEHOLDER_USER_IDS.has(userId.trim().toLowerCase())) {
-        headers['X-User-Id'] = userId;
-    }
-
-    const response = await axios.post(url, {
+    const path = `/v1/skills/${encodeURIComponent(skillId)}/execute`;
+    const data = await foddaRequest('POST', path, apiKey, userId, {
         tool: toolName,
         arguments: args,
-    }, {
-        headers,
-        timeout: EXECUTION_TIMEOUT_MS,
     });
 
     const durationMs = Date.now() - startTime;
-    const data = response.data;
 
     // Extract text from response — the API may return { result: "..." } or { result: { content: [...] } }
     let output = '';

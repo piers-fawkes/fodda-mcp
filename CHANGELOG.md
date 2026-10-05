@@ -5,6 +5,18 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.100] - 2026-10-04
+
+### Changed
+- **Signed Skill Client Routing & Client Helper Modularization (`src/foddaClient.ts`, `src/skillClient.ts`, `src/index.ts`, `package.json`)**:
+  - Extracted `foddaRequest`, cache helpers (`cacheGet`, `cacheSet`, `queryCache`, `widgetCache`, `storeWidget`, `WIDGET_TTL_MS`), user ID helpers (`isPlaceholderUserId`, `PLACEHOLDER_USER_IDS`), client slug normalizers (`normalizeClientSlug`, `cleanClientSlug`), and environment constants (`API_BASE_URL`, `WEBSITE_BASE_URL`) into a standalone module `src/foddaClient.ts`.
+  - Re-exported all extracted client symbols from `src/index.ts` to preserve backwards compatibility across existing callers and test suites while preventing circular import hazards (`index.ts` -> `toolHandlers.ts` -> `skillClient.ts` -> `index.ts`).
+  - Updated `discoverSkillTools` in `src/skillClient.ts` to route tool discovery (`GET /v1/skills/:skillId/tools`) through signed `foddaRequest` instead of raw, unsigned `axios.get`.
+  - Updated `executeSkillTool` in `src/skillClient.ts` to route execution (`POST /v1/skills/:skillId/execute`) through `foddaRequest`, ensuring requests carry valid HMAC signatures (`X-Fodda-Signature`), timestamp headers (`X-Fodda-Timestamp`), user IDs (`X-User-Id`), and trusted billing headers (`X-Fodda-Billing: mcp-orchestrated`), eliminating double-billing drop-downs to per-call billing.
+  - Preserved strict auth invariants: kept `fetchAnalysts` on `Authorization: Bearer <internal_key>` / `X-API-Key` without routing through `spt` slot, and kept public edge-cached `/v1/graphs/catalog` without HMAC timestamps.
+  - Added unit test suite `src/test_skill_hmac.ts` verifying GET discovery and POST execution payloads, HMAC signatures, billing headers, user ID handling, and 404 fail-open behavior.
+  - Verification: Automated suite `src/test_skill_hmac.ts` passed 4/4 checks; existing test suites `test_client_provenance.ts` (3/3) and `test_identity_gap.ts` (4/4) passed cleanly; `npm test` verified full build and `/health` endpoint response HTTP 200.
+
 ## [1.46.99] - 2026-10-04
 
 ### Changed
