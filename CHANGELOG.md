@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.102] - 2026-10-04
+
+### Changed
+- **Client-Agnostic Onboarding Messages & Multi-Platform Grounding (`src/toolHandlers.ts`, `package.json`)**:
+  - Replaced hardcoded "inside Claude" prose in `begin_expert_onboarding` credentials_missing error handler with platform-neutral wording ("directly in your AI assistant (Gemini, Claude, etc.)").
+  - Added Gemini to the confirmed platform roster in `finalize_byo_mcp_onboarding` submission confirmation copy ("callable directly via Claude, Gemini, Copilot, or the Fodda web directory").
+  - Verification: `npm run build` passed clean (36 descriptions synced from Airtable, 55 tools in manifest, Cost Silence Guard passed, tsc zero errors).
+
 ## [1.46.101] - 2026-10-04
 
 ### Changed

@@ -7469,7 +7469,7 @@ export async function createServer(
                     code: 'credentials_missing',
                     cause: 'Fodda credentials missing or unauthorized.',
                     nextAction: 'Add Fodda as a connector or sign in at https://www.fodda.ai/join-experts?return_to=connector&source=mcp, then retry.',
-                    prose: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your Human Agent directly inside Claude, your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
+                    prose: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your Human Agent directly in your AI assistant (Gemini, Claude, etc.), your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
                 });
             }
             try {
@@ -7817,7 +7817,7 @@ export async function createServer(
                     `Your Human Agent profile for **${name}** (${role} — ${knowledgeArea}) has been successfully submitted with live MCP grounding to \`${mcpUrl.trim()}\`.`,
                     ``,
                     `• **Current Status**: Pending review. Our team will verify endpoint responsiveness and domain alignment.`,
-                    `• **Next Steps**: You will receive a confirmation email at **${userEmail}**. Once approved, your Human Agent will be live on the Fodda platform and callable directly via Claude, Copilot, or the Fodda web directory.`,
+                    `• **Next Steps**: You will receive a confirmation email at **${userEmail}**. Once approved, your Human Agent will be live on the Fodda platform and callable directly via Claude, Gemini, Copilot, or the Fodda web directory.`,
                     `• **Live Consultations**: When active, inquiries will consult your MCP server in real time with attribution to your source material.`
                 ].join('\n');
 
