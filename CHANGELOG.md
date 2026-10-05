@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserved strict auth invariants: kept `fetchAnalysts` on `Authorization: Bearer <internal_key>` / `X-API-Key` without routing through `spt` slot, and kept public edge-cached `/v1/graphs/catalog` without HMAC timestamps.
   - Added unit test suite `src/test_skill_hmac.ts` verifying GET discovery and POST execution payloads, HMAC signatures, billing headers, user ID handling, and 404 fail-open behavior.
   - Verification: Automated suite `src/test_skill_hmac.ts` passed 4/4 checks; existing test suites `test_client_provenance.ts` (3/3) and `test_identity_gap.ts` (4/4) passed cleanly; `npm test` verified full build and `/health` endpoint response HTTP 200.
+  - Deployed Cloud Run revision `fodda-mcp-00605-8rr` (100% traffic, health check HTTP 200).
 
 ## [1.46.99] - 2026-10-04
 
