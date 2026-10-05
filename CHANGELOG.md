@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Router Specificity & Domain Gates (`catalogCache.ts`)**: Added inverse domain frequency / specificity weighting to `scoreClauseRelevance()` by down-weighting generic tokens (`consumption`, `occasions`, `trends`, `report`, `market`, `strategy`, etc.) to `0.2x` while keeping domain-specific terms at `1.0x`. Added explicit domain topic gates preventing high-prestige, narrow graphs like Reuters Digital News Report and George Perkins Marsh from dominating unrelated queries like *"orange juice consumption occasions"*. Added orange juice and citrus query expansions.
   - **Brand Trust & Sentiment Intent Awareness**: Added intent detection in `brand_tracker` and prompt rule clarifying that Fodda tracks market footprint, category trend alignment, brand innovation, and commercial moves rather than consumer trust or reputation polling (e.g. YouGov, Skytrax).
   - **Data Honesty Reframe & Zero-Slug Prompt Hygiene (`systemPrompt.ts`)**: Reframed `RULE: CoverageRecoveryAndDataHonesty` to establish that data honesty is mandatory (state plainly when Fodda has no curated data on a topic or brand; the ban on phrases like "thin coverage" applies to internal developer jargon, not truthful communication). Strengthened `RULE: ConfidentialityAndZeroSlugs` forbidding naming raw tools (`find_expert`, `search_graph`), narrating internal lookup procedures (e.g. never say *"I need his ID"*), and exposing internal technical IDs or slugs.
-  - **Deployment**: Deferred per user directive ("defer deploy").
+  - Deployed Cloud Run revision `fodda-mcp-00609-m2t` (100% traffic, health check HTTP 200).
 
 ## [1.46.103] - 2026-10-05
 
