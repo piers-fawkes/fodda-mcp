@@ -5,6 +5,18 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.104] - 2026-10-05
+
+### Changed
+- **Brand Tracker Grounding, Router Specificity & Zero-Slug Prompt Hygiene (`src/catalogCache.ts`, `src/toolHandlers.ts`, `src/brandTemplate.ts`, `src/systemPrompt.ts`, `package.json`)**:
+  - **Direct Match Grounding in `brand_tracker`**: Removed `semanticMatch = signal_score >= 60` fallback in `brand_tracker`, requiring direct brand mentions in trend name, description, brand tags, or evidence excerpt. Zero direct matches now cleanly report empty status (`untracked` velocity) without force-fitting unrelated trends.
+  - **Brand Velocity Suppression**: Suppressed velocity verdicts ("slowing ↓", "accelerating ↑") in `brand_tracker` when direct brand evidence is 0, returning `UNTRACKED` status badge and `.vc-untracked` styling, and setting fallback one-liner to *"Fodda has no curated trend evidence mentioning [brand] yet."*.
+  - **Category-Gated Supplemental Signals**: Category-gated Amazon product search and Census retail storefront calls in `brand_tracker` using `shouldQueryRetailProductSupplementals()`, skipping irrelevant retail/CPG scrapers for airlines, hospitality, banking/finance, and enterprise tech/B2B (e.g. eliminating Amazon toy planes and Census retail rows for Singapore Airlines).
+  - **Router Specificity & Domain Gates (`catalogCache.ts`)**: Added inverse domain frequency / specificity weighting to `scoreClauseRelevance()` by down-weighting generic tokens (`consumption`, `occasions`, `trends`, `report`, `market`, `strategy`, etc.) to `0.2x` while keeping domain-specific terms at `1.0x`. Added explicit domain topic gates preventing high-prestige, narrow graphs like Reuters Digital News Report and George Perkins Marsh from dominating unrelated queries like *"orange juice consumption occasions"*. Added orange juice and citrus query expansions.
+  - **Brand Trust & Sentiment Intent Awareness**: Added intent detection in `brand_tracker` and prompt rule clarifying that Fodda tracks market footprint, category trend alignment, brand innovation, and commercial moves rather than consumer trust or reputation polling (e.g. YouGov, Skytrax).
+  - **Data Honesty Reframe & Zero-Slug Prompt Hygiene (`systemPrompt.ts`)**: Reframed `RULE: CoverageRecoveryAndDataHonesty` to establish that data honesty is mandatory (state plainly when Fodda has no curated data on a topic or brand; the ban on phrases like "thin coverage" applies to internal developer jargon, not truthful communication). Strengthened `RULE: ConfidentialityAndZeroSlugs` forbidding naming raw tools (`find_expert`, `search_graph`), narrating internal lookup procedures (e.g. never say *"I need his ID"*), and exposing internal technical IDs or slugs.
+  - **Deployment**: Deferred per user directive ("defer deploy").
+
 ## [1.46.103] - 2026-10-05
 
 ### Changed

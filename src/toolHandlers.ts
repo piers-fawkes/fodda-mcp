@@ -375,6 +375,64 @@ function resolveUserId(sessionUserId: string, toolProvidedUid?: string): string 
     return 'anonymous';
 }
 
+// Category Gate: Amazon Product Search and US Census Retail Sales should only run for Retail, CPG, Fashion, Beauty
+export function shouldQueryRetailProductSupplementals(brand: string, marketData?: any, primaryGraphId?: string): boolean {
+    const brandLower = brand.toLowerCase().trim();
+
+    // 1. Explicit bypass patterns for non-retail/non-CPG sectors (Airlines, Hospitality, Finance, Tech, B2B)
+    const BYPASS_BRAND_REGEX = /\b(airlines?|airways?|air\s*lines?|aviation|aerospace|hotels?|resorts?|hospitality|cruises?|bank|bancorp|banking|financial|insurance|capital|asset\s*management|credit\s*union|technologies|software|consulting|advisory|logistics|cloud|saas|analytics|semiconductor)\b/i;
+    if (BYPASS_BRAND_REGEX.test(brandLower)) return false;
+
+    // Explicit known airlines / aerospace
+    const KNOWN_AIRLINES = new Set([
+        'singapore airlines', 'delta', 'delta air lines', 'united airlines', 'united',
+        'american airlines', 'southwest airlines', 'southwest', 'emirates', 'qatar airways',
+        'british airways', 'lufthansa', 'air france', 'klm', 'cathay pacific', 'ana',
+        'japan airlines', 'qantas', 'alaska airlines', 'jetblue', 'ryanair', 'easyjet',
+        'boeing', 'airbus'
+    ]);
+    if (KNOWN_AIRLINES.has(brandLower)) return false;
+
+    // Explicit known hospitality / travel
+    const KNOWN_HOSPITALITY = new Set([
+        'marriott', 'hilton', 'hyatt', 'ihg', 'intercontinental', 'accor', 'wyndham',
+        'airbnb', 'booking.com', 'expedia', 'carnival', 'royal caribbean', 'norwegian cruise'
+    ]);
+    if (KNOWN_HOSPITALITY.has(brandLower)) return false;
+
+    // Explicit known finance
+    const KNOWN_FINANCE = new Set([
+        'jpmorgan', 'jpmorgan chase', 'goldman sachs', 'morgan stanley', 'bank of america',
+        'citigroup', 'citi', 'wells fargo', 'barclays', 'hsbc', 'ubs', 'blackrock',
+        'fidelity', 'vanguard', 'visa', 'mastercard', 'american express', 'amex', 'paypal', 'stripe'
+    ]);
+    if (KNOWN_FINANCE.has(brandLower)) return false;
+
+    // Explicit known B2B / Tech
+    const KNOWN_B2B_TECH = new Set([
+        'salesforce', 'oracle', 'sap', 'workday', 'servicenow', 'cisco', 'ibm', 'snowflake',
+        'palantir', 'accenture', 'deloitte', 'pwc', 'ey', 'kpmg', 'mckinsey', 'bcg', 'bain'
+    ]);
+    if (KNOWN_B2B_TECH.has(brandLower)) return false;
+
+    // 2. Sector / Industry checks from marketData if available
+    const sector = (marketData?.company_profile?.sector || marketData?.sector || '').toLowerCase();
+    const industry = (marketData?.company_profile?.industry || marketData?.industry || '').toLowerCase();
+    const graph = (primaryGraphId || '').toLowerCase();
+    const textToCheck = `${sector} ${industry} ${graph}`;
+
+    if (textToCheck.trim().length > 0) {
+        if (/airline|aerospace|aviation|hotel|hospitality|travel|financial|banking|insurance|wealth|software|technology|enterprise|semiconductor|cloud|b2b|consulting|industrial|telecom|defense/i.test(textToCheck)) {
+            return false;
+        }
+        if (/retail|cpg|consumer\s*packaged\s*goods|fashion|beauty|apparel|footwear|cosmetics|skincare|luxury|food|beverage|snack/i.test(textToCheck)) {
+            return true;
+        }
+    }
+
+    return true; // Default allow for consumer/retail brands
+}
+
 // ---------------------------------------------------------------------------
 // createServer — builds and returns a fully-configured MCP server
 // ---------------------------------------------------------------------------
@@ -2933,14 +2991,18 @@ export async function createServer(
         const maxEv = Math.min(max_evidence || 10, 25);
         const brandLower = brandName.toLowerCase();
 
-        // ── Fire static/brand-only supplemental queries in parallel ──
-        // These are created early but only awaited (via Promise.allSettled) ~500 lines later.
-        // A .catch() at creation is MANDATORY: if one rejects (e.g. a transient 503) during the
-        // intervening awaits, an unhandled rejection would crash the whole MCP process. Degrade to null.
-        const amazonPromise = foddaRequest('GET', `/v1/supplemental/amazon?query=${encodeURIComponent(brandName)}&limit=8`, apiKey, resolveUserId(userId, uid))
-            .catch((e: any) => { console.warn('[brand_tracker] amazon supplemental failed:', e?.message); return null; });
-        const censusPromise = foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid))
-            .catch((e: any) => { console.warn('[brand_tracker] census supplemental failed:', e?.message); return null; });
+        // ── Fire static/brand-only supplemental queries in parallel (category-gated) ──
+        // Only query Amazon Product Search and US Census Retail Sales for Retail, CPG, Fashion, Beauty.
+        // Bypass for Airlines, Hospitality, Finance, Tech, B2B.
+        const isRetailCPG = shouldQueryRetailProductSupplementals(brandName);
+        const amazonPromise = isRetailCPG
+            ? foddaRequest('GET', `/v1/supplemental/amazon?query=${encodeURIComponent(brandName)}&limit=8`, apiKey, resolveUserId(userId, uid))
+                .catch((e: any) => { console.warn('[brand_tracker] amazon supplemental failed:', e?.message); return null; })
+            : Promise.resolve(null);
+        const censusPromise = isRetailCPG
+            ? foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid))
+                .catch((e: any) => { console.warn('[brand_tracker] census supplemental failed:', e?.message); return null; })
+            : Promise.resolve(null);
 
         // Build graph lookup map
         const graphLookup = new Map<string, any>();
@@ -2977,6 +3039,29 @@ export async function createServer(
                     const catalogEntry = graphLookup.get(t.graphId);
                     const graphName = catalogEntry ? buildDisplayName(catalogEntry) : t.graphId;
 
+                    // Direct brand mention verification for Cypher trends
+                    const tNameMatch = (t.trendName || '').toLowerCase().includes(brandLower);
+                    const tDescMatch = (t.trendDescription || '').toLowerCase().includes(brandLower);
+                    const tBrandsArr = typeof t.brandNames === 'string' ? t.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(t.brandNames) ? t.brandNames : []);
+                    const tBrandsMatch = tBrandsArr.some((b: string) => b.toLowerCase().includes(brandLower));
+
+                    // Collect evidence — filter to items that actually mention the brand
+                    const matchingEvidenceForTrend: any[] = [];
+                    if (t.evidence && Array.isArray(t.evidence)) {
+                        for (const ev of t.evidence) {
+                            const evBrands = typeof ev.brandNames === 'string' ? ev.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(ev.brandNames) ? ev.brandNames : []);
+                            const evText = `${ev.title || ''} ${ev.summary || ''}`.toLowerCase();
+                            const evMentionsBrand = evBrands.some((b: string) => b.toLowerCase().includes(brandLower)) || evText.includes(brandLower);
+                            if (evMentionsBrand) {
+                                matchingEvidenceForTrend.push({ ev, evBrands });
+                            }
+                        }
+                    }
+
+                    // A trend MUST ONLY attach to a brand if directMatch === true
+                    const hasDirectBrandMatch = tNameMatch || tDescMatch || tBrandsMatch || matchingEvidenceForTrend.length > 0;
+                    if (!hasDirectBrandMatch) continue;
+
                     allTrends.push({
                         trend_name: (t.trendName || '').replace(/^\[(?:REVIW|REVIEW|DRAFT|WIP)\]\s*/i, '').trim(),
                         trend_description: t.trendDescription || '',
@@ -3002,14 +3087,8 @@ export async function createServer(
                     const lastTrend = allTrends[allTrends.length - 1];
                     lastTrend.lifecycle = computeLifecycle({ ...lastTrend, firstSeen: t.firstSeen, lastSeen: t.lastSeen, evidenceCount: t.evidenceCount, signal_score: t.signalScore, freshnessDays: lastTrend.freshnessDays });
 
-                    // Collect evidence — filter to items that actually mention the brand
-                    if (includeEvidence && t.evidence) {
-                        for (const ev of t.evidence) {
-                            const evBrands = typeof ev.brandNames === 'string' ? ev.brandNames.split('|').map((s: string) => s.trim()).filter(Boolean) : (Array.isArray(ev.brandNames) ? ev.brandNames : []);
-                            const evText = `${ev.title || ''} ${ev.summary || ''}`.toLowerCase();
-                            const evMentionsBrand = evBrands.some((b: string) => b.toLowerCase().includes(brandLower)) || evText.includes(brandLower);
-                            if (!evMentionsBrand) continue;
-
+                    if (includeEvidence) {
+                        for (const { ev, evBrands } of matchingEvidenceForTrend) {
                             allEvidence.push({
                                 title: ev.title,
                                 excerpt: ev.summary || '',
@@ -3194,15 +3273,12 @@ export async function createServer(
                             (e.title || '').toLowerCase().includes(brandLower) ||
                             (e.snippet || e.summary || '').toLowerCase().includes(brandLower)
                         );
-                        // Tier 1: Direct brand mention — high confidence
+                        // Direct brand mention ONLY — high confidence.
+                        // Brief explicitly removes semanticMatch = signal_score >= 60 to prevent attaching
+                        // unrelated trends (e.g. coffee dayparts for Singapore Airlines).
                         const directMatch = nameMatch || descMatch || brandNamesMatch || evidenceBrandMatch;
-                        // Tier 2: Semantic relevance — the search used use_semantic:true,
-                        // so high-scoring results are topically relevant even without a literal brand mention.
-                        // This prevents discarding trends like "Closed-Loop Textiles" when searching for "Patagonia".
-                        const semanticMatch = (row.signal_score || row.score || 0) >= 60;
-                        if (!directMatch && !semanticMatch) return false;
-                        // Tag row so competitor extraction only runs on direct matches
-                        row._directBrandMatch = directMatch;
+                        if (!directMatch) return false;
+                        row._directBrandMatch = true;
                         return true;
                     });
 
@@ -3416,9 +3492,15 @@ export async function createServer(
         const priorQCount = (quarterCounts[twoQKey] || 0) + (quarterCounts[threeQKey] || 0);
 
         let velocityTrend = 'stable';
-        if (recentQCount > priorQCount) velocityTrend = 'accelerating';
-        else if (recentQCount < priorQCount && priorQCount > 0) velocityTrend = 'decelerating';
-        else velocityTrend = 'stable';
+        if (uniqueEvidence.length === 0 || uniqueTrends.length === 0) {
+            velocityTrend = 'untracked';
+        } else if (recentQCount > priorQCount) {
+            velocityTrend = 'accelerating';
+        } else if (recentQCount < priorQCount && priorQCount > 0) {
+            velocityTrend = 'decelerating';
+        } else {
+            velocityTrend = 'stable';
+        }
 
         // Build profile
         const profile = {
@@ -3467,6 +3549,11 @@ export async function createServer(
             ].filter(p => uniqueTrends.length > 0),
         };
 
+        if (uniqueTrends.length === 0 || uniqueEvidence.length === 0) {
+            (profile as any).empty_message = `Fodda has no curated trend evidence mentioning ${brandName} yet.`;
+            (profile as any).coverage = { status: 'empty', note: `Fodda has no curated trend evidence mentioning ${brandName} yet.` };
+        }
+
         const topCompetitors = competitors.slice(0, 2).map(c => c.brand);
         const comparisonQuery = [brandName, ...topCompetitors].join(',');
 
@@ -3483,11 +3570,12 @@ export async function createServer(
 
         // Unwrap .snapshot nesting — supplemental API wraps actual data inside .snapshot alongside metadata
         const unwrapSnapshot = (raw: any) => raw?.snapshot || raw;
+        const isEligibleForRetailSupplemental = isRetailCPG && shouldQueryRetailProductSupplementals(brandName, marketData, Object.keys(graphPresence)[0]);
         profile.supplemental_signals = {
             google_trends: googleTrendsResult.status === 'fulfilled' ? unwrapSnapshot(googleTrendsResult.value) : null,
             wikipedia: wikipediaResult.status === 'fulfilled' ? unwrapSnapshot(wikipediaResult.value) : null,
-            amazon: amazonResult.status === 'fulfilled' ? unwrapSnapshot(amazonResult.value) : null,
-            census_retail: beaResult.status === 'fulfilled' ? unwrapSnapshot(beaResult.value) : null,
+            amazon: isEligibleForRetailSupplemental && amazonResult.status === 'fulfilled' ? unwrapSnapshot(amazonResult.value) : null,
+            census_retail: isEligibleForRetailSupplemental && beaResult.status === 'fulfilled' ? unwrapSnapshot(beaResult.value) : null,
         };
 
         // ── Earnings Intelligence (for publicly traded brands) ──
@@ -3504,10 +3592,17 @@ export async function createServer(
             (profile as any).market_data = marketData;
         }
 
+        const isTrustOrSentiment = /\b(trust|trusted|reputation|safe|safety|consumer sentiment|poll|rating|scandal|boycott)\b/i.test(brandName);
+        const TRUST_SENTIMENT_CLARIFICATION = "Fodda tracks category trend alignment, brand innovation footprint, and commercial moves, but does not maintain consumer trust or reputation polling (e.g. YouGov, Skytrax).";
+        if (isTrustOrSentiment) {
+            (profile as any).intent_clarification = TRUST_SENTIMENT_CLARIFICATION;
+        }
+
         const widget = await renderBrandWidget(profile);
+        const trustGuidance = `\n\nINTENT GUIDANCE: If the user inquiry asks about brand trust, safety, consumer sentiment, or reputation (e.g. "Is X trusted?"), clarify upfront: "${TRUST_SENTIMENT_CLARIFICATION}" Then present the commercial innovation footprint below.\n`;
         const EDITORIAL_INSTRUCTION = widget.open_slots.length === 0
             ? null
-            : `── BRAND WIDGET: EDITORIAL SLOTS ──\nThe widget_html is mostly complete. Fill these remaining slot(s): ${widget.open_slots.join(', ')}\n\n${widget.open_slots.includes('ANALYSIS_HTML') ? '{{ANALYSIS_HTML}} — Write 3-5 paragraphs of strategic analysis using <p> tags. Cover: strongest signal and why, gaps or emerging opportunities, competitive positioning, and what to watch next. Use <strong> for key terms.' : ''}\n\nEDITORIAL CONTEXT:\n${JSON.stringify(widget.editorial_context, null, 2)}\n\nCRITICAL: ALL output must go INSIDE the widget slots. Do NOT redesign, restyle, or add new elements.\nAfter filling slots, pass the complete HTML to show_widget.\n`;
+            : `── BRAND WIDGET: EDITORIAL SLOTS ──\nThe widget_html is mostly complete. Fill these remaining slot(s): ${widget.open_slots.join(', ')}\n\n${widget.open_slots.includes('ANALYSIS_HTML') ? '{{ANALYSIS_HTML}} — Write 3-5 paragraphs of strategic analysis using <p> tags. Cover: strongest signal and why, gaps or emerging opportunities, competitive positioning, and what to watch next. Use <strong> for key terms.' : ''}\n\nEDITORIAL CONTEXT:\n${JSON.stringify(widget.editorial_context, null, 2)}${trustGuidance}\nCRITICAL: ALL output must go INSIDE the widget slots. Do NOT redesign, restyle, or add new elements.\nAfter filling slots, pass the complete HTML to show_widget.\n`;
 
         storeWidget(widget.widget_html);
 
@@ -3646,9 +3741,15 @@ export async function createServer(
                 sessionTracker.recordNextMoves(brandNextMoves, brand_name);
                 (profile as any).next_moves = brandNextMoves;
 
+                const emptyNote = (trendCount === 0 || (profile.summary?.total_evidence_items || 0) === 0)
+                    ? `[EMPTY COVERAGE] Fodda has no curated trend evidence mentioning ${brand_name} yet.\n\n`
+                    : '';
+                const intentNote = (profile as any).intent_clarification
+                    ? `[INTENT CLARIFICATION] ${(profile as any).intent_clarification}\n\n`
+                    : '';
                 const rawDataBlock = {
                     type: 'text' as const,
-                    text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
+                    text: intentNote + emptyNote + '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
                 };
                 const widgetBlock = {
                     type: 'text' as const,

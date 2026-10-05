@@ -1058,6 +1058,10 @@ function rebuildSearchIndex(): void {
 const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     // Wine & Beverages
     wine: ['beverage', 'drink', 'food', 'hospitality', 'dining', 'nightlife', 'leisure', 'entertainment', 'luxury', 'home', 'appliances', 'kitchen', 'dining', 'cpg', 'retail'],
+    juice: ['beverage', 'drink', 'food', 'cpg', 'retail', 'wellness'],
+    juices: ['beverage', 'drink', 'food', 'cpg', 'retail', 'wellness'],
+    orange: ['beverage', 'food', 'cpg', 'retail'],
+    citrus: ['beverage', 'food', 'cpg', 'flavor'],
     beverage: ['beverage', 'food', 'drink', 'cpg', 'retail', 'hospitality', 'dining', 'nightlife'],
     beverages: ['beverage', 'food', 'drink', 'cpg', 'retail', 'hospitality', 'dining', 'nightlife'],
     drinks: ['beverage', 'drink', 'food', 'cpg', 'retail', 'nightlife', 'hospitality'],
@@ -1155,6 +1159,20 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     const clauseLower = clause.toLowerCase().trim();
     if (!clauseLower) return 0;
 
+    // Domain Gate: Reuters Digital News Report must ONLY match if query explicitly has media/news/journalism terms
+    const isReutersGraph = g.graph_id.includes('reuters') || g.graph_id.includes('digital-news-report');
+    if (isReutersGraph) {
+        const hasMediaNewsTopic = /\b(media|news|journalism|press|broadcast|platforms?|disinformation|publishers?|reuters)\b/i.test(clauseLower);
+        if (!hasMediaNewsTopic) return 0;
+    }
+
+    // Domain Gate: George Perkins Marsh / Resource Economics must ONLY match if query explicitly has ecological/environmental terms
+    const isResourceEconGraph = g.graph_id.includes('george-perkins-marsh') || g.graph_id.includes('resource-economics');
+    if (isResourceEconGraph) {
+        const hasEconEcoTopic = /\b(ecolog|environment|natural resource|conservation|forestry|climate|soil|marsh\b|man and nature)\b/i.test(clauseLower);
+        if (!hasEconEcoTopic) return 0;
+    }
+
     const stopWords = new Set([
         'trend', 'trends', 'consumer', 'consumers', 'report', 'reports',
         'industry', 'data', 'future', 'insight', 'insights', 'analysis',
@@ -1163,6 +1181,17 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
         'brief', 'study', 'overview', 'summary', 'deck', 'slides', 'presentation', 'topic',
         '2024', '2025', '2026', '2027', '2030', 'year', 'years', 'strategic', 'breakdown',
         'give', 'provide', 'show', 'tell', 'key'
+    ]);
+
+    // Broad generic business / market tokens that appear everywhere across diverse graphs
+    // (e.g. news consumption, alcohol occasions, market outlook) and must not overpower
+    // specific domain terms like "orange juice" or "skincare".
+    const GENERIC_BUSINESS_TOKENS = new Set([
+        'consumption', 'occasions', 'occasion', 'market', 'markets', 'strategy', 'strategies',
+        'future', 'futures', 'outlook', 'behavior', 'behaviors', 'habits', 'practices',
+        'spending', 'growth', 'shifts', 'shift', 'landscape', 'dynamics', 'ecosystem',
+        'trends', 'trend', 'report', 'reports', 'intelligence', 'overview', 'global',
+        'demand', 'supply', 'performance', 'innovation', 'innovations', 'transformation'
     ]);
 
     const terms = clauseLower
@@ -1180,21 +1209,26 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     const topicWords = new Set(topicsText.split(/[^a-z0-9]+/));
     const domainWords = new Set(domainText.split(/[^a-z0-9]+/));
 
-    let matchedTerms = 0;
-    let highValueMatches = 0;
+    const termWeight = (t: string): number => GENERIC_BUSINESS_TOKENS.has(t) ? 0.2 : 1.0;
+
+    let totalWeight = 0;
+    let matchedWeight = 0;
+    let highValueWeight = 0;
 
     for (const term of terms) {
+        const w = termWeight(term);
+        totalWeight += w;
         if (words.has(term)) {
-            matchedTerms++;
+            matchedWeight += w;
             if (topicWords.has(term) || domainWords.has(term)) {
-                highValueMatches++;
+                highValueWeight += w;
             }
         }
     }
 
     let directScore = 0;
-    if (matchedTerms > 0) {
-        directScore = (matchedTerms / terms.length) * 0.6 + (highValueMatches / terms.length) * 0.5;
+    if (totalWeight > 0 && matchedWeight > 0) {
+        directScore = (matchedWeight / totalWeight) * 0.6 + (highValueWeight / totalWeight) * 0.5;
     }
 
     // Category Expansion Score
@@ -1230,7 +1264,7 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     }
 
     // Topic Specialist Boost: if graph's explicit topics, name or routing keywords match query terms directly
-    if (highValueMatches > 0) {
+    if (highValueWeight > 0) {
         finalScore += 0.10;
     }
 

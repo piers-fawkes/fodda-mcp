@@ -159,6 +159,7 @@ function velocityClass(trend: string): { cls: string; label: string } {
         case 'accelerating': return { cls: 'vc-up', label: 'rising ↑' };
         case 'stable': return { cls: 'vc-steady', label: 'steady →' };
         case 'decelerating': return { cls: 'vc-slow', label: 'slowing ↓' };
+        case 'untracked': return { cls: 'vc-untracked', label: 'UNTRACKED' };
         default: return { cls: 'vc-build', label: 'building ↗' };
     }
 }
@@ -351,19 +352,23 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     });
 
     let rawVelocityTrend = 'stable';
-    const totalWithMomentum = accCount + bldCount + stdCount + slowCount;
-    if (totalWithMomentum > 0) {
-        if ((accCount + bldCount) > slowCount && accCount >= bldCount && accCount > 0) {
-            rawVelocityTrend = 'accelerating';
-        } else if ((accCount + bldCount) > slowCount && bldCount > 0) {
-            rawVelocityTrend = 'building';
-        } else if (slowCount > (accCount + bldCount) && slowCount > stdCount) {
-            rawVelocityTrend = 'decelerating';
-        } else {
-            rawVelocityTrend = 'stable';
-        }
+    if (trends.length === 0 || (profile.summary?.total_evidence_items || 0) === 0) {
+        rawVelocityTrend = 'untracked';
     } else {
-        rawVelocityTrend = profile.summary?.evidence_velocity?.trend || 'stable';
+        const totalWithMomentum = accCount + bldCount + stdCount + slowCount;
+        if (totalWithMomentum > 0) {
+            if ((accCount + bldCount) > slowCount && accCount >= bldCount && accCount > 0) {
+                rawVelocityTrend = 'accelerating';
+            } else if ((accCount + bldCount) > slowCount && bldCount > 0) {
+                rawVelocityTrend = 'building';
+            } else if (slowCount > (accCount + bldCount) && slowCount > stdCount) {
+                rawVelocityTrend = 'decelerating';
+            } else {
+                rawVelocityTrend = 'stable';
+            }
+        } else {
+            rawVelocityTrend = profile.summary?.evidence_velocity?.trend || 'stable';
+        }
     }
 
     const velocity = velocityClass(rawVelocityTrend);
@@ -810,7 +815,11 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         fillTrendFootprintIntro(brand, trends, profile.summary?.lifecycle_distribution || {}),
         fillMarketDataIntro(brand, supplemental),
     ]);
-    fills['ONE_LINER'] = oneLiner.status === 'fulfilled' ? oneLiner.value : `${brand} is ${velocity.label} across ${trends.length} trend${trends.length !== 1 ? 's' : ''}.`;
+    if (trends.length === 0 || evidence.length === 0) {
+        fills['ONE_LINER'] = `Fodda has no curated trend evidence mentioning ${brand} yet.`;
+    } else {
+        fills['ONE_LINER'] = oneLiner.status === 'fulfilled' ? oneLiner.value : `${brand} is ${velocity.label} across ${trends.length} trend${trends.length !== 1 ? 's' : ''}.`;
+    }
     const trendIntroText = trendIntro.status === 'fulfilled' ? trendIntro.value : '';
     fills['TREND_FOOTPRINT_INTRO'] = trendIntroText ? `<p class="si">${esc(trendIntroText)}</p>` : '';
     const marketIntroText = marketIntro.status === 'fulfilled' ? marketIntro.value : '';
@@ -899,6 +908,7 @@ export const TEMPLATE = `
 .vc-build{color:var(--color-text-info);}
 .vc-steady{color:var(--color-text-secondary);}
 .vc-slow{color:var(--color-text-warning);}
+.vc-untracked{color:var(--color-text-secondary);opacity:0.7;}
 .pv{font-size:14px;font-family:Georgia,serif;font-style:italic;font-weight:400;line-height:1.65;padding:14px 16px;background:var(--pl);border:1px solid var(--p);border-left-width:3px;border-radius:4px;margin-bottom:1.25rem;color:var(--color-text-primary);}
 .lcb{display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:.75rem;gap:2px;}
 .lcl{display:flex;gap:12px;margin-bottom:1.25rem;flex-wrap:wrap;}
