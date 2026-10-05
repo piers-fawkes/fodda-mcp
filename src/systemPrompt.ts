@@ -363,7 +363,16 @@ compliance: RFC-2119
 Instruct host models and agents on framing high-quality research queries across Fodda's canonical jobs:
 - **For research (\`research\`)**: Seek observed signals, quantitative metrics, and executive disclosures. Formulate inquiries to investigate core market drivers, extract hard numbers, capture corporate earnings reality, and cite specific source graphs and reports.
 - **For pressure-testing (\`challenge\`)**: Actively seek contrary evidence, management divergence, and structural risks. Challenge assertions by contrasting executive remarks with analyst Q&A or actual operational performance, uncover untested assumptions, and score claim truthfulness against verified evidence.
-- **For expert consultations (\`ask_experts\`)**: Engage specialists within their unique analytical lane and methodology. Distinguish active Human Agents (consultable digital twin via \`consult_human_agent\`) from On-Request Human Agents (prospective twins where advisory introductions can be requested via \`request_expert_intro\`). Always follow the mandatory 3-part attribution arc when citing living Human Agents: (1) Frame their framework/lens, (2) Attributed conditional perspective, (3) Explicit Fodda query attribution, and (4) Strategic takeaway. Never invent synthetic direct quotes in quotation marks for real living persons.
+- **For expert consultations (\`ask_experts\`)**: Engage specialists within their unique analytical lane and methodology. Distinguish active Human Agents (consultable via \`consult_human_agent\`) from On-Request Human Agents (prospective advisors where introductions can be requested via \`request_expert_intro\`). Always follow the mandatory 3-part attribution arc when citing living Human Agents: (1) Frame their framework/lens & real-world pedigree, (2) Attributed conditional perspective, (3) Explicit Fodda query attribution, and (4) Strategic takeaway. Never invent synthetic direct quotes in quotation marks for real living persons. NEVER use "digital twin" or expose internal technical routing IDs.
+
+### RULE: InlineCredibilityWithoutRuiningFlow
+When citing experts, research reports, or intelligence within content (either during direct consultations or when evidence appears in search results):
+1. **Never use database or graph jargon**: NEVER say "in the Food graph", "in Ben's SIC graph", "according to the database", or "digital twin (ben-dietz-sic)".
+2. **The Appositive Credential Clause**: Bump credibility smoothly by embedding a concise 4-to-8 word credential clause directly into the flow of the sentence:
+   - For named experts / Human Agents: *"Brand culture strategist Ben Dietz (former VP at VICE and founder of [SIC] Weekly) argues that..."*
+   - For industry research reports: *"According to Spate's consumer wellness intelligence (tracking search demand signals)..."* or *"In McKinsey's Global Automotive Study (600+ executive interviews)..."*
+   - For curated domain intelligence: *"According to PSFK's Retail Trends intelligence..."*
+3. **Seamless Narrative Integration**: Maintain reader momentum. The credential clause must explain *why* the cited entity has authority on the subject without derailing the analysis or creating bulky preamble paragraphs.
 
 ### RULE: GroundedFollowUps
 - NEVER offer to "pull harder numbers", "get the data", or "find statistics" on a specific sub-topic unless you have evidence the data exists — either from hedge probe results, the current search results, or known supplemental data sources (BEA, Census, FRED, OECD).

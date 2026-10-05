@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.103] - 2026-10-05
+
+### Changed
+- **Phase 0 Router Hardening, Inline Credibility Kickers & Expert Pedigree Framing (`src/catalogCache.ts`, `src/coverageRelevance.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`, `src/a2aHandler.ts`, `package.json`)**:
+  - **Phase 0 Router False-Positive Hardening**: Added `NON_PERSON_SURNAME_WORDS` and `GENERIC_COMPANY_WORDS` to prevent common words like "company" from matching corporate curators (e.g. "McKinsey & Company") as person surnames, completely eliminating off-topic McKinsey Health/Automotive shelf recommendations on founder/company queries.
+  - **Inline Credibility Kickers (`getSourcePedigree`)**: Implemented `getSourcePedigree()` in `src/catalogCache.ts` and enriched `search_graph` (trends & evidence) and `search_insights` items with `source_pedigree` to allow host assistants to cite sources via smooth appositive clauses (e.g., *"Brand culture strategist Ben Dietz (former VP at VICE and founder of [SIC] Weekly)..."*, *"In McKinsey's Global Automotive Study..."*) without database jargon like "in the Food graph".
+  - **Credibility Guidance & Appositive Framing Pattern**: Enriched `--- EXPERT CREDIBILITY ANCHOR ---` in `consult_human_agent` and `consult_analyst` with explicit example patterns and instructions forbidding raw IDs (e.g., `ben-dietz-sic`) and forbidden terminology ("digital twin"). Added `### RULE: InlineCredibilityWithoutRuiningFlow` in `src/systemPrompt.ts`.
+  - **Sanitized Action & Move Labels**: Hardened `generateConsultNextMoves` in `src/coverageRelevance.ts` so action and move labels format slugs into clean names (e.g. "Pressure-test Ben Dietz's perspective" instead of "ben-dietz-sic").
+  - **find_expert Timeout & Fallback Alignment**: Aligned upstream API timeout to 3000ms with fast local fallback and hardened `get_capabilities` response array validation.
+  - **Deploy**: Deferred per user directive (commit only).
+
 ## [1.46.102] - 2026-10-04
 
 ### Changed

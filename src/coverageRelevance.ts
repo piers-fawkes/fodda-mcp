@@ -1807,7 +1807,15 @@ export function generateConsultNextMoves(
         return aId === cleanAnalystId || aName === cleanAnalystId;
     });
 
-    const expertDisplayName = matchedAnalyst?.name || analystId;
+    let expertDisplayName = cleanDisplayName(matchedAnalyst?.name);
+    if (!expertDisplayName) {
+        expertDisplayName = cleanAnalystId
+            .replace(/-(sic|weekly|trends|intelligence|strategy|lead|beauty|cycling|alc-bev|fashion|corp|health)$/i, '')
+            .split(/[-_]+/)
+            .filter(Boolean)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ') || analystId;
+    }
     const expertGraphId = matchedAnalyst?.analyst_id || analystId;
 
     const expertThread = result?.expert_thread || {};

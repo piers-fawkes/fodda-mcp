@@ -111,7 +111,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when consulting an authorized living expert twin for practitioner depth, proprietary frameworks, and strategic guidance. For active Human Agents, queries their verified digital twin; for On-Request Human Agents undergoing onboarding, returns domain-grounded intelligence and advisory profile. Supports deep homework mode (deep: true). Returns cited insights and next_moves."
+      "description": "Use when consulting an authorized living Human Agent for practitioner depth, proprietary frameworks, and strategic guidance. Grounded in their verified real-world expertise and published thinking. For On-Request Human Agents undergoing onboarding, returns domain-grounded intelligence and advisory profile. Supports deep homework mode (deep: true). Returns cited insights and next_moves."
     },
     {
       "name": "deep_research_topic",
@@ -188,7 +188,7 @@
         "copilot",
         "grok-brand-context"
       ],
-      "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines and why matched, distinguishing active Human Agents (consultable twin) from On-Request Human Agents (advisory introduction)."
+      "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines, credibility anchors, and why matched, distinguishing active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (advisory introduction via request_expert_intro)."
     },
     {
       "name": "generate_visual",

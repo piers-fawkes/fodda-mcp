@@ -56,6 +56,10 @@ async function sync() {
         let cleanDesc = desc.trim()
           .replace(/\s*Price:\s*\$[\d.]+(?:\s*(?:per|\/)\s*[^.]+)?\.?/gi, '')
           .replace(/\s*Price:\s*Free\.?/gi, '')
+          .replace(/\bdigital twins\b/gi, 'Human Agents')
+          .replace(/\bdigital twin\b/gi, 'Human Agent')
+          .replace(/\bexpert twins\b/gi, 'Human Agents')
+          .replace(/\bexpert twin\b/gi, 'Human Agent')
           .trim();
         descriptionMap.set(toolKey.trim(), cleanDesc);
       }

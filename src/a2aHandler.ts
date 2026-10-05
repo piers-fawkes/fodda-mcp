@@ -91,7 +91,7 @@ export const AGENT_CARD = {
         {
             id: 'expert-consult',
             name: 'Expert Consult',
-            description: "Consult a named Human Agent — a real expert's digital twin that answers in their voice and researches across expert graphs, earnings calls, and market data on your behalf.",
+            description: "Consult an authorized living Human Agent — grounded in a real expert's verified knowledge, proprietary frameworks, and published thinking, researching on your behalf.",
             tags: ['expert', 'consult', 'analyst'],
             examples: ['Consult Ben Dietz about culture-led brand strategy', 'Ask Anu Lingala about 2026 macro trends'],
         },

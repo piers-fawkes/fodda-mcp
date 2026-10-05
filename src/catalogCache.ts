@@ -516,6 +516,155 @@ export function cleanDisplayName(name: string | undefined | null): string {
         .trim();
 }
 
+export interface SourcePedigree {
+    display_attribution: string;
+    source_type: 'human_agent' | 'expert_graph' | 'industry_report' | 'domain_intelligence';
+    curator_name?: string | undefined;
+    company_name?: string | undefined;
+    credibility_anchor?: string | undefined;
+}
+
+const NON_PERSON_SURNAME_WORDS = new Set([
+    'company', 'co', 'corp', 'corporation', 'inc', 'incorporated', 'llc', 'ltd', 'limited',
+    'group', 'associates', 'partners', 'partnership', 'holdings', 'ventures', 'capital',
+    'management', 'media', 'institute', 'lab', 'labs', 'studio', 'studios', 'agency',
+    'collective', 'foundation', 'center', 'centre', 'network', 'insights', 'research',
+    'team', 'global', 'international', 'stat', 'data', 'analytics', 'consulting', 'advisory'
+]);
+
+const GENERIC_COMPANY_WORDS = new Set([
+    'founder', 'co-founder', 'ceo', 'cmo', 'cfo', 'director', 'partner', 'consultant',
+    'company', 'agency', 'studio', 'enterprises', 'ventures', 'group', 'brand', 'brands',
+    'media', 'collective', 'network', 'firm', 'business', 'advisory', 'consulting',
+    'report', 'reports', 'trends', 'intelligence', 'platform', 'service', 'services'
+]);
+
+/**
+ * Build a concise, authoritative source pedigree kicker for graphs and analysts.
+ * Bumps credibility in user-visible prose without derailing narrative flow.
+ */
+export function getSourcePedigree(graphIdOrAnalystId: string): SourcePedigree {
+    if (!graphIdOrAnalystId) {
+        return { display_attribution: 'Fodda Curated Intelligence', source_type: 'domain_intelligence' };
+    }
+    const cleanId = String(graphIdOrAnalystId).toLowerCase().trim();
+
+    // 1. Check if it's a known Analyst / Human Agent
+    const analysts = getAnalysts();
+    const analyst = analysts.find(a => {
+        const aId = (a.analyst_id || (a as any).id || (a as any).slug || '').toLowerCase().trim();
+        const aName = (a.name || '').toLowerCase().trim();
+        return aId === cleanId || aName === cleanId;
+    });
+
+    if (analyst) {
+        const name = cleanDisplayName(analyst.name);
+        const anchor = analyst.credibility_anchor;
+        let shortPedigree = '';
+        if (analyst.expert_in) {
+            shortPedigree = `expert in ${analyst.expert_in}`;
+        }
+        let attribution = name;
+        if (anchor) {
+            const sentences = anchor.split(/(?<=[.!?])\s+/);
+            const bioSentence = sentences.find(s => !s.includes('Human Agent on Fodda') && (s.includes('is a') || s.includes('is an') || s.includes('former') || s.includes('founder')));
+            if (bioSentence) {
+                const matchClause = bioSentence.replace(/^[^a-zA-Z0-9]+/, '').replace(/^.*?is (an? )?/i, '').replace(/\.$/, '').trim();
+                attribution = `${name} (${matchClause})`;
+            } else if (shortPedigree) {
+                attribution = `${name} (${shortPedigree})`;
+            }
+        } else if (shortPedigree) {
+            attribution = `${name} (${shortPedigree})`;
+        }
+
+        return {
+            display_attribution: attribution,
+            source_type: analyst.is_human_agent ? 'human_agent' : 'expert_graph',
+            curator_name: name,
+            credibility_anchor: anchor || undefined
+        };
+    }
+
+    // 2. Check if it's a known Graph in Catalog
+    const graphs = getGraphs();
+    const graph = graphs.find(g => {
+        const gId = (g.graph_id || (g as any).id || '').toLowerCase().trim();
+        return gId === cleanId;
+    });
+
+    if (graph) {
+        const gType = (graph.graph_type || '').toLowerCase();
+        const curator = graph.curator?.trim();
+        const company = graph.company?.trim();
+        const name = graph.name?.trim() || cleanId;
+        const headline = graph.headline?.trim();
+
+        if (gType === 'domain') {
+            const cleanDomainName = name.replace(/\bGraph\b/i, '').replace(/\bTrends\b/i, '').trim();
+            return {
+                display_attribution: `${cleanDomainName} Trends Intelligence`,
+                source_type: 'domain_intelligence',
+                curator_name: curator || 'PSFK'
+            };
+        }
+
+        if (gType === 'expert' || gType === 'analyst') {
+            // Check if there is a linked analyst with a full credibility anchor
+            const matchingAnalyst = analysts.find(a => {
+                const aName = (a.name || '').toLowerCase().trim();
+                const aId = (a.analyst_id || (a as any).id || (a as any).slug || '').toLowerCase().trim();
+                return (curator && aName === curator.toLowerCase().trim()) || aId === cleanId;
+            });
+            if (matchingAnalyst?.credibility_anchor) {
+                const anchor = matchingAnalyst.credibility_anchor;
+                const sentences = anchor.split(/(?<=[.!?])\s+/);
+                const bioSentence = sentences.find(s => !s.includes('Human Agent on Fodda') && (s.includes('is a') || s.includes('is an') || s.includes('former') || s.includes('founder')));
+                if (bioSentence) {
+                    const matchClause = bioSentence.replace(/^[^a-zA-Z0-9]+/, '').replace(/^.*?is (an? )?/i, '').replace(/\.$/, '').trim();
+                    return {
+                        display_attribution: `${curator || name} (${matchClause})`,
+                        source_type: 'expert_graph',
+                        curator_name: curator || name,
+                        company_name: company,
+                        credibility_anchor: anchor
+                    };
+                }
+            }
+            const hasCompany = company && company !== curator && !GENERIC_COMPANY_WORDS.has(company.toLowerCase());
+            const display = hasCompany ? `${curator} (${company})` : (curator || name);
+            return {
+                display_attribution: display,
+                source_type: 'expert_graph',
+                curator_name: curator,
+                company_name: company
+            };
+        }
+
+        // Industry report
+        const hasCurator = curator && curator !== company && !NON_PERSON_SURNAME_WORDS.has(curator.toLowerCase());
+        let reportLabel = company || curator || name;
+        if (hasCurator && company) {
+            reportLabel = `${company} (curated by ${curator})`;
+        } else if (company && headline) {
+            const cleanHeadline = headline.replace(/^Fodda's interpretation of /i, '').slice(0, 75).trim();
+            reportLabel = `${company} (${cleanHeadline})`;
+        }
+        return {
+            display_attribution: reportLabel,
+            source_type: 'industry_report',
+            curator_name: curator,
+            company_name: company
+        };
+    }
+
+    return {
+        display_attribution: graphIdOrAnalystId,
+        source_type: 'domain_intelligence'
+    };
+}
+
+
 /**
  * Build the GRAPH TYPES block from catalog data.
  */
@@ -1261,14 +1410,15 @@ export function getRelevantGraphs(
         }
     }
 
+    const GENERIC_NAMES = new Set([
+        'trends', 'report', 'graph', 'data', '2026', 'state', 'outlook',
+        'beauty', 'food', 'home', 'retail', 'fashion', 'travel', 'design'
+    ]);
+
     const matchesWordBoundary = (text: string, term: string): boolean => {
         if (!term || term.length < 3) return false;
         // Ignore generic topic/format words from forcing Phase 0 direct inclusion
-        const genericNames = new Set([
-            'trends', 'report', 'graph', 'data', '2026', 'state', 'outlook',
-            'beauty', 'food', 'home', 'retail', 'fashion', 'travel', 'design'
-        ]);
-        if (genericNames.has(term.toLowerCase())) return false;
+        if (GENERIC_NAMES.has(term.toLowerCase())) return false;
         const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const rx = new RegExp(`\\b${escaped}\\b`, 'i');
         return rx.test(text);
@@ -1283,28 +1433,45 @@ export function getRelevantGraphs(
 
         // Check curator full name (e.g., "Alyson Stevens", "Ben Dietz")
         const curatorLower = (g.curator || '').trim().toLowerCase();
-        if (curatorLower && curatorLower.length > 4 && matchesWordBoundary(queryLower, curatorLower)) {
+        if (curatorLower && curatorLower.length > 4 && !GENERIC_NAMES.has(curatorLower) && matchesWordBoundary(queryLower, curatorLower)) {
             directMatchIds.add(g.graph_id);
             continue;
         }
 
         // Check curator last name (>3 chars to avoid false positives like "AI", "NIQ")
+        // Only valid for individual expert/analyst graphs, and last name must not be an organizational noun
+        const isIndividualPersonGraph = g.graph_type === 'expert' || g.graph_type === 'analyst';
         const curatorParts = curatorLower.split(/\s+/);
-        const curatorLastName = curatorParts[curatorParts.length - 1];
-        if (curatorLastName && curatorLastName.length > 3 && matchesWordBoundary(queryLower, curatorLastName)) {
-            directMatchIds.add(g.graph_id);
-            continue;
+        if (isIndividualPersonGraph && curatorParts.length >= 2 && curatorParts.length <= 4) {
+            const curatorLastName = curatorParts[curatorParts.length - 1];
+            if (
+                curatorLastName &&
+                curatorLastName.length > 3 &&
+                !NON_PERSON_SURNAME_WORDS.has(curatorLastName) &&
+                !GENERIC_NAMES.has(curatorLastName) &&
+                matchesWordBoundary(queryLower, curatorLastName)
+            ) {
+                directMatchIds.add(g.graph_id);
+                continue;
+            }
         }
 
         // Check company name (e.g., "TBWA", "Delta", "Havas", "Kantar")
-        // Skip generic publisher/consultancy names so mentioning a firm doesn't force all its graphs
+        // Skip generic publisher/consultancy names and generic role/entity words
         const companyLower = (g.company || '').trim().toLowerCase();
         const genericPublishers = new Set([
             'mckinsey', 'bcg', 'deloitte', 'kpmg', 'forrester', 'gartner',
             'pwc', 'ey', 'capgemini', 'bain', 'niq', 'mintel', 'dentsu',
             'accenture', 'youtube', 'google', 'microsoft'
         ]);
-        if (companyLower && companyLower.length > 3 && !genericPublishers.has(companyLower) && matchesWordBoundary(queryLower, companyLower)) {
+        if (
+            companyLower &&
+            companyLower.length > 3 &&
+            !genericPublishers.has(companyLower) &&
+            !GENERIC_COMPANY_WORDS.has(companyLower) &&
+            !NON_PERSON_SURNAME_WORDS.has(companyLower) &&
+            matchesWordBoundary(queryLower, companyLower)
+        ) {
             directMatchIds.add(g.graph_id);
             continue;
         }
