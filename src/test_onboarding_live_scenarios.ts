@@ -140,7 +140,7 @@ async function run() {
         {
             status: 'awaiting_interview',
             expectedTool: 'schedule_interview',
-            expectedAction: 'Book your 15–20 minute expertise interview, now or at a time that suits you.'
+            expectedAction: 'Book your quick 5–10 minute voice interview, now or at a time that suits you.'
         },
         {
             status: 'awaiting_interview',

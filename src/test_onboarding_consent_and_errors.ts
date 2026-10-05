@@ -40,11 +40,11 @@ check(toolsContent.includes('begin_expert_onboarding: "1.1.0"'), 'begin_expert_o
 check(toolsContent.includes('submit_mcp_source: "1.1.0"'), 'submit_mcp_source is bumped to 1.1.0');
 check(toolsContent.includes('finalize_byo_mcp_onboarding: "1.1.0"'), 'finalize_byo_mcp_onboarding is bumped to 1.1.0');
 check(toolsContent.includes('submit_expertise_analysis: "1.1.0"'), 'submit_expertise_analysis is bumped to 1.1.0');
-check(toolsContent.includes('get_detected_themes: "1.1.0"'), 'get_detected_themes is bumped to 1.1.0');
-check(toolsContent.includes('confirm_themes: "1.1.0"'), 'confirm_themes is bumped to 1.1.0');
-check(toolsContent.includes('get_onboarding_status: "1.1.0"'), 'get_onboarding_status is bumped to 1.1.0');
+check(toolsContent.includes('get_detected_themes: "1.2.0"'), 'get_detected_themes is 1.2.0');
+check(toolsContent.includes('confirm_themes: "1.2.0"'), 'confirm_themes is 1.2.0');
+check(toolsContent.includes('get_onboarding_status: "1.2.0"'), 'get_onboarding_status is 1.2.0');
 check(toolsContent.includes('schedule_interview: "1.1.0"'), 'schedule_interview is bumped to 1.1.0');
-check(toolsContent.includes('expert_onboarding_research: "1.1.0"'), 'expert_onboarding_research is bumped to 1.1.0');
+check(toolsContent.includes('expert_onboarding_research: "1.2.0"'), 'expert_onboarding_research is 1.2.0');
 
 // ---------------------------------------------------------------------------
 // 2. Truthful Persistence Copy & Definition of Done Grep

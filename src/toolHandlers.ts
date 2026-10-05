@@ -7418,7 +7418,7 @@ export async function createServer(
         awaiting_interview: {
             label: 'Awaiting interview scheduling',
             nextTool: 'schedule_interview',
-            nextAction: 'Book your 15–20 minute expertise interview, now or at a time that suits you.'
+            nextAction: 'Book your quick 5–10 minute voice interview, now or at a time that suits you.'
         },
         pending_approval: {
             label: 'Pending review',
@@ -7556,11 +7556,11 @@ export async function createServer(
                     `Welcome to Fodda Human Agent Onboarding.`,
                     ``,
                     `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
-                    `• Process: You will share your core domain details in this chat, we will analyze your public work and domain insights, and you'll review and confirm detected themes before scheduling a short deep-dive interview.`,
+                    `• Process: You will share your core domain details in this chat, we will analyze your public work and conversational style, and you'll pick your core lane before scheduling a quick 5–10 minute voice interview.`,
                     `• Knowledge Base: Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer **No / I don't know** — most experts don't have one, and we'll set you up the standard way.`,
                     `• Privacy & Persistence: Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later, in this chat or a new one, and I'll check where you left off. Anything I'm still drafting with you, like your voice study before you submit it, lives only in this chat until you submit that step. Your Human Agent only goes live after your interview and Fodda's review.`,
                     ``,
-                    `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (e.g. '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', '$2,000/hr', or 'No Calls'), or call \`submit_basic_info\` directly.`
+                    `👉 **Next Step:** Ask the expert for their full name, current role, primary knowledge area, and explicit agreement to Fodda's Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) [Turn 1]. Next, ask if Fodda can introduce clients to them and what their preferred 1-on-1 consultation hourly rate is ($250, $500, $750, $1k, $2k, or No Calls) [Turn 1b]. Or call \`submit_basic_info\` directly once collected.`
                 ].join('\n');
 
                 const payload = {
@@ -7571,8 +7571,8 @@ export async function createServer(
                         '1. Basic Information (submit_basic_info)',
                         '2. Background Research (expert_onboarding_research)',
                         '3. Expertise Analysis (submit_expertise_analysis)',
-                        '4. Theme Confirmation (get_detected_themes, confirm_themes)',
-                        '5. Audio Interview (schedule_interview)'
+                        '4. Theme Lane & Articles (get_detected_themes, confirm_themes)',
+                        '5. Quick Voice Interview (schedule_interview)'
                     ],
                     byo_mcp_option: {
                         available: true,
@@ -7984,7 +7984,7 @@ export async function createServer(
                     sections.push('');
                 }
 
-                sections.push('👉 **Next Step:** Present the verified research findings and detected themes to the expert. Ask them to audit the findings (passing any incorrect IDs to `confirm_themes(flaggedFindingIds: [...])`) and **pick their core lane (recommend 2 to 3 themes max)** to keep their Human Agent sharp and opinionated rather than diluted. Unselected topics will define their outside-their-lane boundaries. Then call `confirm_themes` with their confirmed themes.');
+                sections.push('👉 **Next Step:** First, present the detected themes and ask the expert to **pick their core lane (2 to 3 themes max)** to keep their Human Agent sharp and opinionated [Turn 4]. Second, ask separate permission to index the verified public articles/talks found on the web into their knowledge graph, passing any unapproved or non-expert finding IDs to `confirm_themes(flaggedFindingIds: [...])` [Turn 4b]. Then call `confirm_themes` with their confirmed lane.');
 
                 const statusText = sections.join('\n');
                 return {
@@ -8030,7 +8030,7 @@ export async function createServer(
                         prose: "Theme confirmation didn't complete — the interview questionnaire wasn't generated. Please call confirm_themes again to retry. Do NOT proceed to schedule_interview yet."
                     });
                 }
-                const statusText = `Themes confirmed and questionnaire generated.\n\n👉 **Next Step:** Call \`schedule_interview\` to schedule the 15–20 minute deep-dive audio interview.`;
+                const statusText = `Themes confirmed and questionnaire generated.\n\n👉 **Next Step:** Call \`schedule_interview\` to schedule your quick 5–10 minute voice interview.`;
                 const extendedResult = {
                     ...result,
                     next: 'schedule_interview',
@@ -8091,7 +8091,7 @@ export async function createServer(
 
     server.tool(
         'schedule_interview',
-        'Schedule a 15–20 minute expertise deep-dive audio interview with the Fodda AI interviewer. Can specify an ISO datetime, human-readable local time, or request an instant interview now.',
+        'Schedule a quick 5–10 minute voice interview with the Fodda AI interviewer on Google Meet. Can specify an ISO datetime, human-readable local time, or request an instant interview now.',
         {
             datetime: z.string().optional().describe('ISO-8601 UTC datetime for the scheduled interview (e.g. "2026-07-14T19:00:00.000Z")'),
             localTimeStr: z.string().optional().describe('Human-readable local time representation (e.g. "Tuesday, July 14 at 3:00 PM EDT")'),

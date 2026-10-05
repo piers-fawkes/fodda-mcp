@@ -541,7 +541,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Schedule a 15–20 minute expertise deep-dive audio interview with the Fodda AI interviewer. Can specify an ISO datetime, human-readable local time, or request an instant interview now."
+      "description": "Schedule a quick 5–10 minute voice interview with the Fodda AI interviewer on Google Meet. Can specify an ISO datetime, human-readable local time, or request an instant interview now."
     },
     {
       "name": "search_graph",

@@ -5,6 +5,28 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.101] - 2026-10-04
+
+### Changed
+- **Conversational Onboarding Intake, 5–10m Voice Interview Reframe & Lane vs Article Consent Separation (`src/systemPrompt.ts`, `src/toolHandlers.ts`, `server.json`, `fodda_mcp_server.json`, `package.json`)**:
+  - **Turn 1 & 1b Intake Separation**: Split basic info intake into two natural conversational steps:
+    - *Turn 1*: Full name, current role, primary knowledge area, and explicit acceptance of Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy).
+    - *Turn 1b*: Clear client introductions framing: "Can Fodda introduce clients to you? If a Fodda client wishes to book a 1-on-1 video call or consultation with you, what is your preferred hourly fee? (Options: $250/hr, $500/hr, $750/hr, $1,000/hr, $2,000/hr, or No Calls if you prefer not to take calls)."
+  - **Voice Study & Turn 1 Context Consciousness (Turn 2 & 3)**:
+    - Updated system instructions and handlers so that upon launching background research, the assistant immediately asks permission to analyze chat history for the 2 files (`voiceStudy` and `expertTopics`).
+    - Instructed assistant to present the analysis while remaining explicitly conscious of the Turn 1 overview (*"Connecting with your stated focus on [knowledgeArea from Turn 1]..."*), inviting expert adjustments.
+    - Repurposed voice input solely as an optional filler for waiting: *"While background research finishes, feel free to tap the mic and drop a 30-second thought..."*, completely removing any cumbersome "record on phone and paste text" guidance.
+  - **Theme Lane Selection vs. Article Indexing Permission Separation (Turn 4 & 4b)**:
+    - *Turn 4*: Expert picks their core lane (recommend 2 to 3 themes max) to keep their Human Agent sharp and opinionated. Unselected topics define their out-of-lane boundary.
+    - *Turn 4b*: Separately presents verified public articles/talks discovered during research and asks permission to index them into their knowledge graph, passing any unapproved finding IDs to `confirm_themes(flaggedFindingIds: [...])`.
+  - **Voice Interview Reframe**:
+    - Re-anchored the interview across `src/systemPrompt.ts`, `src/toolHandlers.ts` (`schedule_interview`, `confirm_themes`, `begin_expert_onboarding`), and `tools-manifest.json` from a "15–20 minute deep-dive" to a **"quick 5–10 minute voice interview"** (voice calibration) on Google Meet.
+  - **Verification**:
+    - `src/test_onboarding_consent_and_errors.ts` passed 40/40 checks with 0 failures.
+    - `src/test_onboarding_live_scenarios.ts` passed 59/59 checks with 0 failures.
+    - `npm test` verified full build, Airtable description sync, manifest generation, and `/health` HTTP 200 on port 3099.
+  - Deployed: Deferred per user request (commit only).
+
 ## [1.46.100] - 2026-10-04
 
 ### Changed
