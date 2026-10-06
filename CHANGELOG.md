@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/test_credibility_anchors.ts`: Verified Classic Agent vs Human Agent credibility anchor guidance and prohibited terms.
   - `src/test_next_moves_transcripts.ts`: Verified 17 query transcript closing block renderings across Render Spec 1.3 with 0 cost/token/slug violations.
   - `npm test`: Clean build, tools manifest generation (55 tools, 26 billable, 29 free), Cost Silence Guard passed, and server health check 200 OK.
+- Deployed Cloud Run revision `fodda-mcp-00615-l64` (100% traffic, health check HTTP 200).
 
 ## [1.46.105] - 2026-10-06
 
