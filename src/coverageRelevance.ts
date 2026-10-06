@@ -717,6 +717,7 @@ export interface NextMovesAction {
     suggested_prompt: string;
     suggested_parameters: Record<string, any>;
     available: boolean;
+    alternative_route?: string;
 }
 
 export interface NextMoveItem {
@@ -728,6 +729,7 @@ export interface NextMoveItem {
     session_id?: string;
     link?: string;
     available?: boolean;
+    alternative_route?: string;
 }
 
 export interface NextMoves {
@@ -763,6 +765,8 @@ export interface NextMovesOptions {
     sessionTracker?: any | undefined;
     suggestFn?: ((query: string) => Promise<any>) | undefined;
     suggestPromise?: Promise<any> | undefined;
+    isToolCallable?: ((toolName: string) => boolean) | undefined;
+    allowedTools?: Set<string> | string[] | undefined;
 }
 
 interface SuggestCacheEntry {
@@ -858,6 +862,8 @@ export interface ConsultNextMovesOptions {
     analysts?: CatalogAnalyst[] | undefined;
     sessionId?: string | undefined;
     turnCount?: number | undefined;
+    isToolCallable?: ((toolName: string) => boolean) | undefined;
+    allowedTools?: Set<string> | string[] | undefined;
 }
 
 /**
@@ -1675,98 +1681,187 @@ export async function generateNextMoves(
         }
     }
 
+    const isCallable = (toolName?: string): boolean => {
+        if (!toolName) return true;
+        if (options?.isToolCallable) return options.isToolCallable(toolName);
+        if (options?.allowedTools) {
+            const set = options.allowedTools instanceof Set ? options.allowedTools : new Set(options.allowedTools);
+            return set.has(toolName);
+        }
+        return true;
+    };
+
+    const resolveToolAvailability = (tool: string): { tool: string; available: boolean; alternative_route?: string } => {
+        if (isCallable(tool)) {
+            return { tool, available: true };
+        }
+        // Fallback: verify_market_claim -> verify_claim
+        if (tool === 'verify_market_claim' && isCallable('verify_claim')) {
+            return { tool: 'verify_claim', available: true };
+        }
+        return {
+            tool,
+            available: false,
+            alternative_route: 'Available via full Fodda MCP server at https://mcp.fodda.ai/mcp or https://app.fodda.ai',
+        };
+    };
+
+    const isEmptyBrand = Boolean(options?.isBrandTracker && (status === 'empty' || rows.length === 0));
+
+    const pressureTestAction: NextMovesAction = isEmptyBrand ? {
+        action: 'research',
+        name: 'Explore category trends',
+        description: 'Search domain graphs for broader category trends and market dynamics.',
+        reason: `Fodda has no direct evidence for ${cleanTopic}; explore category dynamics across retail and consumer graphs.`,
+        target_tool: resolveToolAvailability('search_graph').tool,
+        tool_display_name: 'Graph Search',
+        suggested_prompt: `Explore consumer trends and market dynamics in ${cleanTopic}'s category`,
+        suggested_parameters: { query: `${cleanTopic} category trends` },
+        available: resolveToolAvailability('search_graph').available,
+        ...(resolveToolAvailability('search_graph').alternative_route ? { alternative_route: resolveToolAvailability('search_graph').alternative_route } : {}),
+    } : {
+        action: 'pressure_test',
+        name: 'Pressure-test thesis',
+        description: 'Evaluate assertions against counter-evidence and executive divergence.',
+        reason: 'Evaluate whether findings rely on untested assumptions',
+        target_tool: resolveToolAvailability('verify_market_claim').tool,
+        tool_display_name: 'Market Claim Verifier',
+        suggested_prompt: `Pressure-test whether the market momentum around ${cleanTopic} holds up against counter-evidence.`,
+        suggested_parameters: { claim: `Pressure-test whether ${cleanTopic} strategy and market momentum holds up` },
+        available: resolveToolAvailability('verify_market_claim').available,
+        ...(resolveToolAvailability('verify_market_claim').alternative_route ? { alternative_route: resolveToolAvailability('verify_market_claim').alternative_route } : {}),
+    };
+
+    const expertToolRes = resolveToolAvailability(expertTargetTool);
+    const expertAction: NextMovesAction = {
+        action: 'ask_expert',
+        name: expertName,
+        description: expertDescription,
+        reason: expertReason,
+        target_tool: expertToolRes.tool,
+        suggested_prompt: expertPrompt,
+        suggested_parameters: expertParams,
+        available: expertToolRes.available,
+        ...(expertToolRes.alternative_route ? { alternative_route: expertToolRes.alternative_route } : {}),
+    };
+
+    const briefToolRes = resolveToolAvailability('request_deliverable');
+    const briefAction: NextMovesAction = {
+        action: 'create_brief',
+        name: 'Commission executive brief',
+        description: 'Turn this intelligence into a finished strategic deliverable.',
+        reason: `Package verified evidence, quantitative statistics, and executive quotes on ${cleanTopic} into a deliverable.`,
+        target_tool: briefToolRes.tool,
+        suggested_prompt: `Commission an executive brief on ${cleanTopic}`,
+        suggested_parameters: { skill_slug: 'research_brief', brief: `Synthesize verified findings, market metrics, and strategic implications for ${cleanTopic}` },
+        available: briefToolRes.available,
+        ...(briefToolRes.alternative_route ? { alternative_route: briefToolRes.alternative_route } : {}),
+    };
+
+    const trackToolRes = resolveToolAvailability('manage_scheduled_reports');
+    const trackAction: NextMovesAction = {
+        action: 'track_topic',
+        name: 'Track topic shifts',
+        description: 'Establish automated weekly monitoring on this subject.',
+        reason: `Detect newly emerging signals, shifts in executive tone, and trend momentum on ${cleanTopic} weekly.`,
+        target_tool: trackToolRes.tool,
+        suggested_prompt: `Set up weekly tracking on ${cleanTopic}`,
+        suggested_parameters: { action: 'create', topic: cleanTopic, cadence: 'weekly' },
+        available: trackToolRes.available,
+        ...(trackToolRes.alternative_route ? { alternative_route: trackToolRes.alternative_route } : {}),
+    };
+
     const actions: NextMovesAction[] = [
-        {
-            action: 'pressure_test',
-            name: 'Pressure-test thesis',
-            description: 'Evaluate assertions against counter-evidence and executive divergence.',
-            reason: 'Evaluate whether findings rely on untested assumptions',
-            target_tool: 'verify_market_claim',
-            tool_display_name: 'Market Claim Verifier',
-            suggested_prompt: `Pressure-test whether the market momentum around ${cleanTopic} holds up against counter-evidence.`,
-            suggested_parameters: { claim: `Pressure-test whether ${cleanTopic} strategy and market momentum holds up` },
-            available: true,
-        },
-        {
-            action: 'ask_expert',
-            name: expertName,
-            description: expertDescription,
-            reason: expertReason,
-            target_tool: expertTargetTool,
-            suggested_prompt: expertPrompt,
-            suggested_parameters: expertParams,
-            available: true,
-        },
-        {
-            action: 'create_brief',
-            name: 'Commission executive brief',
-            description: 'Turn this intelligence into a finished strategic deliverable.',
-            reason: `Package verified evidence, quantitative statistics, and executive quotes on ${cleanTopic} into a deliverable.`,
-            target_tool: 'request_deliverable',
-            suggested_prompt: `Commission an executive brief on ${cleanTopic}`,
-            suggested_parameters: { skill_slug: 'research_brief', brief: `Synthesize verified findings, market metrics, and strategic implications for ${cleanTopic}` },
-            available: true,
-        },
-        {
-            action: 'track_topic',
-            name: 'Track topic shifts',
-            description: 'Establish automated weekly monitoring on this subject.',
-            reason: `Detect newly emerging signals, shifts in executive tone, and trend momentum on ${cleanTopic} weekly.`,
-            target_tool: 'manage_scheduled_reports',
-            suggested_prompt: `Set up weekly tracking on ${cleanTopic}`,
-            suggested_parameters: { action: 'create', topic: cleanTopic, cadence: 'weekly' },
-            available: true,
-        },
+        pressureTestAction,
+        expertAction,
+        briefAction,
+        trackAction,
     ];
     nextMoves.actions = actions;
 
+    const move1ToolRes = resolveToolAvailability('search_graph');
     const move1: NextMoveItem = {
         id: 'thread',
-        label: nextMoves.thread?.theme ? `Explore ${nextMoves.thread.theme}` : 'Pull additional trend signals',
-        why: nextMoves.thread?.text || 'Deepen findings with additional verified signals.',
-        prompt: `Pull more signals on ${cleanTopic}`,
-        tool: 'search_graph',
-        available: true,
+        label: nextMoves.thread?.theme ? `Explore ${nextMoves.thread.theme}` : (isEmptyBrand ? 'Explore category trends' : 'Pull additional trend signals'),
+        why: nextMoves.thread?.text || (isEmptyBrand ? `Fodda has no direct evidence for ${cleanTopic}; explore category dynamics across retail and consumer graphs.` : 'Deepen findings with additional verified signals.'),
+        prompt: isEmptyBrand ? `Explore consumer trends in ${cleanTopic}'s category` : `Pull more signals on ${cleanTopic}`,
+        tool: move1ToolRes.tool,
+        available: move1ToolRes.available,
+        ...(move1ToolRes.alternative_route ? { alternative_route: move1ToolRes.alternative_route } : {}),
     };
 
     let move2: NextMoveItem;
-    if (options?.knownBrand) {
+    if (isEmptyBrand) {
+        const findExpertRes = resolveToolAvailability('find_expert');
+        move2 = {
+            id: 'find_specialist',
+            label: `Find specialists in ${cleanTopic}'s space`,
+            why: `Consult a specialist practitioner who covers this market category.`,
+            prompt: `Find specialists who cover ${cleanTopic}'s category and market`,
+            tool: findExpertRes.tool,
+            available: findExpertRes.available,
+            ...(findExpertRes.alternative_route ? { alternative_route: findExpertRes.alternative_route } : {}),
+        };
+    } else if (options?.knownBrand) {
+        const brandRes = resolveToolAvailability('brand_tracker');
         move2 = {
             id: 'competitor_compare',
             label: 'Compare key competitor responses',
             why: `See how competitor brands are positioning against this dynamic.`,
             prompt: `How are ${options.knownBrand}'s key competitors positioning against this?`,
-            tool: 'brand_tracker',
-            available: true,
+            tool: brandRes.tool,
+            available: brandRes.available,
+            ...(brandRes.alternative_route ? { alternative_route: brandRes.alternative_route } : {}),
         };
     } else if (options?.sessionId) {
+        const ptRes = resolveToolAvailability('verify_market_claim');
         move2 = {
             id: 'counter_thesis',
             label: 'Explore counter-signals & risks',
             why: 'Examine where this trend faces pushback or margin pressure.',
             prompt: `What counter-trends or friction points challenge this dynamic?`,
-            tool: 'verify_market_claim',
-            available: true,
+            tool: ptRes.tool,
+            available: ptRes.available,
+            ...(ptRes.alternative_route ? { alternative_route: ptRes.alternative_route } : {}),
         };
     } else {
+        const sgRes = resolveToolAvailability('search_graph');
         move2 = {
             id: 'scope_brand',
             label: 'Scope to your brand or brief',
             why: 'Tailor these trend findings to your specific category or brief.',
             prompt: 'Here is my brand and category — tailor these findings to it.',
-            tool: 'search_graph',
-            available: true,
+            tool: sgRes.tool,
+            available: sgRes.available,
+            ...(sgRes.alternative_route ? { alternative_route: sgRes.alternative_route } : {}),
         };
     }
 
-    const move3: NextMoveItem = {
-        id: specific.expert ? 'consult_expert' : 'pressure_test',
-        label: specific.expert ? expertName : 'Pressure-test this thesis',
-        why: specific.expert ? expertDescription : 'Evaluate assertions against counter-evidence.',
-        prompt: specific.expert ? expertPrompt : `Pressure-test whether ${cleanTopic} holds up against counter-evidence.`,
-        tool: specific.expert ? expertTargetTool : 'verify_market_claim',
-        available: true,
-    };
+    let move3: NextMoveItem;
+    if (isEmptyBrand) {
+        const sgRes = resolveToolAvailability('search_graph');
+        move3 = {
+            id: 'category_research',
+            label: 'Search market research in this sector',
+            why: `Examine published forecasts and industry reports for ${cleanTopic}'s industry.`,
+            prompt: `What are the major industry forecasts for ${cleanTopic}'s sector?`,
+            tool: sgRes.tool,
+            available: sgRes.available,
+            ...(sgRes.alternative_route ? { alternative_route: sgRes.alternative_route } : {}),
+        };
+    } else {
+        const targetTool = specific.expert ? expertTargetTool : 'verify_market_claim';
+        const toolRes = resolveToolAvailability(targetTool);
+        move3 = {
+            id: specific.expert ? 'consult_expert' : 'pressure_test',
+            label: specific.expert ? expertName : 'Pressure-test this thesis',
+            why: specific.expert ? expertDescription : 'Evaluate assertions against counter-evidence.',
+            prompt: specific.expert ? expertPrompt : `Pressure-test whether ${cleanTopic} holds up against counter-evidence.`,
+            tool: toolRes.tool,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
+        };
+    }
 
     nextMoves.heading = 'Next moves';
     nextMoves.moves = [move1, move2, move3];
@@ -2067,113 +2162,163 @@ export function generateConsultNextMoves(
 
     const cleanTopicPrompt = cleanPromptTopic(options?.knownBrand || query);
 
+    const isCallable = (toolName?: string): boolean => {
+        if (!toolName) return true;
+        if (options?.isToolCallable) return options.isToolCallable(toolName);
+        if (options?.allowedTools) {
+            const set = options.allowedTools instanceof Set ? options.allowedTools : new Set(options.allowedTools);
+            return set.has(toolName);
+        }
+        return true;
+    };
+
+    const resolveToolAvailability = (tool: string): { tool: string; available: boolean; alternative_route?: string } => {
+        if (isCallable(tool)) {
+            return { tool, available: true };
+        }
+        if (tool === 'verify_market_claim' && isCallable('verify_claim')) {
+            return { tool: 'verify_claim', available: true };
+        }
+        return {
+            tool,
+            available: false,
+            alternative_route: 'Available via full Fodda MCP server at https://mcp.fodda.ai/mcp or https://app.fodda.ai',
+        };
+    };
+
     // ── Next Move Item 1: Thread (Expert continuity) ──
     let move1: NextMoveItem;
     if (isOutOfLane) {
         if (nextMoves.thread?.kind === 'adjacent_room' && nextMoves.thread.adjacent) {
+            const toolRes = resolveToolAvailability('find_expert');
             move1 = {
                 id: 'referral',
                 label: `Connect with ${nextMoves.thread.adjacent.graph_display}`,
                 why: threadSentence,
                 prompt: `Connect with ${nextMoves.thread.adjacent.graph_display} on ${cleanTopicPrompt}`,
-                tool: 'find_expert',
-                available: true,
+                tool: toolRes.tool,
+                available: toolRes.available,
+                ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
             };
         } else {
+            const targetTool = matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst';
+            const toolRes = resolveToolAvailability(targetTool);
             move1 = {
                 id: 'thread',
                 label: `Explore related topics in ${expertDisplayName}'s graph`,
                 why: threadSentence,
                 prompt: `What related topics are covered in your graph, ${expertDisplayName}?`,
-                tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
-                available: true,
+                tool: toolRes.tool,
+                available: toolRes.available,
+                ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
             };
         }
     } else if (nextAngleValid && typeof nextAngleRaw === 'string') {
         let cleanAngle = nextAngleRaw.trim();
         const labelText = cleanAngle.length > 50 ? `${cleanAngle.slice(0, 47)}...` : cleanAngle.replace(/[.!?]$/, '');
+        const targetTool = matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst';
+        const toolRes = resolveToolAvailability(targetTool);
         move1 = {
             id: 'thread',
             label: labelText,
             why: threadSentence,
             prompt: cleanAngle,
-            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            tool: toolRes.tool,
             ...(options?.sessionId ? { session_id: options.sessionId } : {}),
-            available: true,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     } else if (uncitedThemes.length > 0) {
         const topTheme = uncitedThemes[0];
+        const targetTool = matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst';
+        const toolRes = resolveToolAvailability(targetTool);
         move1 = {
             id: 'thread',
             label: `Explore ${topTheme}`,
             why: threadSentence,
             prompt: `Explore ${topTheme} in your graph, ${expertDisplayName}`,
-            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            tool: toolRes.tool,
             ...(options?.sessionId ? { session_id: options.sessionId } : {}),
-            available: true,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     } else {
+        const targetTool = matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst';
+        const toolRes = resolveToolAvailability(targetTool);
         move1 = {
             id: 'thread',
             label: 'Pull additional trend signals',
             why: threadSentence,
             prompt: `Pull deeper trend signals from your graph on ${cleanTopicPrompt}`,
-            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            tool: toolRes.tool,
             ...(options?.sessionId ? { session_id: options.sessionId } : {}),
-            available: true,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     }
 
     // ── Next Move Item 2: Dynamic Pivot ──
     let move2: NextMoveItem;
     if (options?.knownBrand) {
+        const toolRes = resolveToolAvailability('brand_tracker');
         move2 = {
             id: 'competitor_compare',
             label: 'Compare key competitor responses',
             why: `See how competitor brands are positioning against this dynamic.`,
             prompt: `How are ${options.knownBrand}'s key competitors positioning against this?`,
-            tool: 'brand_tracker',
-            available: true,
+            tool: toolRes.tool,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     } else if (options?.sessionId || (options?.turnCount && options.turnCount > 1)) {
         if (nextMoves.shelf && nextMoves.shelf.length > 0 && nextMoves.shelf[0]) {
+            const toolRes = resolveToolAvailability('search_graph');
             move2 = {
                 id: 'cross_category',
                 label: `Compare cross-category parallels in ${nextMoves.shelf[0].graph_display}`,
                 why: `Examine how adjacent industries or consumer spaces navigate this dynamic.`,
                 prompt: `What cross-category parallels does ${nextMoves.shelf[0].graph_display} show for this trend?`,
-                tool: 'search_graph',
-                available: true,
+                tool: toolRes.tool,
+                available: toolRes.available,
+                ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
             };
         } else {
+            const toolRes = resolveToolAvailability('verify_market_claim');
             move2 = {
                 id: 'counter_signals',
                 label: 'Examine counter-signals & pushback',
                 why: 'Evaluate where this perspective faces operational friction or contrarian market signals.',
                 prompt: `What counter-trends, operational friction, or pushback challenge this dynamic?`,
-                tool: 'verify_market_claim',
-                available: true,
+                tool: toolRes.tool,
+                available: toolRes.available,
+                ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
             };
         }
     } else if (isClassic) {
+        const targetTool = matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst';
+        const toolRes = resolveToolAvailability(targetTool);
         move2 = {
             id: 'modern_application',
             label: 'Apply to modern culture & commerce',
             why: 'Translate theoretical frameworks into actionable contemporary strategy.',
             prompt: `How does ${expertDisplayName}'s framework apply to current consumer behavior?`,
-            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            tool: toolRes.tool,
             ...(options?.sessionId ? { session_id: options.sessionId } : {}),
-            available: true,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     } else {
+        const targetTool = matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst';
+        const toolRes = resolveToolAvailability(targetTool);
         move2 = {
             id: 'scope_brand',
             label: 'Scope to your brand or brief',
             why: 'Tailor these insights to your specific category or brief.',
             prompt: 'Here is my brand and category — tailor these findings to it.',
-            tool: matchedAnalyst?.is_human_agent ? 'consult_human_agent' : 'consult_analyst',
+            tool: toolRes.tool,
             ...(options?.sessionId ? { session_id: options.sessionId } : {}),
-            available: true,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     }
 
@@ -2191,27 +2336,35 @@ export function generateConsultNextMoves(
             available: true,
         };
     } else if (hasDeliverableOffering) {
+        const toolRes = resolveToolAvailability('request_deliverable');
         move3 = {
             id: 'commission_deliverable',
             label: `Commission deliverable from ${expertDisplayName}`,
             why: `Turn these insights into an executive deliverable or research brief.`,
             prompt: `Commission a strategic research brief from ${expertDisplayName} on ${cleanTopicPrompt}`,
-            tool: 'request_deliverable',
-            available: true,
+            tool: toolRes.tool,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     } else {
+        const toolRes = resolveToolAvailability('verify_market_claim');
         move3 = {
             id: 'pressure_test',
             label: `Pressure-test ${expertDisplayName}'s perspective`,
             why: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
             prompt: `Pressure-test ${expertDisplayName}'s perspective on ${cleanTopicPrompt}`,
-            tool: 'verify_market_claim',
-            available: true,
+            tool: toolRes.tool,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
         };
     }
 
     nextMoves.heading = 'Next moves';
     nextMoves.moves = [move1, move2, move3];
+
+    const ptToolRes = resolveToolAvailability('verify_market_claim');
+    const briefToolRes = resolveToolAvailability('request_deliverable');
+    const trackToolRes = resolveToolAvailability('manage_scheduled_reports');
 
     const consultActions: NextMovesAction[] = [
         {
@@ -2219,31 +2372,34 @@ export function generateConsultNextMoves(
             name: 'Pressure-test perspective',
             description: "Verify expert assertions and claims against broader market data.",
             reason: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
-            target_tool: 'verify_market_claim',
+            target_tool: ptToolRes.tool,
             tool_display_name: 'Market Claim Verifier',
             suggested_prompt: `Pressure-test ${expertDisplayName}'s perspective on ${cleanTopicPrompt}`,
             suggested_parameters: { claim: `Pressure-test ${expertDisplayName}'s thesis and assertions on ${cleanTopicPrompt}` },
-            available: true,
+            available: ptToolRes.available,
+            ...(ptToolRes.alternative_route ? { alternative_route: ptToolRes.alternative_route } : {}),
         },
         {
             action: 'create_brief',
             name: 'Commission deliverable',
             description: `Commission a finished deliverable from ${expertDisplayName}.`,
             reason: `Turn ${expertDisplayName}'s insights and framework into a formatted deliverable.`,
-            target_tool: 'request_deliverable',
+            target_tool: briefToolRes.tool,
             suggested_prompt: `Commission a strategic briefing from ${expertDisplayName} on ${cleanTopicPrompt}`,
             suggested_parameters: { analyst_id: cleanAnalystId || expertGraphId, skill_slug: 'research_brief', brief: `Strategic brief incorporating ${expertDisplayName}'s framework on ${cleanTopicPrompt}` },
-            available: true,
+            available: briefToolRes.available,
+            ...(briefToolRes.alternative_route ? { alternative_route: briefToolRes.alternative_route } : {}),
         },
         {
             action: 'track_topic',
             name: 'Track topic shifts',
             description: 'Establish automated weekly monitoring on this subject.',
             reason: `Monitor new signals and developments in ${expertDisplayName}'s coverage area.`,
-            target_tool: 'manage_scheduled_reports',
+            target_tool: trackToolRes.tool,
             suggested_prompt: `Set up weekly tracking on ${cleanTopicPrompt}`,
             suggested_parameters: { action: 'create', topic: cleanTopicPrompt, cadence: 'weekly' },
-            available: true,
+            available: trackToolRes.available,
+            ...(trackToolRes.alternative_route ? { alternative_route: trackToolRes.alternative_route } : {}),
         },
     ];
     nextMoves.actions = consultActions;

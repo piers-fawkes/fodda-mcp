@@ -453,6 +453,27 @@ export async function createServer(
     allowedTools?: Set<string> | string[],
     sessionSource?: string,
 ): Promise<McpServer> {
+    // ── Tool availability checker for this transport/session ──
+    const isToolCallable = (toolName: string): boolean => {
+        if (!allowedTools) return true;
+        const allowed = allowedTools instanceof Set ? allowedTools : new Set(allowedTools);
+        return allowed.has(toolName);
+    };
+
+    const resolveToolForHost = (tool: string): { tool: string; available: boolean; alternative_route?: string } => {
+        if (isToolCallable(tool)) {
+            return { tool, available: true };
+        }
+        if (tool === 'verify_market_claim' && isToolCallable('verify_claim')) {
+            return { tool: 'verify_claim', available: true };
+        }
+        return {
+            tool,
+            available: false,
+            alternative_route: 'Available via full Fodda MCP server at https://mcp.fodda.ai/mcp or https://app.fodda.ai',
+        };
+    };
+
     // ── SPT settlement helpers (inert for credit/API-key sessions: sptCtx is undefined) ──
     // Pre-run guard: refuse a task BEFORE spending compute if this payment token can't cover it.
     // Returns an error result to return immediately, or null to proceed.
@@ -3398,8 +3419,16 @@ export async function createServer(
             })
             .slice(0, maxEv * Math.max(Object.keys(graphPresence).length, 1));
 
-        // Filter out platforms/marketplaces — these appear in evidence as channels, not competitors
-        const PLATFORM_BLOCKLIST = new Set([
+        // Excluded entities: Fodda internal brands, research vendors, platforms, and non-competitor partners
+        const EXCLUDED_ENTITIES = new Set([
+            // Fodda internal brands
+            'PSFK', 'Fodda', 'Fodda API', 'Fodda MCP', 'SearchShop', '[SIC]', 'SIC', 'Retail Innovation Week', 'RIW',
+            // Research / Polling vendors
+            'YouGov', 'Kantar', 'Nielsen', 'NielsenIQ', 'NIQ', 'Mintel', 'GWI', 'GlobalWebIndex',
+            'Brandwatch', 'WARC', 'Euromonitor', 'Ipsos', 'Deloitte', 'McKinsey', 'PwC', 'KPMG',
+            'Gartner', 'Forrester', 'Edelman', 'Circana', 'Morning Consult', 'Harris Poll', 'Qualtrics', 'Gallup',
+            'Accenture', 'Bain', 'BCG',
+            // Platforms & Channels
             'Meituan', 'Taobao', 'Alibaba', 'JD.com', 'Tmall', 'Pinduoduo', 'Shopee',
             'Amazon', 'eBay', 'Etsy', 'Shopify', 'Walmart', 'Target',
             'Google', 'Apple', 'Meta', 'Microsoft', 'OpenAI',
@@ -3409,8 +3438,17 @@ export async function createServer(
             'WeChat', 'WhatsApp', 'Telegram', 'LINE',
             'Stripe', 'PayPal', 'Square', 'Klarna',
         ]);
+
+        // Specific subject-brand non-competitor exclusions (partners, adjacent, incidental)
+        const BRAND_SPECIFIC_NON_COMPETITORS: Record<string, Set<string>> = {
+            nike: new Set(['EA Sports', 'LEGO', 'BMW', 'Coca-Cola', 'Tiffany & Co.', 'Tiffany', 'Louis Vuitton']),
+            on: new Set(['Samsung', 'Sony', 'Loewe', 'Roger Federer']),
+        };
+
+        const subjectExclusions = BRAND_SPECIFIC_NON_COMPETITORS[brandLower] || new Set<string>();
+
         const filteredCompetitorCounts = Object.fromEntries(
-            Object.entries(competitorCounts).filter(([name]) => !PLATFORM_BLOCKLIST.has(name))
+            Object.entries(competitorCounts).filter(([name]) => !EXCLUDED_ENTITIES.has(name) && !subjectExclusions.has(name))
         );
 
         // Build competitive context — sort by shared DOMAIN graph overlap
@@ -3466,40 +3504,51 @@ export async function createServer(
             lifecycleDist[t.lifecycle] = (lifecycleDist[t.lifecycle] || 0) + 1;
         }
 
-        // Evidence velocity — calendar aligned quarters
+        // Evidence velocity — calendar aligned quarters with partial quarter guard
         const now = new Date();
         const curYear = now.getFullYear();
-        const curQNum = Math.ceil((now.getMonth() + 1) / 3);
+        const curMonth = now.getMonth();
+        const curQNum = Math.ceil((curMonth + 1) / 3);
         const curQKey = `${curYear}-Q${curQNum}`;
 
         const prevQNum = curQNum === 1 ? 4 : curQNum - 1;
         const prevQYear = curQNum === 1 ? curYear - 1 : curYear;
         const prevQKey = `${prevQYear}-Q${prevQNum}`;
 
-        const twoQNum = prevQNum === 1 ? 4 : prevQNum - 1;
-        const twoQYear = prevQNum === 1 ? prevQYear - 1 : prevQYear;
-        const twoQKey = `${twoQYear}-Q${twoQNum}`;
-
-        const threeQNum = twoQNum === 1 ? 4 : twoQNum - 1;
-        const threeQYear = twoQNum === 1 ? twoQYear - 1 : twoQYear;
-        const threeQKey = `${threeQYear}-Q${threeQNum}`;
-
         const currentQ = quarterCounts[curQKey] || 0;
         const prevQ = quarterCounts[prevQKey] || 0;
 
-        // Compare recent two quarters vs previous two quarters for stable velocity trend
-        const recentQCount = currentQ + prevQ;
-        const priorQCount = (quarterCounts[twoQKey] || 0) + (quarterCounts[threeQKey] || 0);
+        // Days elapsed in current quarter
+        const quarterStartMonth = (curQNum - 1) * 3;
+        const quarterStartDate = new Date(curYear, quarterStartMonth, 1);
+        const msInDay = 86400000;
+        const daysElapsed = Math.floor((now.getTime() - quarterStartDate.getTime()) / msInDay) + 1;
+        const isPartialQuarter = daysElapsed < 30;
 
         let velocityTrend = 'stable';
+        let velocityNote: string | undefined = undefined;
+
         if (uniqueEvidence.length === 0 || uniqueTrends.length === 0) {
             velocityTrend = 'untracked';
-        } else if (recentQCount > priorQCount) {
-            velocityTrend = 'accelerating';
-        } else if (recentQCount < priorQCount && priorQCount > 0) {
-            velocityTrend = 'decelerating';
+            velocityNote = 'No curated trend evidence mentioning this brand yet.';
+        } else if (isPartialQuarter) {
+            // Under 30 days into the quarter: comparing partial vs full quarter is invalid. Suppress trend label.
+            velocityTrend = 'insufficient_period';
+            velocityNote = `Current quarter (${curQKey}) is partial (${daysElapsed} day${daysElapsed === 1 ? '' : 's'} elapsed); quarterly trend verdict suppressed until >= 30 days.`;
         } else {
-            velocityTrend = 'stable';
+            const diff = currentQ - prevQ;
+            const base = Math.max(prevQ, 1);
+            const pctChange = (diff / base) * 100;
+            if (pctChange >= 20) {
+                velocityTrend = 'accelerating';
+            } else if (pctChange <= -20) {
+                velocityTrend = 'decelerating';
+            } else {
+                velocityTrend = 'stable';
+            }
+            // Enforce direction sign invariants
+            if (currentQ < prevQ && velocityTrend === 'accelerating') velocityTrend = 'decelerating';
+            if (currentQ > prevQ && velocityTrend === 'decelerating') velocityTrend = 'accelerating';
         }
 
         // Build profile
@@ -3515,7 +3564,10 @@ export async function createServer(
                     previous_quarter: prevQ,
                     current_quarter_period: curQKey,
                     previous_quarter_period: prevQKey,
+                    partial_quarter: isPartialQuarter,
+                    days_in_current_quarter: daysElapsed,
                     trend: velocityTrend,
+                    ...(velocityNote ? { note: velocityNote } : {}),
                 },
                 evidence_by_type: evidenceByType,
                 lifecycle_distribution: lifecycleDist,
@@ -3524,7 +3576,7 @@ export async function createServer(
             evidence_items: includeEvidence ? uniqueEvidence : undefined,
             competitive_context: {
                 co_occurring_brands: competitors,
-                note: 'Brands that appear in the same evidence articles or trend contexts as ' + brandName,
+                note: 'Brands that appear alongside ' + brandName + ' in market evidence and trend contexts',
             },
             cross_graph_presence: crossGraphPresence,
             activity_timeline: activityTimeline,
@@ -3558,7 +3610,14 @@ export async function createServer(
         const comparisonQuery = [brandName, ...topCompetitors].join(',');
 
         // Wikipedia disambiguation: map brand names to canonical article titles
-        const wikiDisambig: Record<string, string> = { 'Nike': 'Nike, Inc.', 'Apple': 'Apple Inc.', 'Amazon': 'Amazon (company)', 'Meta': 'Meta Platforms', 'Target': 'Target Corporation' };
+        const wikiDisambig: Record<string, string> = {
+            'Nike': 'Nike, Inc.',
+            'On': 'On (company)',
+            'Apple': 'Apple Inc.',
+            'Amazon': 'Amazon (company)',
+            'Meta': 'Meta Platforms',
+            'Target': 'Target Corporation'
+        };
         const wikiArticles = [brandName, ...topCompetitors].map(b => wikiDisambig[b] || b).join(',');
         const [googleTrendsResult, wikipediaResult, amazonResult, beaResult, earningsResult] = await Promise.allSettled([
             foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(comparisonQuery)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
@@ -3570,11 +3629,19 @@ export async function createServer(
 
         // Unwrap .snapshot nesting — supplemental API wraps actual data inside .snapshot alongside metadata
         const unwrapSnapshot = (raw: any) => raw?.snapshot || raw;
-        const isEligibleForRetailSupplemental = isRetailCPG && shouldQueryRetailProductSupplementals(brandName, marketData, Object.keys(graphPresence)[0]);
+        const isCoverageEmpty = uniqueTrends.length === 0 || uniqueEvidence.length === 0;
+        const isEligibleForRetailSupplemental = !isCoverageEmpty && isRetailCPG && shouldQueryRetailProductSupplementals(brandName, marketData, Object.keys(graphPresence)[0]);
+
+        const amzRaw = isEligibleForRetailSupplemental && amazonResult.status === 'fulfilled' ? unwrapSnapshot(amazonResult.value) : null;
+        const amzSnapshot = amzRaw && amzRaw.data_status !== 'no_brand_match' && (amzRaw.product_count > 0 || amzRaw.products_analyzed > 0) ? amzRaw : null;
+
+        const wikiRaw = !isCoverageEmpty && wikipediaResult.status === 'fulfilled' ? unwrapSnapshot(wikipediaResult.value) : null;
+        const wikiSnapshot = wikiRaw && wikiRaw.data_status !== 'no_signal' ? wikiRaw : null;
+
         profile.supplemental_signals = {
-            google_trends: googleTrendsResult.status === 'fulfilled' ? unwrapSnapshot(googleTrendsResult.value) : null,
-            wikipedia: wikipediaResult.status === 'fulfilled' ? unwrapSnapshot(wikipediaResult.value) : null,
-            amazon: isEligibleForRetailSupplemental && amazonResult.status === 'fulfilled' ? unwrapSnapshot(amazonResult.value) : null,
+            google_trends: !isCoverageEmpty && googleTrendsResult.status === 'fulfilled' ? unwrapSnapshot(googleTrendsResult.value) : null,
+            wikipedia: wikiSnapshot,
+            amazon: amzSnapshot,
             census_retail: isEligibleForRetailSupplemental && beaResult.status === 'fulfilled' ? unwrapSnapshot(beaResult.value) : null,
         };
 

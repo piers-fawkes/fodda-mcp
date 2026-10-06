@@ -14,22 +14,24 @@ import { esc, FODDA_LOGO_URL } from './widgetShell.js';
 import { getDomainGraphIds } from './catalogCache.js';
 
 const PRESSURE_COLORS: Record<string, { bg: string; color: string; label: string }> = {
-    'Direct competitor':     { bg: '#FFF0E0', color: '#D97B2B', label: 'Direct competitor' },
+    'Shared category':       { bg: '#E6F1FB', color: '#2E6BE5', label: 'Shared category' },
+    'Appears alongside':     { bg: '#F5F0FF', color: '#663399', label: 'Appears alongside' },
     'Adjacent signal':       { bg: '#E6F1FB', color: '#2E6BE5', label: 'Adjacent signal' },
     'Crossover mention':     { bg: '#EEEDFE', color: '#7C6AB5', label: 'Crossover mention' },
     'Related brand':         { bg: '#F5F0FF', color: '#663399', label: 'Related brand' },
-    // Legacy labels (backward compat)
-    'Heritage challenger':   { bg: '#FFF0E0', color: '#D97B2B', label: 'Heritage challenger' },
-    'Sibling challenger':    { bg: '#FFF0E0', color: '#D97B2B', label: 'Sibling challenger' },
-    'Premium challenger':    { bg: '#E6F1FB', color: '#2E6BE5', label: 'Premium challenger' },
+    // Backward compat aliases mapped to neutral wording
+    'Direct competitor':     { bg: '#E6F1FB', color: '#2E6BE5', label: 'Shared category' },
+    'Heritage challenger':   { bg: '#F5F0FF', color: '#663399', label: 'Appears alongside' },
+    'Sibling challenger':    { bg: '#F5F0FF', color: '#663399', label: 'Appears alongside' },
+    'Premium challenger':    { bg: '#E6F1FB', color: '#2E6BE5', label: 'Shared category' },
     'Co-creation partner':   { bg: '#EAF3DE', color: '#3A8F5C', label: 'Co-creation partner' },
     'Tech partner':          { bg: '#EAF3DE', color: '#3A8F5C', label: 'Tech partner' },
     'Culture collaborator':  { bg: '#FBEAF0', color: '#C94F7A', label: 'Culture collaborator' },
-    'Crossover threat':      { bg: '#EEEDFE', color: '#7C6AB5', label: 'Crossover threat' },
-    'Category shadow':       { bg: '#EEEDFE', color: '#7C6AB5', label: 'Category shadow' },
+    'Crossover threat':      { bg: '#EEEDFE', color: '#7C6AB5', label: 'Crossover mention' },
+    'Category shadow':       { bg: '#EEEDFE', color: '#7C6AB5', label: 'Crossover mention' },
 };
 
-const DEFAULT_PRESSURE = { bg: '#FFF0E0', color: '#D97B2B', label: 'Competitor' };
+const DEFAULT_PRESSURE = { bg: '#F5F0FF', color: '#663399', label: 'Appears alongside' };
 
 // Sector-aware pressure type assignment based on graph overlap
 function guessPressureType(_index: number, competitor?: any, brandGraphIds?: Set<string>, domainGraphIds?: Set<string>): string {
@@ -38,14 +40,14 @@ function guessPressureType(_index: number, competitor?: any, brandGraphIds?: Set
         const compGraphs = new Set<string>(compGraphArr);
         const sharedGraphs = [...compGraphs].filter(g => brandGraphIds.has(g));
         if (sharedGraphs.length === 0) return 'Crossover mention';
-        // Any shared DOMAIN graph = direct competitor (both in retail, both in beauty, etc.)
+        // Any shared DOMAIN graph = shared category (both in retail, both in beauty, etc.)
         const sharedDomain = domainGraphIds ? sharedGraphs.filter(g => domainGraphIds.has(g)) : [];
-        if (sharedDomain.length > 0) return 'Direct competitor';
+        if (sharedDomain.length > 0) return 'Shared category';
         // Shared expert graph only = adjacent signal (co-mentioned in research, not same market)
         return 'Adjacent signal';
     }
-    // Fallback: no graph data — conservative label
-    return 'Related brand';
+    // Fallback: no graph data — conservative neutral label
+    return 'Appears alongside';
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +324,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const lcDist = profile.summary?.lifecycle_distribution || {};
     const buildingCount = (lcDist.building || 0) + (lcDist.emerging || 0);
     const fadingCount = (lcDist.fading || 0) + (lcDist.mature || 0);
+    const isEmptyCoverage = profile.coverage?.status === 'empty' || (trends.length === 0 && evidence.length === 0);
 
     // Enrich trends with lifecycle if missing
     trends.forEach((t: any) => {
@@ -352,7 +355,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     });
 
     let rawVelocityTrend = 'stable';
-    if (trends.length === 0 || (profile.summary?.total_evidence_items || 0) === 0) {
+    if (isEmptyCoverage || trends.length === 0 || (profile.summary?.total_evidence_items || 0) === 0) {
         rawVelocityTrend = 'untracked';
     } else {
         const totalWithMomentum = accCount + bldCount + stdCount + slowCount;
@@ -624,11 +627,11 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         return `<div class="cc">
   <div>
     <div class="cn">${esc(c.brand)}</div>
-    <div class="cd">Co-occurs in ${c.co_occurrences} evidence item${c.co_occurrences !== 1 ? 's' : ''}</div>
+    <div class="cd">Appears alongside in ${c.co_occurrences} evidence item${c.co_occurrences !== 1 ? 's' : ''}</div>
   </div>
   <div class="ca">
     <span class="pb" style="background:${colors.bg};color:${colors.color};">${colors.label}</span>
-    <button class="cv" onclick="sendPrompt('brand intelligence: ${esc(c.brand)}')">View ↗</button>
+    <button class="cv" onclick="sendPrompt('brand intelligence: ${esc(c.brand)}')">Explore ↗</button>
   </div>
 </div>`;
     }).join('\n');
@@ -664,6 +667,17 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const amazonProductsHtml = products.slice(0, 4).map((p: any) =>
         `<div class="ap"><div><div class="an2">${esc(p.name || p.title)}</div><div class="am2">${esc(p.price || '')}</div></div><div><div class="astar">${'★'.repeat(Math.round(p.rating || 0))}${'☆'.repeat(5 - Math.round(p.rating || 0))}</div><div class="am2">${(p.reviews || 0).toLocaleString()} reviews</div></div></div>`
     ).join('\n');
+
+    const totalListings = amazon.product_count || 0;
+    const analyzed = amazon.products_analyzed || products.length || 0;
+    let amazonBasisSub = 'across listings';
+    if (analyzed > 0 && totalListings > analyzed) {
+        amazonBasisSub = `based on sample of ${analyzed} of ${totalListings.toLocaleString()} listings`;
+    } else if (analyzed > 0) {
+        amazonBasisSub = `based on ${analyzed} listings`;
+    } else if (totalListings > 0) {
+        amazonBasisSub = `based on ${totalListings.toLocaleString()} listings`;
+    }
 
     // ── Geographic bars ──
     const geoDist = profile.geographic_distribution || [];
@@ -702,22 +716,144 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const beaChangeValue = totalRetail ? `$${(totalRetail / 1000).toFixed(0)}B` : '—';
     const beaChangeSub = totalMom != null ? `${totalMom > 0 ? '+' : ''}${totalMom.toFixed(1)}% MoM` : '';
 
+    // ── Conditional section HTML builders (Honour coverage status & data boundaries) ──
+    const emptyStateCalloutHtml = isEmptyCoverage
+        ? `<div class="ec" style="margin-top:1rem;padding:1.25rem;">
+  <div class="et" style="font-size:13px;font-weight:600;">Broaden your search</div>
+  <div class="ex" style="margin-top:6px;line-height:1.6;">Fodda does not currently track curated trend evidence specifically mentioning <strong>${esc(brand)}</strong>. Try exploring broader category trends in our domain graphs or consult a specialist practitioner for strategic perspective.</div>
+</div>`
+        : '';
+
+    const caseStudiesSectionHtml = (!isEmptyCoverage && evidenceHtml)
+        ? `<div class="sec">Case Studies</div>\n${evidenceHtml}`
+        : '';
+
+    const trendsSectionHtml = (!isEmptyCoverage && (trendsHtml || weakSignalsHtml))
+        ? `<div class="sec">Relevant trends</div>
+{{TREND_FOOTPRINT_INTRO}}
+<div class="lcb">{{LIFECYCLE_BAR}}</div>
+<div class="lcl">{{LIFECYCLE_LEGEND}}</div>
+${trendsHtml}
+${weakSignalsHtml}`
+        : '';
+
+    const competitiveSectionHtml = (!isEmptyCoverage && competitors.length > 0)
+        ? `<div class="sec">Co-occurring brands</div>\n${competitorListHtml}`
+        : '';
+
+    const earningsSectionHtml = (!isEmptyCoverage && earningsHtml)
+        ? `<div class="sl2">Quarterly Earnings & Wall Street Intelligence</div>
+${earningsHtml}
+<p class="note">Source: Fodda Institutional Earnings Intelligence (SEC Filings & Executive Earnings Call Transcripts).</p>`
+        : '';
+
+    const financialSnapshotSectionHtml = (!isEmptyCoverage && financialSnapshotHtml)
+        ? `<div class="sl2">Institutional Financial Snapshot</div>
+${financialSnapshotHtml}
+<p class="note">Source: Institutional SEC & Market Financial Filings.</p>`
+        : '';
+
+    // Supplemental section gating: never render no_signal / no_brand_match or untracked brands
+    const censusHasSignal = censusRaw?.data_status !== 'no_signal' && censusRaw?.data_status !== 'no_brand_match' && (totalRetail != null || matchedSector?.sales_millions != null);
+    const censusSectionHtml = (!isEmptyCoverage && censusHasSignal)
+        ? `<div class="sl2">US retail sales — Census Bureau (National market context)</div>
+<div class="sg">
+  <div class="sk"><div class="skl">{{BEA_STAT_1_LABEL}}</div><div class="skv">{{BEA_STAT_1_VALUE}}</div><div class="sks">{{BEA_STAT_1_SUB}}</div></div>
+  <div class="sk"><div class="skl">{{BEA_STAT_2_LABEL}}</div><div class="skv">{{BEA_STAT_2_VALUE}}</div><div class="sks">{{BEA_STAT_2_SUB}}</div></div>
+</div>
+<p class="note">Macroeconomic context from the US Census Bureau. National retail volume, not brand-specific sales.</p>`
+        : '';
+
+    const gtHasSignal = supplemental?.google_trends?.data_status !== 'no_signal' && supplemental?.google_trends?.data_status !== 'no_brand_match' && hasGoogleTrendsData;
+    const gtSectionHtml = (!isEmptyCoverage && gtHasSignal) ? `<div class="sl2">${gt.description}</div>
+<svg viewBox="0 0 300 96" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:96px;margin-bottom:4px;">
+  <defs>
+    <linearGradient id="gtg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--fodda-accent, #663399)" stop-opacity=".18"/>
+      <stop offset="100%" stop-color="var(--fodda-accent, #663399)" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <polygon points="${gt.polygon}" fill="url(#gtg)"/>
+  <polyline points="${gt.polyline}" fill="none" stroke="var(--fodda-accent, #663399)" stroke-width="1.5" stroke-linejoin="round"/>
+  <line x1="0" y1="88" x2="300" y2="88" stroke="var(--color-border-tertiary)" stroke-width=".5"/>
+  <text x="2" y="93" font-size="7" fill="var(--color-text-secondary)" font-family="monospace">${gt.startDateLabel}</text>
+  <text x="150" y="93" font-size="7" fill="var(--color-text-secondary)" text-anchor="middle" font-family="monospace">${gt.peakLabel}</text>
+  <text x="298" y="93" font-size="7" fill="var(--color-text-secondary)" text-anchor="end" font-family="monospace">${gt.nowLabel}</text>
+  <circle cx="${gt.peakX}" cy="${gt.peakY}" r="2" fill="var(--fodda-accent, #663399)"/>
+  <circle cx="300" cy="${gt.annY}" r="2.5" fill="var(--fodda-accent, #663399)"/>
+  <text x="${gt.annX}" y="${gt.annY}" font-size="7" fill="var(--fodda-accent, #663399)" text-anchor="end" font-family="monospace">${gt.annText}</text>
+</svg>
+<p class="note">{{GT_CAPTION}}</p>` : '';
+
+    const gtComparisonSectionHtml = (!isEmptyCoverage && gtHasSignal && gt.comparisonBarsHtml) ? `<div class="sl2">Search interest — brand vs co-occurring brands</div>
+${gt.comparisonBarsHtml}` : '';
+
+    const relatedQueriesSectionHtml = (!isEmptyCoverage && gtHasSignal && gt.relatedQueriesHtml) ? `<div class="sl2">Top related queries</div>
+<div class="rq">${gt.relatedQueriesHtml}</div>
+<p class="note">{{RELATED_QUERIES_NOTE}}</p>` : '';
+
+    const wikiHasSignal = rawWiki?.data_status !== 'no_signal' && rawWiki?.data_status !== 'no_brand_match' && wikiData.length > 0;
+    const wikiSectionHtml = (!isEmptyCoverage && wikiHasSignal)
+        ? `<div class="sl2">Wikipedia — avg daily pageviews</div>
+${wikiBarsHtml}
+<p class="note">{{WIKI_NOTE}}</p>`
+        : '';
+
+    const amazonHasSignal = amazonRaw?.data_status !== 'no_signal' && amazonRaw?.data_status !== 'no_brand_match' && (totalListings > 0 || products.length > 0);
+    const amazonSectionHtml = (!isEmptyCoverage && amazonHasSignal)
+        ? `<div class="sl2">Amazon footprint</div>
+<div class="sg">
+  <div class="sk"><div class="skl">{{AMAZON_STAT_1_LABEL}}</div><div class="skv">{{AMAZON_STAT_1_VALUE}}</div><div class="sks">{{AMAZON_STAT_1_SUB}}</div></div>
+  <div class="sk"><div class="skl">{{AMAZON_STAT_2_LABEL}}</div><div class="skv">{{AMAZON_STAT_2_VALUE}}</div><div class="sks">{{AMAZON_STAT_2_SUB}}</div></div>
+  <div class="sk"><div class="skl">{{AMAZON_STAT_3_LABEL}}</div><div class="skv">{{AMAZON_STAT_3_VALUE}}</div><div class="sks">{{AMAZON_STAT_3_SUB}}</div></div>
+  <div class="sk"><div class="skl">{{AMAZON_STAT_4_LABEL}}</div><div class="skv">{{AMAZON_STAT_4_VALUE}}</div><div class="sks">{{AMAZON_STAT_4_SUB}}</div></div>
+</div>
+${amazonProductsHtml}
+<p class="note">{{AMAZON_CAPTION}}</p>`
+        : '';
+
+    const geoSectionHtml = (!isEmptyCoverage && geoBarsHtml)
+        ? `<div class="sl2">Geographic spread</div>
+${geoBarsHtml}`
+        : '';
+
+    const marketDataItems = [
+        censusSectionHtml,
+        gtSectionHtml,
+        gtComparisonSectionHtml,
+        relatedQueriesSectionHtml,
+        wikiSectionHtml,
+        amazonSectionHtml,
+        geoSectionHtml,
+    ].filter(Boolean);
+
+    const marketDataSectionHtml = (!isEmptyCoverage && marketDataItems.length > 0)
+        ? `<div class="sec">Market data</div>
+{{MARKET_DATA_INTRO}}
+${marketDataItems.join('\n')}`
+        : '';
+
     // ── Source pills ──
     const graphNames = crossGraph.map((g: any) => g.graphName).filter(Boolean);
     const sourcePills = [
         ...graphNames.map((n: string) => `<span class="gp">${esc(n)}</span>`),
-        (earningsSource === 'truth_layer' || earnings.length > 0) ? '<span class="gp">Earnings Intelligence</span>' : '',
-        (marketData && marketData.data_status !== 'no_signal') ? '<span class="gp">Financial Snapshot</span>' : '',
-        hasGoogleTrendsData ? '<span class="gp">Google Trends</span>' : '',
-        supplemental?.wikipedia ? '<span class="gp">Wikipedia</span>' : '',
-        supplemental?.amazon ? '<span class="gp">Amazon</span>' : '',
-        supplemental?.census_retail ? '<span class="gp">US Census</span>' : '',
+        (!isEmptyCoverage && (earningsSource === 'truth_layer' || earnings.length > 0)) ? '<span class="gp">Earnings Intelligence</span>' : '',
+        (!isEmptyCoverage && marketData && marketData.data_status !== 'no_signal') ? '<span class="gp">Financial Snapshot</span>' : '',
+        (!isEmptyCoverage && gtHasSignal) ? '<span class="gp">Google Trends</span>' : '',
+        (!isEmptyCoverage && wikiHasSignal) ? '<span class="gp">Wikipedia</span>' : '',
+        (!isEmptyCoverage && amazonHasSignal) ? '<span class="gp">Amazon</span>' : '',
+        (!isEmptyCoverage && censusHasSignal) ? '<span class="gp">US Census</span>' : '',
     ].filter(Boolean).join('\n    ');
 
     // ── Export slots (data-driven labels) ──
-    const exportLabels: Array<{ label: string; desc: string; prompt: string }> = [
+    const exportLabels: Array<{ label: string; desc: string; prompt: string }> = isEmptyCoverage ? [
+        { label: 'Category brief', desc: `Explore market dynamics in ${brand}'s category`, prompt: `Write category brief for ${brand}'s market` },
+        { label: 'Find specialist', desc: `Consult experts covering this space`, prompt: `Find specialists who cover ${brand}'s category` },
+        { label: 'Category signals', desc: `Emerging opportunities in this sector`, prompt: `Emerging signals for ${brand}'s category` },
+        { label: 'Market research', desc: `Broad research across retail & consumer graphs`, prompt: `Research trends in ${brand}'s industry` },
+    ] : [
         { label: 'Editorial brief', desc: `Strategic analysis of ${brand}'s innovation position`, prompt: `Write editorial brief for ${brand}` },
-        { label: 'Competitor comparison', desc: `Head-to-head with ${competitors[0]?.brand || 'top rival'}`, prompt: `Compare ${brand} vs ${competitors[0]?.brand || 'competitor'}` },
+        { label: 'Co-occurring landscape', desc: `Analysis of brands appearing alongside ${brand}`, prompt: `Compare brands appearing alongside ${brand}` },
         { label: 'Weak signal forecast', desc: `Emerging opportunities on ${brand}'s horizon`, prompt: `Weak signal forecast for ${brand}` },
         { label: 'Steal this idea', desc: `Actionable concepts from ${brand}'s playbook`, prompt: `Steal this idea from ${brand}` },
     ];
@@ -737,38 +873,19 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         'TRENDS_HTML': trendsHtml,
         'WEAK_SIGNALS_HTML': weakSignalsHtml,
         'EVIDENCE_HTML': evidenceHtml,
-        'COMPETITIVE_SECTION_HTML': competitors.length > 0 ? `<div class="sec">Competitive</div>\n${competitorListHtml}` : '',
-        'GT_SECTION_HTML': hasGoogleTrendsData ? `<div class="sl2">${gt.description}</div>
-    <svg viewBox="0 0 300 96" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:96px;margin-bottom:4px;">
-      <defs>
-        <linearGradient id="gtg" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--fodda-accent, #663399)" stop-opacity=".18"/>
-          <stop offset="100%" stop-color="var(--fodda-accent, #663399)" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      <polygon points="${gt.polygon}" fill="url(#gtg)"/>
-      <polyline points="${gt.polyline}" fill="none" stroke="var(--fodda-accent, #663399)" stroke-width="1.5" stroke-linejoin="round"/>
-      <line x1="0" y1="88" x2="300" y2="88" stroke="var(--color-border-tertiary)" stroke-width=".5"/>
-      <text x="2" y="93" font-size="7" fill="var(--color-text-secondary)" font-family="monospace">${gt.startDateLabel}</text>
-      <text x="150" y="93" font-size="7" fill="var(--color-text-secondary)" text-anchor="middle" font-family="monospace">${gt.peakLabel}</text>
-      <text x="298" y="93" font-size="7" fill="var(--color-text-secondary)" text-anchor="end" font-family="monospace">${gt.nowLabel}</text>
-      <circle cx="${gt.peakX}" cy="${gt.peakY}" r="2" fill="var(--fodda-accent, #663399)"/>
-      <circle cx="300" cy="${gt.annY}" r="2.5" fill="var(--fodda-accent, #663399)"/>
-      <text x="${gt.annX}" y="${gt.annY}" font-size="7" fill="var(--fodda-accent, #663399)" text-anchor="end" font-family="monospace">${gt.annText}</text>
-    </svg>
-    <p class="note">{{GT_CAPTION}}</p>` : '',
-        'GT_COMPARISON_SECTION_HTML': gt.comparisonBarsHtml ? `<div class="sl2">Search interest — brand vs competitors</div>
-    ${gt.comparisonBarsHtml}` : '',
-        'RELATED_QUERIES_SECTION_HTML': gt.relatedQueriesHtml ? `<div class="sl2">Top related queries</div>
-    <div class="rq">${gt.relatedQueriesHtml}</div>
-    <p class="note">{{RELATED_QUERIES_NOTE}}</p>` : '',
-        'WIKI_BARS_HTML': wikiBarsHtml,
+        'EMPTY_STATE_CALLOUT_HTML': emptyStateCalloutHtml,
+        'CASE_STUDIES_SECTION_HTML': caseStudiesSectionHtml,
+        'TRENDS_SECTION_HTML': trendsSectionHtml,
+        'COMPETITIVE_SECTION_HTML': competitiveSectionHtml,
+        'MARKET_DATA_SECTION_HTML': marketDataSectionHtml,
+        'EARNINGS_SECTION_HTML': earningsSectionHtml,
+        'FINANCIAL_SNAPSHOT_SECTION_HTML': financialSnapshotSectionHtml,
         'AMAZON_STAT_1_LABEL': 'Listings',
         'AMAZON_STAT_1_VALUE': (amazon.product_count || 0).toLocaleString(),
         'AMAZON_STAT_1_SUB': 'total listings',
         'AMAZON_STAT_2_LABEL': 'Median price',
         'AMAZON_STAT_2_VALUE': amazon?.price_range?.median || amazon?.median_price || '—',
-        'AMAZON_STAT_2_SUB': 'across all listings',
+        'AMAZON_STAT_2_SUB': amazonBasisSub,
         'AMAZON_STAT_3_LABEL': 'Avg rating',
         'AMAZON_STAT_3_VALUE': String(amazon?.average_rating || '—'),
         'AMAZON_STAT_3_SUB': 'product average',
@@ -776,7 +893,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         'AMAZON_STAT_4_VALUE': products[0] ? (products[0].reviews || 0).toLocaleString() : '—',
         'AMAZON_STAT_4_SUB': products[0] ? esc(products[0].name || products[0].title || '') : '',
         'AMAZON_PRODUCTS_HTML': amazonProductsHtml,
-        'AMAZON_CAPTION': 'Snapshot only. Source: Amazon.',
+        'AMAZON_CAPTION': 'Snapshot sample only. Not a full catalogue census. Source: Amazon.',
         'BEA_STAT_1_LABEL': beaLabel,
         'BEA_STAT_1_VALUE': beaValue,
         'BEA_STAT_1_SUB': beaSub,
@@ -785,12 +902,6 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         'BEA_STAT_2_SUB': beaChangeSub,
         'GEO_SECTION_HTML': geoBarsHtml ? `<div class="sl2">Geographic spread</div>
     ${geoBarsHtml}` : '',
-        'EARNINGS_SECTION_HTML': earningsHtml ? `<div class="sl2">Quarterly Earnings & Wall Street Intelligence</div>
-    ${earningsHtml}
-    <p class="note">Source: Fodda Institutional Earnings Intelligence (SEC Filings & Executive Earnings Call Transcripts).</p>` : '',
-        'FINANCIAL_SNAPSHOT_SECTION_HTML': financialSnapshotHtml ? `<div class="sl2">Institutional Financial Snapshot</div>
-    ${financialSnapshotHtml}
-    <p class="note">Source: Institutional SEC & Market Financial Filings.</p>` : '',
         'SOURCE_PILLS_HTML': sourcePills,
         'EXPORT_1_LABEL': exportLabels[0]!.label,
         'EXPORT_1_DESC': exportLabels[0]!.desc,
@@ -815,7 +926,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
         fillTrendFootprintIntro(brand, trends, profile.summary?.lifecycle_distribution || {}),
         fillMarketDataIntro(brand, supplemental),
     ]);
-    if (trends.length === 0 || evidence.length === 0) {
+    if (isEmptyCoverage || trends.length === 0 || evidence.length === 0) {
         fills['ONE_LINER'] = `Fodda has no curated trend evidence mentioning ${brand} yet.`;
     } else {
         fills['ONE_LINER'] = oneLiner.status === 'fulfilled' ? oneLiner.value : `${brand} is ${velocity.label} across ${trends.length} trend${trends.length !== 1 ? 's' : ''}.`;
@@ -834,8 +945,14 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     fills['WIKI_NOTE'] = wikiData.length > 0 ? `Daily Wikipedia pageviews for ${brand}-related articles. Higher = more cultural attention.` : '';
     const safeBrandName = esc(brand).replace(/'/g, "\\'");
     const safeCompName = competitors[0]?.brand ? esc(competitors[0].brand).replace(/'/g, "\\'") : 'top rival';
-    fills['SUGGESTED_NEXT_HTML'] = `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-        <button class="btn-out" onclick="sendPrompt('What are competitors of ${safeBrandName} doing differently?')">Competitive landscape</button>
+    fills['SUGGESTED_NEXT_HTML'] = isEmptyCoverage
+        ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">
+        <button class="btn-out" onclick="sendPrompt('Explore broader trends in ${safeBrandName}\\'s category')">Category trends</button>
+        <button class="btn-out" onclick="sendPrompt('Find domain specialists who cover ${safeBrandName}\\'s space')">Find expert</button>
+        <button class="btn-out" onclick="sendPrompt('Search market research on ${safeBrandName}')">Market research</button>
+    </div>`
+        : `<div style="display:flex;flex-wrap:wrap;gap:6px;">
+        <button class="btn-out" onclick="sendPrompt('What are other brands alongside ${safeBrandName} doing differently?')">Category landscape</button>
         <button class="btn-out" onclick="sendPrompt('Show me the evidence behind the strongest trend for ${safeBrandName}')">Deep dive</button>
         <button class="btn-out" onclick="sendPrompt('Compare ${safeBrandName} vs ${safeCompName}')">Head-to-head</button>
     </div>`;
@@ -1003,48 +1120,18 @@ export const TEMPLATE = `
 
   <div class="pv">{{ONE_LINER}}</div>
 
-  <div class="sec">Case Studies</div>
-  {{EVIDENCE_HTML}}
+  {{EMPTY_STATE_CALLOUT_HTML}}
+
+  {{CASE_STUDIES_SECTION_HTML}}
 
   {{EARNINGS_SECTION_HTML}}
   {{FINANCIAL_SNAPSHOT_SECTION_HTML}}
 
-  <div class="sec">Relevant trends</div>
-  {{TREND_FOOTPRINT_INTRO}}
-  <div class="lcb">{{LIFECYCLE_BAR}}</div>
-  <div class="lcl">{{LIFECYCLE_LEGEND}}</div>
-  {{TRENDS_HTML}}
-  {{WEAK_SIGNALS_HTML}}
+  {{TRENDS_SECTION_HTML}}
 
   {{COMPETITIVE_SECTION_HTML}}
 
-  <div class="sec">Market data</div>
-  {{MARKET_DATA_INTRO}}
-  <div class="sl2">US retail sales — Census Bureau</div>
-  <div class="sg">
-    <div class="sk"><div class="skl">{{BEA_STAT_1_LABEL}}</div><div class="skv">{{BEA_STAT_1_VALUE}}</div><div class="sks">{{BEA_STAT_1_SUB}}</div></div>
-    <div class="sk"><div class="skl">{{BEA_STAT_2_LABEL}}</div><div class="skv">{{BEA_STAT_2_VALUE}}</div><div class="sks">{{BEA_STAT_2_SUB}}</div></div>
-  </div>
-
-  {{GT_SECTION_HTML}}
-  {{GT_COMPARISON_SECTION_HTML}}
-  {{RELATED_QUERIES_SECTION_HTML}}
-
-  <div class="sl2">Wikipedia — avg daily pageviews</div>
-  {{WIKI_BARS_HTML}}
-  <p class="note">{{WIKI_NOTE}}</p>
-
-  <div class="sl2">Amazon footprint</div>
-  <div class="sg">
-    <div class="sk"><div class="skl">{{AMAZON_STAT_1_LABEL}}</div><div class="skv">{{AMAZON_STAT_1_VALUE}}</div><div class="sks">{{AMAZON_STAT_1_SUB}}</div></div>
-    <div class="sk"><div class="skl">{{AMAZON_STAT_2_LABEL}}</div><div class="skv">{{AMAZON_STAT_2_VALUE}}</div><div class="sks">{{AMAZON_STAT_2_SUB}}</div></div>
-    <div class="sk"><div class="skl">{{AMAZON_STAT_3_LABEL}}</div><div class="skv">{{AMAZON_STAT_3_VALUE}}</div><div class="sks">{{AMAZON_STAT_3_SUB}}</div></div>
-    <div class="sk"><div class="skl">{{AMAZON_STAT_4_LABEL}}</div><div class="skv">{{AMAZON_STAT_4_VALUE}}</div><div class="sks">{{AMAZON_STAT_4_SUB}}</div></div>
-  </div>
-  {{AMAZON_PRODUCTS_HTML}}
-  <p class="note">{{AMAZON_CAPTION}}</p>
-
-  {{GEO_SECTION_HTML}}
+  {{MARKET_DATA_SECTION_HTML}}
 
   <div class="sec">Explore further</div>
   {{SUGGESTED_NEXT_HTML}}

@@ -5,6 +5,16 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.105] - 2026-10-06
+
+### Changed
+- **Brand Intelligence Trust, Entity Resolution & Co-Occurrence Typing (`src/toolHandlers.ts`, `src/brandTemplate.ts`)**:
+  - **Exclusion of Self Entities & Research Vendors**: Strictly excluded Fodda internal brands (`PSFK`, `Fodda`, `SearchShop`, `[SIC]`) and research/data vendors (`YouGov`, `Mintel`, `Kantar`, `Nielsen`, etc.) from competitor lists in `brand_tracker`. Added brand-specific non-competitor exclusions (Nike: BMW, LEGO, EA Sports, Coca-Cola; On: Samsung, Sony).
+  - **Evidence Velocity Period Guard**: Suppressed quarterly trend labels when evaluated `< 30 days` into the current quarter (`trend: "insufficient_period"`), and enforced direction sign invariants (`current < prev` cannot be `accelerating`).
+  - **Wikipedia Disambiguation**: Added canonical brand disambiguation mapping (`On` -> `On (company)`, `Nike` -> `Nike, Inc.`), rejecting generic dictionary/disambiguation page lookups.
+  - **Honest Coverage & Supplemental Gating**: When brand coverage is empty (`uniqueTrends === 0 || uniqueEvidence === 0`), suppressed Amazon, Census national retail, and Wikipedia blocks (`null`), rendering clear category exploration next steps instead of competitor comparisons.
+  - **Sampling Basis Disclosure**: Preserved and displayed real sampling basis in Amazon product stats (`based on 30 of N listings`) instead of misleading "across all listings".
+
 ## [1.46.104] - 2026-10-05
 
 ### Changed
