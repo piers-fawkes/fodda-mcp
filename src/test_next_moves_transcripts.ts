@@ -533,10 +533,10 @@ async function runTranscripts() {
 
         assert.ok(closingBlock.length > 0, `Closing block must not be empty for ${tq.tool}`);
 
-        // Verify 2 or 3 sentences
+        // Verify 2, 3, or 4 sentences (4 when specialist proactive CTA is included)
         assert.ok(
-            lines.length === 2 || lines.length === 3,
-            `Expected 2 or 3 sentences for ${tq.tool}, got ${lines.length}: "${closingBlock}"`
+            lines.length >= 2 && lines.length <= 4,
+            `Expected 2 to 4 sentences for ${tq.tool}, got ${lines.length}: "${closingBlock}"`
         );
 
         // Zero-count check for banned terms

@@ -705,6 +705,7 @@ export interface NextMovesConsultEnvelope {
     thread_line: string;
     shelf_line?: string | undefined;
     scope_line: string;
+    specialist_line?: string | undefined;
 }
 
 export interface NextMovesAction {
@@ -741,6 +742,7 @@ export interface NextMoves {
     shelf?: NextMovesShelfGraph[] | undefined;
     scope_prompt: boolean;
     scope?: string | undefined;
+    specialist?: string | undefined;
     known_brand?: string | undefined;
     consult_envelope?: NextMovesConsultEnvelope | undefined;
     actions?: NextMovesAction[] | undefined;
@@ -1625,7 +1627,7 @@ export async function generateNextMoves(
     const candidateExperts = findCandidateExperts(query, {
         analysts,
         graphs: catalog,
-        limit: 1,
+        limit: 2,
         currentAnalystId: options?.currentAnalystId,
         searchedGraphs,
         rowsByGraph,
@@ -1648,6 +1650,20 @@ export async function generateNextMoves(
     const cleanTopic = options?.knownBrand || options?.brandDisplayName || nextMoves.thread?.theme || query.trim();
     const isOnRequestExpert = specific.expert?.status === 'on_request';
     const isExpertHuman = specific.expert?.category === 'human_agent' || specific.expert?.consult_tool === 'consult_human_agent';
+
+    let specialistSentence: string | undefined = undefined;
+    if (candidateExperts.length >= 2 && candidateExperts[0] && candidateExperts[1]) {
+        const name1 = candidateExperts[0].display_name;
+        const name2 = candidateExperts[1].display_name;
+        specialistSentence = `Would you like me to look up the links to ${name1} and ${name2}'s profiles, or request an advisory introduction for your project?`;
+    } else if (candidateExperts.length === 1 && candidateExperts[0]) {
+        const name1 = candidateExperts[0].display_name;
+        specialistSentence = `Would you like me to look up the links to ${name1}'s profile, or request an advisory introduction for your project?`;
+    }
+
+    if (specialistSentence) {
+        nextMoves.specialist = specialistSentence;
+    }
 
     let expertTargetTool = 'find_expert';
     let expertName = 'Consult specialist';
@@ -1791,7 +1807,7 @@ export async function generateNextMoves(
     };
 
     let move2: NextMoveItem;
-    if (isEmptyBrand) {
+    if (isEmptyBrand && !specific.expert) {
         const findExpertRes = resolveToolAvailability('find_expert');
         move2 = {
             id: 'find_specialist',
@@ -1838,7 +1854,40 @@ export async function generateNextMoves(
     }
 
     let move3: NextMoveItem;
-    if (isEmptyBrand) {
+    if (specific.expert) {
+        const topCandidate = specific.expert;
+        const isOnReq = topCandidate.status === 'on_request';
+        const cand2 = candidateExperts[1];
+        const toolRes = resolveToolAvailability(expertTargetTool);
+
+        let moveLabel: string;
+        let movePrompt: string;
+        if (cand2 && cand2.display_name && cand2.display_name !== topCandidate.display_name) {
+            moveLabel = isOnReq
+                ? `Look up ${topCandidate.display_name} & ${cand2.display_name} or request intro`
+                : `Consult ${topCandidate.display_name} or ${cand2.display_name}`;
+            movePrompt = isOnReq
+                ? `Shall I look up the links to ${topCandidate.display_name} and ${cand2.display_name}'s profiles, or request an introduction?`
+                : `Shall I look up the links to ${topCandidate.display_name} and ${cand2.display_name}'s profiles, or consult them?`;
+        } else {
+            moveLabel = isOnReq
+                ? `Look up ${topCandidate.display_name} or request intro`
+                : `Consult ${topCandidate.display_name}`;
+            movePrompt = isOnReq
+                ? `Shall I look up the links to ${topCandidate.display_name}'s profile, or request an introduction?`
+                : `Shall I look up the link to ${topCandidate.display_name}'s profile, or consult them?`;
+        }
+
+        move3 = {
+            id: 'specialist',
+            label: moveLabel,
+            why: specialistSentence || expertDescription,
+            prompt: movePrompt,
+            tool: toolRes.tool,
+            available: toolRes.available,
+            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
+        };
+    } else if (isEmptyBrand) {
         const sgRes = resolveToolAvailability('search_graph');
         move3 = {
             id: 'category_research',
@@ -1850,13 +1899,13 @@ export async function generateNextMoves(
             ...(sgRes.alternative_route ? { alternative_route: sgRes.alternative_route } : {}),
         };
     } else {
-        const targetTool = specific.expert ? expertTargetTool : 'verify_market_claim';
+        const targetTool = 'verify_market_claim';
         const toolRes = resolveToolAvailability(targetTool);
         move3 = {
-            id: specific.expert ? 'consult_expert' : 'pressure_test',
-            label: specific.expert ? expertName : 'Pressure-test this thesis',
-            why: specific.expert ? expertDescription : 'Evaluate assertions against counter-evidence.',
-            prompt: specific.expert ? expertPrompt : `Pressure-test whether ${cleanTopic} holds up against counter-evidence.`,
+            id: 'pressure_test',
+            label: 'Pressure-test this thesis',
+            why: 'Evaluate assertions against counter-evidence.',
+            prompt: `Pressure-test whether ${cleanTopic} holds up against counter-evidence.`,
             tool: toolRes.tool,
             available: toolRes.available,
             ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
@@ -2154,10 +2203,32 @@ export function generateConsultNextMoves(
 
     nextMoves.scope = scopeSentence;
 
+    const analystStatusRaw = (matchedAnalyst?.status || (matchedAnalyst as any)?.Status || '').toLowerCase().trim();
+    const isOnRequestAnalyst = analystStatusRaw === 'unclaimed' || analystStatusRaw === 'on request' || analystStatusRaw === 'on_request';
+
+    let specialistSentence: string | undefined = undefined;
+    if (isOnRequestAnalyst) {
+        specialistSentence = `Would you like me to look up the links to ${expertDisplayName}'s profile, or request an advisory introduction for your project?`;
+    } else if (Array.isArray(result?.referrals) && result.referrals.length > 0) {
+        if (result.referrals.length >= 2 && result.referrals[0] && result.referrals[1]) {
+            const r1 = cleanDisplayName(result.referrals[0].name || result.referrals[0].curator);
+            const r2 = cleanDisplayName(result.referrals[1].name || result.referrals[1].curator);
+            specialistSentence = `Would you like me to look up the links to ${r1} and ${r2}'s profiles, or request an advisory introduction for your project?`;
+        } else if (result.referrals[0]) {
+            const r1 = cleanDisplayName(result.referrals[0].name || result.referrals[0].curator);
+            specialistSentence = `Would you like me to look up the links to ${r1}'s profile, or request an advisory introduction for your project?`;
+        }
+    }
+
+    if (specialistSentence) {
+        nextMoves.specialist = specialistSentence;
+    }
+
     nextMoves.consult_envelope = {
         thread_line: threadSentence,
         shelf_line: shelfSentence || undefined,
         scope_line: scopeSentence,
+        specialist_line: specialistSentence || undefined,
     };
 
     const cleanTopicPrompt = cleanPromptTopic(options?.knownBrand || query);
@@ -2322,41 +2393,65 @@ export function generateConsultNextMoves(
         };
     }
 
-    // ── Next Move Item 3: Commercial / Action ──
+    // ── Next Move Item 3: Commercial / Specialist Action ──
     let move3: NextMoveItem;
-    const bookACall = result?.book_a_call || (matchedAnalyst as any)?.book_a_call;
-    if (bookACall?.url) {
-        const rateText = bookACall.rate_display ? ` (${bookACall.rate_display})` : '';
+    if (isOnRequestAnalyst) {
+        const introToolRes = resolveToolAvailability('request_expert_intro');
         move3 = {
-            id: 'book_call',
-            label: `Book strategy call with ${expertDisplayName}`,
-            why: `Discuss strategic implications directly with ${expertDisplayName}${rateText}.`,
-            prompt: `Provide booking details to schedule a strategy session with ${expertDisplayName}`,
-            link: bookACall.url,
-            available: true,
+            id: 'specialist',
+            label: `Look up ${expertDisplayName} or request intro`,
+            why: specialistSentence || `Would you like me to look up the links to ${expertDisplayName}'s profile, or request an advisory introduction for your project?`,
+            prompt: `Shall I look up the links to ${expertDisplayName}'s profile, or request an intro to ${expertDisplayName}?`,
+            tool: introToolRes.tool,
+            available: introToolRes.available,
+            ...(introToolRes.alternative_route ? { alternative_route: introToolRes.alternative_route } : {}),
         };
-    } else if (hasDeliverableOffering) {
-        const toolRes = resolveToolAvailability('request_deliverable');
+    } else if (specific.expert && isOutOfLane) {
+        const introToolRes = resolveToolAvailability('request_expert_intro');
         move3 = {
-            id: 'commission_deliverable',
-            label: `Commission deliverable from ${expertDisplayName}`,
-            why: `Turn these insights into an executive deliverable or research brief.`,
-            prompt: `Commission a strategic research brief from ${expertDisplayName} on ${cleanTopicPrompt}`,
-            tool: toolRes.tool,
-            available: toolRes.available,
-            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
+            id: 'specialist',
+            label: `Look up ${specific.expert.display_name} or request intro`,
+            why: specialistSentence || `Would you like me to look up the links to ${specific.expert.display_name}'s profile, or request an advisory introduction for your project?`,
+            prompt: `Shall I look up the links to ${specific.expert.display_name}'s profile, or request an intro to ${specific.expert.display_name}?`,
+            tool: introToolRes.tool,
+            available: introToolRes.available,
+            ...(introToolRes.alternative_route ? { alternative_route: introToolRes.alternative_route } : {}),
         };
     } else {
-        const toolRes = resolveToolAvailability('verify_market_claim');
-        move3 = {
-            id: 'pressure_test',
-            label: `Pressure-test ${expertDisplayName}'s perspective`,
-            why: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
-            prompt: `Pressure-test ${expertDisplayName}'s perspective on ${cleanTopicPrompt}`,
-            tool: toolRes.tool,
-            available: toolRes.available,
-            ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
-        };
+        const bookACall = result?.book_a_call || (matchedAnalyst as any)?.book_a_call;
+        if (bookACall?.url) {
+            const rateText = bookACall.rate_display ? ` (${bookACall.rate_display})` : '';
+            move3 = {
+                id: 'book_call',
+                label: `Book strategy call with ${expertDisplayName}`,
+                why: `Discuss strategic implications directly with ${expertDisplayName}${rateText}.`,
+                prompt: `Provide booking details to schedule a strategy session with ${expertDisplayName}`,
+                link: bookACall.url,
+                available: true,
+            };
+        } else if (hasDeliverableOffering) {
+            const toolRes = resolveToolAvailability('request_deliverable');
+            move3 = {
+                id: 'commission_deliverable',
+                label: `Commission deliverable from ${expertDisplayName}`,
+                why: `Turn these insights into an executive deliverable or research brief.`,
+                prompt: `Commission a strategic research brief from ${expertDisplayName} on ${cleanTopicPrompt}`,
+                tool: toolRes.tool,
+                available: toolRes.available,
+                ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
+            };
+        } else {
+            const toolRes = resolveToolAvailability('verify_market_claim');
+            move3 = {
+                id: 'pressure_test',
+                label: `Pressure-test ${expertDisplayName}'s perspective`,
+                why: `Verify ${expertDisplayName}'s perspective against empirical market evidence and executive divergence.`,
+                prompt: `Pressure-test ${expertDisplayName}'s perspective on ${cleanTopicPrompt}`,
+                tool: toolRes.tool,
+                available: toolRes.available,
+                ...(toolRes.alternative_route ? { alternative_route: toolRes.alternative_route } : {}),
+            };
+        }
     }
 
     nextMoves.heading = 'Next moves';
@@ -2414,8 +2509,8 @@ export function renderConsultClosingEnvelope(nextMoves: NextMoves | undefined): 
     if (!nextMoves?.consult_envelope) {
         return renderClosingBlock(nextMoves);
     }
-    const { thread_line, shelf_line, scope_line } = nextMoves.consult_envelope;
-    const lines = [thread_line, shelf_line, scope_line].filter((l): l is string => Boolean(l));
+    const { thread_line, shelf_line, scope_line, specialist_line } = nextMoves.consult_envelope;
+    const lines = [thread_line, shelf_line, scope_line, specialist_line].filter((l): l is string => Boolean(l));
     return {
         lines,
         text: lines.join(' '),
@@ -2430,8 +2525,8 @@ export function renderClosingBlock(nextMoves: NextMoves | undefined): { lines: s
     if (!nextMoves) return { lines: [], text: '' };
 
     if (nextMoves.consult_envelope) {
-        const { thread_line, shelf_line, scope_line } = nextMoves.consult_envelope;
-        const lines = [thread_line, shelf_line, scope_line].filter((l): l is string => Boolean(l));
+        const { thread_line, shelf_line, scope_line, specialist_line } = nextMoves.consult_envelope;
+        const lines = [thread_line, shelf_line, scope_line, specialist_line].filter((l): l is string => Boolean(l));
         return {
             lines,
             text: lines.join(' '),
@@ -2479,6 +2574,11 @@ export function renderClosingBlock(nextMoves: NextMoves | undefined): { lines: s
         lines.push(`Want this cut to ${nextMoves.known_brand} specifically?`);
     } else {
         lines.push(`If you tell me the brand or brief you're working on, I'll cut this to that.`);
+    }
+
+    // Line 4: Specialist Proactive Lookup / Intro CTA
+    if (nextMoves.specialist) {
+        lines.push(nextMoves.specialist);
     }
 
     return { lines, text: lines.join(' ') };

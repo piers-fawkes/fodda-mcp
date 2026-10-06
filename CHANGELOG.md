@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.106] - 2026-10-06
+
+### Changed
+- **Balanced Multi-Path Next Moves & Specialist Lookup CTA (`src/coverageRelevance.ts`)**:
+  - When specialists or on-request advisors are surfaced, the system no longer reduces follow-ups exclusively to an expert booking or a single generic brand-scoping fallback.
+  - Generates a balanced 3-path menu in `next_moves`:
+    - **Path A (`id: 'thread'`)**: Topic exploration & signal depth.
+    - **Path B (`id: 'scope_brand'` / `scope`)**: Category and brand application.
+    - **Path C (`id: 'specialist'`)**: Proactive lookup & advisory intro CTA using pattern: *"Would you like me to look up the links to [Specialist 1] and [Specialist 2]'s profiles, or request an advisory introduction for your project?"*.
+  - Enriched `nextMoves.specialist` and `consult_envelope.specialist_line`, and updated `renderConsultClosingEnvelope` and `renderClosingBlock` to include specialist lookup CTAs.
+- **Guidance for Host Models on Concluding Options (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Added assistant guidance in `systemPrompt.ts` (under `SEQUENCE: VirtualExpertConsultation` and `RULE: StructuredNextMoves`) and tool results (`SUGGESTED NEXT MOVES (GUIDANCE FOR ASSISTANT)`) instructing host models to present a balanced set of next moves (exploring the topic further, scoping to a brand/brief, and proactively offering specialist profile links/intros) without reducing the follow-up exclusively to an expert booking or omitting the specialist CTA.
+- **Differentiated Assistant Guidance for Classic vs. Living Agents (`src/toolHandlers.ts`, `src/systemPrompt.ts`)**:
+  - In `consult_human_agent` and `consult_analyst`, branched credibility anchor guidance and platform notes on `isClassic`:
+    - **Classic Agents** (historical thinkers like Thorstein Veblen, Jane Austen, Josephine Baker): Framed using *"When their Classic Agent on Fodda is consulted..."*; strictly prohibited referring to historical figures as a "Human Agent", directing models to refer to them as a "Classic Agent" or by their historical domain title. Platform notes now specify "Classic Agent" instead of "Human Agent" / "Synthetic Analyst".
+    - **Living Human Agents**: Preserved the official "Human Agent" pedigree framing.
+- **Verification**:
+  - `src/test_credibility_anchors.ts`: Verified Classic Agent vs Human Agent credibility anchor guidance and prohibited terms.
+  - `src/test_next_moves_transcripts.ts`: Verified 17 query transcript closing block renderings across Render Spec 1.3 with 0 cost/token/slug violations.
+  - `npm test`: Clean build, tools manifest generation (55 tools, 26 billable, 29 free), Cost Silence Guard passed, and server health check 200 OK.
+
 ## [1.46.105] - 2026-10-06
 
 ### Changed

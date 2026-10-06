@@ -128,6 +128,9 @@ async function runCredibilityAnchorVerification() {
     assert.ok(text1.includes(THIAGO_ANCHOR), 'Text section must include Thiago Bersou credibility anchor verbatim');
     assert.ok(text1.includes('GUIDANCE FOR ASSISTANT:'), 'Text section must include GUIDANCE FOR ASSISTANT');
     assert.ok(text1.includes('FIRST TOUCH ONLY: If introducing this expert to the user for the first time'), 'Must include first touch guidance');
+    assert.ok(text1.includes('When their Human Agent on Fodda is consulted'), 'Human Agent text must include Human Agent phrasing');
+    assert.ok(text1.includes('Always refer to them by their professional name ("Thiago Bersou") or as a "Human Agent"'), 'Human Agent text must permit Human Agent');
+    assert.ok(text1.includes('When concluding responses where specialists are suggested, present a balanced set of next moves:'), 'Must include balanced next moves guidance');
     assert.ok(text1.includes('FOLLOW-UP TURNS IN SAME SESSION: If this is an ongoing conversation or follow-up question with this expert, DO NOT repeat the pedigree'), 'Must include follow-up session guidance');
     assert.ok(text1.includes('Thiago Bersou perspective on alc-bev market dynamics.'), 'Must include actual consult report');
     console.log('✅ TEST 1 Passed: consult_human_agent returns credibility_anchor in structured payload and text block with guidance.\n');
@@ -150,6 +153,11 @@ async function runCredibilityAnchorVerification() {
     assert.ok(text2.includes(VEBLEN_ANCHOR), 'Text section must include Thorstein Veblen credibility anchor verbatim');
     assert.ok(text2.includes('GUIDANCE FOR ASSISTANT:'), 'Text section must include GUIDANCE FOR ASSISTANT');
     assert.ok(text2.includes('FIRST TOUCH ONLY: If introducing this expert to the user for the first time'), 'Must include first touch guidance');
+    assert.ok(text2.includes('When their Classic Agent on Fodda is consulted'), 'Classic Agent text must include Classic Agent phrasing');
+    assert.ok(text2.includes('NEVER refer to historical figures as a "Human Agent"'), 'Classic Agent text must prohibit Human Agent');
+    assert.ok(text2.includes('as a "Classic Agent"'), 'Classic Agent text must direct to refer as Classic Agent');
+    assert.ok(!text2.includes('When their Human Agent on Fodda is consulted'), 'Classic Agent text must not say When their Human Agent on Fodda is consulted');
+    assert.ok(text2.includes('When concluding responses where specialists are suggested, present a balanced set of next moves:'), 'Must include balanced next moves guidance');
     assert.ok(text2.includes('FOLLOW-UP TURNS IN SAME SESSION:'), 'Must include follow-up guidance');
     assert.ok(text2.includes('Thorstein Veblen institutional critique of conspicuous consumption.'), 'Must include actual consult report');
     console.log('✅ TEST 2 Passed: consult_analyst returns credibility_anchor in structured payload and text block with guidance.\n');
