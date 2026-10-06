@@ -45,7 +45,9 @@
       "category": "Status",
       "profiles": [
         "mcp",
-        "expert-consult"
+        "expert-consult",
+        "copilot",
+        "chatgpt"
       ],
       "description": "Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status (\"working\" | \"completed\" | \"failed\") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s. (Expert deliverable job status poll.)"
     },
@@ -186,6 +188,7 @@
         "mcp",
         "expert-consult",
         "copilot",
+        "chatgpt",
         "grok-brand-context"
       ],
       "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines, credibility anchors, and why matched, distinguishing active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (advisory introduction via request_expert_intro)."
@@ -202,6 +205,7 @@
         "deep-research",
         "earnings-intelligence",
         "expert-consult",
+        "copilot",
         "chatgpt"
       ],
       "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. (Data payload transformation + SVG chart rendering.)"
@@ -333,6 +337,7 @@
         "deep-research",
         "earnings-intelligence",
         "expert-consult",
+        "copilot",
         "chatgpt"
       ],
       "description": "List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To get a complete list of every trend in a graph, call with label=\"Trend\" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results. (Graph taxonomy label value lookup.)"
@@ -376,6 +381,7 @@
         "deep-research",
         "earnings-intelligence",
         "expert-consult",
+        "copilot",
         "chatgpt"
       ],
       "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node in Neo4j.)"
@@ -392,6 +398,7 @@
         "deep-research",
         "earnings-intelligence",
         "expert-consult",
+        "copilot",
         "chatgpt"
       ],
       "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct Neo4j node metadata lookup by ID.)"
@@ -491,7 +498,9 @@
       "bills_as": "free",
       "category": "Account",
       "profiles": [
-        "mcp"
+        "mcp",
+        "copilot",
+        "chatgpt"
       ],
       "description": "Use when establishing recurring intelligence tracking, setting up automated briefings, or monitoring category/brand shifts on a recurring schedule."
     },
@@ -517,7 +526,9 @@
       "category": "Expert",
       "profiles": [
         "mcp",
-        "expert-consult"
+        "expert-consult",
+        "copilot",
+        "chatgpt"
       ],
       "description": "Use when commissioning a finished document from an analyst — an executive briefing, research memo, strategic assessment, or publication-ready article."
     },
@@ -529,7 +540,8 @@
       "profiles": [
         "mcp",
         "expert-consult",
-        "copilot"
+        "copilot",
+        "chatgpt"
       ],
       "description": "Use when requesting an advisory introduction or consultation with an On-Request Human Agent or active domain specialist (for 1-on-1 advisory, strategic projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email."
     },
@@ -664,6 +676,8 @@
       "profiles": [
         "mcp",
         "expert-consult",
+        "copilot",
+        "chatgpt",
         "grok-brand-context"
       ],
       "description": "Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence."
@@ -674,7 +688,9 @@
       "bills_as": "topic_research",
       "category": "Intelligence",
       "profiles": [
-        "mcp"
+        "mcp",
+        "copilot",
+        "chatgpt"
       ],
       "description": "Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence."
     }

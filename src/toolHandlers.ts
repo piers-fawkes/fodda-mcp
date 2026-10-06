@@ -467,11 +467,99 @@ export async function createServer(
         if (tool === 'verify_market_claim' && isToolCallable('verify_claim')) {
             return { tool: 'verify_claim', available: true };
         }
+        if (tool === 'verify_claim' && isToolCallable('verify_market_claim')) {
+            return { tool: 'verify_market_claim', available: true };
+        }
+        if (tool === 'consult_human_agent' && isToolCallable('consult_analyst')) {
+            return { tool: 'consult_analyst', available: true };
+        }
+        if (tool === 'consult_analyst' && isToolCallable('consult_human_agent')) {
+            return { tool: 'consult_human_agent', available: true };
+        }
         return {
             tool,
             available: false,
             alternative_route: 'Available via full Fodda MCP server at https://mcp.fodda.ai/mcp or https://app.fodda.ai',
         };
+    };
+
+    const reconcileActionItem = (act: any): any => {
+        if (!act) return act;
+        const targetTool = act.target_tool || act.tool;
+        if (!targetTool) return act;
+        const res = resolveToolForHost(targetTool);
+        return {
+            ...act,
+            ...(act.target_tool ? { target_tool: res.tool } : { tool: res.tool }),
+            available: res.available,
+            ...(res.available ? {} : { alternative_route: res.alternative_route }),
+        };
+    };
+
+    const reconcileActionList = (actions?: any[]): any[] | undefined => {
+        if (!Array.isArray(actions)) return actions;
+        return actions.map(reconcileActionItem);
+    };
+
+    const reconcileWorkflows = (workflows?: any[]): any[] | undefined => {
+        if (!Array.isArray(workflows)) return workflows;
+        return workflows.map(wf => {
+            if (!wf) return wf;
+            const possible_next_actions = reconcileActionList(wf.possible_next_actions);
+            const underlying_capabilities = Array.isArray(wf.underlying_capabilities)
+                ? wf.underlying_capabilities.map((uc: any) => {
+                    if (!uc?.mcp_tool) return uc;
+                    const res = resolveToolForHost(uc.mcp_tool);
+                    return {
+                        ...uc,
+                        mcp_tool: res.tool,
+                        available: res.available,
+                        ...(res.available ? {} : { alternative_route: res.alternative_route }),
+                    };
+                })
+                : wf.underlying_capabilities;
+            return {
+                ...wf,
+                ...(possible_next_actions ? { possible_next_actions } : {}),
+                ...(underlying_capabilities ? { underlying_capabilities } : {}),
+            };
+        });
+    };
+
+    const reconcileCapabilitiesList = (caps?: any[]): any[] | undefined => {
+        if (!Array.isArray(caps)) return caps;
+        return caps.map(cap => {
+            if (!cap) return cap;
+            const allTools = Array.isArray(cap.tools) ? cap.tools : [];
+            const callableTools = allTools.filter((t: string) => isToolCallable(t));
+            const unexposedTools = allTools.filter((t: string) => !isToolCallable(t));
+            return {
+                ...cap,
+                tools: callableTools,
+                ...(unexposedTools.length > 0 ? {
+                    unexposed_tools: unexposedTools,
+                    alternative_route: 'Available via full Fodda MCP server at https://mcp.fodda.ai/mcp or https://app.fodda.ai',
+                } : {}),
+            };
+        });
+    };
+
+    const reconcileCapabilitiesResponse = (obj: any): any => {
+        if (!obj || typeof obj !== 'object') return obj;
+        const clone = JSON.parse(JSON.stringify(obj));
+        if (clone.available_next_actions) {
+            clone.available_next_actions = reconcileActionList(clone.available_next_actions);
+        }
+        if (clone.topic_reconnaissance?.available_next_actions) {
+            clone.topic_reconnaissance.available_next_actions = reconcileActionList(clone.topic_reconnaissance.available_next_actions);
+        }
+        if (clone.workflows) {
+            clone.workflows = reconcileWorkflows(clone.workflows);
+        }
+        if (clone.capabilities) {
+            clone.capabilities = reconcileCapabilitiesList(clone.capabilities);
+        }
+        return clone;
     };
 
     // ── SPT settlement helpers (inert for credit/API-key sessions: sptCtx is undefined) ──
@@ -1265,7 +1353,8 @@ export async function createServer(
                 try {
                     const data = await foddaRequest('GET', `/v1/capabilities?topic=${encodeURIComponent(cleanTopic)}`, apiKey, targetUserId);
                     if (data && data.ok !== false) {
-                        return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
+                        const reconciled = reconcileCapabilitiesResponse(data);
+                        return { content: [{ type: 'text' as const, text: JSON.stringify(reconciled, null, 2) }] };
                     }
                 } catch (err: any) {
                     console.warn(`[get_capabilities] API recon fetch failed, using local fallback:`, err?.message);
@@ -1367,7 +1456,7 @@ export async function createServer(
                     available: true
                 };
 
-                const availableNextActions = [
+                const rawNextActions = [
                     {
                         action: 'pressure_test',
                         name: 'Pressure-test this assertion',
@@ -1400,6 +1489,7 @@ export async function createServer(
                         available: true
                     }
                 ];
+                const availableNextActions = reconcileActionList(rawNextActions);
 
                 const localRecon = {
                     ok: true,
@@ -1434,8 +1524,8 @@ export async function createServer(
                         boundary_advisory: boundaryAdvisory
                     },
                     available_next_actions: availableNextActions,
-                    workflows: STATIC_CAPABILITIES_FALLBACK.workflows,
-                    capabilities: STATIC_CAPABILITIES_FALLBACK.capabilities
+                    workflows: reconcileWorkflows(STATIC_CAPABILITIES_FALLBACK.workflows),
+                    capabilities: reconcileCapabilitiesList(STATIC_CAPABILITIES_FALLBACK.capabilities)
                 };
                 return {
                     content: [{
@@ -1451,7 +1541,7 @@ export async function createServer(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: JSON.stringify(cachedCapabilitiesData, null, 2)
+                        text: JSON.stringify(reconcileCapabilitiesResponse(cachedCapabilitiesData), null, 2)
                     }]
                 };
             }
@@ -1464,7 +1554,7 @@ export async function createServer(
                     return {
                         content: [{
                             type: 'text' as const,
-                            text: JSON.stringify(data, null, 2)
+                            text: JSON.stringify(reconcileCapabilitiesResponse(data), null, 2)
                         }]
                     };
                 }
@@ -1475,7 +1565,7 @@ export async function createServer(
             return {
                 content: [{
                     type: 'text' as const,
-                    text: JSON.stringify(STATIC_CAPABILITIES_FALLBACK, null, 2)
+                    text: JSON.stringify(reconcileCapabilitiesResponse(STATIC_CAPABILITIES_FALLBACK), null, 2)
                 }]
             };
         }
@@ -2940,6 +3030,8 @@ export async function createServer(
                             userId: resolvedUserId,
                             sessionId: (sessionTracker as any).sessionId || resolvedUserId,
                             sessionTracker,
+                            isToolCallable,
+                            allowedTools,
                         }
                     );
                     sessionTracker.recordNextMoves(nextMoves, topic);
@@ -3006,7 +3098,7 @@ export async function createServer(
     );
 
     // --- brand_tracker ---
-    const executeBrandTracker = async (brand_name: string, uid: string | undefined, graph_ids?: string[], include_evidence?: boolean, max_evidence?: number) => {
+    const executeBrandTracker = async (brand_name: string, uid: string | undefined, graph_ids?: string[], include_evidence?: boolean, max_evidence?: number, options?: { shouldRenderWidget?: boolean }) => {
         const brandName = brand_name.trim();
         const includeEvidence = include_evidence !== false;
         const maxEv = Math.min(max_evidence || 10, 25);
@@ -3665,13 +3757,18 @@ export async function createServer(
             (profile as any).intent_clarification = TRUST_SENTIMENT_CLARIFICATION;
         }
 
-        const widget = await renderBrandWidget(profile);
+        const shouldRenderWidget = options?.shouldRenderWidget !== false;
+        const widget = shouldRenderWidget
+            ? await renderBrandWidget(profile)
+            : { widget_html: '', open_slots: [] as string[], editorial_context: {} as any };
         const trustGuidance = `\n\nINTENT GUIDANCE: If the user inquiry asks about brand trust, safety, consumer sentiment, or reputation (e.g. "Is X trusted?"), clarify upfront: "${TRUST_SENTIMENT_CLARIFICATION}" Then present the commercial innovation footprint below.\n`;
-        const EDITORIAL_INSTRUCTION = widget.open_slots.length === 0
+        const EDITORIAL_INSTRUCTION = (!shouldRenderWidget || widget.open_slots.length === 0)
             ? null
             : `── BRAND WIDGET: EDITORIAL SLOTS ──\nThe widget_html is mostly complete. Fill these remaining slot(s): ${widget.open_slots.join(', ')}\n\n${widget.open_slots.includes('ANALYSIS_HTML') ? '{{ANALYSIS_HTML}} — Write 3-5 paragraphs of strategic analysis using <p> tags. Cover: strongest signal and why, gaps or emerging opportunities, competitive positioning, and what to watch next. Use <strong> for key terms.' : ''}\n\nEDITORIAL CONTEXT:\n${JSON.stringify(widget.editorial_context, null, 2)}${trustGuidance}\nCRITICAL: ALL output must go INSIDE the widget slots. Do NOT redesign, restyle, or add new elements.\nAfter filling slots, pass the complete HTML to show_widget.\n`;
 
-        storeWidget(widget.widget_html);
+        if (widget.widget_html) {
+            storeWidget(widget.widget_html);
+        }
 
         return { profile, widget, EDITORIAL_INSTRUCTION };
     };
@@ -3685,9 +3782,12 @@ export async function createServer(
             graph_ids: z.array(z.string()).optional().describe('Optional: specific graph IDs to search. If omitted, searches ALL accessible graphs.'),
             include_evidence: z.boolean().optional().describe('If true (default), include individual evidence items. Set to false for summary-only.'),
             max_evidence: z.number().optional().describe('Maximum evidence items per graph. Default: 10. Max: 25.'),
+            format: z.enum(['full', 'compact', 'data_only']).optional().describe("Output mode: 'full' (default, rich HTML widget + complete dataset), 'compact' (concise structured summary without HTML widget blob), or 'data_only' (complete structured JSON without HTML widget)."),
+            compact: z.boolean().optional().describe("Shortcut boolean for compact mode. When true, returns compact structured JSON without the heavy HTML widget blob."),
+            include_widget: z.boolean().optional().describe("Whether to include widget_html in the response. Defaults to false when compact or data_only is active; true otherwise."),
         },
         { title: 'Brand Intelligence Profile', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ brand_name, userId: uid, graph_ids, include_evidence, max_evidence }) => {
+        async ({ brand_name, userId: uid, graph_ids, include_evidence, max_evidence, format, compact, include_widget }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(brand_name, 'brand_tracker');
@@ -3696,7 +3796,18 @@ export async function createServer(
                 const guard = sptGuard('brand_intelligence');
                 if (guard) return guard;
 
-                const { profile, widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(brand_name, uid, graph_ids, include_evidence, max_evidence);
+                const isCompact = format === 'compact' || compact === true;
+                const isDataOnly = format === 'data_only';
+                const shouldRenderWidget = include_widget !== undefined ? include_widget : (!isCompact && !isDataOnly);
+
+                const { profile, widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(
+                    brand_name,
+                    uid,
+                    graph_ids,
+                    include_evidence,
+                    max_evidence,
+                    { shouldRenderWidget }
+                );
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
                 const withheld = await settleOrWithhold({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name }, 'brand_tracker');
@@ -3803,6 +3914,8 @@ export async function createServer(
                         userId: resolveUserId(userId, uid),
                         sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                         sessionTracker,
+                        isToolCallable,
+                        allowedTools,
                     }
                 );
                 sessionTracker.recordNextMoves(brandNextMoves, brand_name);
@@ -3814,6 +3927,87 @@ export async function createServer(
                 const intentNote = (profile as any).intent_clarification
                     ? `[INTENT CLARIFICATION] ${(profile as any).intent_clarification}\n\n`
                     : '';
+
+                if (isCompact) {
+                    const compactPayload = {
+                        brand: brand_name,
+                        coverage: {
+                            status: coverageStatus,
+                            trend_count: trendCount,
+                            evidence_count: profile.summary?.total_evidence_items || 0,
+                            graph_count: Object.keys(profile.cross_graph_presence || {}).length,
+                        },
+                        velocity: profile.summary?.evidence_velocity,
+                        summary: {
+                            one_liner: (profile as any).one_liner || (trendCount === 0 ? `Fodda has no curated trend evidence mentioning ${brand_name} yet.` : undefined),
+                            lifecycle_distribution: profile.summary?.lifecycle_distribution,
+                            evidence_by_type: profile.summary?.evidence_by_type,
+                        },
+                        top_trends: (profile.trend_footprint || []).slice(0, 5).map((t: any) => ({
+                            name: t.name,
+                            lifecycle: t.lifecycle,
+                            graph_id: t.graphId || t._use_this_graphId || t.graph_id,
+                            signal_score: t.signalScore || t.signal_score,
+                            summary: t.summary,
+                        })),
+                        co_occurring_brands: profile.competitive_context?.co_occurring_brands || [],
+                        supplemental_signals: profile.supplemental_signals ? {
+                            google_trends: profile.supplemental_signals.google_trends?.data_status || (profile.supplemental_signals.google_trends ? 'available' : null),
+                            wikipedia: profile.supplemental_signals.wikipedia ? {
+                                article: profile.supplemental_signals.wikipedia.article,
+                                avg_daily_pageviews: profile.supplemental_signals.wikipedia.avg_daily_pageviews || profile.supplemental_signals.wikipedia.average_daily_views,
+                            } : null,
+                            amazon: profile.supplemental_signals.amazon ? {
+                                products_analyzed: profile.supplemental_signals.amazon.products_analyzed,
+                                product_count: profile.supplemental_signals.amazon.product_count,
+                                median_price: profile.supplemental_signals.amazon.price_range?.median || profile.supplemental_signals.amazon.median_price,
+                                average_rating: profile.supplemental_signals.amazon.average_rating,
+                            } : null,
+                            census_retail: profile.supplemental_signals.census_retail ? {
+                                latest_sales_m: profile.supplemental_signals.census_retail.latest_sales_m,
+                                yoy_growth_pct: profile.supplemental_signals.census_retail.yoy_growth_pct,
+                            } : null,
+                        } : null,
+                        market_data: (profile as any).market_data ? {
+                            company_name: (profile as any).market_data.company_name,
+                            ticker: (profile as any).market_data.ticker,
+                            revenue: (profile as any).market_data.revenue,
+                        } : undefined,
+                        intent_clarification: (profile as any).intent_clarification,
+                        next_moves: brandNextMoves,
+                    };
+
+                    const content: Array<{ type: 'text'; text: string }> = [
+                        {
+                            type: 'text' as const,
+                            text: intentNote + emptyNote + '── COMPACT BRAND INTELLIGENCE ──\n' + JSON.stringify(compactPayload, null, 2),
+                        }
+                    ];
+                    if (shouldRenderWidget && widget.widget_html) {
+                        if (EDITORIAL_INSTRUCTION) {
+                            content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
+                        }
+                        content.push({ type: 'text' as const, text: widget.widget_html });
+                    }
+                    return { next_moves: brandNextMoves, content };
+                }
+
+                if (isDataOnly) {
+                    const content: Array<{ type: 'text'; text: string }> = [
+                        {
+                            type: 'text' as const,
+                            text: intentNote + emptyNote + '── STRUCTURED BRAND INTELLIGENCE (DATA ONLY) ──\n' + JSON.stringify(profile, null, 2),
+                        }
+                    ];
+                    if (shouldRenderWidget && widget.widget_html) {
+                        if (EDITORIAL_INSTRUCTION) {
+                            content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
+                        }
+                        content.push({ type: 'text' as const, text: widget.widget_html });
+                    }
+                    return { next_moves: brandNextMoves, content };
+                }
+
                 const rawDataBlock = {
                     type: 'text' as const,
                     text: intentNote + emptyNote + '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
@@ -3824,11 +4018,13 @@ export async function createServer(
                 };
 
                 const content: Array<{ type: 'text'; text: string }> = [rawDataBlock];
-                if (widget.widget_html) {
+                if (shouldRenderWidget && widget.widget_html) {
                     if (EDITORIAL_INSTRUCTION) {
                         content.push({ type: 'text' as const, text: EDITORIAL_INSTRUCTION });
                     }
                     content.push(widgetBlock);
+                } else if (!shouldRenderWidget) {
+                    // Widget omitted by configuration
                 } else {
                     content.push({ type: 'text' as const, text: FODDA_HOUSE_VISUAL_RECIPE_V2_2 });
                 }
@@ -3898,6 +4094,8 @@ export async function createServer(
                                 userId: resolveUserId(userId, uid),
                                 sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                                 sessionTracker,
+                                isToolCallable,
+                                allowedTools,
                             }
                         );
                         if (data && typeof data === 'object') {
@@ -5494,6 +5692,8 @@ export async function createServer(
                         userId: resolveUserId(userId, uid),
                         sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
                         sessionTracker,
+                        isToolCallable,
+                        allowedTools,
                     }
                 );
                 sessionTracker.recordNextMoves(brainstormNextMoves, query);
@@ -6327,6 +6527,8 @@ export async function createServer(
                     currentAnalystId: resolvedAnalystId || analyst_id,
                     knownBrand: resolvedCompany || getKnownBrand(),
                     sessionId: session_id,
+                    isToolCallable,
+                    allowedTools,
                 },
                 getGraphs(),
                 getAnalysts()
@@ -6425,6 +6627,8 @@ export async function createServer(
                             currentAnalystId: expertId,
                             knownBrand: resolvedCompany || getKnownBrand(),
                             sessionId: session_id,
+                            isToolCallable,
+                            allowedTools,
                         },
                         getGraphs(),
                         getAnalysts()
@@ -6750,6 +6954,8 @@ export async function createServer(
                     currentAnalystId: resolvedAnalystId || analyst_id,
                     knownBrand: resolvedCompany || getKnownBrand(),
                     sessionId: session_id,
+                    isToolCallable,
+                    allowedTools,
                 },
                 getGraphs(),
                 getAnalysts()

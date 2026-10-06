@@ -33,8 +33,16 @@ const PRESSURE_COLORS: Record<string, { bg: string; color: string; label: string
 
 const DEFAULT_PRESSURE = { bg: '#F5F0FF', color: '#663399', label: 'Appears alongside' };
 
-// Sector-aware pressure type assignment based on graph overlap
+// Sector-aware pressure type assignment based on graph overlap or explicit API relationship_type
 function guessPressureType(_index: number, competitor?: any, brandGraphIds?: Set<string>, domainGraphIds?: Set<string>): string {
+    if (competitor?.relationship_type) {
+        const rel = String(competitor.relationship_type).toLowerCase();
+        if (rel === 'competitor' || rel === 'peer') return 'Shared category';
+        if (rel === 'adjacent') return 'Adjacent signal';
+        if (rel === 'partner') return 'Co-creation partner';
+        if (rel === 'crossover') return 'Crossover mention';
+        return 'Appears alongside';
+    }
     const compGraphArr = competitor?.graphIds || [];
     if (compGraphArr.length > 0 && brandGraphIds && brandGraphIds.size > 0) {
         const compGraphs = new Set<string>(compGraphArr);
@@ -317,8 +325,10 @@ function formatStockPrice(priceWindow?: { current_price?: number; as_of_date?: s
 export async function renderBrandWidget(profile: any): Promise<{ widget_html: string; editorial_context: any; open_slots: string[] }> {
     const brand = profile.brand || 'Brand';
     const trends = profile.trend_footprint || [];
-    const evidence = profile.evidence_items || [];
-    const competitors = profile.competitive_context?.co_occurring_brands || [];
+    const evidence = profile.evidence_items || profile.direct_evidence || [];
+    const competitors = (profile.competitive_context?.peers && profile.competitive_context.peers.length > 0)
+        ? profile.competitive_context.peers
+        : (profile.competitive_context?.co_occurring_brands || profile.competitive_context?.co_occurring || []);
     const crossGraph = profile.cross_graph_presence || [];
     const supplemental = profile.supplemental_signals || {};
     const lcDist = profile.summary?.lifecycle_distribution || {};
@@ -624,22 +634,28 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     const competitorListHtml = competitors.slice(0, 8).map((c: any, i: number) => {
         const pType = guessPressureType(i, c, brandGraphIds, domainGIds);
         const colors = PRESSURE_COLORS[pType] || DEFAULT_PRESSURE;
+        const bName = c.brand || c.name || '';
+        const count = c.co_occurrences ?? c.count ?? 1;
+        const countText = c.relationship_type === 'partner'
+            ? `Partner in ${count} initiative${count !== 1 ? 's' : ''}`
+            : `Appears alongside in ${count} evidence item${count !== 1 ? 's' : ''}`;
         return `<div class="cc">
   <div>
-    <div class="cn">${esc(c.brand)}</div>
-    <div class="cd">Appears alongside in ${c.co_occurrences} evidence item${c.co_occurrences !== 1 ? 's' : ''}</div>
+    <div class="cn">${esc(bName)}</div>
+    <div class="cd">${countText}</div>
   </div>
   <div class="ca">
     <span class="pb" style="background:${colors.bg};color:${colors.color};">${colors.label}</span>
-    <button class="cv" onclick="sendPrompt('brand intelligence: ${esc(c.brand)}')">Explore ↗</button>
+    <button class="cv" onclick="sendPrompt('brand intelligence: ${esc(bName)}')">Explore ↗</button>
   </div>
 </div>`;
     }).join('\n');
 
     // ── Compare buttons ──
-    const compareButtonsHtml = competitors.slice(0, 4).map((c: any) =>
-        `<button class="cp" onclick="sendPrompt('brand intelligence: ${esc(c.brand)}')">${esc(c.brand)} ↗</button>`
-    ).join('\n    ');
+    const compareButtonsHtml = competitors.slice(0, 4).map((c: any) => {
+        const bName = c.brand || c.name || '';
+        return `<button class="cp" onclick="sendPrompt('brand intelligence: ${esc(bName)}')">${esc(bName)} ↗</button>`;
+    }).join('\n    ');
 
     // ── Google Trends ──
     const gt = buildGoogleTrendsSVG(supplemental?.google_trends);
@@ -922,7 +938,7 @@ ${marketDataItems.join('\n')}`
 
     // ── Parallel Gemini fills: one-liner + section intros ──
     const [oneLiner, trendIntro, marketIntro] = await Promise.allSettled([
-        fillBrandOneLiner(brand, trends, velocity.label, competitors.slice(0, 3).map((c: any) => c.brand)),
+        fillBrandOneLiner(brand, trends, velocity.label, competitors.slice(0, 3).map((c: any) => c.brand || c.name || '')),
         fillTrendFootprintIntro(brand, trends, profile.summary?.lifecycle_distribution || {}),
         fillMarketDataIntro(brand, supplemental),
     ]);
@@ -944,7 +960,8 @@ ${marketDataItems.join('\n')}`
     fills['RELATED_QUERIES_NOTE'] = supplemental?.google_trends?.related_queries?.length ? `Top related searches when people look for ${brand}.` : '';
     fills['WIKI_NOTE'] = wikiData.length > 0 ? `Daily Wikipedia pageviews for ${brand}-related articles. Higher = more cultural attention.` : '';
     const safeBrandName = esc(brand).replace(/'/g, "\\'");
-    const safeCompName = competitors[0]?.brand ? esc(competitors[0].brand).replace(/'/g, "\\'") : 'top rival';
+    const comp0 = competitors[0]?.brand || competitors[0]?.name;
+    const safeCompName = comp0 ? esc(comp0).replace(/'/g, "\\'") : 'top rival';
     fills['SUGGESTED_NEXT_HTML'] = isEmptyCoverage
         ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">
         <button class="btn-out" onclick="sendPrompt('Explore broader trends in ${safeBrandName}\\'s category')">Category trends</button>

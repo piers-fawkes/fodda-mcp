@@ -8,12 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.46.105] - 2026-10-06
 
 ### Changed
-- **Brand Intelligence Trust, Entity Resolution & Co-Occurrence Typing (`src/toolHandlers.ts`, `src/brandTemplate.ts`)**:
-  - **Exclusion of Self Entities & Research Vendors**: Strictly excluded Fodda internal brands (`PSFK`, `Fodda`, `SearchShop`, `[SIC]`) and research/data vendors (`YouGov`, `Mintel`, `Kantar`, `Nielsen`, etc.) from competitor lists in `brand_tracker`. Added brand-specific non-competitor exclusions (Nike: BMW, LEGO, EA Sports, Coca-Cola; On: Samsung, Sony).
-  - **Evidence Velocity Period Guard**: Suppressed quarterly trend labels when evaluated `< 30 days` into the current quarter (`trend: "insufficient_period"`), and enforced direction sign invariants (`current < prev` cannot be `accelerating`).
-  - **Wikipedia Disambiguation**: Added canonical brand disambiguation mapping (`On` -> `On (company)`, `Nike` -> `Nike, Inc.`), rejecting generic dictionary/disambiguation page lookups.
-  - **Honest Coverage & Supplemental Gating**: When brand coverage is empty (`uniqueTrends === 0 || uniqueEvidence === 0`), suppressed Amazon, Census national retail, and Wikipedia blocks (`null`), rendering clear category exploration next steps instead of competitor comparisons.
-  - **Sampling Basis Disclosure**: Preserved and displayed real sampling basis in Amazon product stats (`based on 30 of N listings`) instead of misleading "across all listings".
+- **Brand Intelligence Widget Rendering Honesty (`src/brandTemplate.ts`)**:
+  - **Untracked Brand Honest Empty State**: When coverage is empty (`coverage.status === 'empty'` or 0 trends & evidence), suppressed Amazon footprint, US Census Retail sales, Wikipedia pageviews, and competitor modules. Renders clean empty state callout with category exploration next moves.
+  - **Real Sampling Basis Disclosures**: Replaced hardcoded "across all listings" with actual sampling basis (`based on sample of ${analyzed} of ${total} listings`) and added `"Snapshot sample only. Not a full catalogue census. Source: Amazon."` disclosure.
+  - **Neutral Co-Occurrence Wording**: Replaced "competitor" labeling with neutral framing ("Appears alongside", "Shared category", "Adjacent signal").
+- **Compact & Data-Only Brand Tracker Modes (`src/toolHandlers.ts`)**:
+  - Added `format` (`'full' | 'compact' | 'data_only'`), `compact: boolean`, and `include_widget: boolean` parameters to `brand_tracker`.
+  - Compact mode returns structured summary JSON without the heavy 250k+ char HTML widget blob, reducing token consumption for agentic workflows.
+  - Data-only mode returns complete structured profile JSON while suppressing HTML widget generation unless explicitly requested.
+- **Tool Exposure Reconciliation Per Host (`src/toolHandlers.ts`, `src/index.ts`, `src/coverageRelevance.ts`)**:
+  - Reconciled `available_next_actions` in `get_capabilities`, `generateNextMoves`, and `generateConsultNextMoves` using session-scoped `isToolCallable`.
+  - For unexposed tools in scoped connectors (e.g. `/brand-intelligence`), sets `available: false` and supplies truthful `alternative_route`.
+  - Expanded `OFFERING_SCOPED_TOOLS['chatgpt']` and `['copilot']` to include missing backend capabilities (`find_expert`, `request_expert_intro`, `verify_market_claim`, `verify_claim`, `request_deliverable`, `check_deliverable_status`, `manage_scheduled_reports`).
+- **Defensive ID Resolution (`src/foddaClient.ts`)**:
+  - Hardened `isPlaceholderUserId` with a `typeof id !== 'string'` guard against non-string inputs.
+- **Skill Publishing Verification**:
+  - Verified all 10 raw GitHub skill URLs advertised in `llms.txt`; all 10 return HTTP 200 OK.
+- **Deploy**: Deferred per user directive.
 
 ## [1.46.104] - 2026-10-05
 

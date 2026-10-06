@@ -19,7 +19,7 @@ export const WEBSITE_BASE_URL = process.env.WEBSITE_BASE_URL || 'https://www.fod
 export const PLACEHOLDER_USER_IDS = new Set(['', 'anonymous', 'undefined', 'null', 'oauth_user']);
 
 export function isPlaceholderUserId(id?: string | null): boolean {
-    if (!id) return true;
+    if (!id || typeof id !== 'string') return true;
     return PLACEHOLDER_USER_IDS.has(id.trim().toLowerCase());
 }
 
