@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hardened `isPlaceholderUserId` with a `typeof id !== 'string'` guard against non-string inputs.
 - **Skill Publishing Verification**:
   - Verified all 10 raw GitHub skill URLs advertised in `llms.txt`; all 10 return HTTP 200 OK.
-- **Deploy**: Deferred per user directive.
+- Deployed Cloud Run revision `fodda-mcp-00613-7xn` (100% traffic, health check HTTP 200).
 
 ## [1.46.104] - 2026-10-05
 
