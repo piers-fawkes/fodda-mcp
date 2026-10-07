@@ -46,7 +46,7 @@ export {
     queryCache,
 };
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 // ── Global crash guards ──
 // This is a long-lived server holding in-memory session state (transports, sessionSpts,
@@ -1387,16 +1387,35 @@ registerA2ARoute(app, foddaRequest, waverunnerRequest);
 // AgentFacts (NANDA) identity document — projection of the A2A card + version
 registerAgentFactsRoute(app, getServiceUrl);
 
-const PORT = parseInt(process.env.PORT || '8080');
-
-// Initialize catalog and pricing caches before accepting connections
-Promise.all([
-    initCatalogCache(),
-    initPricingCache(),
-]).then(() => {
-    app.listen(PORT, () => console.error(`Fodda MCP server v${MCP_SERVER_VERSION} on port ${PORT}`));
-}).catch(() => {
-    // Start anyway with hardcoded fallbacks if cache init fails
-    console.error('[startup] Cache init failed — using hardcoded fallbacks');
-    app.listen(PORT, () => console.error(`Fodda MCP server v${MCP_SERVER_VERSION} on port ${PORT} (fallback mode)`));
-});
+if (process.env.PORT) {
+    const PORT = parseInt(process.env.PORT);
+    Promise.all([
+        initCatalogCache(),
+        initPricingCache(),
+    ]).then(() => {
+        app.listen(PORT, () => console.error(`Fodda MCP server v${MCP_SERVER_VERSION} on port ${PORT}`));
+    }).catch(() => {
+        // Start anyway with hardcoded fallbacks if cache init fails
+        console.error('[startup] Cache init failed — using hardcoded fallbacks');
+        app.listen(PORT, () => console.error(`Fodda MCP server v${MCP_SERVER_VERSION} on port ${PORT} (fallback mode)`));
+    });
+} else {
+    // Stdio mode: invoked when PORT is omitted (Glama mcp-proxy, Claude Desktop, local stdio CLI)
+    import('@modelcontextprotocol/sdk/server/stdio.js').then(({ StdioServerTransport }) => {
+        Promise.all([
+            initCatalogCache(),
+            initPricingCache(),
+        ]).then(async () => {
+            const apiKey = process.env.FODDA_API_KEY || '';
+            const server = await createServer(apiKey, 'stdio-user', foddaRequest, waverunnerRequest, storeWidget, getServiceUrl);
+            const transport = new StdioServerTransport();
+            await server.connect(transport);
+            console.error(`Fodda MCP server v${MCP_SERVER_VERSION} connected via stdio`);
+        }).catch(async (err) => {
+            console.error('[startup] Stdio fallback:', err);
+            const server = await createServer('', 'stdio-user', foddaRequest, waverunnerRequest, storeWidget, getServiceUrl);
+            const transport = new StdioServerTransport();
+            await server.connect(transport);
+        });
+    });
+}

@@ -13,8 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Portable `app` Export Type Annotation (`src/index.ts`)**: Added `import { type Express }` and annotated `export const app: Express = express();` to eliminate TS2742 inferred type portability error under isolated pnpm node_modules.
   - **Strict String Type on Lambda Parameter (`src/toolHandlers.ts`)**: Explicitly typed `(c: string) => c.toUpperCase()` at line 5412 to satisfy `noImplicitAny` (TS7006).
   - **Added `pnpm-workspace.yaml`**: Defined workspace packages root to suppress pnpm workspace warnings.
+  - **Dual-Rail Stdio & HTTP Transport (`src/index.ts`)**: When `PORT` environment variable is unset (Glama `mcp-proxy`, Claude Desktop, local stdio CLI), initialize and connect `StdioServerTransport`. When `PORT` is set (Google Cloud Run `PORT=8080`), continue listening as an Express HTTP server.
+  - **Quiet Dotenv Runtime Logs (`src/index.ts`)**: Added `{ quiet: true }` to `dotenv.config()` to prevent dotenv v17 from printing informational messages to `stdout`, keeping stdio JSON-RPC framing clean.
+  - **Added `glama.json`**: Created repository maintainer manifest conforming to Glama MCP schema.
+  - **Test Isolation (`tsconfig.json`)**: Excluded all `src/test_*.ts` files from production compiler builds.
   - **Version alignment**: Bumped canonical version to `1.46.108` across `package.json`, `server.json`, and `fodda_mcp_server.json`.
-- **Verification**: Ran `npm run build` locally — 55 tools generated, TypeScript compiled with 0 errors.
+- **Verification**: Ran `npm run build` locally — 55 tools generated, TypeScript compiled with 0 errors. Verified stdio JSON-RPC handshake (`initialize`) with child process without `PORT` responding cleanly.
 
 ## [1.46.107] - 2026-10-06
 
