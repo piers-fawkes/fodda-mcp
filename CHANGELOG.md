@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `src/test_on_request_caller_identity.ts`: Added tests 7, 8, and 9 verifying client provenance forwarding (`cursor`), test isolation skipping live webhook (`test_user_credibility`), and case-insensitive active status bypass.
   - `src/test_dynamic_next_moves.ts`: Added Test 9 verifying Col. John Boyd and Charles Babbage rotate Move 2 to modern application, omit brand scoping copy, and omit *"in my graph"* from thread lines.
   - `npm test`: Clean build, tools manifest generation, Cost Silence Guard passed, and server health check 200 OK.
+- Deployed Cloud Run revision `fodda-mcp-00618-mxp` (100% traffic, health check HTTP 200).
 
 ## [1.46.106] - 2026-10-06
 
