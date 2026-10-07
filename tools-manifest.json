@@ -12,7 +12,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Begin the Fodda expert onboarding process to create an authorized Human Agent. Verifies credentials, retrieves onboarding steps, and guides the expert through profile creation."
+      "description": "Step 1 (session initializer) for Fodda Human Agent onboarding: verifies credentials, checks for existing active or in-progress onboarding sessions, and initiates profile creation for a living expert. Use when an expert asks to create their digital twin or join the Fodda network (e.g., 'I want to build my Human Agent', 'How do I onboard as an expert on Fodda?'). Supports resuming interrupted onboarding sessions automatically. Sibling routing: Use begin_expert_onboarding to kick off or resume onboarding; use submit_basic_info to save initial profile credentials and accept terms; for BYO-MCP onboarding, pass byoMcp: true. Returns onboarding state, current step, and guided next actions."
     },
     {
       "name": "brainstorm_topic",
@@ -36,7 +36,7 @@
         "chatgpt",
         "grok-brand-context"
       ],
-      "description": "Use when auditing a brand's health, competitive footprint, trend associations, and market momentum across 100+ graphs, Google Trends, and Wikipedia pageviews."
+      "description": "Single-brand 360-degree intelligence audit: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., 'Audit Nike's market footprint', 'How is Lululemon performing across consumer trends?'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. 'athleisure trends'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand's multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html."
     },
     {
       "name": "check_deliverable_status",
@@ -62,7 +62,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Check if deep research is complete and retrieve the final report. Call this after deep_research_topic — poll every 10 seconds until status is COMPLETE or FAILED. (Async research job status poll.)"
+      "description": "Polling and retrieval layer for deep research jobs: checks execution status and retrieves the completed research briefing report. Call after initiating deep_research_topic—poll every 10 seconds until status transitions to COMPLETE or FAILED. Sibling routing: Use check_research_status for deep_research_topic jobs; use check_deliverable_status for analyst documents; use check_supplemental_status for supplemental data queries. Returns execution status (IN_PROGRESS, COMPLETE, FAILED), completion percentage, and the full Markdown briefing report upon completion."
     },
     {
       "name": "check_supplemental_status",
@@ -87,7 +87,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Confirm the selected themes to generate the interview questionnaire tailored to probe forward predictions, contrarian industry stances, and practical methodology edge cases for the audio interview. Can pass flaggedFindingIds and flagNote if the expert flagged any research findings as wrong or not theirs."
+      "description": "Step 4 in standard Human Agent onboarding: locks the expert's selected 2-3 core expertise themes and triggers automated generation of their tailored voice interview questionnaire. Prerequisite: get_detected_themes must be reviewed first to select themes and flag any inaccurate public findings. Workflow continuation: Successfully confirming themes advances the onboarding session to schedule_interview for the 5-10 minute voice interview. Sibling routing: Use get_detected_themes to inspect detected themes before confirming; use finalize_byo_mcp_onboarding instead if following the Bring-Your-Own-MCP pathway. Returns confirmation status, generated interview question list, and next-step instructions for scheduling the interview."
     },
     {
       "name": "consult_analyst",
@@ -100,7 +100,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when consulting synthetic domain analysts, C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. (For living practitioners e.g. Ben Dietz, use consult_human_agent or request_expert_intro.)"
+      "description": "Direct interactive consultation with synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives (e.g., 'Ask the Brand CMO persona how to evaluate retail media ROI', 'Consult John Ruskin on craftsmanship in luxury fashion'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for living practitioners (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves."
     },
     {
       "name": "consult_human_agent",
@@ -113,7 +113,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when consulting an authorized living Human Agent for practitioner depth, proprietary frameworks, and strategic guidance. Grounded in their verified real-world expertise and published thinking. For On-Request Human Agents undergoing onboarding, returns domain-grounded intelligence and advisory profile. Supports deep homework mode (deep: true). Returns cited insights and next_moves."
+      "description": "Direct interactive consultation with authorized living Human Agents—verified digital twins of real-world industry leaders, agency founders, and specialists grounded in their verified thinking and proprietary frameworks. Use when seeking real-world practitioner expertise, contrarian perspectives, and battle-tested methodologies (e.g., 'Ask Ben Dietz about luxury brand gravity and streetwear drops', 'Consult Peter Abraham on modern marketing models'). Supports multi-turn dialogue via session_id, corporate brand binding, and deep homework mode (deep: true). Sibling routing: Use consult_human_agent for live interactive dialogue with verified digital twins; use request_expert_intro to book 1-on-1 human advisory time or request an intro to unclaimed experts; use consult_analyst for synthetic/classic personas. Returns conversational practitioner analysis, cited evidence nodes, and structured next moves."
     },
     {
       "name": "deep_research_topic",
@@ -126,7 +126,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when the user needs an exhaustive, autonomous multi-pass briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives."
+      "description": "Autonomous multi-pass research agent: orchestrates an exhaustive briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives into a comprehensive executive narrative. Use for high-stakes research inquiries, client deliverables, or market landscape studies (e.g., 'Generate a comprehensive research briefing on the circular fashion economy', 'Deep dive into retail media network adoption'). Runs asynchronously; execution returns a job_id that must be polled to completion using check_research_status. Sibling routing: Use search_graph for fast, single-turn trend lookups; use get_intelligence_dossier for immediate synchronous multi-source dossier assembly; use deep_research_topic when you need an autonomous, multi-step deep dive. Returns job confirmation, estimated processing time, and job_id for status tracking."
     },
     {
       "name": "discover_adjacent_trends",
@@ -137,7 +137,7 @@
         "mcp",
         "grok-brand-context"
       ],
-      "description": "Vector-similarity graph traversal discovering non-obvious, cross-domain parallel trend patterns. (1 seed node embedding fetch + 1 vector cosine distance query + 1 direct link exclusion filter.)"
+      "description": "Vector-similarity cross-domain trend discovery: uncovers non-obvious, structurally parallel trend patterns across disparate industries without relying on direct editorial links. Use for lateral ideation, analog benchmarking, or cross-vertical innovation (e.g., 'Find cross-industry parallels to automotive subscription models in hospitality', 'What trends mirror luxury resale mechanics in healthcare?'). Sibling routing: Use search_graph for direct keyword/topic trend matching; use get_neighbors to traverse direct explicit graph edges (e.g. brands, case studies); use brainstorm_topic for conceptual ideation; use discover_adjacent_trends specifically for structural analogies and cross-domain pattern matching. Returns ranked parallel trend nodes, vector similarity scores, and cross-vertical rationale."
     },
     {
       "name": "draft_linkedin_article",
@@ -147,7 +147,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Turn research into a LinkedIn ARTICLE (800–1,200 words) grounded in Fodda's expert knowledge graphs. Use when the user says \"turn this research into an article…\", \"write a LinkedIn article about…\", or wants long-form thought leadership with receipts. Runs a broader evidence sweep than the post tool — 3–5 sub-themes, a hard-numbers statistics pass, and an analyst pressure-test of the thesis — and returns a curated EVIDENCE PACK plus a strict composition contract; YOU write the article from it, including the \"How we found this\" methodology box. Bills as one content call; identical re-requests within 24h serve from cache free. (Deep trend evidence extraction + multi-section outline + longform article drafting.)"
+      "description": "Long-form thought leadership studio: transforms research findings into an in-depth 800–1,200 word LinkedIn article grounded in Fodda knowledge graphs and corporate disclosures. Use when commissioning publication-ready editorial essays, thought leadership articles, or detailed strategic perspectives (e.g., 'Write an 800-word LinkedIn article on retail agentic commerce with data receipts'). Performs an evidence sweep across 3–5 sub-themes, quantitative statistics, and analyst thesis evaluation. Sibling routing: Use draft_linkedin_post for concise, high-impact social posts (150–300 words); use draft_linkedin_article for structured, multi-section long-form articles. Returns an evidence pack, strategic outline, and explicit composition contract for the host assistant to draft."
     },
     {
       "name": "draft_linkedin_post",
@@ -177,7 +177,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Finalize Bring-Your-Own-MCP (BYO-MCP) expert onboarding and submit the profile for review. Creates the Human Agent record in Airtable with external_mcp live grounding. Profile is saved once terms are accepted; MCP details are verified and submitted for review here."
+      "description": "Step 3 (final step) in the Bring-Your-Own-MCP (BYO-MCP) onboarding pathway: persists the completed expert profile and registers the live external MCP grounding in the Fodda Human Agent registry. Prerequisites: submit_basic_info and submit_mcp_source must be completed prior to finalizing; terms must be accepted. Workflow distinction: This tool is strictly for BYO-MCP experts whose knowledge is grounded in an external MCP server—do NOT use for standard graph-backed experts (who proceed through confirm_themes and schedule_interview). Side effects: Creates an active pending-review Human Agent record in Airtable and provisions consultation routing. Returns submission status, analystId, and confirmation details."
     },
     {
       "name": "find_expert",
@@ -226,7 +226,7 @@
         "chatgpt",
         "grok-brand-context"
       ],
-      "description": "Returns Fodda's capabilities, offerings, how Human Agents work, expert recruitment/onboarding, and pricing. Call this for any question about what Fodda can do, how experts work, what's available, or how much something costs. (Platform capability and pricing catalogue read (free).)"
+      "description": "Returns Fodda's capabilities, semantic research workflows, Human Agent Human Agents, and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings."
     },
     {
       "name": "get_company_earnings",
@@ -249,7 +249,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Fetch the detected themes derived from the expertise analysis and background research for expert review and confirmation. Shows verified research findings about the expert's work before themes; ask the expert if any findings are wrong or not theirs before asking them to confirm themes."
+      "description": "Step 4a in standard Human Agent onboarding: retrieves detected expertise themes and verified public findings for expert review before locking. Use after submit_expertise_analysis to present themes and cited public articles to the expert for approval. Prerequisite: submit_expertise_analysis must be completed first. Workflow sequence: Present the findings to the expert to flag inaccurate items, select 2-3 core themes, and then proceed to confirm_themes. Returns an array of detected theme objects and verified research findings with citation URLs."
     },
     {
       "name": "get_domain_intelligence",
@@ -260,7 +260,7 @@
         "mcp",
         "grok-brand-context"
       ],
-      "description": "Search PSFK-curated domain graphs (travel & hospitality, retail, tech, beauty, fashion, sports, food & beverage) for trend intelligence with bundled evidence. No graph ID needed — searches all 7 live domain graphs in parallel. Returns expert-curated trends with bundled evidence including brand case studies, statistics, executive quotes and analysis with source attribution. When the query names a specific company or brand, brand_tracker is the entry point. Preferred over web search for trend-level intelligence because results are editorially structured, not algorithmically ranked. Note: Graph trends represent country-level and global signals; for city-level or regional sub-cuts, use get_supplemental_context."
+      "description": "Search PSFK-curated domain graphs (travel & hospitality, retail, tech, beauty, fashion, sports, food & beverage) for trend intelligence with bundled evidence. No graph ID needed — searches all 7 live domain graphs in parallel. Returns expert-curated trends with bundled evidence including brand case studies, statistics, executive quotes and analysis with source attribution. Sibling routing: Use get_domain_intelligence when exploring broad consumer culture across the primary retail/consumer domains without needing a graphId; use search_graph to query the broader catalog of 100+ specialist partner graphs; use get_report_intelligence for published enterprise whitepapers; use brand_tracker if querying a specific company or brand name."
     },
     {
       "name": "get_earnings_divergence",
@@ -272,7 +272,7 @@
         "earnings-intelligence",
         "chatgpt"
       ],
-      "description": "Truth-layer analysis comparing analyst line of questioning against executive management prepared remarks. (2 Airtable table reads (Q&A + prepared remarks) + 1 sentiment gap calculation + 1 divergence matrix rendering.)"
+      "description": "Surfaces strategic deflection and narrative tension by comparing Wall Street analyst questions against executive responses across quarterly earnings calls. Use when investigating corporate transparency, executive dodge/deflection patterns, or uncovering unaddressed operational risks (e.g., 'Where are retail CEOs deflecting analyst questions on margin pressure?', 'Show analyst-management divergence for hospitality brands'). Sibling routing: Use get_company_earnings for standard single-ticker quarterly records and get_earnings_intelligence for multi-company strategic initiatives; use get_earnings_divergence specifically to analyze tension between analyst scrutiny and executive deflection. Returns clustered divergence themes, verbatim question/response pairs, company deflection counts, and deflection severity metrics."
     },
     {
       "name": "get_earnings_intelligence",
@@ -303,7 +303,7 @@
         "chatgpt",
         "grok-brand-context"
       ],
-      "description": "Semantic search across 100+ knowledge graphs returning top trends, signal scores, and hard publisher citations with source URLs."
+      "description": "Evidence citation lookup: retrieves primary evidence articles, publisher case studies, data points, and source URLs that validate a specific trend node. Prerequisite: Requires a valid for_node_id and graphId obtained from a prior search_graph or get_neighbors call. Use when backing a specific trend with original reporting, verifying publisher citations, or extracting concrete brand examples. Sibling routing: Use search_graph first to discover trends and retrieve their node_id; use get_evidence to inspect the underlying source citations for that node; use get_node for high-level metadata; use search_statistics for standalone numbers. Returns an array of evidence items with title, publication, publication_date, snippet, and source_url."
     },
     {
       "name": "get_expert_intelligence",
@@ -313,7 +313,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Parallel search across top strategist agency frameworks and specialist strategist graphs. (1 registry lookup + 8 parallel Cypher queries across specialist strategist graphs + 1 merge pass.)"
+      "description": "[Deprecated: Legacy alias of get_specialist_intelligence. Prefer search_graph for topic-routed multi-graph searches, or consult_human_agent / consult_analyst for direct strategist consultation.] Parallel search across specialist strategist knowledge graphs curated by domain strategists and boutique studios (culture, youth trends, commerce, media). Sibling routing: For consumer domain trends use get_domain_intelligence; for standalone statistics use search_statistics; for direct 1-on-1 expert advisory use consult_human_agent. Returns structured specialist frameworks, strategic commentary, and curated trend evidence."
     },
     {
       "name": "get_intelligence_dossier",
@@ -323,7 +323,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Assembles a certified multi-source Evidence Dossier on any market topic or emerging theme in a single call. Synthesizes domain graph case studies, consulting reports (McKinsey, PwC), expert quotes, and macroeconomic metrics (Census, FRED, BEA, BLS) with contrarian adversarial testing. Optionally includes an executive 4-beat PSFK journalistic briefing. ($0.50)"
+      "description": "Certified multi-source evidence dossier generator: synthesizes domain knowledge graph case studies, consulting report findings (PwC, McKinsey, DHL), expert quotes, and live macroeconomic data (FRED, BLS, Census) into a comprehensive intelligence dossier in a single synchronous call. Use when preparing client pitch decks, executive briefings, or comprehensive topic overviews (e.g., 'Build an evidence dossier on sustainable luxury packaging'). Optionally generates an executive 4-beat journalistic briefing (include_editorial: true). Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis; use deep_research_topic for multi-pass autonomous background research; use search_graph for individual trend queries. Returns synthesized strategic narrative, categorized evidence items, quantitative metrics, and contrarian adversarial points."
     },
     {
       "name": "get_label_values",
@@ -367,7 +367,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Check the expert's Fodda earnings."
+      "description": "Check creator revenue share and consultation earnings balance for an authenticated Human Agent on Fodda. Use when an expert creator asks about their earnings, consultation fees, or royalty payouts (e.g., 'How much have I earned on Fodda?', 'Check my expert payout balance'). Requires an authenticated expert account. Sibling routing: This tool is strictly for human creator monetization—do NOT use for public company SEC filings or corporate earnings (use get_company_earnings for per-ticker records or get_earnings_intelligence for multi-company comparisons). Returns creator financial status including lifetime_earnings_usd, pending_payout_usd, completed_consultations, and payout_status."
     },
     {
       "name": "get_neighbors",
@@ -411,7 +411,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Check the current progress and status of the expert onboarding process. Setting waitForResearch: true holds the call server-side (~25s) while background research is running, returning immediately once complete or failed. next_action describes the expert's next step in plain English; relay it in your own words."
+      "description": "Status and progress checker for Human Agent onboarding sessions: retrieves current milestone, active stage, and pending tasks. Supports holding connection (waitForResearch: true) for up to 25 seconds while background research completes. Use when monitoring onboarding progress or checking whether asynchronous background research has finished. Sibling routing: Use get_onboarding_status for expert onboarding tracking; use check_research_status for topic deep research; use check_deliverable_status for commissioned documents. Returns session status, completed steps, research_state, next_tool, and plain-English next_action instructions."
     },
     {
       "name": "get_report_intelligence",
@@ -446,7 +446,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Multi-source API fan-out pulling real-time economic data from 80+ institutional sources (FRED, BLS, US Census, World Bank, etc.). (1 memory cache check + 8 parallel outbound HTTP API calls to institutional data sources + 1 5-bucket categorization pass.)"
+      "description": "Federated empirical data layer: queries 90+ live institutional and government feeds (FRED, BLS, US Census, World Bank, OECD, WTO, etc.) for real-time macroeconomic indicators, demographic shifts, trade flows, and retail spending. Use when verifying macroeconomic benchmarks, checking consumer spending metrics, grounding trend hypotheses with empirical statistics, or when knowledge graph coverage is thin. Sibling routing: Use search_graph or get_domain_intelligence for curated consumer trends and brand case studies; use get_supplemental_context when you need authoritative government statistics or regional/country economic context. Returns a structured 5-bucket evidence bundle (demand_signals, economic_context, market_data, financial_reporting, demographic_context) with full source provenance."
     },
     {
       "name": "get_validated_trends",
@@ -460,7 +460,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Returns market-validated consumer trends from corporate earnings reports cross-validated by Fodda's analysis pipeline. Connects earnings commentary (analyst concerns, CEO statements) with consumer trend signals."
+      "description": "Discovers consumer trends that have been empirically corroborated by corporate earnings reports in Fodda's cross-validation pipeline. Connects high-level cultural trend signals with corroborating executive statements and analyst Q&A from quarterly 10-Q/10-K earnings calls. Use when you need proof that an emerging consumer trend is impacting corporate P&L and executive strategy (e.g., 'Show consumer trends validated in recent beauty earnings calls'). Sibling routing: Use search_graph for pure cultural/consumer trend discovery; use get_company_earnings for full single-ticker filings; use get_validated_trends when you specifically need the bridge between consumer trends and corporate earnings validation. Returns validated trend records with corroborating company tickers, validation types, analyst themes, and executive quote excerpts."
     },
     {
       "name": "list_analysts",
@@ -473,7 +473,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "List available Synthetic Analysts — named expert personas grounded in specific knowledge graphs. Each analyst has a unique voice, methodology, and domain expertise that cannot be replicated by web search. Use when user asks to \"talk to\" or \"consult\" an expert, or when you need specialist depth on culture, strategy, or innovation topics. (Fast analyst registry metadata lookup.)"
+      "description": "Catalog and discover all expert personas available on Fodda across 4 categories: living Human Agents (practitioners with Human Agents), C-Suite Agents (corporate executive lenses grounded in earnings), Classic Agents (historical thinkers), and Synthetic Analysts (domain specialists). Use when exploring available experts, finding who to consult for a specific topic, or inspecting available specialist deliverables. Sibling routing: This tool lists and filters agents; to initiate an interactive conversation with a chosen specialist, call consult_human_agent (for living experts) or consult_analyst (for synthetic/classic/C-suite personas); to search experts by query match, use find_expert. Returns an array of agent profiles with analyst_id, canonical_slug, name, role, agent_class, topics, consult_tool, and commissionable offerings."
     },
     {
       "name": "list_graphs",
@@ -490,7 +490,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "List all knowledge graphs the user can access — IDs, descriptions, authors, sectors, signal counts. Use FIRST in any session to discover available sources before searching. Returns graph metadata needed for graphId parameters in other tools. Deprecated: waldo, psfk (use retail/tech/food/travel/fashion/beauty/sports instead). (Fast graph registry metadata lookup.)"
+      "description": "Catalog and discovery layer for Fodda knowledge graphs: lists all accessible knowledge graph IDs, topic vertical tags, author credentials, node counts, and signal metrics. Use first when discovering available domain libraries or when you need a valid graphId parameter for graph-scoped queries (e.g. \"What knowledge graphs do you have on retail or sustainability?\"). Sibling routing: Use list_graphs to inspect graph metadata and available sources; use search_graph to query trend content across graphs; use list_analysts to discover specialist Human Agents. Returns an array of graph profiles with graphId, name, topics, signal_count, and author."
     },
     {
       "name": "manage_scheduled_reports",
@@ -502,7 +502,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when establishing recurring intelligence tracking, setting up automated briefings, or monitoring category/brand shifts on a recurring schedule."
+      "description": "Automated briefing and recurring tracking manager: creates, lists, updates, pauses, resumes, and cancels recurring intelligence digests delivered via email. Use when a user asks to track a topic, monitor a competitor, or set up weekly/monthly briefings (e.g., 'Track sustainability shifts in luxury fashion every Monday', 'Pause my weekly retail digest'). Actions: 'create' registers a new schedule (requires query, email, cadence); 'list' returns all active schedules for the user; 'update' modifies query/cadence for schedule_id; 'pause' and 'resume' temporarily halt or restart delivery; 'cancel' permanently removes the schedule. Returns confirmation status, schedule_id, active frequency, and next delivery date."
     },
     {
       "name": "read_url",
@@ -530,7 +530,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when commissioning a finished document from an analyst — an executive briefing, research memo, strategic assessment, or publication-ready article."
+      "description": "Commissions an executive document from an analyst or Human Agent—such as a strategic briefing, market memo, competitive assessment, or publication-ready article. Use when the user requests a formal deliverable rather than conversational chat (e.g., 'Have Ben Dietz write a strategic memo on retail media networks'). Workflow routing: Discover available analysts and their specific commissionable offerings first via list_analysts or consult them interactively via consult_human_agent / consult_analyst. Execution & follow-up: Requests may process asynchronously; returns a job_id that can be polled to completion using check_deliverable_status. Returns job confirmation, estimated completion time, and deliverable status."
     },
     {
       "name": "request_expert_intro",
@@ -543,7 +543,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when requesting an advisory introduction or consultation with an On-Request Human Agent or active domain specialist (for 1-on-1 advisory, strategic projects, or when an expert does not have an instant calendar booking link). Fodda concierge coordinates the introduction and sends next steps via email."
+      "description": "Executive advisory introduction and inquiry concierge: requests a facilitated advisory introduction or 1-on-1 strategic consultation with an On-Request living specialist or active Human Agent across 4,150+ indexed topics. Use when a user wants to hire, book, or speak directly with a human expert, or when an expert does not have an instant calendar link (e.g., 'I want to speak with Peter Abraham about bicycle retail strategy'). Sibling routing: Use consult_human_agent for immediate AI-driven conversational consultation with active digital twins; use find_expert to discover specialists; use request_expert_intro when the user seeks direct human-to-human advisory engagement. Returns immediate request confirmation, concierge tracking reference, and expected email follow-up timeline."
     },
     {
       "name": "schedule_interview",
@@ -553,7 +553,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Schedule a quick 5–10 minute voice interview with the Fodda AI interviewer on Google Meet. Can specify an ISO datetime, human-readable local time, or request an instant interview now."
+      "description": "Step 5 (final stage) in standard Human Agent onboarding: schedules or immediately dispatches a 5–10 minute voice interview with the Fodda AI interviewer on Google Meet to capture conversational tone, voice cadence, and contrarian perspectives. Prerequisite: confirm_themes must be completed first to generate the interview questionnaire. Sibling routing: This tool finalizes standard graph-backed expert onboarding; for Bring-Your-Own-MCP onboarding, use finalize_byo_mcp_onboarding instead (which does not require a voice interview). Returns meeting link, calendar confirmation, and next steps for going live."
     },
     {
       "name": "search_graph",
@@ -570,7 +570,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when researching market trends, category dynamics, consumer behavior shifts, competitor intelligence, or broad topic investigation across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. If query names a company/brand, prefer brand_tracker."
+      "description": "Primary universal entrypoint for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
     },
     {
       "name": "search_insights",
@@ -583,7 +583,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Does NOT return raw statistics or market sizing — use search_statistics for hard numbers, or get_domain_intelligence for full trends with bundled evidence. When the query names a specific company or brand, brand_tracker is the entry point."
+      "description": "Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Sibling routing: Use search_insights when you need authoritative quotes and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing."
     },
     {
       "name": "search_statistics",
@@ -596,7 +596,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Quantitative statistics and hard numbers layer only: returns specific figures, survey percentages, market sizes, growth rates, and quantitative data points linked to parent trends across Fodda knowledge graphs (domain, specialist, and report). Does NOT return narrative analysis, trends, or quotes — use search_insights for quotes/analysis, or get_domain_intelligence for full trends. When the query names a specific company or brand, brand_tracker is the entry point. Try this before external supplemental data tools."
+      "description": "Quantitative statistics and hard numbers retrieval layer: queries curated knowledge graphs for empirical metrics, survey percentages, market sizes, adoption rates, and compound annual growth rates (CAGR) linked to parent trends. Use when looking specifically for data points, percentages, and numerical proof to substantiate arguments (e.g., 'What percentage of Gen Z consumers prefer clean beauty?', 'Find market size data for sports tourism'). Sibling routing: Use search_statistics for numerical data points; use search_insights for quotes and narrative editorial commentary; use get_domain_intelligence for full trends with bundled case studies; use get_supplemental_context for live government/macro statistics. Does NOT return general narrative prose."
     },
     {
       "name": "send_feedback",
@@ -626,7 +626,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Submit basic expert details (name, role, knowledge area, consultation call rate, and optional bio/headshot) to initialize the Human Agent onboarding session and begin saving progress. This is the step where Fodda starts saving the expert's onboarding. Before calling, show the Terms (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) links and get an explicit yes."
+      "description": "Step 1b in Human Agent onboarding: registers expert profile details (name, role, knowledge area, consultation call rate, optional bio/headshot) and records explicit acceptance of Terms of Service and Privacy Policy. Prerequisite: The expert must review and explicitly accept Fodda Terms (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) with termsAccepted: true before progress can be saved. Workflow sequence: Advances to expert_onboarding_research for standard onboarding or submit_mcp_source for BYO-MCP. Returns basic_info_saved status and next step instructions."
     },
     {
       "name": "submit_expertise_analysis",
@@ -636,7 +636,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Submit the analyzed voice study and expertise map to proceed to theme confirmation."
+      "description": "Step 3 in standard Human Agent onboarding: submits the expert's structured voice study and domain expertise map derived from conversational analysis and public writing. Prerequisite: Must follow submit_basic_info and expert_onboarding_research. Workflow sequence: Submitting this analysis prepares the thematic taxonomy; immediately follow this call with get_detected_themes to review extracted themes. Sibling routing: This is for standard onboarding—BYO-MCP onboarding skips this step and uses submit_mcp_source instead. Returns submission confirmation and advances onboarding status to theme review."
     },
     {
       "name": "submit_mcp_source",
@@ -646,7 +646,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Connect and probe a Bring-Your-Own-MCP (BYO-MCP) endpoint for expert live grounding. Discovers available tools and derives topic coverage for profile modeling."
+      "description": "Step 2 in the Bring-Your-Own-MCP (BYO-MCP) expert onboarding flow: connects to and probes an external public HTTPS MCP endpoint to evaluate live tools and infer domain expertise for a Human Agent digital twin. Prerequisite: submit_basic_info must be called first. Alternative: If the expert does not have an external MCP endpoint, use the standard knowledge-graph path via expert_onboarding_research instead. Side effects: Sends an external live probe to the target MCP server to discover tools and capabilities; does not finalize onboarding until finalize_byo_mcp_onboarding is invoked. Returns discovered tools count, tool names, derived expertise topics, and recommended next step."
     },
     {
       "name": "toggle_graph_preference",
@@ -656,7 +656,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Enable or disable any knowledge graph, supplemental data source, or skill for the user. Use this when the user says \"Turn off Paralogy\", \"Enable igloo\", \"Disable the economics data\", or similar. The change is permanent until toggled again. (User graph enablement preference write.)"
+      "description": "User search scope preference manager: toggles inclusion or exclusion preferences for specific knowledge graphs (e.g., 'Don't include the sports graph in my searches', 'Re-enable the beauty graph'). Preferences persist across sessions in the user profile. Sibling routing: Use toggle_graph_preference to set permanent search filtering; use update_user_profile for general account context; pass explicit graphs or graphId directly on search_graph for one-off query overrides. Returns updated user graph preference state and confirmation status."
     },
     {
       "name": "update_user_profile",
@@ -680,7 +680,7 @@
         "chatgpt",
         "grok-brand-context"
       ],
-      "description": "Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence."
+      "description": "Qualitative advisory critique by a living Human Agent: matches the claim to a vetted practitioner Human Agent to critically debate, challenge, and stress-test a strategic business hypothesis from an experienced operator's perspective. Use when you need human expert judgment, experiential critique, or strategic pressure-testing on an idea (e.g., 'Have an expert challenge our DTC growth strategy'). Sibling routing: Use verify_claim for human practitioner judgment, experiential pushback, and qualitative advice; use verify_market_claim for algorithmic evidence verification and empirical contradiction scoring. Returns expert perspective, counter-arguments, and strategic recommendations."
     },
     {
       "name": "verify_market_claim",
@@ -692,7 +692,7 @@
         "copilot",
         "chatgpt"
       ],
-      "description": "Use when evaluating a strategy, pressure-testing a client hypothesis, finding counter-evidence, or uncovering missing assumptions. Evaluates any market or strategic claim against primary evidence and divergence."
+      "description": "Algorithmic 5-gate empirical data verification: evaluates a factual market claim against 100+ knowledge graphs, primary research citations, and corporate earnings divergence through 5 sequential kill-gates (grounding, contradiction, freshness, corroboration, divergence). Sibling routing: Use verify_market_claim for objective, multi-source empirical data verification and contradiction scoring; use verify_claim for qualitative strategic debate with a living Human Agent practitioner. Returns structured verdict ([VERIFIED], [REFUTED_BY_EVIDENCE], [INSUFFICIENT_EVIDENCE], [UNGROUNDED_SPECULATION]), supporting evidence citations, and contradiction scores."
     }
   ]
 }

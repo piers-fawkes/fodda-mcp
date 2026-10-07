@@ -5,6 +5,24 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.109] - 2026-10-07
+
+### Changed
+- **Glama TDQS Tool Description Quality Optimization (`src/toolHandlers.ts`, `tools-manifest.json`, Airtable `tbl93DJ627r81zKVP`)**:
+  - **Comprehensive 33-Tool Quality Upgrade**: Completely rewritten and sharpened descriptions across 33 tools (all 14 C/B-tier evaluated tools plus the 10 un-evaluated/throttled tools and borderline A-tier tools) conforming to the Glama 4.5+ standard demonstrated by `get_earnings_intelligence` (4.6) and `search_insights` (4.5).
+  - **Eliminated Implementation Trivia**: Removed all parenthetical internal execution trivia across `list_graphs`, `get_supplemental_context`, `discover_adjacent_trends`, `draft_linkedin_article`, `get_earnings_divergence`, `get_expert_intelligence`, `get_capabilities`, and `check_research_status`.
+  - **Explicit Sibling Differentiation**: Differentiated adjacent tools across the catalog:
+    - `get_my_earnings`: Disambiguated creator/expert revenue share and payout balance from corporate SEC earnings (`get_company_earnings` / `get_earnings_intelligence`).
+    - `verify_claim` vs `verify_market_claim`: Eliminated duplicate opening descriptions; separated qualitative Human Agent consultation from quantitative 5-gate empirical graph verification.
+    - `list_analysts`: Clarified listing across all 4 specialist categories (Human Agents, Classic Agents, C-Suite Agents, Synthetic Analysts) vs interactive consultation (`consult_human_agent` / `consult_analyst`).
+    - `brand_tracker`: Clarified single-entity audit entry point vs topic search (`search_graph`) and SEC statements (`get_company_earnings`).
+    - `get_evidence`: Fixed inaccurate description to reflect node-specific evidence citations from prior searches.
+  - **Workflow Sequencing & Lifecycle Guidance**: Added step sequencing, prerequisites, and follow-up tools across all onboarding operations (`begin_expert_onboarding`, `submit_basic_info`, `submit_mcp_source`, `finalize_byo_mcp_onboarding`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `schedule_interview`, `get_onboarding_status`) and deliverable requests (`request_deliverable` -> `check_deliverable_status`).
+  - **Parameter-Level Semantics**: Added rich schema docstrings for the 6 `action` enum options in `manage_scheduled_reports`, `userId` in `get_my_earnings`, and `voiceStudy`/`expertTopics` in `submit_expertise_analysis`.
+  - **Airtable Offerings Authority Sync**: Synced all updated descriptions to Airtable Offerings authority table (`tbl93DJ627r81zKVP`) ensuring zero drift across `sync-descriptions-from-airtable.mjs`.
+  - **Tools Manifest Regeneration**: Updated `tools-manifest.json` with clean, publication-ready descriptions across all 55 registered tools.
+- **Verification**: Ran `npm run build` locally — 36 descriptions verified from Airtable, 55 tools emitted to manifest (Cost Silence Guard passed), TypeScript compiled with 0 errors. Verified server startup via `node dist/verify_tools_endpoint.js` (HTTP 200 OK, health ok).
+
 ## [1.46.108] - 2026-10-07
 
 ### Fixed
