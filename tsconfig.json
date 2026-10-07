@@ -46,6 +46,8 @@
     "node_modules",
     "dist",
     "scripts",
-    "deployment"
+    "deployment",
+    "src/test_*.ts",
+    "src/**/test_*.ts"
   ]
 }
