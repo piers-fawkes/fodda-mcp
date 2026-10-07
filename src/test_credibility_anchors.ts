@@ -21,7 +21,7 @@ async function runCredibilityAnchorVerification() {
                 name: 'Thiago Bersou',
                 graphSubType: 'Digital Twin',
                 is_human_agent: true,
-                status: 'active',
+                status: 'Active',
                 credibility_anchor: THIAGO_ANCHOR
             },
             {
@@ -30,7 +30,7 @@ async function runCredibilityAnchorVerification() {
                 name: 'Thorstein Veblen',
                 graphSubType: 'Classic Digital Twin',
                 is_classic_agent: true,
-                status: 'active',
+                status: 'Active',
                 credibility_anchor: VEBLEN_ANCHOR
             },
             {
@@ -38,7 +38,7 @@ async function runCredibilityAnchorVerification() {
                 analyst_id: 'retail-strategy-innovation',
                 name: 'Retail Strategy & Innovation Lead',
                 graphSubType: 'Synthetic Expert',
-                status: 'active',
+                status: 'Active',
                 credibility_anchor: RETAIL_ANCHOR
             }
         ]
@@ -221,7 +221,9 @@ async function runCredibilityAnchorVerification() {
     console.log('================================================================');
 }
 
-runCredibilityAnchorVerification().catch(err => {
+runCredibilityAnchorVerification().then(() => {
+    process.exit(0);
+}).catch(err => {
     console.error('❌ Verification failed:', err);
     process.exit(1);
 });

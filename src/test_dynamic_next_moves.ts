@@ -340,4 +340,70 @@ setCachedCatalogForTesting(
     console.log('✅ Test 8 Passed: Prompt hygiene maintains <= 25 words without repeating raw queries');
 }
 
+// ── Test 9: Classic Agent POV — Col. John Boyd & Charles Babbage ──
+{
+    const boydResult = {
+        coverage: 'ok',
+        report: 'Boyd strategic analysis on OODA and Schwerpunkt.',
+        expert_thread: {
+            on_topic_total: 4,
+            cited_count: 1,
+        }
+    };
+
+    const boydNextMoves = generateConsultNextMoves(
+        boydResult,
+        'fast-transient decision cycles and organizational agility',
+        'john-boyd',
+        {},
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(Array.isArray(boydNextMoves.moves) && boydNextMoves.moves.length === 3);
+    const boydMove2 = boydNextMoves.moves![1]!;
+    assert.strictEqual(boydMove2.id, 'modern_application', 'Boyd must rotate Move 2 to modern application');
+    assert.ok(
+        !boydNextMoves.consult_envelope?.scope_line?.includes('tell me the brand'),
+        'Boyd must not ask for client brand or brief'
+    );
+    assert.ok(
+        !boydNextMoves.consult_envelope?.thread_line?.includes('in my graph'),
+        'Boyd thread line must not say "in my graph"'
+    );
+    assert.ok(
+        boydNextMoves.consult_envelope?.scope_line?.includes('case study'),
+        'Boyd scope line must offer application to modern case study'
+    );
+
+    const babbageResult = {
+        coverage: 'ok',
+        report: 'Babbage analysis on programmable engines.',
+        expert_thread: {
+            on_topic_total: 6,
+            cited_count: 1,
+        }
+    };
+
+    const babbageNextMoves = generateConsultNextMoves(
+        babbageResult,
+        'collaborative systems synthesis and computational architecture',
+        'charles-babbage',
+        {},
+        mockGraphs,
+        mockAnalysts
+    );
+
+    assert.ok(
+        !babbageNextMoves.consult_envelope?.scope_line?.includes('tell me the brand'),
+        'Babbage must not ask for client brand or brief'
+    );
+    assert.ok(
+        !babbageNextMoves.consult_envelope?.thread_line?.includes('in my graph'),
+        'Babbage thread line must not say "in my graph"'
+    );
+
+    console.log('✅ Test 9 Passed: Classic Agent POV (John Boyd & Charles Babbage) preserves in-character frameworks and rejects brand scoping');
+}
+
 console.log('\nAll Dynamic Next Moves Rotation & Guidance tests passed successfully!');

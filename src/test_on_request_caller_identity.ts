@@ -169,6 +169,76 @@ async function runTests() {
         assert.strictEqual(p6.parameters.expertName, 'Roxane Prieux');
         console.log('  ✅ Test 6 Passed: verify_claim caller identity forwarded correctly');
 
+        // --- Test 7: Client provenance forwarding (sessionSource / clientSlug = 'cursor') ---
+        console.log('\nTest 7: Client provenance forwarding in demand webhook...');
+        capturedPayloads.length = 0;
+        const cursorServer = await createServer(
+            'sk_live_cursor_user',
+            'user_cursor_123',
+            async () => ({ result: 'domain intelligence response', coverage: 'full' }),
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai',
+            '',
+            undefined,
+            undefined,
+            'cursor',
+            'cursor'
+        );
+
+        const consultToolCursor = (cursorServer as any)._registeredTools['consult_human_agent'];
+        await (consultToolCursor.handler || consultToolCursor.callback || consultToolCursor.execute)({
+            analyst_id: 'roxane-prieux',
+            query: 'Biotech skincare packaging'
+        });
+
+        assert.strictEqual(capturedPayloads.length, 1, 'Exactly one webhook should be captured');
+        const p7 = capturedPayloads[0].data;
+        assert.strictEqual(p7.parameters.source, 'cursor', 'Webhook source parameter must reflect declared client provenance slug');
+        console.log('  ✅ Test 7 Passed: Declared client slug "cursor" forwarded in webhook parameters');
+
+        // --- Test 8: Test caller isolation (test_ and sk_test_ callers skip webhook) ---
+        console.log('\nTest 8: Test caller isolation skips webhook dispatch...');
+        capturedPayloads.length = 0;
+        const testCallerServer = await createServer(
+            'sk_test_api_key',
+            'test_user_credibility',
+            async () => ({ result: 'domain intelligence response', coverage: 'full' }),
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai'
+        );
+
+        const consultToolTestCaller = (testCallerServer as any)._registeredTools['consult_human_agent'];
+        await (consultToolTestCaller.handler || consultToolTestCaller.callback || consultToolTestCaller.execute)({
+            analyst_id: 'roxane-prieux',
+            query: 'Clean beauty formulation trends'
+        });
+
+        assert.strictEqual(capturedPayloads.length, 0, 'No webhook should be dispatched for test caller (test_ / sk_test_)');
+        console.log('  ✅ Test 8 Passed: Test callers successfully isolated from live sales webhooks');
+
+        // --- Test 9: Case-insensitive active status check ---
+        console.log('\nTest 9: Active expert does not trigger on-request webhook...');
+        capturedPayloads.length = 0;
+        const benDietzServer = await createServer(
+            'sk_live_corp_agent_99',
+            'ben_caller@fodda.ai',
+            async () => ({ result: 'Ben Dietz perspective on culture and brand strategy', coverage: 'full' }),
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai'
+        );
+
+        const consultToolBen = (benDietzServer as any)._registeredTools['consult_human_agent'];
+        await (consultToolBen.handler || consultToolBen.callback || consultToolBen.execute)({
+            analyst_id: 'ben-dietz',
+            query: 'What is cultural gravity in brand strategy?'
+        });
+
+        assert.strictEqual(capturedPayloads.length, 0, 'Active expert must not trigger on-request demand webhook');
+        console.log('  ✅ Test 9 Passed: Active expert correctly bypasses on-request demand webhook (case-insensitive)');
+
         console.log('\n🎉 ALL CALLER IDENTITY WEBHOOK TESTS PASSED SUCCESSFULLY!');
         process.exit(0);
     } finally {

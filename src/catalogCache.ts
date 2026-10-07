@@ -140,9 +140,18 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
     // 2. Classic Agents: public-domain historical thinkers providing philosophical lenses
     const is_classic = !is_c_suite && (
         rawSubType === 'Classic Digital Twin' ||
-        /classic digital twin/i.test(rawSubType) ||
+        /classic/i.test(rawSubType) ||
+        /classic/i.test(a.category || '') ||
+        /classic/i.test(a.type || '') ||
         a.is_classic_agent === true ||
-        a.category === 'classic_agent'
+        a.category === 'classic_agent' ||
+        cleanId === 'thorstein-veblen' ||
+        cleanId === 'jane-austen' ||
+        cleanId === 'charles-babbage' ||
+        cleanId === 'john-boyd' ||
+        cleanId === 'john-ruskin' ||
+        cleanId === 'adam-smith' ||
+        cleanId === 'sun-tzu'
     );
 
     // 3. Human Agents: real living industry figures with consented digital twins

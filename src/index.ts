@@ -1256,7 +1256,8 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 const boundFoddaRequest = isSpt
                     ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, clientSlug || undefined)) as typeof foddaRequest)
                     : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source || undefined, undefined, clientSlug || undefined)) as typeof foddaRequest);
-                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, source || undefined);
+                const effectiveSessionSource = source || clientSlug || declaredClientSlug || undefined;
+                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, effectiveSessionSource, clientSlug || declaredClientSlug || undefined);
                 transport = new StreamableHTTPServerTransport({
                     sessionIdGenerator: () => crypto.randomUUID(),
                     onsessioninitialized: (sid) => {
@@ -1318,7 +1319,8 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                 const boundFoddaRequest = isSpt
                     ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, clientSlug || undefined)) as typeof foddaRequest)
                     : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, source || undefined, undefined, clientSlug || undefined)) as typeof foddaRequest);
-                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, source || undefined);
+                const effectiveSessionSource = source || clientSlug || declaredClientSlug || undefined;
+                const server = await createServer(apiKey, userId, boundFoddaRequest, waverunnerRequest, storeWidget, getServiceUrl, entryId, sptInfo ?? undefined, allowedTools, effectiveSessionSource, clientSlug || declaredClientSlug || undefined);
                 transport = new StreamableHTTPServerTransport();
                 await server.connect(transport as any);
             }

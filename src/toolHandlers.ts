@@ -452,6 +452,7 @@ export async function createServer(
     sptCtx?: { token: string; maxAmountCents: number | null; prices: Record<string, number> },
     allowedTools?: Set<string> | string[],
     sessionSource?: string,
+    clientSlug?: string,
 ): Promise<McpServer> {
     // ── Tool availability checker for this transport/session ──
     const isToolCallable = (toolName: string): boolean => {
@@ -6157,6 +6158,22 @@ export async function createServer(
             callerIdentity = cleanKey.startsWith('key:') ? cleanKey : `key:${cleanKey}`;
         }
 
+        const isTestCaller = !effectiveUser ||
+            effectiveUser.startsWith('test_') ||
+            effectiveUser.startsWith('test-') ||
+            effectiveUser.startsWith('sk_test_') ||
+            callerIdentity.startsWith('test_') ||
+            callerIdentity.startsWith('test-') ||
+            callerIdentity.startsWith('key:sk_test_') ||
+            process.env.NODE_ENV === 'test';
+
+        if (isTestCaller) {
+            console.log(`[OnRequestWebhook] (Test Mode) Skipping live webhook for ${params.expertName} (caller: ${effectiveUser})`);
+            return;
+        }
+
+        const effectiveSource = params.source || sessionSource || clientSlug || 'mcp_claude';
+
         const payload: Record<string, any> = {
             intent_event: 'unclaimed_expert_request',
             email: callerIdentity,
@@ -6166,7 +6183,7 @@ export async function createServer(
                 expertName: params.expertName,
                 expertIn: params.expertIn,
                 requestedQuestion: params.query,
-                source: params.source || 'mcp_claude',
+                source: effectiveSource,
                 userId: callerIdentity,
                 ...(callerIdentity.startsWith('user_') ? { clerkUserId: callerIdentity } : {}),
             },
@@ -6280,7 +6297,7 @@ export async function createServer(
             match && (
                 match.status === 'Unclaimed' ||
                 match.status === 'On Request' ||
-                (match.status && match.status !== 'Active')
+                (match.status && match.status.toLowerCase() !== 'active')
             )
         );
 
@@ -6327,7 +6344,7 @@ export async function createServer(
                     expertName,
                     expertIn: topicLabel,
                     query,
-                    source: 'mcp_claude',
+                    source: sessionSource || clientSlug || 'mcp_claude',
                     userId: uid
                 }).catch(err => console.warn('[OnRequestWebhook] Failed to notify sales:', err.message));
 
@@ -6427,10 +6444,17 @@ export async function createServer(
                 (match as any)?.tier === 'static_expert' ||
                 (match as any)?.graphSubType === 'Classic Digital Twin' ||
                 /classic/i.test((match as any)?.graphSubType || '') ||
+                /classic/i.test((match as any)?.category || '') ||
+                /classic/i.test((match as any)?.type || '') ||
                 result?.analyst?.category === 'classic_agent' ||
                 result?.analyst?.is_classic_agent === true ||
                 resolvedAnalystId === 'thorstein-veblen' ||
                 resolvedAnalystId === 'jane-austen' ||
+                resolvedAnalystId === 'charles-babbage' ||
+                resolvedAnalystId === 'john-boyd' ||
+                resolvedAnalystId === 'john-ruskin' ||
+                resolvedAnalystId === 'adam-smith' ||
+                resolvedAnalystId === 'sun-tzu' ||
                 resolvedAnalystId === 'josephine-baker'
             );
 
@@ -6443,7 +6467,9 @@ export async function createServer(
                         `(GUIDANCE FOR ASSISTANT:`,
                         `- FIRST TOUCH ONLY: If introducing this expert to the user for the first time in this conversation, frame their response using their official credibility anchor above.`,
                         `  Example pattern: "${expertDisplayName}, [role/pedigree from anchor], approaches this through the lens of... When their Classic Agent on Fodda is consulted, they explain that..."`,
-                        `- ABSOLUTELY FORBIDDEN TERMS: NEVER use the words "digital twin" or "twin". NEVER refer to historical figures as a "Human Agent". NEVER expose internal routing IDs (e.g. "${resolvedAnalystId}"). Always refer to them by their professional name ("${expertDisplayName}"), by their historical domain title, or as a "Classic Agent".`,
+                        `- ABSOLUTELY FORBIDDEN TERMS: NEVER use the words "digital twin" or "twin". NEVER refer to historical figures as a "Human Agent". NEVER expose internal routing IDs (e.g. "${resolvedAnalystId}") or tool names (e.g. "consult_analyst", "consult_human_agent"). Always refer to them by their professional name ("${expertDisplayName}"), by their historical domain title, or as a "Classic Agent".`,
+                        `- CITATIONS: Cite sources cleanly by author, title, publication, or historical treatise (e.g. "Source: ${expertDisplayName}, [Treatise Title] (via Fodda Classic Agent)"). NEVER cite internal tool names, API routing slugs, or database terms (e.g. "knowledge graph").`,
+                        `- CLASSIC AGENT POV & FOLLOW-UPS: Maintain their historical intellectual point of view throughout the ENTIRE response. NEVER ask for a client "brand or brief". Follow-ups must offer to apply their theoretical, military, economic, or philosophical frameworks to modern strategic case studies or explore their writings.`,
                         `- INLINE FLOW: Integrate their credentials into your opening sentence so authority is established immediately without interrupting narrative momentum.`,
                         `- FOLLOW-UP TURNS IN SAME SESSION: If this is an ongoing conversation or follow-up question with this expert, DO NOT repeat the pedigree or credibility anchor. Answer directly from their perspective.)`
                     ].join('\n'));
@@ -6632,7 +6658,7 @@ export async function createServer(
                     expertName,
                     expertIn: topicLabel,
                     query,
-                    source: 'mcp_claude',
+                    source: sessionSource || clientSlug || 'mcp_claude',
                     userId: uid
                 }).catch(e => console.warn('[OnRequestWebhook] Failed to notify sales:', e.message));
 
@@ -6903,10 +6929,17 @@ export async function createServer(
                 (match as any)?.tier === 'static_expert' ||
                 (match as any)?.graphSubType === 'Classic Digital Twin' ||
                 /classic/i.test((match as any)?.graphSubType || '') ||
+                /classic/i.test((match as any)?.category || '') ||
+                /classic/i.test((match as any)?.type || '') ||
                 result?.analyst?.category === 'classic_agent' ||
                 result?.analyst?.is_classic_agent === true ||
                 resolvedAnalystId === 'thorstein-veblen' ||
                 resolvedAnalystId === 'jane-austen' ||
+                resolvedAnalystId === 'charles-babbage' ||
+                resolvedAnalystId === 'john-boyd' ||
+                resolvedAnalystId === 'john-ruskin' ||
+                resolvedAnalystId === 'adam-smith' ||
+                resolvedAnalystId === 'sun-tzu' ||
                 resolvedAnalystId === 'josephine-baker'
             );
 
@@ -6919,7 +6952,9 @@ export async function createServer(
                         `(GUIDANCE FOR ASSISTANT:`,
                         `- FIRST TOUCH ONLY: If introducing this expert to the user for the first time in this conversation, frame their response using their official credibility anchor above.`,
                         `  Example pattern: "${analystDisplayName}, [role/pedigree from anchor], approaches this through the lens of... When their Classic Agent on Fodda is consulted, they explain that..."`,
-                        `- ABSOLUTELY FORBIDDEN TERMS: NEVER use the words "digital twin" or "twin". NEVER refer to historical figures as a "Human Agent". NEVER expose internal routing IDs (e.g. "${resolvedAnalystId}"). Always refer to them by their professional name ("${analystDisplayName}"), by their historical domain title, or as a "Classic Agent".`,
+                        `- ABSOLUTELY FORBIDDEN TERMS: NEVER use the words "digital twin" or "twin". NEVER refer to historical figures as a "Human Agent". NEVER expose internal routing IDs (e.g. "${resolvedAnalystId}") or tool names (e.g. "consult_analyst", "consult_human_agent"). Always refer to them by their professional name ("${analystDisplayName}"), by their historical domain title, or as a "Classic Agent".`,
+                        `- CITATIONS: Cite sources cleanly by author, title, publication, or historical treatise (e.g. "Source: ${analystDisplayName}, [Treatise Title] (via Fodda Classic Agent)"). NEVER cite internal tool names, API routing slugs, or database terms (e.g. "knowledge graph").`,
+                        `- CLASSIC AGENT POV & FOLLOW-UPS: Maintain their historical intellectual point of view throughout the ENTIRE response. NEVER ask for a client "brand or brief". Follow-ups must offer to apply their theoretical, military, economic, or philosophical frameworks to modern strategic case studies or explore their writings.`,
                         `- INLINE FLOW: Integrate their credentials into your opening sentence so authority is established immediately without interrupting narrative momentum.`,
                         `- FOLLOW-UP TURNS IN SAME SESSION: DO NOT repeat the pedigree or credibility anchor. Answer directly.)`
                     ].join('\n'));
@@ -7330,7 +7365,7 @@ export async function createServer(
                 match && (
                     match.status === 'Unclaimed' ||
                     match.status === 'On Request' ||
-                    (match.status && match.status !== 'Active')
+                    (match.status && match.status.toLowerCase() !== 'active')
                 )
             );
 
@@ -7347,7 +7382,7 @@ export async function createServer(
                     expertName: expName,
                     expertIn: topicLabel,
                     query: claim,
-                    source: 'mcp_claude',
+                    source: sessionSource || clientSlug || 'mcp_claude',
                     userId: uid
                 }).catch(err => console.warn('[OnRequestWebhook] Failed to notify sales:', err.message));
             }

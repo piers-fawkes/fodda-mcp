@@ -5,6 +5,27 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.107] - 2026-10-06
+
+### Changed
+- **On-Request Demand Channel Provenance & Test Isolation (`src/toolHandlers.ts`, `src/index.ts`, `src/test_credibility_anchors.ts`, `src/test_on_request_caller_identity.ts`)**:
+  - **Case-Insensitive Expert Status Check (`src/toolHandlers.ts`)**: Made `isUnclaimedOrOnRequest` status checks case-insensitive (`(match.status && match.status.toLowerCase() !== 'active')`) across `consult_human_agent`, `consult_analyst`, and `verify_claim`, preventing mocks or catalog entries with lowercase `status: 'active'` from mistakenly evaluating as on-request or unclaimed.
+  - **Test Caller Isolation (`src/toolHandlers.ts`)**: Added `isTestCaller` guard in `sendOnRequestDemandWebhook` checking `effectiveUser.startsWith('test_')`, `effectiveUser.startsWith('test-')`, `effectiveUser.startsWith('sk_test_')`, `callerIdentity.startsWith('test_')`, `callerIdentity.startsWith('key:sk_test_')`, or `process.env.NODE_ENV === 'test'`. Test runs now safely skip live HTTP POST calls to Cloud Run sales webhooks.
+  - **Handshake Client Provenance Forwarding (`src/toolHandlers.ts`, `src/index.ts`)**: Forwarded `declaredClientSlug` (e.g. `'cursor'`, `'claude-desktop'`, `'windsurf'`, `'vscode'`) from initialize handshake through `effectiveSessionSource` into `createServer` and `sendOnRequestDemandWebhook`, replacing the hardcoded `'mcp_claude'` fallback.
+  - **Mock Catalog & Test Isolation Suite (`src/test_credibility_anchors.ts`, `src/test_on_request_caller_identity.ts`)**: Updated mock analyst statuses in `test_credibility_anchors.ts` to standard Airtable capitalization (`'Active'`) and added clean `process.exit(0)`. Added unit tests 7, 8, and 9 to `test_on_request_caller_identity.ts` verifying declared client slug forwarding, test caller webhook isolation, and case-insensitive active status bypass.
+- **Classic Agent POV Consistency & Scope Hygiene (`src/catalogCache.ts`, `src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - **Broadened Classic Agent Classifier (`src/catalogCache.ts`)**: Widened regex to `/classic/i.test(rawSubType)` and added explicit checks for historical thinkers (`john-boyd`, `charles-babbage`, `adam-smith`, `sun-tzu`, `john-ruskin`), ensuring they are classified as `classic_agent` rather than falling into generic `synthetic_agent`.
+  - **In-Character Thread Line for Classic Agents (`src/coverageRelevance.ts`)**: Replaced bot/database jargon (*"in my graph"*) with in-character phrasing (*"in my writings and frameworks"* / *"through my frameworks"*) for all Classic Agents.
+  - **Grounded Modern Strategic Scoping for Classic Agents (`src/coverageRelevance.ts`)**: Ensured all Classic Agents strictly rotate to `modern_application` (*"Apply to modern culture & commerce"*) and scope to applying their frameworks to a modern strategic case study, completely eliminating the anachronistic *"If you tell me the brand or brief you're working on..."* fallback.
+- **Guidance & Citation Hygiene for Host Models (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Added `consult_analyst` to the explicit list of forbidden tool names in `src/systemPrompt.ts`.
+  - Added explicit rules in `systemPrompt.ts` (under `RULE: ResearchMethodologyRecipes`) and `toolHandlers.ts` instructing host models to maintain the Classic Agent's historical intellectual POV throughout the response, forbid asking for a client brand or brief, forbid using database jargon (*"in my graph"*, *"the Fodda knowledge graph"*, *"other classic agents"*), and prohibit exposing internal routing slugs (`"john-boyd"`, `"charles-babbage"`) or tool names in citations.
+- **Verification**:
+  - `src/test_credibility_anchors.ts`: Verified mock analysts with `'Active'` status run in <1s with 0 live webhook calls.
+  - `src/test_on_request_caller_identity.ts`: Added tests 7, 8, and 9 verifying client provenance forwarding (`cursor`), test isolation skipping live webhook (`test_user_credibility`), and case-insensitive active status bypass.
+  - `src/test_dynamic_next_moves.ts`: Added Test 9 verifying Col. John Boyd and Charles Babbage rotate Move 2 to modern application, omit brand scoping copy, and omit *"in my graph"* from thread lines.
+  - `npm test`: Clean build, tools manifest generation, Cost Silence Guard passed, and server health check 200 OK.
+
 ## [1.46.106] - 2026-10-06
 
 ### Changed

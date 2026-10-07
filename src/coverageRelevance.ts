@@ -1951,6 +1951,24 @@ export function generateConsultNextMoves(
         return aId === cleanAnalystId || aName === cleanAnalystId;
     });
 
+    const isClassic = Boolean(
+        matchedAnalyst?.category === 'classic_agent' ||
+        (matchedAnalyst as any)?.is_classic_agent === true ||
+        (matchedAnalyst as any)?.tier === 'static_expert' ||
+        /classic/i.test((matchedAnalyst as any)?.graphSubType || '') ||
+        /classic/i.test((matchedAnalyst as any)?.category || '') ||
+        /classic/i.test((matchedAnalyst as any)?.type || '') ||
+        result?.analyst?.category === 'classic_agent' ||
+        result?.analyst?.is_classic_agent === true ||
+        cleanAnalystId === 'thorstein-veblen' ||
+        cleanAnalystId === 'jane-austen' ||
+        cleanAnalystId === 'charles-babbage' ||
+        cleanAnalystId === 'john-boyd' ||
+        cleanAnalystId === 'john-ruskin' ||
+        cleanAnalystId === 'adam-smith' ||
+        cleanAnalystId === 'sun-tzu'
+    );
+
     let expertDisplayName = cleanDisplayName(matchedAnalyst?.name);
     if (!expertDisplayName) {
         expertDisplayName = cleanAnalystId
@@ -1998,7 +2016,9 @@ export function generateConsultNextMoves(
                 text: threadSentence,
             };
         } else {
-            threadSentence = `That's what Fodda holds on this right now; if you have a related topic in my graph, let me know.`;
+            threadSentence = isClassic
+                ? `That's what Fodda holds on this right now; if you have a related topic from my writings, let me know.`
+                : `That's what Fodda holds on this right now; if you have a related topic in my graph, let me know.`;
             nextMoves.thread = {
                 kind: 'honest_thin',
                 graph_id: expertGraphId,
@@ -2038,7 +2058,9 @@ export function generateConsultNextMoves(
             };
         } else if (uncitedThemes.length > 0) {
             const topTheme = uncitedThemes[0];
-            threadSentence = `If you want to stay on this, we can look into ${topTheme} in my graph.`;
+            threadSentence = isClassic
+                ? `If you want to stay on this, we can look into ${topTheme} through my frameworks.`
+                : `If you want to stay on this, we can look into ${topTheme} in my graph.`;
             nextMoves.thread = {
                 kind: 'expert_thread',
                 graph_id: expertGraphId,
@@ -2052,12 +2074,22 @@ export function generateConsultNextMoves(
             const citedCount = typeof expertThread?.cited_count === 'number' ? expertThread.cited_count : (Array.isArray(result?.sources_used) ? result.sources_used.length : 0);
             let remainder = (onTopicTotal !== undefined && onTopicTotal > citedCount) ? (onTopicTotal - citedCount) : 0;
 
-            if (remainder >= 10) {
-                threadSentence = `There are many more trends in my graph exploring this topic — want me to pull those?`;
-            } else if (remainder > 0) {
-                threadSentence = `There are several more trends in my graph exploring this topic — want me to pull those?`;
+            if (isClassic) {
+                if (remainder >= 10) {
+                    threadSentence = `I have explored many more dimensions of this topic in my writings and frameworks — want me to unpack those?`;
+                } else if (remainder > 0) {
+                    threadSentence = `There are several more principles exploring this dynamic in my frameworks — want me to unpack those?`;
+                } else {
+                    threadSentence = `If you want to stay on this, we can explore deeper dimensions of this dynamic from my writings.`;
+                }
             } else {
-                threadSentence = `If you want to stay on this, we can explore deeper signals in my graph.`;
+                if (remainder >= 10) {
+                    threadSentence = `There are many more trends in my graph exploring this topic — want me to pull those?`;
+                } else if (remainder > 0) {
+                    threadSentence = `There are several more trends in my graph exploring this topic — want me to pull those?`;
+                } else {
+                    threadSentence = `If you want to stay on this, we can explore deeper signals in my graph.`;
+                }
             }
 
             nextMoves.thread = {
@@ -2181,11 +2213,6 @@ export function generateConsultNextMoves(
     }
 
     // ── Sentence 3: Scope (Dynamic Pivot / Platform Voice) ──
-    const isClassic = matchedAnalyst?.category === 'classic_agent' ||
-        (matchedAnalyst as any)?.tier === 'static_expert' ||
-        cleanAnalystId === 'thorstein-veblen' ||
-        cleanAnalystId === 'jane-austen';
-
     let scopeSentence = '';
     if (options?.knownBrand) {
         scopeSentence = `Want this cut to ${options.knownBrand} specifically?`;
