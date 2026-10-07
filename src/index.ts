@@ -4,7 +4,7 @@
  * NO middleware, NO AsyncLocalStorage, NO response interceptors.
  * API key is extracted from URL query params and passed to tool handlers.
  */
-import express from 'express';
+import express, { type Express } from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -60,7 +60,7 @@ process.on('uncaughtException', (err: any) => {
     console.error('[uncaughtException] kept process alive:', err?.stack || err?.message || err);
 });
 
-export const app = express();
+export const app: Express = express();
 app.use(express.json({ limit: '512kb' }));
 
 // Strip api_key from request logging globally before anything hits Cloud Run logs

@@ -5409,7 +5409,7 @@ export async function createServer(
                 // Derive firstName from name or email prefix
                 const firstName: string = name
                     ? (name.split(' ')[0] || name)
-                    : (email.split('@')[0] || 'User').replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    : (email.split('@')[0] || 'User').replace(/[._-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
 
                 const convertBody: Record<string, string> = {
                     email,

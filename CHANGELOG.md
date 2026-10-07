@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.108] - 2026-10-07
+
+### Fixed
+- **Glama & pnpm Compatibility / Portable TypeScript (`package.json`, `src/index.ts`, `src/toolHandlers.ts`, `pnpm-workspace.yaml`, `server.json`, `fodda_mcp_server.json`)**:
+  - **Explicit `zod` Dependency (`package.json`)**: Added `"zod": "^3.24.2 || ^4.0.0"` under `dependencies` so strict container package managers (`pnpm`) resolve zod imports in `src/toolHandlers.ts` and test scripts.
+  - **Portable `app` Export Type Annotation (`src/index.ts`)**: Added `import { type Express }` and annotated `export const app: Express = express();` to eliminate TS2742 inferred type portability error under isolated pnpm node_modules.
+  - **Strict String Type on Lambda Parameter (`src/toolHandlers.ts`)**: Explicitly typed `(c: string) => c.toUpperCase()` at line 5412 to satisfy `noImplicitAny` (TS7006).
+  - **Added `pnpm-workspace.yaml`**: Defined workspace packages root to suppress pnpm workspace warnings.
+  - **Version alignment**: Bumped canonical version to `1.46.108` across `package.json`, `server.json`, and `fodda_mcp_server.json`.
+- **Verification**: Ran `npm run build` locally — 55 tools generated, TypeScript compiled with 0 errors.
+
 ## [1.46.107] - 2026-10-06
 
 ### Changed
