@@ -124,15 +124,31 @@ export async function foddaRequest(
     // Never send placeholder user IDs upstream — let the API's account-label fallback apply
     if (userId && !isPlaceholderUserId(userId)) {
         headers['X-User-Id'] = userId;
+        if (userId.includes('@')) {
+            headers['X-User-Email'] = userId;
+        }
+    } else if (body && typeof body === 'object') {
+        const declaredEmail = body.email || body.userEmail || body.expertEmail;
+        if (declaredEmail && typeof declaredEmail === 'string' && declaredEmail.includes('@')) {
+            headers['X-User-Id'] = declaredEmail;
+            headers['X-User-Email'] = declaredEmail;
+        }
     }
     // SPT settlement: the Shared Payment Token is the payer (Authorization Bearer), no X-API-Key.
     if (spt) {
         headers['Authorization'] = `Bearer ${spt}`;
-    } else {
+    } else if (apiKey) {
         headers['X-API-Key'] = apiKey;
+    } else {
+        // Allow pre-key onboarding tools to communicate with Fodda backend
+        headers['X-Onboarding-Session'] = 'pre_auth_mcp';
     }
     if (requestId) headers['X-Request-Id'] = requestId;
-    if (source) headers['X-Fodda-Source'] = source;
+    if (source) {
+        headers['X-Fodda-Source'] = source;
+    } else if (headers['X-Onboarding-Session'] === 'pre_auth_mcp' || (body && typeof body === 'object' && body.intakeSource === 'mcp_conversational')) {
+        headers['X-Fodda-Source'] = 'onboarding';
+    }
     if (client) headers['X-Fodda-Client'] = client;
 
     // HMAC sign the request

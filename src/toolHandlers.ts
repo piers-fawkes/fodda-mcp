@@ -441,8 +441,8 @@ const activeResearchJobs = new Map<string, any>();
 const activeSupplementalJobs = new Map<string, any>();
 
 export async function createServer(
-    apiKey: string,
-    userId: string,
+    initialApiKey: string,
+    initialUserId: string,
     foddaRequest: FoddaRequestFn,
     waverunnerRequest: WaverunnerRequestFn,
     storeWidget: (html: string) => string,
@@ -454,6 +454,19 @@ export async function createServer(
     sessionSource?: string,
     clientSlug?: string,
 ): Promise<McpServer> {
+    // Session-mutable credentials — allow pre-auth onboarding tools to store provisioned keys/email
+    let apiKey = initialApiKey;
+    let userId = initialUserId;
+
+    const storeSessionCredentials = (newKey?: string, newUserId?: string) => {
+        if (newKey && typeof newKey === 'string' && newKey.trim()) {
+            apiKey = newKey.trim();
+        }
+        if (newUserId && typeof newUserId === 'string' && newUserId.trim() && !isPlaceholderUserId(newUserId)) {
+            userId = newUserId.trim();
+        }
+    };
+
     // ── Tool availability checker for this transport/session ──
     const isToolCallable = (toolName: string): boolean => {
         if (!allowedTools) return true;
@@ -8002,22 +8015,66 @@ export async function createServer(
         'begin_expert_onboarding',
         'Step 1 (session initializer) for Fodda Human Agent onboarding: verifies credentials, checks for existing active or in-progress onboarding sessions, and initiates profile creation for a living expert. Use when an expert asks to create their digital twin or join the Fodda network (e.g., \'I want to build my Human Agent\', \'How do I onboard as an expert on Fodda?\'). Supports resuming interrupted onboarding sessions automatically. Sibling routing: Use begin_expert_onboarding to kick off or resume onboarding; use submit_basic_info to save initial profile credentials and accept terms; for BYO-MCP onboarding, pass byoMcp: true. Returns onboarding state, current step, and guided next actions.',
         {
+            name: z.string().optional().describe("Optional expert full name to kick off and register initial profile immediately."),
+            email: z.string().optional().describe("Optional expert email address for account linking and onboarding session."),
+            userEmail: z.string().optional().describe("Alternative alias for expert email."),
+            knowledgeArea: z.string().optional().describe("Optional expert primary knowledge area or domain focus."),
+            role: z.string().optional().describe("Optional expert current role or title."),
             byoMcp: z.boolean().optional().describe('Set to true if the expert explicitly confirmed they have their own live MCP endpoint to use as their knowledge base. Defaults to false (standard knowledge-graph onboarding).'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ byoMcp, userId: uid }) => {
-            if (!apiKey) {
-                return formatOnboardingError(null, {
-                    code: 'credentials_missing',
-                    cause: 'Fodda credentials missing or unauthorized.',
-                    nextAction: 'Add Fodda as a connector or sign in at https://www.fodda.ai/join-experts?return_to=connector&source=mcp, then retry.',
-                    prose: 'Welcome to Fodda Human Agent Onboarding!\n\nTo build your Human Agent directly in your AI assistant (Gemini, Claude, etc.), your Fodda account needs to be connected.\n\n👉 **Next Step:** Please visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp to link your account or sign in. Once linked, reply "continue" and we will kick off your background research and voice study.'
-                });
+        async ({ name, email, userEmail: uEmail, knowledgeArea, role, byoMcp, userId: uid }) => {
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
+
+            // Quickstart path: if name and email are provided, register draft record immediately and advance to expert_onboarding_research (or submit_mcp_source if BYO-MCP)
+            if (name && effectiveEmail && !isPlaceholderUserId(effectiveEmail)) {
+                try {
+                    const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, effectiveEmail, {
+                        action: 'basic_info',
+                        name,
+                        role: role || 'Expert',
+                        knowledgeArea: knowledgeArea || 'General Domain',
+                        termsAccepted: true,
+                        intakeSource: 'mcp_conversational',
+                        email: effectiveEmail
+                    });
+                    if (result?.apiKey || result?.api_key || result?.liveApiKey || result?.token || result?.onboardingSessionToken) {
+                        storeSessionCredentials(result.apiKey || result.api_key || result.liveApiKey || result.token || result.onboardingSessionToken, effectiveEmail);
+                    }
+                    const nextStep = byoMcp ? 'submit_mcp_source' : 'expert_onboarding_research';
+                    const statusText = `Basic info registered and terms accepted for **${name}** (${role || 'Expert'} — ${knowledgeArea || 'General Domain'}).\n\n👉 **Next Step:** Run \`${nextStep}\` to proceed with your onboarding.`;
+                    const payload = {
+                        status: 'basic_info_saved',
+                        name,
+                        role: role || 'Expert',
+                        knowledgeArea: knowledgeArea || 'General Domain',
+                        terms_accepted: true,
+                        next_step: nextStep,
+                        result
+                    };
+                    return {
+                        content: [
+                            { type: 'text' as const, text: statusText },
+                            { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
+                        ]
+                    };
+                } catch (err: any) {
+                    return formatOnboardingError(err);
+                }
+            }
+
+            // Standard initializer / resume path:
             try {
-                const userEmail = resolveUserId(userId, uid);
-                const result = await foddaRequest('GET', '/api/onboarding-prompts', apiKey, userEmail);
+                const userEmail = effectiveEmail;
+                const result = await foddaRequest('GET', '/api/onboarding-prompts', apiKey, userEmail, undefined, undefined, 'onboarding');
+                if (result?.apiKey || result?.api_key || result?.liveApiKey || result?.token || result?.onboardingSessionToken) {
+                    storeSessionCredentials(result.apiKey || result.api_key || result.liveApiKey || result.token || result.onboardingSessionToken, userEmail);
+                }
                 if (result.alreadyActive) {
                     return {
                         content: [{
@@ -8031,10 +8088,11 @@ export async function createServer(
                     const inProg = result.inProgress;
                     const { label, nextTool, nextAction } = deriveStatusFlow(inProg);
                     const resumeStep = nextTool || inProg.next_step || 'submit_basic_info';
+                    const displayAccount = !isPlaceholderUserId(userEmail) ? `Linked to **${userEmail}**.` : 'Pre-authenticated onboarding session.';
                     const resumeText = [
                         `Welcome back to Fodda Human Agent Onboarding!`,
                         ``,
-                        `• Account: Linked to **${userEmail}**.`,
+                        `• Account: ${displayAccount}`,
                         `• Status: You've already started, so let's pick up at <${resumeStep}>.`,
                         `• Persistence: Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later, in this chat or a new one, and I'll check where you left off. Anything I'm still drafting with you, like your voice study before you submit it, lives only in this chat until you submit that step. Your Human Agent only goes live after your interview and Fodda's review.`,
                         ``,
@@ -8062,14 +8120,15 @@ export async function createServer(
                 }
 
                 if (byoMcp) {
+                    const displayAccount = !isPlaceholderUserId(userEmail) ? `This profile will be linked to the Fodda account for **${userEmail}**.` : 'Please share your email with submit_basic_info so we can link your profile.';
                     const introText = [
                         `Welcome to Fodda Human Agent Onboarding (Bring-Your-Own-MCP).`,
                         ``,
-                        `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
+                        `• Account: ${displayAccount}`,
                         `• Process: Connect your live MCP endpoint to ground your agent directly in your live tools and data (skipping background research and interview). Your profile is saved once you accept the terms. Your MCP connection is only checked, not saved, until you submit at the end. Anything I'm still drafting with you lives only in this chat until you submit that step. Your Human Agent goes live after review.`,
                         `• Fallback: If you encounter issues connecting your MCP endpoint, you can switch back to the standard onboarding path at any time.`,
                         ``,
-                        `👉 **Next Step:** Please share your full name, current role, primary knowledge area, and preferred consultation rate (or call \`submit_basic_info\` directly). Next, you'll provide your MCP endpoint URL for verification.`
+                        `👉 **Next Step:** Please share your full name, email, current role, primary knowledge area, and preferred consultation rate (or call \`submit_basic_info\` directly). Next, you'll provide your MCP endpoint URL for verification.`
                     ].join('\n');
 
                     const payload = {
@@ -8095,15 +8154,16 @@ export async function createServer(
                     };
                 }
 
+                const displayAccount = !isPlaceholderUserId(userEmail) ? `This profile will be linked to the Fodda account for **${userEmail}**.` : 'Please share your email with submit_basic_info so we can link your profile.';
                 const introText = [
                     `Welcome to Fodda Human Agent Onboarding.`,
                     ``,
-                    `• Account: This profile will be linked to the Fodda account for **${userEmail}**. To use a different account, visit https://www.fodda.ai/join-experts?return_to=connector&source=mcp before continuing.`,
+                    `• Account: ${displayAccount}`,
                     `• Process: You will share your core domain details in this chat, we will analyze your public work and conversational style, and you'll pick your core lane before scheduling a quick 5–10 minute voice interview.`,
                     `• Knowledge Base: Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer **No / I don't know** — most experts don't have one, and we'll set you up the standard way.`,
                     `• Privacy & Persistence: Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later, in this chat or a new one, and I'll check where you left off. Anything I'm still drafting with you, like your voice study before you submit it, lives only in this chat until you submit that step. Your Human Agent only goes live after your interview and Fodda's review.`,
                     ``,
-                    `👉 **Next Step:** Ask the expert for their full name, current role, primary knowledge area, and explicit agreement to Fodda's Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) [Turn 1]. Next, ask if Fodda can introduce clients to them and what their preferred 1-on-1 consultation hourly rate is ($250, $500, $750, $1k, $2k, or No Calls) [Turn 1b]. Or call \`submit_basic_info\` directly once collected.`
+                    `👉 **Next Step:** Ask the expert for their full name, email address, current role, primary knowledge area, and explicit agreement to Fodda's Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) [Turn 1]. Next, ask if Fodda can introduce clients to them and what their preferred 1-on-1 consultation hourly rate is ($250, $500, $750, $1k, $2k, or No Calls) [Turn 1b]. Or call \`submit_basic_info\` directly once collected.`
                 ].join('\n');
 
                 const payload = {
@@ -8144,6 +8204,8 @@ export async function createServer(
             role: z.string().describe("The expert's current role or title"),
             knowledgeArea: z.string().describe("The expert's primary knowledge area"),
             termsAccepted: z.boolean().describe("The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after reviewing the links. Must be true to begin saving onboarding progress."),
+            email: z.string().optional().describe("The expert's email address for account linking and onboarding session."),
+            userEmail: z.string().optional().describe("Alternative alias for expert email."),
             callPrice: z.string().optional().describe("The expert's preferred 1-hour video/telephone consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Recorded under callPrice."),
             bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
             description: z.string().optional().describe("Optional comprehensive description of the expert's background and domain focus."),
@@ -8151,7 +8213,7 @@ export async function createServer(
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ name, role, knowledgeArea, termsAccepted, callPrice, bio, description, headshotUrl, userId: uid }) => {
+        async ({ name, role, knowledgeArea, termsAccepted, email, userEmail: uEmail, callPrice, bio, description, headshotUrl, userId: uid }) => {
             if (termsAccepted !== true) {
                 return formatOnboardingError(null, {
                     code: 'terms_required',
@@ -8160,21 +8222,36 @@ export async function createServer(
                     prose: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed. Please ask the expert to confirm acceptance: "To begin saving your onboarding progress, please confirm that you accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)." Then call submit_basic_info with termsAccepted: true.'
                 });
             }
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to begin onboarding.',
+                    nextAction: 'Provide your email address to submit_basic_info(email: "you@example.com", ...).',
+                    prose: 'Please provide your email address with submit_basic_info so we can link your onboarding profile and send you your credentials.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), {
+                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, effectiveEmail, {
                     action: 'basic_info',
                     name,
                     role,
                     knowledgeArea,
                     callPrice,
                     termsAccepted: true,
+                    email: effectiveEmail,
+                    intakeSource: 'mcp_conversational',
                     ...(bio ? { bio } : {}),
                     ...(description ? { description } : {}),
                     ...(headshotUrl ? { headshotUrl } : {})
                 });
+                if (result?.apiKey || result?.api_key || result?.liveApiKey || result?.token || result?.onboardingSessionToken) {
+                    storeSessionCredentials(result.apiKey || result.api_key || result.liveApiKey || result.token || result.onboardingSessionToken, effectiveEmail);
+                }
                 const statusText = `Basic info registered and terms accepted for **${name}** (${role} — ${knowledgeArea}). Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later in this chat or a new one.\n\n👉 **Next Step:** Run \`expert_onboarding_research\` to begin background research on public work and publications (or \`submit_mcp_source\` if onboarding via BYO-MCP).`;
                 const payload = {
                     status: 'basic_info_saved',
@@ -8210,10 +8287,12 @@ export async function createServer(
         {
             mcpUrl: z.string().describe("The HTTPS URL of the expert's public MCP endpoint (e.g. 'https://games.thisisdelightful.com/mcp')"),
             mcpAuthType: z.enum(['none', 'bearer', 'header']).optional().describe("Authentication type for the MCP endpoint. Phase 1 supports 'none' (public/open endpoints) only. Defaults to 'none'."),
+            email: z.string().optional().describe("Optional expert email address for account linking and onboarding session."),
+            userEmail: z.string().optional().describe("Alternative alias for expert email."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the BYO-MCP endpoint connection step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ mcpUrl, mcpAuthType, userId: uid }) => {
+        async ({ mcpUrl, mcpAuthType, email, userEmail: uEmail, userId: uid }) => {
             const authType = mcpAuthType || 'none';
             if (authType !== 'none') {
                 return formatOnboardingError(null, {
@@ -8234,15 +8313,27 @@ export async function createServer(
                 });
             }
 
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to identify your onboarding session.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can link your MCP endpoint to your expert profile.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
 
             try {
-                const userEmail = resolveUserId(userId, uid);
+                const userEmail = effectiveEmail;
                 const probeResult = await foddaRequest('POST', '/api/probe-mcp', apiKey, userEmail, {
                     url: trimmedUrl,
-                    scan: true
+                    scan: true,
+                    email: userEmail,
+                    intakeSource: 'mcp_conversational'
                 });
 
                 if (!probeResult || probeResult.error || probeResult.success === false) {
@@ -8307,6 +8398,8 @@ export async function createServer(
             role: z.string().describe("The expert's current role or title"),
             knowledgeArea: z.string().describe("The expert's primary knowledge area"),
             mcpUrl: z.string().describe("The verified HTTPS URL of the expert's public MCP endpoint"),
+            email: z.string().optional().describe("Optional expert email address for account linking and onboarding session."),
+            userEmail: z.string().optional().describe("Alternative alias for expert email."),
             callPrice: z.string().optional().describe("The expert's preferred 1-hour consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Defaults to 'No Calls'."),
             expertTopicsRaw: z.string().describe("Confirmed JSON string or text summary of the expert's domain topics (derived from MCP scan and confirmed by the expert). Powers the profile expertise map and suggested queries."),
             voiceStudyRaw: z.string().optional().describe("Optional light voice study or tone-of-voice persona derived from conversation or public writing."),
@@ -8317,7 +8410,7 @@ export async function createServer(
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the BYO-MCP onboarding final submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ name, role, knowledgeArea, mcpUrl, callPrice, expertTopicsRaw, voiceStudyRaw, bio, description, headshotUrl, termsAccepted, userId: uid }) => {
+        async ({ name, role, knowledgeArea, mcpUrl, email, userEmail: uEmail, callPrice, expertTopicsRaw, voiceStudyRaw, bio, description, headshotUrl, termsAccepted, userId: uid }) => {
             if (termsAccepted === false) {
                 return formatOnboardingError(null, {
                     code: 'terms_required',
@@ -8327,12 +8420,22 @@ export async function createServer(
                 });
             }
 
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to finalize onboarding.',
+                    nextAction: 'Provide your email address to finalize_byo_mcp_onboarding(email: "you@example.com", ...).',
+                    prose: 'Please provide your email address so we can finalize and link your Human Agent profile.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
 
             try {
-                const userEmail = resolveUserId(userId, uid);
+                const userEmail = effectiveEmail;
                 const payload = {
                     byo_mcp: true,
                     mcpUrl: mcpUrl.trim(),
@@ -8340,6 +8443,7 @@ export async function createServer(
                     name,
                     role,
                     knowledgeArea,
+                    email: userEmail,
                     callPrice: callPrice || 'No Calls',
                     expertTopicsRaw,
                     voiceStudyRaw: voiceStudyRaw || undefined,
@@ -8353,6 +8457,9 @@ export async function createServer(
                 };
 
                 const result = await foddaRequest('POST', '/api/onboard-expert', apiKey, userEmail, payload);
+                if (result?.apiKey || result?.api_key || result?.liveApiKey || result?.token || result?.onboardingSessionToken) {
+                    storeSessionCredentials(result.apiKey || result.api_key || result.liveApiKey || result.token || result.onboardingSessionToken, userEmail);
+                }
 
                 const statusText = [
                     `🎉 **Human Agent Submission Received!**`,
@@ -8392,15 +8499,31 @@ export async function createServer(
         'expert_onboarding_research',
         'Initiate background research on the expert\'s public work and domain insights to support expertise and voice modeling. Research runs asynchronously in the background for 1-2 minutes. Do NOT wait now; proceed immediately to the Tone of Voice study in chat.',
         {
+            email: z.string().optional().describe("Optional expert email address for account linking and onboarding session."),
+            userEmail: z.string().optional().describe("Alternative alias for expert email."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the background research step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ userId: uid }) => {
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+        async ({ email, userEmail: uEmail, userId: uid }) => {
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to run background research.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can run background research on your public work.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const result = await foddaRequest('POST', '/api/deep-research', apiKey, resolveUserId(userId, uid));
+                const userEmail = effectiveEmail;
+                const result = await foddaRequest('POST', '/api/deep-research', apiKey, userEmail, {
+                    intakeSource: 'mcp_conversational',
+                    email: userEmail
+                });
                 const statusText = `Background research has started in the background (takes 1-2 minutes). Do NOT pause or wait here: immediately transition to the Tone of Voice & Expertise Study in chat with the expert so they remain actively engaged while research runs. When you later reach theme confirmation, research will either already be finished or you can check it then via \`get_onboarding_status\` with \`waitForResearch: true\` (each call waits up to 25 seconds). Proceed now to discussing their frameworks and voice in chat.\n\n👉 **Next Step:** Engage the expert in chat to analyze their tone of voice, reasoning style, and core frameworks, then call \`submit_expertise_analysis\`.`;
                 const payload = {
                     status: 'research_started',
@@ -8435,10 +8558,12 @@ export async function createServer(
             voiceStudy: z.string().describe("JSON string or structured summary of the expert's tone of voice, reasoning style, and communication patterns derived from conversation or published work."),
             expertTopics: z.string().describe("JSON string or array of the expert's primary domain topics and strategic expertise areas to model in their digital twin."),
             termsAccepted: z.boolean().optional().describe("Optional if already accepted at basic info. The expert must have accepted the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."),
+            email: z.string().optional().describe("Optional expert email address for account linking and onboarding session."),
+            userEmail: z.string().optional().describe("Alternative alias for expert email."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the expertise analysis submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ voiceStudy, expertTopics, termsAccepted, userId: uid }) => {
+        async ({ voiceStudy, expertTopics, termsAccepted, email, userEmail: uEmail, userId: uid }) => {
             if (termsAccepted === false) {
                 return formatOnboardingError(null, {
                     code: 'terms_required',
@@ -8447,14 +8572,27 @@ export async function createServer(
                     prose: 'Explicit acceptance required: The expert must review and agree to the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) to proceed.'
                 });
             }
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to submit expertise analysis.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can associate your expertise analysis with your profile.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, resolveUserId(userId, uid), { 
+                const userEmail = effectiveEmail;
+                const result = await foddaRequest('POST', '/api/prepare-voice-interview', apiKey, userEmail, { 
                     action: 'expertise_analysis', 
                     voiceStudyRaw: voiceStudy, 
                     expertTopicsRaw: expertTopics,
+                    email: userEmail,
+                    intakeSource: 'mcp_conversational',
                     ...(termsAccepted !== undefined ? { termsAccepted } : {})
                 });
                 const statusText = `Expertise analysis submitted.\n\n👉 **Next Step:** Call \`get_detected_themes\` to retrieve and review the detected expertise themes.`;
@@ -8479,15 +8617,31 @@ export async function createServer(
         'get_detected_themes',
         'Step 4a in standard Human Agent onboarding: retrieves detected expertise themes and verified public findings for expert review before locking. Use after submit_expertise_analysis to present themes and cited public articles to the expert for approval. Prerequisite: submit_expertise_analysis must be completed first. Workflow sequence: Present the findings to the expert to flag inaccurate items, select 2-3 core themes, and then proceed to confirm_themes. Returns an array of detected theme objects and verified research findings with citation URLs.',
         {
+            email: z.string().optional().describe('Optional expert email address. Provide if not already supplied in previous onboarding steps.'),
+            userEmail: z.string().optional().describe('Alias for email.'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the detected expertise themes list', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ userId: uid }) => {
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+        async ({ email, userEmail: uEmail, userId: uid }) => {
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to retrieve detected themes.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can associate your onboarding session with your profile.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const result = await foddaRequest('GET', '/api/onboarding-themes', apiKey, resolveUserId(userId, uid));
+                const params = new URLSearchParams();
+                params.set('intakeSource', 'mcp_conversational');
+                if (effectiveEmail) params.set('email', effectiveEmail);
+                const queryString = params.toString() ? `?${params.toString()}` : '';
+                const result = await foddaRequest('GET', `/api/onboarding-themes${queryString}`, apiKey, effectiveEmail);
 
                 const sections: string[] = [];
 
@@ -8549,22 +8703,41 @@ export async function createServer(
             themes: z.array(z.string()).describe("Array of confirmed theme names"),
             flaggedFindingIds: z.array(z.string()).optional().describe("IDs of any research findings the expert flagged as incorrect, outdated, or not theirs."),
             flagNote: z.string().optional().describe("Optional note from the expert explaining why certain findings were flagged."),
+            email: z.string().optional().describe('Optional expert email address. Provide if not already supplied in previous onboarding steps.'),
+            userEmail: z.string().optional().describe('Alias for email.'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the theme confirmation step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ themes, flaggedFindingIds, flagNote, userId: uid }) => {
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+        async ({ themes, flaggedFindingIds, flagNote, email, userEmail: uEmail, userId: uid }) => {
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to confirm themes.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can associate your confirmed themes with your profile.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const body: Record<string, any> = { confirmedThemes: themes };
+                const body: Record<string, any> = {
+                    confirmedThemes: themes,
+                    email: effectiveEmail,
+                    intakeSource: 'mcp_conversational'
+                };
                 if (flaggedFindingIds && flaggedFindingIds.length > 0) {
                     body.flaggedFindingIds = flaggedFindingIds;
                 }
                 if (flagNote) {
                     body.flagNote = flagNote;
                 }
-                const result = await foddaRequest('POST', '/api/generate-questions', apiKey, resolveUserId(userId, uid), body);
+                const result = await foddaRequest('POST', '/api/generate-questions', apiKey, effectiveEmail, body);
+                if (result?.apiKey) {
+                    storeSessionCredentials(result.apiKey, result.email || effectiveEmail);
+                }
                 if (!result || result.success === false) {
                     return formatOnboardingError(null, {
                         code: 'questions_failed',
@@ -8598,21 +8771,38 @@ export async function createServer(
         {
             analystId: z.string().optional().describe('Optional specific Analyst ID to check status for.'),
             waitForResearch: z.boolean().optional().describe('When true, holds the call server-side (up to 25s) while background research is running, returning immediately once complete or failed.'),
+            email: z.string().optional().describe('Optional expert email address. Provide if not already supplied in previous onboarding steps.'),
+            userEmail: z.string().optional().describe('Alias for email.'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the onboarding progress status check', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ analystId, waitForResearch, userId: uid }) => {
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+        async ({ analystId, waitForResearch, email, userEmail: uEmail, userId: uid }) => {
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail) && !analystId) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email or analystId is required to check onboarding status.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can check your onboarding progress.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const userEmail = resolveUserId(userId, uid);
+                const userEmail = effectiveEmail;
                 const params = new URLSearchParams();
                 if (analystId) params.set('analystId', analystId);
                 if (waitForResearch) params.set('wait', 'research');
+                if (userEmail) params.set('email', userEmail);
+                params.set('intakeSource', 'mcp_conversational');
                 const queryString = params.toString() ? `?${params.toString()}` : '';
                 const path = `/api/onboarding-status${queryString}`;
                 const result = await foddaRequest('GET', path, apiKey, userEmail);
+                if (result?.apiKey) {
+                    storeSessionCredentials(result.apiKey, result.email || userEmail);
+                }
                 const { label, nextTool, nextAction } = deriveStatusFlow(result);
                 const proseText = `**Where you are:** ${label}. **Next step for you:** ${nextAction}`;
                 const payload = {
@@ -8639,20 +8829,37 @@ export async function createServer(
             datetime: z.string().optional().describe('ISO-8601 UTC datetime for the scheduled interview (e.g. "2026-07-14T19:00:00.000Z")'),
             localTimeStr: z.string().optional().describe('Human-readable local time representation (e.g. "Tuesday, July 14 at 3:00 PM EDT")'),
             now: z.boolean().optional().describe('Set to true to dispatch an instant interview bot immediately'),
+            email: z.string().optional().describe('Optional expert email address. Provide if not already supplied in previous onboarding steps.'),
+            userEmail: z.string().optional().describe('Alias for email.'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'the interview scheduling step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ datetime, localTimeStr, now, userId: uid }) => {
-            if (!apiKey) {
-                return formatOnboardingError(null, { code: 'credentials_missing' });
+        async ({ datetime, localTimeStr, now, email, userEmail: uEmail, userId: uid }) => {
+            const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
+            const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
+            if (!apiKey && isPlaceholderUserId(effectiveEmail)) {
+                return formatOnboardingError(null, {
+                    code: 'credentials_missing',
+                    cause: 'Expert email is required to schedule interview.',
+                    nextAction: 'Provide your email address or complete submit_basic_info first.',
+                    prose: 'Please provide your email address so we can schedule your voice interview.'
+                });
+            }
+            if (declaredEmail) {
+                storeSessionCredentials(undefined, declaredEmail);
             }
             try {
-                const userEmail = resolveUserId(userId, uid);
+                const userEmail = effectiveEmail;
                 const result = await foddaRequest('POST', '/api/voice-interview/request', apiKey, userEmail, {
                     datetime,
                     localTimeStr,
-                    now
+                    now,
+                    email: userEmail,
+                    intakeSource: 'mcp_conversational'
                 });
+                if (result?.apiKey) {
+                    storeSessionCredentials(result.apiKey, result.email || userEmail);
+                }
                 const statusText = `Interview request received. Please share the confirmed time and Google Meet join link with the expert. After the interview, Fodda reviews your Human Agent and emails you. You can check progress any time with get_onboarding_status.`;
                 const payload = {
                     ...result,

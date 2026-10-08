@@ -5,6 +5,29 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.110] - 2026-10-08
+
+### Fixed
+- **Onboarding Pre-Credential Identity Handshake & Zero-Rate Intake (`src/foddaClient.ts`, `src/toolHandlers.ts`, `src/tools.ts`, `src/test_onboarding_preauth_handshake.ts`)**:
+  - **Eliminated Chicken-and-Egg Credential Deadlock**: Fixed critical issue where prospective experts joining via Claude MCP were hard-blocked by `if (!apiKey)` checks returning `credentials_missing` before they could provide an email or basic info to receive credentials.
+  - **Pre-Auth Onboarding Session Header (`src/foddaClient.ts`)**: In `foddaRequest`, when no API key or SPT token is present, automatically attaches `headers['X-Onboarding-Session'] = 'pre_auth_mcp'`, threads declared user email into `X-User-Id` and `X-User-Email` from arguments or body, and tags `X-Fodda-Source: 'onboarding'`.
+  - **Session Credential Persistence (`src/toolHandlers.ts`)**: Added mutable session credentials (`apiKey`, `userId`) and `storeSessionCredentials()` helper in `createServer`. When `/api/prepare-voice-interview`, `/api/onboard-expert`, or `/api/onboarding-status` returns an auto-provisioned API key or session token, it is persisted in server session state so subsequent tool calls within the same conversational session are authenticated automatically.
+  - **Pre-Credential Intake on All 10 Onboarding Tools (`src/toolHandlers.ts`)**:
+    - `begin_expert_onboarding`: Added optional `name`, `email`, `userEmail`, `knowledgeArea`, and `role`. Added quickstart path: if `name` and email are provided, immediately calls `/api/prepare-voice-interview` (`action: 'basic_info'`), stores returned key, and prompts to advance to `expert_onboarding_research`.
+    - `submit_basic_info`, `submit_mcp_source`, `finalize_byo_mcp_onboarding`, `expert_onboarding_research`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `get_onboarding_status`, `schedule_interview`: Added `email` and `userEmail` parameters, removed `if (!apiKey)` hard-blocks in favor of checking `!apiKey && isPlaceholderUserId(effectiveEmail)`, and forward `intakeSource: 'mcp_conversational'`.
+  - **Tool Versions Bumped (`src/tools.ts`)**: Updated version strings for all 10 onboarding tools (`begin_expert_onboarding` 1.2.0, `submit_basic_info` 1.3.0, `submit_mcp_source` 1.2.0, `finalize_byo_mcp_onboarding` 1.2.0, `expert_onboarding_research` 1.3.0, `submit_expertise_analysis` 1.2.0, `get_detected_themes` 1.3.0, `confirm_themes` 1.3.0, `get_onboarding_status` 1.3.0, `schedule_interview` 1.2.0).
+  - **Clean-Room Test Suite (`src/test_onboarding_preauth_handshake.ts`)**: Added isolated test suite verifying:
+    1. Quickstart `begin_expert_onboarding` pre-credential provisioning without an existing key.
+    2. Subsequent tool calls (`expert_onboarding_research`) automatically inheriting provisioned credentials from session state.
+    3. Pre-auth execution across all remaining onboarding tools with declared email.
+    4. Graceful structured `credentials_missing` error prompting for email when no key or email is passed.
+    5. BYO-MCP pre-auth onboarding support.
+    6. `foddaRequest` network header inspection (`X-Onboarding-Session: pre_auth_mcp`, `X-Fodda-Source: onboarding`, `X-User-Id`/`X-User-Email`).
+- **Verification**:
+  - `npx tsx src/test_onboarding_preauth_handshake.ts`: 38 passed, 0 failed.
+  - `npx tsx src/test_onboarding_live_scenarios.ts`: 59 passed, 0 failed.
+  - `npm test`: Clean build (`tsc`), 55 tools emitted to manifest (Cost Silence Guard passed), server health check 200 OK.
+
 ## [1.46.109] - 2026-10-07
 
 ### Changed
