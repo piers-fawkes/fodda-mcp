@@ -4,6 +4,26 @@
   "title": "Fodda Brand Intelligence",
   "description": "Brand health & trend footprint across PSFK expert graphs with citable sources, not web summaries.",
   "websiteUrl": "https://www.fodda.ai",
+  "privacyPolicyUrl": "https://www.fodda.ai/privacy",
+  "termsOfServiceUrl": "https://www.fodda.ai/terms",
+  "cancellationPolicyUrl": "https://www.fodda.ai/terms",
+  "refundPolicyUrl": "https://www.fodda.ai/terms",
+  "supportContact": "support@fodda.ai",
+  "payments": {
+    "acceptedMethods": [
+      "x402",
+      "stripe-spt",
+      "ap2_mandate"
+    ],
+    "recipientAddress": "0xF61c2D34e84C77e0e97eba47dB4A1db32fF225A1",
+    "network": "base"
+  },
+  "policies": {
+    "termsUrl": "https://www.fodda.ai/terms",
+    "privacyUrl": "https://www.fodda.ai/privacy",
+    "cancellationUrl": "https://www.fodda.ai/terms",
+    "refundUrl": "https://www.fodda.ai/terms"
+  },
   "icons": [
     {
       "src": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
@@ -12,7 +32,7 @@
       ]
     }
   ],
-  "version": "1.33.0",
+  "version": "1.46.111",
   "repository": {
     "url": "https://github.com/piers-fawkes/fodda-mcp",
     "source": "github"

@@ -44,6 +44,7 @@ export interface CatalogGraph {
     trend_count: number;
     evidence_count: number;
     last_synced: string | null;
+    graph_sub_type?: string | null;
     // Fields that may be added in the future — supplemental_tools, routing_keywords, etc.
     supplemental_tools_primary?: string[];
     supplemental_tools_secondary?: string[];
@@ -1021,6 +1022,24 @@ export function buildDynamicPromptSections(): string | null {
 // ---------------------------------------------------------------------------
 
 /**
+ * Normalize multi-word cultural and domain compounds into atomic tokens
+ * before word boundary splitting. This prevents compound terms like "Gen Z"
+ * or "third places" from fragmenting into ambiguous single tokens ("gen", "third")
+ * that collide with unrelated business concepts like "Gen AI" or "third-party cookies".
+ */
+export function normalizeCompoundTokens(text: string): string {
+    return text
+        .replace(/\bgen[- ]?z\b/gi, ' genz ')
+        .replace(/\bgen[- ]?alpha\b/gi, ' genalpha ')
+        .replace(/\bgen[- ]?x\b/gi, ' genx ')
+        .replace(/\bgen[- ]?y\b/gi, ' geny ')
+        .replace(/\bgen[- ]?ai\b/gi, ' genai ')
+        .replace(/\bgenerative[- ]ai\b/gi, ' genai ')
+        .replace(/\bthird[- ]places?\b/gi, ' thirdplaces ')
+        .replace(/\bthird[- ]part(y|ies)\b/gi, ' thirdparty ');
+}
+
+/**
  * Build a single searchable text blob from all the metadata fields of a graph.
  * Used for keyword matching against user queries.
  */
@@ -1037,7 +1056,7 @@ function buildSearchableText(g: CatalogGraph): string {
         ...(g.routing_keywords || []),
         ...(g.example_queries || []),
     ];
-    return parts.join(' ').toLowerCase();
+    return normalizeCompoundTokens(parts.join(' ').toLowerCase());
 }
 
 // Pre-computed searchable text cache (rebuilt on catalog refresh)
@@ -1162,11 +1181,40 @@ const QUERY_EXPANSION_MAP: Record<string, string[]> = {
     software: ['technology', 'software', 'enterprise', 'b2b'],
     cloud: ['technology', 'enterprise', 'software'],
     cybersecurity: ['technology', 'enterprise', 'security'],
+    // Youth Culture, Generations & Social Connection
+    genz: ['culture', 'youth', 'social', 'lifestyle', 'community', 'entertainment', 'nightlife'],
+    youth: ['culture', 'genz', 'social', 'lifestyle', 'community', 'entertainment', 'nightlife'],
+    socializing: ['culture', 'nightlife', 'hospitality', 'experience', 'community', 'social', 'dining'],
+    gathering: ['culture', 'nightlife', 'hospitality', 'experience', 'community', 'social'],
+    loneliness: ['culture', 'wellness', 'social', 'community', 'mental-health'],
+    thirdplaces: ['hospitality', 'culture', 'retail', 'experience', 'community', 'nightlife', 'dining'],
 };
 
 function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
-    const clauseLower = clause.toLowerCase().trim();
+    const clauseLower = normalizeCompoundTokens(clause.toLowerCase().trim());
     if (!clauseLower) return 0;
+
+    // Classic Digital Twin Domain Gate: historical thinker persona graphs must ONLY match if
+    // the query explicitly requests classic / historical doctrine or names the persona.
+    const isClassic = /classic/i.test(g.graph_sub_type || '') || g.graph_type === 'classic_agent';
+    if (isClassic) {
+        const hasClassicIntent = /\b(classic|historical|history|philosophy|philosophical|doctrine|thinker|thinkers|literature|literary|canon|19th[- ]century|18th[- ]century|ancient)\b/i.test(clauseLower);
+        if (!hasClassicIntent) {
+            const nameLower = (g.name || '').toLowerCase();
+            const idLower = (g.graph_id || '').toLowerCase();
+            const curatorLower = (g.curator || '').toLowerCase();
+            const isNamed = (idLower.length > 3 && clauseLower.includes(idLower)) ||
+                (nameLower.length > 3 && clauseLower.includes(nameLower)) ||
+                (curatorLower.length > 4 && !curatorLower.includes('public domain') && clauseLower.includes(curatorLower));
+            if (!isNamed) {
+                const nameParts = nameLower.split(/\s+/);
+                const lastName = nameParts[nameParts.length - 1];
+                if (!lastName || lastName.length <= 3 || !clauseLower.includes(lastName)) {
+                    return 0;
+                }
+            }
+        }
+    }
 
     // Domain Gate: Reuters Digital News Report must ONLY match if query explicitly has media/news/journalism terms
     const isReutersGraph = g.graph_id.includes('reuters') || g.graph_id.includes('digital-news-report');
@@ -1200,7 +1248,8 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
         'future', 'futures', 'outlook', 'behavior', 'behaviors', 'habits', 'practices',
         'spending', 'growth', 'shifts', 'shift', 'landscape', 'dynamics', 'ecosystem',
         'trends', 'trend', 'report', 'reports', 'intelligence', 'overview', 'global',
-        'demand', 'supply', 'performance', 'innovation', 'innovations', 'transformation'
+        'demand', 'supply', 'performance', 'innovation', 'innovations', 'transformation',
+        'gen', 'third', 'party', 'places', 'place'
     ]);
 
     const terms = clauseLower
@@ -1211,8 +1260,8 @@ function scoreClauseRelevance(clause: string, g: CatalogGraph): number {
     if (terms.length === 0) return 0;
 
     const searchText = graphSearchTexts.get(g.graph_id) || buildSearchableText(g);
-    const topicsText = [...(g.topics || []), ...(g.routing_keywords || []), g.name || '', g.graph_id || ''].join(' ').toLowerCase();
-    const domainText = (g.domain || '').toLowerCase();
+    const topicsText = normalizeCompoundTokens([...(g.topics || []), ...(g.routing_keywords || []), g.name || '', g.graph_id || ''].join(' ').toLowerCase());
+    const domainText = normalizeCompoundTokens((g.domain || '').toLowerCase());
 
     const words = new Set(searchText.split(/[^a-z0-9]+/));
     const topicWords = new Set(topicsText.split(/[^a-z0-9]+/));
@@ -1429,11 +1478,44 @@ export function getRelevantGraphs(
     const queryLower = query.toLowerCase();
     const directMatchIds = new Set<string>();
 
+    const GENERIC_NAMES = new Set([
+        'trends', 'report', 'graph', 'data', '2026', 'state', 'outlook',
+        'beauty', 'food', 'home', 'retail', 'fashion', 'travel', 'design'
+    ]);
+
+    const matchesWordBoundary = (text: string, term: string): boolean => {
+        if (!term || term.length < 3) return false;
+        // Ignore generic topic/format words from forcing Phase 0 direct inclusion
+        if (GENERIC_NAMES.has(term.toLowerCase())) return false;
+        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const rx = new RegExp(`\\b${escaped}\\b`, 'i');
+        return rx.test(text);
+    };
+
+    const isClassicAgent = (g: CatalogGraph): boolean =>
+        /classic/i.test(g.graph_sub_type || '') || g.graph_type === 'classic_agent';
+
+    const hasClassicIntent = /\b(classic|historical|history|philosophy|philosophical|doctrine|thinker|thinkers|literature|literary|canon|19th[- ]century|18th[- ]century|ancient)\b/i.test(queryLower);
+
     const isCreatorQuery = /creator economy|content creator|creator monetization|creators report/i.test(queryLower);
     const isNightlifeQuery = /nightlife|going out|shared experiences|shared social experiences/i.test(queryLower);
 
     const eligibleGraphs = syncedGraphs.filter(g => {
-        if (isCreatorQuery && g.graph_id === 'mary-shelley') return false;
+        // Classic Digital Twin Intent Gate: exclude historical thinker persona graphs
+        // from open trend routing unless query explicitly asks for historical / classic doctrine
+        // or names the persona directly.
+        if (isClassicAgent(g) && !hasClassicIntent) {
+            const isNamed = (g.graph_id.length > 3 && matchesWordBoundary(queryLower, g.graph_id)) ||
+                (g.curator && !g.curator.toLowerCase().includes('public domain') && matchesWordBoundary(queryLower, g.curator.toLowerCase())) ||
+                (g.name && matchesWordBoundary(queryLower, g.name.toLowerCase()));
+            if (!isNamed) {
+                const nameParts = (g.name || '').trim().toLowerCase().split(/\s+/);
+                const lastName = nameParts[nameParts.length - 1];
+                if (!lastName || lastName.length <= 3 || !matchesWordBoundary(queryLower, lastName)) {
+                    return false;
+                }
+            }
+        }
         return true;
     });
 
@@ -1452,20 +1534,6 @@ export function getRelevantGraphs(
             }
         }
     }
-
-    const GENERIC_NAMES = new Set([
-        'trends', 'report', 'graph', 'data', '2026', 'state', 'outlook',
-        'beauty', 'food', 'home', 'retail', 'fashion', 'travel', 'design'
-    ]);
-
-    const matchesWordBoundary = (text: string, term: string): boolean => {
-        if (!term || term.length < 3) return false;
-        // Ignore generic topic/format words from forcing Phase 0 direct inclusion
-        if (GENERIC_NAMES.has(term.toLowerCase())) return false;
-        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const rx = new RegExp(`\\b${escaped}\\b`, 'i');
-        return rx.test(text);
-    };
 
     for (const g of eligibleGraphs) {
         // Check graph_id (e.g., "alyson-stevens-macro", "sic")
@@ -1583,7 +1651,7 @@ export function getRelevantGraphs(
         '2024', '2025', '2026', '2027', '2030', 'year', 'years', 'strategic', 'breakdown',
         'give', 'provide', 'show', 'tell', 'key'
     ]);
-    const debugTokens = query.toLowerCase().split(/\s+/).map(t => t.replace(/[^a-z0-9]/g, '')).filter(t => t.length > 2 && !stopWords.has(t));
+    const debugTokens = normalizeCompoundTokens(query.toLowerCase()).split(/\s+/).map(t => t.replace(/[^a-z0-9]/g, '')).filter(t => t.length > 2 && !stopWords.has(t));
     const debugExpansions = new Set<string>();
     debugTokens.forEach(t => (QUERY_EXPANSION_MAP[t] || []).forEach(e => debugExpansions.add(e)));
 

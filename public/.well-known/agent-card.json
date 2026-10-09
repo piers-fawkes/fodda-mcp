@@ -1,0 +1,161 @@
+{
+  "protocolVersion": "0.3.0",
+  "name": "Fodda Research Agent",
+  "description": "Expert-curated trend, brand, research, and earnings intelligence from named experts' knowledge graphs (220+ graphs across retail, beauty, sports, finance, and institutional data). Delegate a task in natural language — Fodda selects the right tools and returns a synthesized result.",
+  "url": "https://mcp.fodda.ai/a2a",
+  "preferredTransport": "JSONRPC",
+  "version": "1.46.111",
+  "provider": {
+    "organization": "Fodda (PSFK)",
+    "url": "https://www.fodda.ai"
+  },
+  "documentationUrl": "https://www.fodda.ai/llms.txt",
+  "privacyPolicyUrl": "https://www.fodda.ai/privacy",
+  "termsOfServiceUrl": "https://www.fodda.ai/terms",
+  "cancellationPolicyUrl": "https://www.fodda.ai/terms",
+  "refundPolicyUrl": "https://www.fodda.ai/terms",
+  "supportContact": "support@fodda.ai",
+  "iconUrl": "https://ucarecdn.com/6e7893d7-6b14-426b-83bc-574a3f72d6bc/foddafavicon.png",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "stateTransitionHistory": false
+  },
+  "payments": {
+    "acceptedMethods": [
+      "x402",
+      "stripe-spt",
+      "ap2_mandate"
+    ],
+    "recipientAddress": "0xF61c2D34e84C77e0e97eba47dB4A1db32fF225A1",
+    "network": "base"
+  },
+  "policies": {
+    "termsUrl": "https://www.fodda.ai/terms",
+    "privacyUrl": "https://www.fodda.ai/privacy",
+    "cancellationUrl": "https://www.fodda.ai/terms",
+    "refundUrl": "https://www.fodda.ai/terms"
+  },
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "brand-intelligence",
+      "name": "Brand Intelligence",
+      "description": "Track a brand's trend footprint, competitive context, and market signals across expert-curated graphs.",
+      "tags": [
+        "brand",
+        "competitive",
+        "intelligence"
+      ],
+      "examples": [
+        "What is Nike doing?",
+        "Brand intelligence for Patagonia"
+      ],
+      "termsOfServiceUrl": "https://www.fodda.ai/terms",
+      "privacyPolicyUrl": "https://www.fodda.ai/privacy",
+      "cancellationPolicyUrl": "https://www.fodda.ai/terms",
+      "refundPolicyUrl": "https://www.fodda.ai/terms",
+      "policies": {
+        "termsUrl": "https://www.fodda.ai/terms",
+        "privacyUrl": "https://www.fodda.ai/privacy",
+        "cancellationUrl": "https://www.fodda.ai/terms",
+        "refundUrl": "https://www.fodda.ai/terms"
+      }
+    },
+    {
+      "id": "trend-search",
+      "name": "Trend Search",
+      "description": "Search expert-curated knowledge graphs for trends with supporting evidence and source attribution.",
+      "tags": [
+        "trends",
+        "search",
+        "research"
+      ],
+      "examples": [
+        "sustainable packaging trends",
+        "Gen Z beauty habits"
+      ]
+    },
+    {
+      "id": "deep-research",
+      "name": "Deep Research",
+      "description": "Full multi-source autonomous research: expert-curated knowledge graphs, earnings-call intelligence, and institutional data, synthesized into a cited editorial report. Returned as an async task — poll tasks/get for the result. API key required; SPT support coming.",
+      "tags": [
+        "research",
+        "report",
+        "analysis"
+      ],
+      "examples": [
+        "comprehensive report on Gen Z luxury",
+        "detailed analysis of the resale market"
+      ]
+    },
+    {
+      "id": "earnings-intelligence",
+      "name": "Cross-Company Earnings Themes",
+      "description": "Surface cross-company and industry-level themes from earnings calls — analyst concerns, management commentary, guidance trends, and divergence detection across sectors.",
+      "tags": [
+        "earnings",
+        "financial",
+        "intelligence",
+        "cross-company"
+      ],
+      "examples": [
+        "what are hotel companies saying about labor costs",
+        "where are executives deflecting on margins"
+      ]
+    },
+    {
+      "id": "per-ticker-earnings",
+      "name": "Per-Ticker Earnings Intelligence",
+      "description": "The strategic truth layer per company: what analysts pressed on, where management deflected, marketing/retail/tech/sustainability activity, CEO intelligence, and market-validated consumer trends — quarterly records with multi-quarter history for 500+ consumer-sector companies.",
+      "tags": [
+        "earnings",
+        "analyst-pressure",
+        "activity",
+        "validated-trends"
+      ],
+      "examples": [
+        "What are analysts pressing Nike on?",
+        "Compare how Lululemon and On Running talk about growth",
+        "Show me Costco's analyst Q&A themes",
+        "Which consumer trends do KR's earnings validate?"
+      ]
+    },
+    {
+      "id": "expert-consult",
+      "name": "Expert Consult",
+      "description": "Consult an authorized living Human Agent — grounded in a real expert's verified knowledge, proprietary frameworks, and published thinking, researching on your behalf.",
+      "tags": [
+        "expert",
+        "consult",
+        "analyst"
+      ],
+      "examples": [
+        "Consult Ben Dietz about culture-led brand strategy",
+        "Ask Anu Lingala about 2026 macro trends"
+      ]
+    },
+    {
+      "id": "commissioned-deliverable",
+      "name": "Commissioned Deliverable",
+      "description": "Commission a finished document from an analyst — a marketing plan, deck review, or trend briefing. The analyst researches, then produces the document in the background; returned as an async job (poll for the artifact). Priced per offering; see each analyst's offerings.",
+      "tags": [
+        "deliverable",
+        "document",
+        "analyst",
+        "async"
+      ],
+      "examples": [
+        "Commission a marketing plan from Ben Dietz for a Gen-Z skincare launch",
+        "Ask for a trend briefing deliverable on resale"
+      ]
+    }
+  ]
+}

@@ -5,6 +5,24 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.111] - 2026-10-08
+
+### Added
+- **Surfing Dog Agentic Score Optimization — x402 Payment Doors & Machine Policies (`src/a2aHandler.ts`, `public/.well-known/agent-card.json`, `fodda_mcp_brand_intelligence_server.json`)**:
+  - **A2A Payment Capabilities Declaration (`src/a2aHandler.ts`, `public/.well-known/agent-card.json`)**: Declared explicit payment methods (`x402`, `stripe-spt`, `ap2_mandate`), network (`base`), and recipient treasury address (`0xF61c2D34e84C77e0e97eba47dB4A1db32fF225A1`) in `AGENT_CARD` and static discovery card `public/.well-known/agent-card.json`.
+  - **Explicit Machine Policy & URL Linking**: Linked `cancellationPolicyUrl` (`https://www.fodda.ai/terms`) and `refundPolicyUrl` (`https://www.fodda.ai/terms`) alongside existing terms and privacy URLs on the agent card and brand intelligence server descriptor.
+  - **Machine-Readable Policies on Brand Intelligence (`fodda_mcp_brand_intelligence_server.json`, `src/a2aHandler.ts`)**: Exposed structured `policies` object (`termsUrl`, `privacyUrl`, `cancellationUrl`, `refundUrl`) and `payments` block on the `brand-intelligence` server descriptor and A2A skill definition to maximize agentic evaluator discovery scores (+25 Pay, +10 Policies).
+
+### Fixed
+- **Graph Routing Compound Token Preservation & Classic Digital Twin Query Gating (`src/catalogCache.ts`)**:
+  - **Compound Cultural & Domain Phrase Normalization**: Added `normalizeCompoundTokens()` to prevent cultural and domain compounds (`gen z` -> `genz`, `third places` -> `thirdplaces`, `gen alpha` -> `genalpha`, `gen ai` -> `genai`, `third party` -> `thirdparty`) from breaking into ambiguous single tokens during regex splitting. Normalized text in `buildSearchableText()`, `scoreClauseRelevance()`, `topicsText`, `domainText`, and query token extraction.
+  - **Single-Token Collision Suppression**: Added `gen`, `third`, `party`, `places`, `place` to `GENERIC_BUSINESS_TOKENS` (0.2 weight). Eliminated false-positive leakage where McKinsey's Farmer Insights Outlook matched `"Gen AI"` as bare `"gen"` and Deloitte's Tech Trends matched `"Third-Party Cookies"` as bare `"third"`.
+  - **Youth Culture Expansion**: Expanded `QUERY_EXPANSION_MAP` for `genz`, `youth`, `socializing`, `gathering`, `loneliness`, and `thirdplaces` across lifestyle, community, hospitality, and nightlife clusters.
+  - **Classic Digital Twin Intent Gate**: Established systemic intent gate for all 38 historical persona graphs (`graph_sub_type === 'Classic Digital Twin'` or `graph_type === 'classic_agent'`). Classic digital twins are strictly excluded from open trend routing unless:
+    1. Query explicitly names the persona (full name, surname, or graph ID), or
+    2. Query contains historical/philosophical intent keywords (`classic`, `historical`, `history`, `philosophy`, `doctrine`, `thinker`, `literature`, `19th-century`, etc.).
+  - **Eliminated False Positives**: In *"how young people Gen Z socialize today, new forms of social connection and gathering"* and *"Gen Z nightlife, sober socializing, run clubs, third places and loneliness"*, completely eliminated noise graphs (Octavia Hill, Jane Austen, Isabella Bird, Sui Sin Far, Pandita Ramabai, McKinsey Farmer AI, Deloitte Cookies) while retaining high-precision signal (Bompas & Parr, Common Ground Trail Trends, Ben Dietz [SIC], Pressler-Duggan, Heineken Living Room Effect, Firefish Treat Culture).
+
 ## [1.46.110] - 2026-10-08
 
 ### Fixed
