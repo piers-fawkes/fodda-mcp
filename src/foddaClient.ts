@@ -170,11 +170,14 @@ export async function foddaRequest(
         : /\/supplemental\//.test(path)
         ? 35000
         : 30000;
+    const startTime = Date.now();
     const response = method === 'GET'
         ? await axios.get(url, { headers, timeout: AXIOS_TIMEOUT_MS })
         : method === 'PATCH'
         ? await axios.patch(url, body ?? {}, { headers, timeout: AXIOS_TIMEOUT_MS })
         : await axios.post(url, body ?? {}, { headers, timeout: AXIOS_TIMEOUT_MS });
+    const latencyMs = Date.now() - startTime;
+    console.error(`[foddaRequest] ${method} ${path} completed in ${latencyMs}ms`);
 
     // ── Cache store ──
     cacheSet(method, path, body, response.data);

@@ -1098,7 +1098,7 @@ export async function createServer(
 
     const STATIC_CAPABILITIES_FALLBACK = {
         pricing_url: "https://fodda.ai/pricing",
-        pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is $0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+        pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is \\$0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
         scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
         platform_scale: {
             knowledge_graphs: 100,
@@ -1508,7 +1508,7 @@ export async function createServer(
                 const localRecon = {
                     ok: true,
                     pricing_url: "https://fodda.ai/pricing",
-                    pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is $0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+                    pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is \\$0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
                     platform_scale: STATIC_CAPABILITIES_FALLBACK.platform_scale,
                     topic_reconnaissance: {
                         query: cleanTopic,
@@ -8163,7 +8163,7 @@ export async function createServer(
                     `• Knowledge Base: Do you already have your own MCP endpoint you'd like to use as your Human Agent's knowledge base? If you're not sure what that is, just answer **No / I don't know** — most experts don't have one, and we'll set you up the standard way.`,
                     `• Privacy & Persistence: Once you accept the terms, Fodda saves each step as you complete it. If you stop partway, you can pick up later, in this chat or a new one, and I'll check where you left off. Anything I'm still drafting with you, like your voice study before you submit it, lives only in this chat until you submit that step. Your Human Agent only goes live after your interview and Fodda's review.`,
                     ``,
-                    `👉 **Next Step:** Ask the expert for their full name, email address, current role, primary knowledge area, and explicit agreement to Fodda's Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) [Turn 1]. Next, ask if Fodda can introduce clients to them and what their preferred 1-on-1 consultation hourly rate is ($250, $500, $750, $1k, $2k, or No Calls) [Turn 1b]. Or call \`submit_basic_info\` directly once collected.`
+                    `👉 **Next Step:** Ask the expert for their full name, email address, current role, primary knowledge area, and explicit agreement to Fodda's Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) [Turn 1]. Next, ask if Fodda can introduce clients to them and what their preferred 1-on-1 consultation hourly rate is (\\$250, \\$500, \\$750, \\$1k, \\$2k, or No Calls) [Turn 1b]. Or call \`submit_basic_info\` directly once collected.`
                 ].join('\n');
 
                 const payload = {
@@ -8206,7 +8206,7 @@ export async function createServer(
             termsAccepted: z.boolean().describe("The expert must explicitly accept the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy) after reviewing the links. Must be true to begin saving onboarding progress."),
             email: z.string().optional().describe("The expert's email address for account linking and onboarding session."),
             userEmail: z.string().optional().describe("Alternative alias for expert email."),
-            callPrice: z.string().optional().describe("The expert's preferred 1-hour video/telephone consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Recorded under callPrice."),
+            callPrice: z.string().optional().describe("The expert's preferred 1-hour video/telephone consultation rate: 'No Calls', '\\$250/hr', '\\$500/hr', '\\$750/hr', '\\$1,000/hr', or '\\$2,000/hr'. Recorded under callPrice."),
             bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
             description: z.string().optional().describe("Optional comprehensive description of the expert's background and domain focus."),
             headshotUrl: z.string().optional().describe("Optional public HTTPS URL to the expert's profile headshot image (URL only, no file uploads)."),
@@ -8400,7 +8400,7 @@ export async function createServer(
             mcpUrl: z.string().describe("The verified HTTPS URL of the expert's public MCP endpoint"),
             email: z.string().optional().describe("Optional expert email address for account linking and onboarding session."),
             userEmail: z.string().optional().describe("Alternative alias for expert email."),
-            callPrice: z.string().optional().describe("The expert's preferred 1-hour consultation rate: 'No Calls', '$250/hr', '$500/hr', '$750/hr', '$1,000/hr', or '$2,000/hr'. Defaults to 'No Calls'."),
+            callPrice: z.string().optional().describe("The expert's preferred 1-hour consultation rate: 'No Calls', '\\$250/hr', '\\$500/hr', '\\$750/hr', '\\$1,000/hr', or '\\$2,000/hr'. Defaults to 'No Calls'."),
             expertTopicsRaw: z.string().describe("Confirmed JSON string or text summary of the expert's domain topics (derived from MCP scan and confirmed by the expert). Powers the profile expertise map and suggested queries."),
             voiceStudyRaw: z.string().optional().describe("Optional light voice study or tone-of-voice persona derived from conversation or public writing."),
             bio: z.string().optional().describe("Optional short biography for the expert's public profile."),
