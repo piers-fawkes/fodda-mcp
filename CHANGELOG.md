@@ -5,6 +5,19 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.117] - 2026-10-12
+
+### Added & Enhanced
+- **Dedicated Scoped Claude Research Connector (`/claude`)** (`src/index.ts`, `tools-manifest.json`, `README.md`):
+  - **Scoped Researcher Toolset**: Exposed curated 27-tool read-only research suite (`search_graph`, `search_statistics`, `search_insights`, `get_validated_trends`, `get_evidence`, `get_node`, `get_neighbors`, `get_label_values`, `list_graphs`, `brand_tracker`, `get_company_earnings`, `get_earnings_intelligence`, `get_earnings_divergence`, `deep_research_topic`, `check_research_status`, `find_expert`, `consult_analyst`, `consult_human_agent`, `list_analysts`, `verify_claim`, `verify_market_claim`, `get_supplemental_context`, `check_supplemental_status`, `read_url`, `get_my_account`, `generate_visual`, `get_capabilities`) for Claude Web, Desktop, and Code.
+  - **Suppression of Administrative & Mutating Tools**: Completely excluded all 11 expert onboarding tools (`begin_expert_onboarding`, `expert_onboarding_research`, `get_onboarding_status`, `submit_basic_info`, `submit_expertise_analysis`, `get_detected_themes`, `confirm_themes`, `schedule_interview`, `request_deliverable`, `check_deliverable_status`, `get_my_earnings`) and mutating account/admin tools (`sign_up_free_account`, `update_user_profile`, `toggle_graph_preference`, `manage_scheduled_reports`, `send_feedback`) to meet Anthropic directory guidelines.
+  - **RFC 9728 & RFC 8414 Discovery**:
+    - Mounted `/.well-known/oauth-protected-resource/claude` advertising `resource: "https://mcp.fodda.ai/claude"` and `authorization_servers: ["https://clerk.fodda.ai"]`.
+    - Mounted `/.well-known/claude` and `/.well-known/claude.json` discovery cards returning server schema metadata.
+    - Updated 401 unauthenticated challenge header on `/claude` to return `WWW-Authenticate: Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/claude"`.
+  - **User-Agent & Client Detection**: Extended transport handler client-slug and source attribution to automatically recognize Claude User-Agents and client identifiers (`claude-desktop`, `claude-code`, `claude`).
+  - **Clerk OAuth & Sign-Up Audit**: Verified live DCR (`clerk.fodda.ai/oauth/register` returns 201), consent screen (`app.fodda.ai/oauth-consent`), First-Factor sign-up methods (`AuthGate.tsx` email_code + Google/LinkedIn SSO), and Fodda API auto-provisioning (`functions/v1/auth.ts` creating User record, 100 free credits Account, and live API key).
+
 ## [1.46.116] - 2026-10-12
 
 ### Enhanced

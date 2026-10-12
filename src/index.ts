@@ -192,7 +192,7 @@ app.all(['/sse', '/messages'], (_req, res) => {
 
 // Deprecation middleware for legacy URL parameters (?api_key=... / ?user_id=...)
 const LEGACY_DEPRECATION_PATHS = [
-    '/mcp', '/copilot', '/chatgpt',
+    '/mcp', '/copilot', '/chatgpt', '/claude',
     '/brand-intelligence', '/topic-research', '/deep-research',
     '/earnings-intelligence', '/expert-consult',
     '/grok-brand-context', '/c/:token', '/c'
@@ -419,6 +419,35 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
         'check_supplemental_status',
         'generate_visual',
     ],
+    'claude': [
+        'get_capabilities',
+        'search_graph',
+        'search_statistics',
+        'search_insights',
+        'get_validated_trends',
+        'get_evidence',
+        'get_node',
+        'get_neighbors',
+        'get_label_values',
+        'list_graphs',
+        'brand_tracker',
+        'get_company_earnings',
+        'get_earnings_intelligence',
+        'get_earnings_divergence',
+        'deep_research_topic',
+        'check_research_status',
+        'find_expert',
+        'consult_analyst',
+        'consult_human_agent',
+        'list_analysts',
+        'verify_claim',
+        'verify_market_claim',
+        'get_supplemental_context',
+        'check_supplemental_status',
+        'read_url',
+        'get_my_account',
+        'generate_visual',
+    ],
     'grok-brand-context': [
         'get_capabilities',
         'get_domain_intelligence',
@@ -467,6 +496,11 @@ const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; desc
         title: 'Fodda Market Intelligence for ChatGPT',
         description: 'Expert-curated knowledge, brand, research & earnings intelligence across PSFK expert graphs.',
     },
+    'claude': {
+        name: 'ai.fodda/claude',
+        title: 'Fodda Market & Earnings Intelligence for Claude',
+        description: 'Expert-curated knowledge graphs, company earnings transcripts, and live macroeconomic data for Claude.',
+    },
     'grok-brand-context': {
         name: 'ai.fodda/grok-brand-context',
         title: 'Fodda Brand & Market Context',
@@ -483,6 +517,7 @@ app.get([
     '/.well-known/expert-consult', '/.well-known/expert-consult.json',
     '/.well-known/copilot', '/.well-known/copilot.json',
     '/.well-known/chatgpt', '/.well-known/chatgpt.json',
+    '/.well-known/claude', '/.well-known/claude.json',
     '/.well-known/grok-brand-context', '/.well-known/grok-brand-context.json',
 ], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -773,7 +808,7 @@ async function waverunnerRequest(
 // Browser Landing Page — catch humans who paste the MCP URL into a browser
 // ---------------------------------------------------------------------------
 
-app.get(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot'], (req, res, next) => {
+app.get(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/claude', '/grok-brand-context'], (req, res, next) => {
     // Only intercept browser requests (Accept: text/html).
     // MCP SDK clients send application/json or text/event-stream, so they
     // fall through to the app.all('/mcp') transport handler below.
@@ -1081,7 +1116,7 @@ export async function resolveMcpToken(token: string, websiteBaseUrl: string): Pr
 // MCP Transport Handler
 // ---------------------------------------------------------------------------
 
-app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/grok-brand-context', '/c/:token'], async (req, res) => {
+app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/claude', '/claude/{*sub}', '/grok-brand-context', '/c/:token'], async (req, res) => {
     try {
         const sessionId = req.headers['mcp-session-id'] as string;
         let transport: StreamableHTTPServerTransport;
@@ -1203,7 +1238,8 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         const rawSource = (req.headers['x-fodda-source'] as string) || (req.query.source as string) || '';
         const userAgent = (req.headers['user-agent'] || '').toString().toLowerCase();
         const isChatGptUa = userAgent.includes('chatgpt') || userAgent.includes('chatgpt-user') || userAgent.includes('openai');
-        const source = isInternalTest ? 'mcp-internal-test' : (rawSource || (isChatGptUa ? 'chatgpt' : defaultSource));
+        const isClaudeUa = userAgent.includes('claude') || userAgent.includes('anthropic');
+        const source = isInternalTest ? 'mcp-internal-test' : (rawSource || (isChatGptUa ? 'chatgpt' : (isClaudeUa ? 'claude' : defaultSource)));
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;
@@ -1211,7 +1247,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             const body = req.body;
             const clientInfo = body?.params?.clientInfo;
             const declaredClientSlug = normalizeClientSlug(clientInfo?.name, clientInfo?.version);
-            const clientSlug = declaredClientSlug || (isChatGptUa ? 'chatgpt' : '');
+            const clientSlug = declaredClientSlug || (isChatGptUa ? 'chatgpt' : (isClaudeUa ? 'claude' : ''));
             if (body?.method === 'initialize') {
                 // Directory connector policy: All offering routes require authentication — Clerk OAuth,
                 // an API key, or a /c/<token> connection URL. An anonymous handshake gets

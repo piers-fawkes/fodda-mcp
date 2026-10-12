@@ -34,6 +34,7 @@
         "brand-intelligence",
         "copilot",
         "chatgpt",
+        "claude",
         "grok-brand-context"
       ],
       "description": "Single-brand 360-degree intelligence audit: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., 'Audit Nike's market footprint', 'How is Lululemon performing across consumer trends?'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. 'athleisure trends'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand's multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html."
@@ -60,7 +61,8 @@
         "mcp",
         "deep-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Polling and retrieval layer for deep research jobs: checks execution status and retrieves the completed research briefing report. Call after initiating deep_research_topic—poll every 10 seconds until status transitions to COMPLETE or FAILED. Sibling routing: Use check_research_status for deep_research_topic jobs; use check_deliverable_status for analyst documents; use check_supplemental_status for supplemental data queries. Returns execution status (IN_PROGRESS, COMPLETE, FAILED), completion percentage, and the full Markdown briefing report upon completion."
     },
@@ -75,7 +77,8 @@
         "topic-research",
         "deep-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Check if market data gathering is complete and retrieve the results. Call this after get_supplemental_context — poll every 5-10 seconds until status is COMPLETE or FAILED. (Async supplemental query status poll.)"
     },
@@ -98,7 +101,8 @@
         "mcp",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Direct interactive consultation with synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives (e.g., 'Ask the Brand CMO persona how to evaluate retail media ROI', 'Consult John Ruskin on craftsmanship in luxury fashion'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for living practitioners (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves."
     },
@@ -111,7 +115,8 @@
         "mcp",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Direct interactive consultation with authorized living Human Agents—verified digital twins of real-world industry leaders, agency founders, and specialists grounded in their verified thinking and proprietary frameworks. Use when seeking real-world practitioner expertise, contrarian perspectives, and battle-tested methodologies (e.g., 'Ask Ben Dietz about luxury brand gravity and streetwear drops', 'Consult Peter Abraham on modern marketing models'). Supports multi-turn dialogue via session_id, corporate brand binding, and deep homework mode (deep: true). Sibling routing: Use consult_human_agent for live interactive dialogue with verified digital twins; use request_expert_intro to book 1-on-1 human advisory time or request an intro to unclaimed experts; use consult_analyst for synthetic/classic personas. Returns conversational practitioner analysis, cited evidence nodes, and structured next moves."
     },
@@ -124,7 +129,8 @@
         "mcp",
         "deep-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Autonomous multi-pass research agent: orchestrates an exhaustive briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives into a comprehensive executive narrative. Use for high-stakes research inquiries, client deliverables, or market landscape studies (e.g., 'Generate a comprehensive research briefing on the circular fashion economy', 'Deep dive into retail media network adoption'). Runs asynchronously; execution returns a job_id that must be polled to completion using check_research_status. Sibling routing: Use search_graph for fast, single-turn trend lookups; use get_intelligence_dossier for immediate synchronous multi-source dossier assembly; use deep_research_topic when you need an autonomous, multi-step deep dive. Returns job confirmation, estimated processing time, and job_id for status tracking."
     },
@@ -189,6 +195,7 @@
         "expert-consult",
         "copilot",
         "chatgpt",
+        "claude",
         "grok-brand-context"
       ],
       "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines, credibility anchors, and why matched, distinguishing active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (advisory introduction via request_expert_intro)."
@@ -206,7 +213,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. (Data payload transformation + SVG chart rendering.)"
     },
@@ -224,6 +232,7 @@
         "expert-consult",
         "copilot",
         "chatgpt",
+        "claude",
         "grok-brand-context"
       ],
       "description": "Returns Fodda's capabilities, semantic research workflows, Human Agent Human Agents, and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings."
@@ -237,7 +246,8 @@
         "mcp",
         "earnings-intelligence",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "The canonical per-ticker earnings source for 517 covered companies. - view='snapshot' (default): Full quarterly record including headline, financial metrics, analyst sentiment, strategic activity, CEO quotes, and top Q&A entries. - view='qa': Itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness. USE THIS VIEW whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes. - view='history': Narrative quarterly timeline. - view='compare': Side-by-side comparison of 2-5 tickers."
     },
@@ -270,7 +280,8 @@
       "profiles": [
         "mcp",
         "earnings-intelligence",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Surfaces strategic deflection and narrative tension by comparing Wall Street analyst questions against executive responses across quarterly earnings calls. Use when investigating corporate transparency, executive dodge/deflection patterns, or uncovering unaddressed operational risks (e.g., 'Where are retail CEOs deflecting analyst questions on margin pressure?', 'Show analyst-management divergence for hospitality brands'). Sibling routing: Use get_company_earnings for standard single-ticker quarterly records and get_earnings_intelligence for multi-company strategic initiatives; use get_earnings_divergence specifically to analyze tension between analyst scrutiny and executive deflection. Returns clustered divergence themes, verbatim question/response pairs, company deflection counts, and deflection severity metrics. OUTPUT REQUIREMENT: For multi-company thematic findings, present results in a structured evidence table citing: | Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |. Clearly distinguish Fodda's synthesized theme labels (e.g. \"Pilot Trap\") from what analysts or executives actually said on the call."
     },
@@ -283,6 +294,7 @@
         "mcp",
         "earnings-intelligence",
         "chatgpt",
+        "claude",
         "grok-brand-context"
       ],
       "description": "Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries, sector filters, or strategic corporate activity categories (activity: \"sustainability\" | \"marketing\" | \"retail\" | \"technology\"). For corporate ESG, circular economy, and climate initiatives (e.g. \"What sustainability commitments did apparel companies make this quarter?\"), pass activity=\"sustainability\" or rely on server-side intent routing to avoid conflation with analyst margin sustainability questions. Multi-company and sector queries return active initiatives along with confirmed_absent brands (checked tickers with confirmed silence / no initiatives discussed). For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include \"knowledge_graph\" or \"web_supplemental\" provenance. OUTPUT REQUIREMENT: For multi-company thematic findings, present results in a structured evidence table citing: | Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |. Clearly distinguish Fodda's synthesized theme labels (e.g. \"Pilot Trap\") from what analysts or executives actually said on the call."
@@ -301,6 +313,7 @@
         "expert-consult",
         "copilot",
         "chatgpt",
+        "claude",
         "grok-brand-context"
       ],
       "description": "Evidence citation lookup: retrieves primary evidence articles, publisher case studies, data points, and source URLs that validate a specific trend node. Prerequisite: Requires a valid for_node_id and graphId obtained from a prior search_graph or get_neighbors call. Use when backing a specific trend with original reporting, verifying publisher citations, or extracting concrete brand examples. Sibling routing: Use search_graph first to discover trends and retrieve their node_id; use get_evidence to inspect the underlying source citations for that node; use get_node for high-level metadata; use search_statistics for standalone numbers. Returns an array of evidence items with title, publication, publication_date, snippet, and source_url."
@@ -338,7 +351,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., \"what brands are in the retail graph?\" or \"what locations does the fashion graph cover?\". To get a complete list of every trend in a graph, call with label=\"Trend\" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results. (Graph taxonomy label value lookup.)"
     },
@@ -355,7 +369,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Check the current user's account status: API call balance, plan, enabled/disabled graphs, and profile info. Use when the user asks \"how many API calls do I have?\", \"what plan am I on?\", \"what graphs can I access?\", or similar account questions. Returns live data — not cached from session start. (User account status & credit balance lookup.)"
     },
@@ -382,7 +397,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node in Neo4j.)"
     },
@@ -399,7 +415,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct Neo4j node metadata lookup by ID.)"
     },
@@ -444,7 +461,8 @@
         "topic-research",
         "deep-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Federated empirical data layer: queries 110+ live institutional and government feeds (FRED, BLS, US Census, World Bank, OECD, WTO, IMF PortWatch, etc.) for real-time macroeconomic indicators, demographic shifts, global trade flows, container shipping & port throughput, maritime chokepoints (Suez, Panama), and retail spending. When citing US retail sales, cite official Headline Retail & Food Services (NAICS 44X72 / FRED RSAFS, ~\\$738B) as the primary retail figure; clearly distinguish from Retail Trade Excl. Food Services (NAICS 44000 / FRED RSXFS, ~\\$646B). When citing consumer spending, report live Monthly Personal Consumption Expenditures (BEA Table T20805 / FRED PCE, ~\\$22.3T through August) with MoM and YoY growth rates rather than quarterly aggregates. Use when verifying macroeconomic benchmarks, checking consumer spending metrics, grounding supply chain or trend hypotheses with empirical statistics, or when knowledge graph coverage is thin. Sibling routing: Use search_graph or get_domain_intelligence for curated consumer trends and brand case studies; use get_supplemental_context when you need authoritative government statistics, port/logistics telemetry, or regional/country economic context. Returns a structured 5-bucket evidence bundle (demand_signals, economic_context, market_data, financial_reporting, demographic_context) with full source provenance."
     },
@@ -458,7 +476,8 @@
         "topic-research",
         "earnings-intelligence",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Discovers consumer trends that have been empirically corroborated by corporate earnings reports in Fodda's cross-validation pipeline. Connects high-level cultural trend signals with corroborating executive statements and analyst Q&A from quarterly 10-Q/10-K earnings calls. Use when you need proof that an emerging consumer trend is impacting corporate P&L and executive strategy (e.g., 'Show consumer trends validated in recent beauty earnings calls'). Sibling routing: Use search_graph for pure cultural/consumer trend discovery; use get_company_earnings for full single-ticker filings; use get_validated_trends when you specifically need the bridge between consumer trends and corporate earnings validation. Returns validated trend records with corroborating company tickers, validation types, analyst themes, and executive quote excerpts."
     },
@@ -471,7 +490,8 @@
         "mcp",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Catalog and discover all expert personas available on Fodda across 4 categories: living Human Agents (practitioners with Human Agents), C-Suite Agents (corporate executive lenses grounded in earnings), Classic Agents (historical thinkers), and Synthetic Analysts (domain specialists). Use when exploring available experts, finding who to consult for a specific topic, or inspecting available specialist deliverables. Sibling routing: This tool lists and filters agents; to initiate an interactive conversation with a chosen specialist, call consult_human_agent (for living experts) or consult_analyst (for synthetic/classic/C-suite personas); to search experts by query match, use find_expert. Returns an array of agent profiles with analyst_id, canonical_slug, name, role, agent_class, topics, consult_tool, and commissionable offerings."
     },
@@ -488,7 +508,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Catalog and discovery layer for Fodda knowledge graphs: lists all accessible knowledge graph IDs, topic vertical tags, author credentials, node counts, and signal metrics. Use first when discovering available domain libraries or when you need a valid graphId parameter for graph-scoped queries (e.g. \"What knowledge graphs do you have on retail or sustainability?\"). Sibling routing: Use list_graphs to inspect graph metadata and available sources; use search_graph to query trend content across graphs; use list_analysts to discover specialist Human Agents. Returns an array of graph profiles with graphId, name, topics, signal_count, and author."
     },
@@ -515,7 +536,8 @@
         "topic-research",
         "deep-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Extract clean text content from any URL. Use this when a user shares a link (competitor site, news article, client brief, trend report) and wants to cross-reference it against Fodda knowledge graphs. Returns structured text ready for analysis."
     },
@@ -568,7 +590,8 @@
         "earnings-intelligence",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Primary universal entrypoint for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
     },
@@ -581,7 +604,8 @@
         "mcp",
         "topic-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Sibling routing: Use search_insights when you need authoritative quotes and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing."
     },
@@ -594,7 +618,8 @@
         "mcp",
         "topic-research",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Quantitative statistics and hard numbers retrieval layer: queries curated knowledge graphs for empirical metrics, survey percentages, market sizes, adoption rates, and compound annual growth rates (CAGR) linked to parent trends. Use when looking specifically for data points, percentages, and numerical proof to substantiate arguments (e.g., 'What percentage of Gen Z consumers prefer clean beauty?', 'Find market size data for sports tourism'). Sibling routing: Use search_statistics for numerical data points; use search_insights for quotes and narrative editorial commentary; use get_domain_intelligence for full trends with bundled case studies; use get_supplemental_context for live government/macro statistics. Does NOT return general narrative prose."
     },
@@ -678,6 +703,7 @@
         "expert-consult",
         "copilot",
         "chatgpt",
+        "claude",
         "grok-brand-context"
       ],
       "description": "Qualitative advisory critique by a living Human Agent: matches the claim to a vetted practitioner Human Agent to critically debate, challenge, and stress-test a strategic business hypothesis from an experienced operator's perspective. Use when you need human expert judgment, experiential critique, or strategic pressure-testing on an idea (e.g., 'Have an expert challenge our DTC growth strategy'). Sibling routing: Use verify_claim for human practitioner judgment, experiential pushback, and qualitative advice; use verify_market_claim for algorithmic evidence verification and empirical contradiction scoring. Returns expert perspective, counter-arguments, and strategic recommendations."
@@ -690,7 +716,8 @@
       "profiles": [
         "mcp",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Algorithmic 5-gate empirical data verification: evaluates a factual market claim against 100+ knowledge graphs, primary research citations, and corporate earnings divergence through 5 sequential kill-gates (grounding, contradiction, freshness, corroboration, divergence). Sibling routing: Use verify_market_claim for objective, multi-source empirical data verification and contradiction scoring; use verify_claim for qualitative strategic debate with a living Human Agent practitioner. Returns structured verdict ([VERIFIED], [REFUTED_BY_EVIDENCE], [INSUFFICIENT_EVIDENCE], [UNGROUNDED_SPECULATION]), supporting evidence citations, and contradiction scores."
     }

@@ -7,7 +7,7 @@
 
   [![MCP Registry](https://img.shields.io/badge/MCP_Registry-ai.fodda%2Fmcp--server-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server)
   [![npm](https://img.shields.io/npm/v/fodda-mcp)](https://www.npmjs.com/package/fodda-mcp)
-  [![Version](https://img.shields.io/badge/version-1.46.85-green)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.46.117-green)](./CHANGELOG.md)
   [![License](https://img.shields.io/badge/license-Proprietary-red)](https://fodda.ai)
 
 </div>
@@ -16,22 +16,27 @@
 
 ## Quick Start
 
-### Claude (Web — Pro, Max, Team, Enterprise)
+### Claude (Web & Desktop — Scoped Research Connector)
 
-1. Get your personal MCP URL at [app.fodda.ai](https://app.fodda.ai) → Connections (format: `https://mcp.fodda.ai/c/<your-token>`)
-2. In Claude, go to **Settings → Connectors → Add custom connector**, paste the URL, and click **Add**
-3. Start chatting with your Fodda knowledge graphs
+Fodda provides a dedicated scoped endpoint optimized for research in Claude: **`https://mcp.fodda.ai/claude`**. It exposes a curated, read-only 27-tool research suite (knowledge graphs, company earnings transcripts, macroeconomic data, and synthetic analyst consultation) with all internal administrative and expert-onboarding mutators suppressed.
 
-> **Note:** Legacy URL query-string parameter authentication is deprecated and returns HTTP 401 with instructions. Get your fresh MCP URL or connect via OAuth at [app.fodda.ai](https://app.fodda.ai).
+1. In Claude, go to **Settings → Connectors → Add custom connector**
+2. Enter Name: **Fodda** and URL: **`https://mcp.fodda.ai/claude`**
+3. Authorize via Clerk OAuth (supports Google/LinkedIn SSO and email code) — your account is auto-provisioned with 100 free trial credits
+4. Start querying market intelligence, earnings divergence, and expert graphs
+
+Alternatively, you can connect using your personal tokenized URL from [app.fodda.ai](https://app.fodda.ai) → Connections (format: `https://mcp.fodda.ai/c/<your-token>`).
+
+> **Note:** Legacy URL query-string parameter authentication is deprecated and returns HTTP 401 with instructions. Connect via OAuth at `https://mcp.fodda.ai/claude` or use your tokenized connection URL.
 
 ### Claude Code (CLI)
 
 ```bash
-# Connect via OAuth:
-claude mcp add --transport http fodda https://mcp.fodda.ai/mcp
+# Connect to the curated Claude research connector via OAuth:
+claude mcp add --transport http fodda https://mcp.fodda.ai/claude
 
 # Or with an API key:
-claude mcp add --transport http fodda https://mcp.fodda.ai/mcp \
+claude mcp add --transport http fodda https://mcp.fodda.ai/claude \
   --header "Authorization: Bearer sk_live_..."
 ```
 
