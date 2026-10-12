@@ -78,7 +78,7 @@ async function sync() {
       const escapedDesc = newDesc.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
       const regex = new RegExp(`(server\\.tool\\(\\s*['"]${toolName}['"]\\s*,\\s*)(?:'([^'\\\\]|\\\\.)*'|"([^"\\\\]|\\\\.)*"|\`([^\`\\\\]|\\\\.)*\`)`, 'g');
       if (regex.test(src)) {
-        src = src.replace(regex, `$1'${escapedDesc}'`);
+        src = src.replace(regex, (match, p1) => `${p1}'${escapedDesc}'`);
         updatedCount++;
       }
     }

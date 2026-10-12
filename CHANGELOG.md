@@ -5,6 +5,20 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.116] - 2026-10-12
+
+### Enhanced
+- **Macro Series Precision, Retail Sales Labeling & Monthly PCE Tool Guidance** (`src/toolHandlers.ts`, `tools-manifest.json`, `src/editorialFill.ts`, `src/brandTemplate.ts`, `src/searchTemplate.ts`, `scripts/sync-descriptions-from-airtable.mjs`):
+  - **Tool Description Guidance for `get_supplemental_context`**: Updated tool description and parameter schema in `toolHandlers.ts` and `tools-manifest.json` to explicitly instruct downstream foundation models (Claude, ChatGPT, Copilot) on macro series precision:
+    - **US Retail Sales Disambiguation**: When citing US retail sales, models must cite official Headline Retail & Food Services (NAICS `44X72` / FRED `RSAFS`, ~\$738B, August 2026 value \$737.8B) as the primary retail figure, and clearly distinguish from Retail Trade Excl. Food Services (NAICS `44000` / FRED `RSXFS`, ~\$646B, August 2026 value \$646.3B).
+    - **Live Monthly PCE Consumer Spending**: When citing consumer spending, models must report live Monthly Personal Consumption Expenditures (BEA Table `T20805` / FRED `PCE`, ~\$22.3T through August 2026, MoM +0.9%, YoY +6.1%) rather than citing lagged quarterly aggregates.
+  - **Airtable Offerings Synchronized**: Synchronized updated `get_supplemental_context` tool description in Airtable Offerings table (`tbl93DJ627r81zKVP`, record `recvLcNsMw8pSXmdH`).
+  - **Sync Script Hardening (`scripts/sync-descriptions-from-airtable.mjs`)**: Updated regex replacer from string `$1` pattern to a function replacer `(match, p1) => ...` to prevent JavaScript regex engine from collapsing dollar numbers (e.g. `\$738B`, `\$646B`, `\$22.3T`) as nonexistent capture groups.
+  - **Schema Normalization & Template Formatting**:
+    - `src/editorialFill.ts`: Unpacks `headline_retail_and_food_services` (RSAFS) and `latest_sales_m` for editorial data intro prompts.
+    - `src/brandTemplate.ts`: Aligns market retail stat cards with `headline_retail_and_food_services` under label "US retail & food".
+    - `src/searchTemplate.ts`: Supports `headline_retail_and_food_services` in `buildCensusHtml` while excluding aggregate NAICS codes (`44X72`, `44000`) from subcategory cards.
+
 ## [1.46.115] - 2026-10-12
 
 ### Fixed & Enhanced

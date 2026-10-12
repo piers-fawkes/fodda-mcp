@@ -263,7 +263,17 @@ export async function fillMarketDataIntro(
     }
     const censusRaw = supplemental?.census_retail;
     const census = censusRaw?.snapshot || censusRaw;  // unwrap .snapshot if present
-    if (census?.latest_value || census?.retail_sales) {
+    if (census?.headline_retail_and_food_services?.sales_millions) {
+        const headline = census.headline_retail_and_food_services;
+        const val = (headline.sales_millions / 1000).toFixed(1);
+        const yoy = headline.yoy_change_pct != null ? ` (${headline.yoy_change_pct >= 0 ? '+' : ''}${headline.yoy_change_pct}% YoY)` : '';
+        parts.push(`US Headline Retail & Food Services (Census RSAFS): \$${val}B${yoy}`);
+    } else if (census?.latest_sales_m || census?.total_retail_sales_millions) {
+        const sales = census.latest_sales_m || census.total_retail_sales_millions;
+        const val = (sales / 1000).toFixed(1);
+        const yoy = census.yoy_growth_pct != null ? ` (${census.yoy_growth_pct >= 0 ? '+' : ''}${census.yoy_growth_pct}% YoY)` : '';
+        parts.push(`US Headline Retail & Food Services (Census RSAFS): \$${val}B${yoy}`);
+    } else if (census?.latest_value || census?.retail_sales) {
         const val = census.latest_value || census.retail_sales;
         parts.push(`US retail sales (Census): ${val}`);
     }

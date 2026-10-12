@@ -103,21 +103,30 @@ function buildCensusHtml(census: any): string {
     if (!census) return '';
     const snap = census?.snapshot || census;
     const total = snap?.total_retail;
+    const headline = snap?.headline_retail_and_food_services;
     const subs = snap?.subcategories || [];
 
     const fmtB = (v: number) => `$${(v / 1e9).toFixed(1)}B`;
+    const fmtMillionsB = (v: number) => `$${(v / 1e3).toFixed(1)}B`;
     const fmtPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
 
     const cards: string[] = [];
 
-    // Guard: only emit card if value is non-zero number > 0
-    if (total && typeof total.value === 'number' && total.value > 0) {
+    // Headline / Total Retail Card
+    if (headline && typeof headline.sales_millions === 'number' && headline.sales_millions > 0) {
+        cards.push(`<div class="sk"><div class="skl">Headline retail & food</div><div class="skv">${fmtMillionsB(headline.sales_millions)}</div><div class="sks">${fmtPct(headline.mom_change_pct || 0)} MoM</div></div>`);
+    } else if (total && typeof total.value === 'number' && total.value > 0) {
         cards.push(`<div class="sk"><div class="skl">Total US retail</div><div class="skv">${fmtB(total.value)}</div><div class="sks">${fmtPct(total.mom_change || 0)} MoM</div></div>`);
+    } else if (snap?.latest_sales_m && typeof snap.latest_sales_m === 'number' && snap.latest_sales_m > 0) {
+        cards.push(`<div class="sk"><div class="skl">Headline retail & food</div><div class="skv">${fmtMillionsB(snap.latest_sales_m)}</div><div class="sks">${fmtPct(snap.month_over_month_change_pct || 0)} MoM</div></div>`);
     }
 
-    // Show first valid subcategory with non-zero value > 0
+    // Show first valid subcategory with non-zero value > 0 (excluding aggregate NAICS 44X72 / 44000)
     for (const sub of subs) {
-        if (sub && typeof sub.value === 'number' && sub.value > 0) {
+        if (sub && typeof sub.sales_millions === 'number' && sub.sales_millions > 0 && sub.naics_code !== '44X72' && sub.naics_code !== '44000') {
+            cards.push(`<div class="sk"><div class="skl">${esc(sub.name || '')}</div><div class="skv">${fmtMillionsB(sub.sales_millions)}</div><div class="sks">${fmtPct(sub.mom_change_pct || 0)} MoM</div></div>`);
+            break;
+        } else if (sub && typeof sub.value === 'number' && sub.value > 0) {
             cards.push(`<div class="sk"><div class="skl">${esc(sub.name || '')}</div><div class="skv">${fmtB(sub.value)}</div><div class="sks">${fmtPct(sub.mom_change || 0)} MoM</div></div>`);
             break;
         }

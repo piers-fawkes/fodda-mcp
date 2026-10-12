@@ -723,12 +723,12 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     if (!matchedSector) {
         matchedSector = censusSubs.find((c: any) => (c.name || '').toLowerCase().includes('non-store') || (c.name || '').toLowerCase().includes('e-commerce'));
     }
-    const totalRetail = censusSnap?.total_retail_sales_millions;
-    const totalMom = censusSnap?.month_over_month_change_pct;
+    const totalRetail = censusSnap?.headline_retail_and_food_services?.sales_millions || censusSnap?.total_retail_sales_millions || censusSnap?.latest_sales_m;
+    const totalMom = censusSnap?.headline_retail_and_food_services?.mom_change_pct ?? censusSnap?.month_over_month_change_pct ?? censusSnap?.mom_change_pct;
     const beaLabel = matchedSector ? esc(matchedSector.name).replace(/ Stores$/, '') : 'Retail sector';
     const beaValue = matchedSector?.sales_millions ? `$${(matchedSector.sales_millions / 1000).toFixed(1)}B` : '—';
     const beaSub = matchedSector?.mom_change_pct != null ? `${matchedSector.mom_change_pct > 0 ? '+' : ''}${matchedSector.mom_change_pct.toFixed(1)}% MoM` : '';
-    const beaChangeLabel = 'Total US retail';
+    const beaChangeLabel = 'US retail & food';
     const beaChangeValue = totalRetail ? `$${(totalRetail / 1000).toFixed(0)}B` : '—';
     const beaChangeSub = totalMom != null ? `${totalMom > 0 ? '+' : ''}${totalMom.toFixed(1)}% MoM` : '';
 
