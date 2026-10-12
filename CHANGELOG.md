@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.114] - 2026-10-12
+
+### Changed
+- **`get_supplemental_context` Tool Description Refresh (110 Live Feeds & IMF PortWatch Logistics Routing)** (`src/toolHandlers.ts`, `tools-manifest.json`):
+  - Updated tool registration description from 90+ feeds to **110+ live institutional and government feeds**, explicitly incorporating **IMF PortWatch** (maritime trade flows, daily container ship port calls across 2,065 ports, and 28 straits/chokepoints including Suez and Panama).
+  - Explicitly incorporated container shipping, port throughput, and supply chain hypothesis verification into tool purpose and sibling routing hints, ensuring foundation models (Claude, ChatGPT, Copilot) accurately route maritime logistics and port throughput queries directly to Fodda instead of misrouting to web search.
+  - Synchronized updated description in Airtable Offerings table (`tbl93DJ627r81zKVP`, record `recvLcNsMw8pSXmdH`) and regenerated `tools-manifest.json`.
+
 ## [1.46.113] - 2026-10-12
 
 ### Fixed
