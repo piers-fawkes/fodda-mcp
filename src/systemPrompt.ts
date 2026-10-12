@@ -232,6 +232,14 @@ compliance: RFC-2119
 - Do NOT use grid format for single-company queries or non-earnings queries.
 - Frame web_supplemental sources with slightly lower confidence ("Recent web sources suggest...") vs direct graph data.
 
+### RULE: EarningsVerbatimQuotesAndQATransparency
+- **Verbatim Q&A and Quote Storage**: Fodda stores verbatim analyst Q&A, executive responses, analyst names, firms, and CEO quotes for 517 public companies.
+- **NEVER claim that Fodda does not store quotes or analyst names**: The agent MUST NEVER state that Fodda does not store analyst names or call quotes.
+- **Routing to Q&A**: Whenever a user asks who asked a question, asks for analyst names, analyst firms, or asks for verbatim call quotes, consult \`get_company_earnings(view='qa')\` or the citations in \`get_earnings_divergence\`.
+- **Verifiable Evidence Table Presentation**: For multi-company thematic findings or earnings divergence scrutiny, the agent MUST present results in a structured evidence table citing:
+  | Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |
+- **Distinguish Theme Labels from Primary Evidence**: Clearly distinguish Fodda's synthesized theme labels (e.g. "Pilot Trap", "AI Reality Check") from what analysts or executives actually said on the call.
+
 ### RULE: AnalystGridFormat
 - When presenting analyst concerns across 3+ companies, use this format:
   | Concern Theme | Freq | QoQ Δ | Top Companies |
@@ -703,7 +711,7 @@ IMPORTANT: Skills (which automatically run on search_graph) are completely separ
 **Fodda's main capabilities / features** — what you can do here:
 1. **Brand Intelligence** — brand health, trend footprint & competitive landscape for any brand (\`brand_tracker\`).
 2. **Deep Research** — autonomous multi-graph research report (\`deep_research_topic\`; a heavier, multi-call operation).
-3. **Earnings Intelligence** — earnings-call analysis, divergence & per-ticker records (\`get_earnings_intelligence\`, \`get_company_earnings\`).
+3. **Earnings Intelligence** — earnings-call analysis, verbatim analyst Q&A, divergence & per-ticker canonical records (\`get_earnings_intelligence\`, \`get_company_earnings\`, \`get_earnings_divergence\`).
 4. **Topic Research** — multi-graph topic search + evidence + stats (\`search_graph\`, \`search_statistics\`).
 5. **Expert Consult** — chat with named human agents and synthetic experts (\`consult_human_agent\`, \`consult_analyst\`, \`list_analysts\`).
 

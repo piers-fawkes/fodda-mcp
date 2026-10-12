@@ -4948,7 +4948,7 @@ export async function createServer(
     // This tool is for: multi-company comparisons, industry/sector filters, and explicit earnings queries.
     server.tool(
         'get_earnings_intelligence',
-        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, sector filters, or strategic corporate activity categories (activity: "sustainability" | "marketing" | "retail" | "technology"). For corporate ESG, circular economy, and climate initiatives (e.g. "What sustainability commitments did apparel companies make this quarter?"), pass activity="sustainability" or rely on server-side intent routing to avoid conflation with analyst margin sustainability questions. Multi-company and sector queries return active initiatives along with confirmed_absent brands (checked tickers with confirmed silence / no initiatives discussed). For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance.',
+        'Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons ("what are hotel companies saying about labor costs?"), industry-level queries, sector filters, or strategic corporate activity categories (activity: "sustainability" | "marketing" | "retail" | "technology"). For corporate ESG, circular economy, and climate initiatives (e.g. "What sustainability commitments did apparel companies make this quarter?"), pass activity="sustainability" or rely on server-side intent routing to avoid conflation with analyst margin sustainability questions. Multi-company and sector queries return active initiatives along with confirmed_absent brands (checked tickers with confirmed silence / no initiatives discussed). For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include "knowledge_graph" or "web_supplemental" provenance. OUTPUT REQUIREMENT: For multi-company thematic findings, present results in a structured evidence table citing: | Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |. Clearly distinguish Fodda\'s synthesized theme labels (e.g. "Pilot Trap") from what analysts or executives actually said on the call.',
         {
             ticker: z.string().optional().describe("Company stock ticker (e.g., 'NKE', 'LVMUY', 'HLT'). At least one filter required."),
             brand: z.string().optional().describe("Brand name for fuzzy matching (e.g., 'Nike', 'Marriott')"),
@@ -4990,7 +4990,33 @@ export async function createServer(
                 const earningsWithheld = await settleOrWithhold({ queryTypeCode: 'earnings_intelligence', apiKey, userId: resolveUserId(userId, uid), query: search || brand || ticker || sector || activity || '' }, 'get_earnings_intelligence');
                 if (earningsWithheld) return earningsWithheld;
 
-                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                const results = data?.snapshot?.results || [];
+                const citations = results.map((r: any) => ({
+                    company: r.company || r.brands || r.ticker || 'Unknown Company',
+                    ticker: r.ticker,
+                    quarter: r.period || r.quarter || 'Latest',
+                    speaker: r.speaker_name ? `${r.speaker_name}${r.speaker_firm ? ` (${r.speaker_firm})` : ''}` : (r.company ? `${r.company} Exec / Call` : 'Earnings Call'),
+                    speaker_name: r.speaker_name || r.exec_name || r.analyst_name || null,
+                    speaker_firm: r.speaker_firm || r.analyst_firm || null,
+                    quote: r.quote || r.quote_from_ceo || r.summary || r.title,
+                    finding: r.summary || r.title,
+                    source_url: r.source_url,
+                    publication: r.publication,
+                }));
+
+                const synthesizedTheme = data?.activity_inferred || activity || search || sector || industry || 'Earnings Intelligence';
+
+                let formattedPayload = {
+                    ...data,
+                    theme_label: synthesizedTheme,
+                    citations,
+                };
+                if (formattedPayload.snapshot && typeof formattedPayload.snapshot === 'object') {
+                    formattedPayload.snapshot.theme_label = synthesizedTheme;
+                    formattedPayload.snapshot.citations = citations;
+                }
+
+                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(formattedPayload) : formattedPayload;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
@@ -5006,7 +5032,7 @@ export async function createServer(
     // This is premium intelligence — surfaces deflection and narrative mismatches.
     server.tool(
         'get_earnings_divergence',
-        'Surfaces strategic deflection and narrative tension by comparing Wall Street analyst questions against executive responses across quarterly earnings calls. Use when investigating corporate transparency, executive dodge/deflection patterns, or uncovering unaddressed operational risks (e.g., \'Where are retail CEOs deflecting analyst questions on margin pressure?\', \'Show analyst-management divergence for hospitality brands\'). Sibling routing: Use get_company_earnings for standard single-ticker quarterly records and get_earnings_intelligence for multi-company strategic initiatives; use get_earnings_divergence specifically to analyze tension between analyst scrutiny and executive deflection. Returns clustered divergence themes, verbatim question/response pairs, company deflection counts, and deflection severity metrics.',
+        'Surfaces strategic deflection and narrative tension by comparing Wall Street analyst questions against executive responses across quarterly earnings calls. Use when investigating corporate transparency, executive dodge/deflection patterns, or uncovering unaddressed operational risks (e.g., \'Where are retail CEOs deflecting analyst questions on margin pressure?\', \'Show analyst-management divergence for hospitality brands\'). Sibling routing: Use get_company_earnings for standard single-ticker quarterly records and get_earnings_intelligence for multi-company strategic initiatives; use get_earnings_divergence specifically to analyze tension between analyst scrutiny and executive deflection. Returns clustered divergence themes, verbatim question/response pairs, company deflection counts, and deflection severity metrics. OUTPUT REQUIREMENT: For multi-company thematic findings, present results in a structured evidence table citing: | Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |. Clearly distinguish Fodda\'s synthesized theme labels (e.g. "Pilot Trap") from what analysts or executives actually said on the call.',
         {
             sector: z.string().optional().describe("Sector filter (e.g., 'retail', 'consumer goods', 'food & beverage', 'travel')"),
             period: z.string().optional().describe("Quarter filter (e.g., 'Q1-2026'). Defaults to latest quarter."),
@@ -5057,6 +5083,37 @@ export async function createServer(
                     data.warning = warningText;
                 }
 
+                // Format returned payload to clearly label theme_label and citations
+                if (data && typeof data === 'object') {
+                    const formatTheme = (t: any) => {
+                        const themeLabel = t.question_theme || t.theme_label || 'Unlabeled Theme';
+                        const citations = (t.absorbed_signals || []).map((sig: any) => ({
+                            company: sig.company || sig.ticker,
+                            ticker: sig.ticker,
+                            quarter: sig.quarter,
+                            speaker: sig.analyst_name ? `${sig.analyst_name}${sig.analyst_firm ? ` (${sig.analyst_firm})` : ''}` : (sig.exec_name || 'Executive'),
+                            analyst_name: sig.analyst_name,
+                            analyst_firm: sig.analyst_firm,
+                            exec_name: sig.exec_name,
+                            quote: sig.question || sig.answer || sig.management_response_theme || sig.question_theme,
+                            finding: sig.analyst_concern || sig.question_theme,
+                            response_directness: sig.response_directness,
+                        }));
+                        return {
+                            ...t,
+                            theme_label: themeLabel,
+                            citations,
+                        };
+                    };
+
+                    if (Array.isArray(data.data?.themes)) {
+                        data.data.themes = data.data.themes.map(formatTheme);
+                    }
+                    if (Array.isArray(data.themes)) {
+                        data.themes = data.themes.map(formatTheme);
+                    }
+                }
+
                 const divergencePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(divergencePayload, null, 2) }] };
             } catch (err: any) {
@@ -5072,21 +5129,35 @@ export async function createServer(
     // One tool with a `view` parameter — not 5 separate tools (context budget).
     server.tool(
         'get_company_earnings',
-        'The canonical per-ticker earnings source. Returns the full truth-layer record for covered tickers (517 consumer-sector companies) — analyst concerns, sentiment labels, strategic activity (marketing/retail/technology/sustainability), CEO intelligence, and validated consumer trends from Fodda\'s quarterly analysis pipeline. Falls back to web-backfill for uncovered tickers. Use this for company-specific data. Use get_earnings_intelligence for cross-company thematic comparisons.',
+        'The canonical per-ticker earnings source for 517 covered companies. \n- view=\'snapshot\' (default): Full quarterly record including headline, financial metrics, analyst sentiment, strategic activity, CEO quotes, and top Q&A entries.\n- view=\'qa\': Itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness. USE THIS VIEW whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes.\n- view=\'history\': Narrative quarterly timeline.\n- view=\'compare\': Side-by-side comparison of 2-5 tickers.',
         {
             mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot, history, qa, compare, guidance, coverage (free). Defaults to snapshot.'),
-            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe('snapshot: full quarterly record with analyst concerns, sentiment, activity, validated trends. history: narrative timeline across quarters. qa: per-analyst Q&A entries with thematic tagging and response directness. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free).'),
+            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe("snapshot: full quarterly record including headline, financial metrics, analyst sentiment, strategic activity, CEO quotes, and top Q&A entries. qa: itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness. USE THIS VIEW whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes. history: narrative quarterly timeline. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free). Defaults to snapshot."),
             ticker: z.string().optional().describe("Company ticker symbol (e.g. NKE, LULU, ONON). Required for snapshot, history, and qa views."),
             tickers: z.string().optional().describe("Comma-separated ticker symbols for compare view (2-5 tickers). Only used when view=compare."),
             period: z.string().optional().describe("Quarter filter (e.g. Q1-2026). Defaults to latest quarter."),
             metrics: z.string().optional().describe("Comma-separated metric names for history view (e.g. swot_total,ceo_sentiment). Defaults to all."),
             analyst: z.string().optional().describe("Analyst name filter for qa view."),
+            query: z.string().optional().describe("Optional question, topic, or search query (e.g. 'analyst questions about AI', 'who asked about margin'). If asking about analyst questions, quotes, or who asked, view will auto-route to 'qa'."),
+            search: z.string().optional().describe("Free-text topic search or question within earnings call."),
             sector: z.string().optional().describe("Sector filter for guidance view."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
         },
         { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-        async ({ mode, view, ticker, tickers, period, metrics, analyst, sector, userId: uid }) => {
-            const effectiveView = mode || view || 'snapshot';
+        async ({ mode, view, ticker, tickers, period, metrics, analyst, query, search, sector, userId: uid }) => {
+            const rawInquiry = [query, search, analyst].filter(Boolean).join(' ');
+            const asksForQa = Boolean(
+                analyst ||
+                (rawInquiry && /(analyst|question|who asked|call quote|direct quote|verbatim|\bqa\b|q&a)/i.test(rawInquiry))
+            );
+
+            // Intelligent View Resolution: if view not explicitly passed, or snapshot requested while inquiring about Q&A/quotes/analyst
+            const isExplicitNonDefaultView = Boolean(mode || (view && view !== 'snapshot'));
+            let effectiveView = mode || view || 'snapshot';
+            if ((!isExplicitNonDefaultView || effectiveView === 'snapshot') && asksForQa) {
+                effectiveView = 'qa';
+            }
+
             try {
                 logUserQuery(ticker || tickers || sector || view || 'company earnings', 'earnings_company');
 
@@ -5150,14 +5221,93 @@ export async function createServer(
                 const guard = sptGuard(queryTypeCode);
                 if (guard) return guard;
 
+                // For snapshot view, also fetch Q&A session in parallel to embed top Q&A entries and citations
+                let qaPromise: Promise<any> | null = null;
+                if (effectiveView === 'snapshot' && ticker) {
+                    const qaParams = new URLSearchParams();
+                    if (period) qaParams.set('period', period);
+                    const qaQs = qaParams.toString();
+                    qaPromise = foddaRequest('GET', `/v1/earnings/company/${encodeURIComponent(ticker)}/qa${qaQs ? '?' + qaQs : ''}`, apiKey, resolveUserId(userId, uid)).catch(() => null);
+                }
+
                 // ── API call ──
-                const data = await foddaRequest('GET', path, apiKey, resolveUserId(userId, uid));
+                const [data, qaResult] = await Promise.all([
+                    foddaRequest('GET', path, apiKey, resolveUserId(userId, uid)),
+                    qaPromise
+                ]);
 
                 // ── Settlement ──
                 const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: ticker || tickers || sector || view }, 'get_company_earnings');
                 if (withheld) return withheld;
 
-                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                let responsePayload = data;
+
+                if (effectiveView === 'qa') {
+                    const qaEntries: any[] = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+                    const citations = qaEntries.map((qa: any) => ({
+                        company: qa.company || ticker,
+                        ticker: qa.ticker || ticker,
+                        quarter: qa.quarter,
+                        speaker: qa.analyst_name ? `${qa.analyst_name}${qa.analyst_firm ? ` (${qa.analyst_firm})` : ''}` : (qa.exec_name || 'Executive'),
+                        analyst_name: qa.analyst_name,
+                        analyst_firm: qa.analyst_firm,
+                        exec_name: qa.exec_name,
+                        quote: qa.question,
+                        executive_response: qa.answer,
+                        finding: qa.question_theme || qa.analyst_concern,
+                        response_directness: qa.response_directness,
+                        credibility_anchor: qa.credibility_anchor,
+                    }));
+
+                    let matchedCitations = citations;
+                    const searchTopic = (query || search || '').trim();
+                    if (searchTopic) {
+                        const rawTokens = searchTopic.toLowerCase().match(/[a-z0-9]{3,}/g) || [searchTopic.toLowerCase()];
+                        const stopWords = new Set(['what', 'did', 'the', 'and', 'for', 'about', 'latest', 'call', 'earnings', 'give', 'direct', 'quotes', 'analyst', 'names', 'firm', 'who', 'asked']);
+                        const tokens = rawTokens.filter(t => !stopWords.has(t));
+                        const filterTokens = tokens.length > 0 ? tokens : rawTokens;
+                        const filtered = citations.filter(c => {
+                            const text = `${c.speaker} ${c.quote} ${c.executive_response} ${c.finding}`.toLowerCase();
+                            return filterTokens.some(t => text.includes(t));
+                        });
+                        if (filtered.length > 0) {
+                            matchedCitations = filtered;
+                        }
+                    }
+
+                    responsePayload = {
+                        ...data,
+                        ticker,
+                        period: period || qaEntries[0]?.quarter || 'Latest',
+                        total_qa_entries: qaEntries.length,
+                        theme_label: searchTopic || 'Analyst Q&A',
+                        topic_matched_citations: matchedCitations.length !== citations.length ? matchedCitations : undefined,
+                        citations,
+                    };
+                } else if (effectiveView === 'snapshot' && data?.data && typeof data.data === 'object') {
+                    const qaEntries: any[] = Array.isArray(qaResult?.data) ? qaResult.data : [];
+                    if (qaEntries.length > 0) {
+                        const citations = qaEntries.map((qa: any) => ({
+                            company: qa.company || ticker,
+                            ticker: qa.ticker || ticker,
+                            quarter: qa.quarter,
+                            speaker: qa.analyst_name ? `${qa.analyst_name}${qa.analyst_firm ? ` (${qa.analyst_firm})` : ''}` : (qa.exec_name || 'Executive'),
+                            analyst_name: qa.analyst_name,
+                            analyst_firm: qa.analyst_firm,
+                            exec_name: qa.exec_name,
+                            quote: qa.question,
+                            executive_response: qa.answer,
+                            finding: qa.question_theme || qa.analyst_concern,
+                            response_directness: qa.response_directness,
+                        }));
+                        data.data.qa_entries = qaEntries;
+                        data.data.top_qa_entries = qaEntries.slice(0, 10);
+                        data.data.citations = citations;
+                        data.citations = citations;
+                    }
+                }
+
+                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(responsePayload) : responsePayload;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);

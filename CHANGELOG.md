@@ -5,6 +5,30 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.115] - 2026-10-12
+
+### Fixed & Enhanced
+- **Earnings Q&A Routing, Citable Tables & Quote Transparency** (`src/toolHandlers.ts`, `src/systemPrompt.ts`, `tools-manifest.json`):
+  - **Tool Description Guidance for `get_company_earnings`**: Updated description in `toolHandlers.ts` and `tools-manifest.json` to clearly document `view='qa'` as itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness, explicitly instructing models to use this view whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes.
+  - **Intelligent View Resolution & Auto-Routing**: In `get_company_earnings` handler, if `view` was not explicitly passed (or defaulted to `'snapshot'`) and the query or parameters inquire about analyst questions, analyst names, who asked, or quotes, automatically routes to `view: 'qa'`.
+  - **Dual Q&A Embedding in Snapshot View**: In `get_company_earnings` with `view: 'snapshot'`, fetches Q&A in parallel and embeds `qa_entries`, `top_qa_entries`, and structured `citations` into the returned payload so that snapshot callers also have immediate access to verbatim analyst Q&As and names.
+  - **Structured Evidence Table Presentation Contract**: Updated `get_earnings_intelligence` and `get_earnings_divergence` tool descriptions to mandate structured evidence table output:
+    `| Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |`
+    while clearly distinguishing Fodda's synthesized theme labels from verbatim statements on the call.
+  - **Payload Formatting with `theme_label` & `citations`**: Formatted `get_earnings_intelligence` and `get_earnings_divergence` payloads to explicitly include `theme_label` and an array of table-ready `citations` with `company`, `ticker`, `quarter`, `speaker`, `analyst_name`, `analyst_firm`, `exec_name`, and `quote`/`finding`.
+  - **System Prompt Quote Storage Invariant (`src/systemPrompt.ts`)**: Added `RULE: EarningsVerbatimQuotesAndQATransparency` explicitly declaring that Fodda stores verbatim analyst Q&A, executive responses, analyst names, firms, and CEO quotes for 517 public companies, strictly barring models from falsely claiming that Fodda lacks quote or analyst storage, and instructing routing to `get_company_earnings(view='qa')`.
+  - **Airtable Offerings Synchronized**: Synchronized updated descriptions in Airtable Offerings table (`tbl93DJ627r81zKVP`) for `get_company_earnings` (`recNicxBGch3YguQn`), `get_earnings_intelligence` (`recVfq7v2csFFmFRQ`), and `get_earnings_divergence` (`recC6171z7YzGSsYp`).
+
+### Tests
+- Added `src/test_earnings_qa_and_citable_tables.ts` verifying all 6 acceptance categories (38 assertions passed):
+  - System prompt quote transparency and Q&A routing invariants.
+  - Tools manifest descriptions for `get_company_earnings`, `get_earnings_intelligence`, and `get_earnings_divergence`.
+  - Walmart single-company Q&A auto-routing and topic matching for AI questions (retrieving Morgan Stanley, Deutsche Bank, Goldman Sachs, etc.).
+  - Walmart snapshot embedding of `qa_entries` and `top_qa_entries`.
+  - Multi-company earnings intelligence theme labels and structured citations.
+  - Earnings divergence theme labels and structured citations.
+- Ran `npm test`: Server health check 200 OK.
+
 ## [1.46.114] - 2026-10-12
 
 ### Changed
