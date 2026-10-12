@@ -34,7 +34,7 @@ async function run() {
     if (divCost) {
         assert(divCost.tool === 'get_earnings_divergence', 'tool matches get_earnings_divergence');
         assert(divCost.name === 'Earnings Divergence & Deflection', 'name matches "Earnings Divergence & Deflection"');
-        assert(divCost.apiCalls === 40, 'apiCalls charged is 40 ($20.00 equivalent)');
+        assert(divCost.apiCalls === 1, 'apiCalls charged is 1 ($0.50 equivalent)');
     }
 
     console.log('\n=== 2. Tools Manifest & Code Invariants ===');

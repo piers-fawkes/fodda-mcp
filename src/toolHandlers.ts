@@ -1865,7 +1865,7 @@ export async function createServer(
                             candidateObj.status = 'on_request';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
                             if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
-                            candidateObj.next_step = `Use request_expert_intro(analyst_id: '${analystId}') to introduce the user to this verified specialist, or call consult_human_agent(analyst_id: '${analystId}') for immediate domain-grounded intelligence.`;
+                            candidateObj.next_step = `This specialist is available On Request. Use request_expert_intro(analyst_id: '${analystId}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${analystId}') for domain fallback intelligence.`;
                         } else {
                             candidateObj.status = 'active';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
@@ -1930,12 +1930,17 @@ export async function createServer(
                     graphs: getGraphs(),
                 });
 
-                const candidates = localCandidates.map(c => ({
-                    ...c,
-                    credibility_anchor: c.credibility_anchor || null,
-                    status: 'active',
-                    next_step: `Call ${c.consult_tool} with analyst_id: '${c.analyst_id}'.`
-                }));
+                const candidates = localCandidates.map(c => {
+                    const isOnReq = c.status === 'on_request';
+                    return {
+                        ...c,
+                        credibility_anchor: c.credibility_anchor || null,
+                        status: c.status || 'active',
+                        next_step: isOnReq
+                            ? `This specialist is available On Request. Use request_expert_intro(analyst_id: '${c.analyst_id}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${c.analyst_id}') for domain fallback intelligence.`
+                            : `Call ${c.consult_tool} with analyst_id: '${c.analyst_id}'.`
+                    };
+                });
 
                 const payload = {
                     query,
@@ -6245,8 +6250,53 @@ export async function createServer(
             `While ${expertName}'s verified Human Agent is currently available On Request and undergoing onboarding verification, here is the latest intelligence and evidence retrieved from Fodda's ${topicLabel} knowledge graph:\n`
         ];
 
-        if (Array.isArray(domainTrends) && domainTrends.length > 0) {
-            domainTrends.slice(0, 4).forEach((t: any, idx: number) => {
+        // Filter domain trends to ensure topical relevance to the query and expert's domain,
+        // preventing unrelated cross-domain trends (e.g. niche mobility vehicles or gym apps) from leaking into a domain brief.
+        const qTokens = specificQueryTokens(query);
+        const substantiveQTokens = qTokens.filter(t => t.length >= 3 && !['about', 'future', 'trend', 'trends', 'what', 'tell', 'show', 'with', 'from', 'this', 'that', 'industry'].includes(t));
+        const topicWords = (topicLabel || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3 && !['industry', 'market', 'trends', 'overview'].includes(w));
+
+        const scoreTrend = (t: any): number => {
+            const trendName = (t.name || '').toLowerCase();
+            const trendDesc = (t.description || '').toLowerCase();
+            const graphId = (t.graph_id || '').toLowerCase();
+            const evidenceText = (Array.isArray(t.evidence) ? t.evidence.map((ev: any) => `${ev.title || ''} ${ev.snippet || ''} ${ev.text || ''} ${ev.brand || ''}`).join(' ') : '').toLowerCase();
+            const contentText = `${trendName} ${trendDesc} ${evidenceText}`;
+
+            let queryScore = 0;
+            for (const tok of substantiveQTokens) {
+                if (trendName.includes(tok)) queryScore += 3.0;
+                else if (trendDesc.includes(tok)) queryScore += 2.0;
+                else if (evidenceText.includes(tok)) queryScore += 1.5;
+                else if (contentText.includes(tok)) queryScore += 1.0;
+            }
+
+            // If there are substantive query tokens, require at least one query token match (queryScore > 0)
+            // so unrelated trends in the same graph (e.g. non-alcoholic cocktails in a dog food brief) are never included.
+            if (substantiveQTokens.length > 0 && queryScore === 0) {
+                return 0;
+            }
+
+            let topicScore = 0;
+            for (const tw of topicWords) {
+                if (trendName.includes(tw)) topicScore += 1.5;
+                else if (trendDesc.includes(tw)) topicScore += 1.0;
+                else if (graphId.includes(tw)) topicScore += 0.5;
+            }
+            return queryScore + topicScore;
+        };
+
+        const rawTrends = Array.isArray(domainTrends) ? domainTrends : [];
+        const scoredTrends = rawTrends
+            .map((t: any) => ({ trend: t, score: scoreTrend(t) }))
+            .filter((item: any) => substantiveQTokens.length > 0 ? item.score > 0 : true)
+            .sort((a: any, b: any) => b.score - a.score)
+            .map((item: any) => item.trend);
+
+        const trendsToRender = scoredTrends.length > 0 ? scoredTrends : (rawTrends.length > 0 && substantiveQTokens.length === 0 ? rawTrends : []);
+
+        if (trendsToRender.length > 0) {
+            trendsToRender.slice(0, 4).forEach((t: any, idx: number) => {
                 parts.push(`#### ${idx + 1}. ${t.name || 'Industry Signal'}`);
                 if (t.description) {
                     parts.push(`${t.description}\n`);
@@ -6276,7 +6326,7 @@ export async function createServer(
                 }
             });
         } else {
-            parts.push(`Recent market indicators show accelerating transformation across ${topicLabel}, driven by changing consumer expectations and rapid technical advancements.\n`);
+            parts.push(`Fodda's knowledge graphs currently do not contain deep trend signals specifically matching "${query}". However, ${expertName}'s verified background covers ${topicLabel}, and you can request a strategic advisory introduction below.\n`);
         }
 
         parts.push(`---\n*Note: ${expertName}'s verified Human Agent is currently available On Request and undergoing onboarding verification. While her team reviews her model, this answer was retrieved from Fodda's underlying ${topicLabel} knowledge graph. You can view her profile and request access at https://www.fodda.ai/experts/${expertSlug}.*`);

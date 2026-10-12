@@ -5,6 +5,70 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.113] - 2026-10-12
+
+### Fixed
+- **Pricing Cache Fallback Alignment with Authoritative API Metering (`src/pricingCache.ts`)**:
+  - **Corrected Tool Cost Quotes in `get_my_account` & `getToolCostSummary()`**: Updated hardcoded `DEFAULT_PRICING` fallback table to match canonical `TOKEN_COSTS` defined in `Fodda API/functions/tracking/metering.ts`:
+    - `earnings_divergence` (`get_earnings_divergence`): reduced from legacy 40 calls to **1 call** ($0.50 equivalent), matching the API server meter.
+    - `earnings_company` (`get_company_earnings` mode: snapshot): reduced from legacy 10 calls to **1 call**.
+    - `earnings_history` (`get_company_earnings` mode: history): reduced from legacy 10 calls to **1 call**.
+    - `earnings_qa` (`get_company_earnings` mode: qa): reduced from 5 calls to **1 call**.
+    - `earnings_compare` (`get_company_earnings` mode: compare): reduced from 15 calls to **2 calls**.
+    - `deep_research_heavy` (`deep_research_topic` mode: heavy): reduced from legacy 30 calls to **10 calls**.
+    - `deep_research_light` (`deep_research_topic` mode: light): reduced from legacy 20 calls to **5 calls**.
+    - `brand_intelligence` (`brand_tracker`): reduced from legacy 20 calls to **4 calls**.
+    - `weekly_tracker` (`manage_scheduled_reports`): reduced from legacy 20 calls to **4 calls**; aligned `meterInteractionType` to `'weekly_tracker'`.
+    - `brainstorm` (`brainstorm_topic`): reduced from legacy 15 calls to **4 calls**.
+    - `url_as_prompt` (`read_url`): reduced from legacy 15 calls to **1 call**.
+    - `upload_compare` (`search_graph` mode: compare): reduced from legacy 20 calls to **4 calls**.
+    - `topic_research` (`search_graph` mode: research): reduced from legacy 15 calls to **1 call**.
+    - `standalone_supplemental` (`get_supplemental_context`): aligned from 5 calls to **1 call** (matching canonical `metering.ts:101`).
+    - `standalone_evidence` (`get_evidence`): reduced from 5 calls to **1 call**.
+    - `standalone_statistics` (`search_statistics`): reduced from 5 calls to **1 call**.
+    - `research_chat`: reduced from 3 calls to **1 call**.
+    - `expert_agent` (`consult_analyst`): reduced from 5 calls to **1 call**.
+    - `earnings_intelligence` (`get_earnings_intelligence`): reduced from 5 calls to **1 call**.
+    - `linkedin_post` (`draft_linkedin_post`): aligned from 10 calls to **3 calls**.
+    - `linkedin_article` (`draft_linkedin_article`): aligned from 20 calls to **5 calls**.
+    - `earnings_guidance` (`get_company_earnings` mode: guidance): aligned from 10 calls to **3 calls**.
+  - **Eliminated User Quota Chilling**: Fixed discrepancy where `get_my_account` quoted alarming figures (e.g. 40 calls for Walmart divergence, 10 for snapshot), causing cautious exploration, when `/v1/research/meter` on the API actually debited only 1 call.
+  - **Airtable Fallback & Mode Mapping Hardening (`src/pricingCache.ts`)**: In `fetchFromAirtable()`, preserved `mode` in record mapping and set defaults to fall back to canonical `DEFAULT_PRICING` entries for missing fields rather than arbitrary zeros.
+  - **Test Alignment (`src/test_earnings_divergence_live.ts`)**: Updated divergence cost assertion from legacy 40 calls to 1 call.
+
+### Tests
+- Added `src/test_pricing_cache_alignment.ts` verifying all 24 billable tool pricing outputs and asserting zero occurrences of inflated 40-call or 10-call quotes for 1-call tools.
+- Verification:
+  - `node --loader ts-node/esm src/test_pricing_cache_alignment.ts`: 27 passed, 0 failed.
+  - `node --loader ts-node/esm src/test_intelligence_and_verifier.ts`: Passed.
+  - `npm test`: Clean build (`tsc`), tools manifest generated (55 tools, 26 billable, 29 free), server health check 200 OK.
+
+## [1.46.112] - 2026-10-09
+
+### Fixed
+- **Domain Intelligence Fallback Filtering & Cross-Domain Trend Leaks (`src/toolHandlers.ts`)**:
+  - **Topical Content Scoring**: In `formatDomainFallbackIntelligence`, implemented strict lexical content scoring over `trendName`, `trendDesc`, and `evidenceText` against substantive query tokens.
+  - **Eliminated Cross-Domain Noise**: When substantive query tokens exist (e.g. `dog`, `food`), trends require direct query token overlap (`queryScore > 0`). Discarded `graphName` token matching which previously caused unrelated trends in broad graphs (e.g. non-alcoholic cocktails in the "Food & Beverage" graph, or mobility vehicles in "Travel") to match unrelated vertical briefs.
+  - **Honest Absence Framing**: When Fodda's knowledge graphs do not contain direct trend matches on a query, the system now honestly states that deep trend signals were not found, rather than spraying unrelated trends from adjacent domain graphs.
+
+### Changed
+- **System Prompt & Discovery Routing for Broad Inquiries & On-Request Experts (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - **Broad Volume Over Precise Thinness (`src/systemPrompt.ts`)**: Codified guidance for broad multi-expert queries (`Ask Fodda experts about [Topic]`):
+    1. Active vs On-Request Gate: Only consult Active Human Agents (`status === 'active'`) conversationally via `consult_human_agent` or `consult_analyst`. Never proactively consult On-Request specialists (`status === 'on_request'`) unless explicitly requested by name.
+    2. Proactive Broadening on Adjacent / Macro-Only Coverage: When active experts cover a topic through an adjacent or macro-cultural lens (e.g. Anu Lingala applying "trend bipolarity" to pets without pet-food data), proactively enrich the answer with empirical category signals, company case studies, and brand moves from Fodda's domain graphs (`search_graph`), supported by supplemental economic/demographic data.
+    3. Multi-Layered Briefing Structure: Lead with the active expert's macro framework, substantiate with concrete domain graph trends/case studies, and conclude with balanced next moves offering advisory introductions (`request_expert_intro`) to On-Request vertical specialists (e.g. formulation/regulatory).
+  - **Clarity in `find_expert` Candidate Routing (`src/toolHandlers.ts`)**: Updated `candidateObj.next_step` and local fallback for On-Request specialists to clearly instruct callers to use `request_expert_intro` for human advisory introductions, preventing client LLMs from blindly consulting On-Request profiles as active twins.
+
+### Tests
+- Added clean-room QA regression suite `src/test_marina_dog_food_qa.ts` verifying:
+  1. `find_expert` marks Marina Reluskoska with `status: 'on_request'` and directs to `request_expert_intro`.
+  2. `consult_human_agent` domain fallback filters out unrelated mobility vehicles, sports, and non-alcoholic drinks, preserving on-topic pet food trends and case studies (The Farmer's Dog / Walmart, Pet Circle, M&S Paws & Pals).
+- Verification:
+  - `npx tsx src/test_marina_dog_food_qa.ts`: Passed.
+  - `npx tsx src/test_expert_layer.ts`: Passed.
+  - `npx tsx src/test_on_request_intercept.ts`: Passed.
+  - `npm test`: Clean build (`tsc`), 55 tools emitted to manifest (Cost Silence Guard passed), server health check 200 OK.
+
 ## [1.46.111] - 2026-10-08
 
 ### Added
