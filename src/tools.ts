@@ -20,7 +20,7 @@ export const TOOL_VERSIONS = {
     get_neighbors: "1.2.0",
     get_evidence: "1.1.0",
     get_node: "1.0.0",
-    get_label_values: "1.2.0",
+    get_label_values: "1.3.0",
     psfk_overview: "1.0.0",
     discover_adjacent_trends: "1.1.0",
     brand_tracker: "1.0.0",

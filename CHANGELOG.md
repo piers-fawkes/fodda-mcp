@@ -5,6 +5,15 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.118] - 2026-10-15
+
+### Enhanced & Steered
+- **Anti-Scraping Tool Guidance & Sibling Routing for `get_label_values`** (`src/toolHandlers.ts`, `src/tools.ts`, `tools-manifest.json`, Airtable `tbl93DJ627r81zKVP`):
+  - **Tool Description & Sibling Routing**: Updated `get_label_values` tool description to prevent foundation models (Claude, ChatGPT, Copilot) from treating taxonomy lookups as brute-force dump endpoints for thematic discovery. Clarified that the tool returns up to 100 values alphabetically without evidence or signals, is optimized for entity exploration (Brands, Locations) and small discrete report graphs (<40 trends, e.g. DHL/PwC radars), and explicitly forbids using it for thematic discovery (e.g. "find AI trends") on large domain graphs (`tech`, `retail`, `cpg`), directing models to `search_graph` and `get_domain_intelligence`.
+  - **Parameter Documentation**: Annotated `label` parameter schema with explicit warning that output caps at 100 values alphabetically.
+  - **Airtable Offerings Synchronized**: Synchronized updated description in Airtable Offerings table (`tbl93DJ627r81zKVP`, record `recbrUe2WgY7ckeIN`), ensuring automated build sync (`sync-descriptions-from-airtable.mjs`) remains aligned with single source of truth.
+  - **Tool Version Bump**: Bumped `get_label_values` to `1.3.0` in `src/tools.ts`.
+
 ## [1.46.117] - 2026-10-12
 
 ### Added & Enhanced

@@ -2884,10 +2884,10 @@ export async function createServer(
     // --- get_label_values ---
     server.tool(
         'get_label_values',
-        'List all brands, locations, technologies, audiences, or trends within a specific knowledge graph. Use to explore what a graph contains — e.g., "what brands are in the retail graph?" or "what locations does the fashion graph cover?". To get a complete list of every trend in a graph, call with label="Trend" — this returns the full deterministic list, useful for industry-report graphs where search may return partial results. (Graph taxonomy label value lookup.)',
+        'List unique taxonomy entity values (brands, locations, technologies, audiences) or retrieve the complete table of contents for small, discrete report graphs (<40 trends, e.g. DHL, PwC, or Mintel radars) where search may return partial results. Returns up to 100 unique values ordered alphabetically. Sibling routing: DO NOT use this tool for thematic or topic research (e.g. \'find AI trends\' or \'what trends are in tech?\') on large domain graphs (tech, retail, cpg), because it caps at 100 items alphabetically without evidence or signals; use search_graph or get_domain_intelligence instead for semantic trend retrieval. (Graph taxonomy label value lookup.)',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
-            label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend')"),
+            label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend'). Note: caps at 100 values alphabetically."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             property: z.string().optional().describe('Optional property to return values for. Defaults vary by label.')
         },
