@@ -48,7 +48,8 @@
         "mcp",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status (\"working\" | \"completed\" | \"failed\") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s. (Expert deliverable job status poll.)"
     },
@@ -550,7 +551,8 @@
         "mcp",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Commissions an executive document from an analyst or Human Agent—such as a strategic briefing, market memo, competitive assessment, or publication-ready article. Use when the user requests a formal deliverable rather than conversational chat (e.g., 'Have Ben Dietz write a strategic memo on retail media networks'). Workflow routing: Discover available analysts and their specific commissionable offerings first via list_analysts or consult them interactively via consult_human_agent / consult_analyst. Execution & follow-up: Requests may process asynchronously; returns a job_id that can be polled to completion using check_deliverable_status. Returns job confirmation, estimated completion time, and deliverable status."
     },
@@ -563,7 +565,8 @@
         "mcp",
         "expert-consult",
         "copilot",
-        "chatgpt"
+        "chatgpt",
+        "claude"
       ],
       "description": "Executive advisory introduction and inquiry concierge: requests a facilitated advisory introduction or 1-on-1 strategic consultation with an On-Request living specialist or active Human Agent across 4,150+ indexed topics. Use when a user wants to hire, book, or speak directly with a human expert, or when an expert does not have an instant calendar link (e.g., 'I want to speak with Peter Abraham about bicycle retail strategy'). Sibling routing: Use consult_human_agent for immediate AI-driven conversational consultation with active digital twins; use find_expert to discover specialists; use request_expert_intro when the user seeks direct human-to-human advisory engagement. Returns immediate request confirmation, concierge tracking reference, and expected email follow-up timeline."
     },

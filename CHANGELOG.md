@@ -5,6 +5,18 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.119] - 2026-10-15
+
+### Added & Enhanced
+- **WebMCP & MCP Specification Convergence: Structured `outputSchema` & Consequential Safety Annotations** (`src/toolHandlers.ts`, `src/tools.ts`, `package.json`, `tools-manifest.json`):
+  - **Structured `outputSchema` Support**: Enhanced server tool registration wrapper to register JSON `outputSchema` definitions alongside `inputSchema` for tools in `@modelcontextprotocol/sdk`. Enabled returning typed `structuredContent` alongside `content[0].text` for backwards compatibility.
+  - **Core Specialist Tools Structured Output**: Added explicit `outputSchema` definitions and structured payload returns to `find_expert`, `consult_human_agent`, and `consult_analyst`. Downstream models and host platforms (Claude, Cursor, Copilot Studio, and Chrome WebMCP agents) now receive typed objects for candidate lists, coverage tiers, credibility anchors, expert metadata, and next moves without relying on parsing stringified markdown or text JSON.
+  - **Tool Safety Hints (`consequentialHint: true`)**: Added `consequentialHint: true` annotation across all 15 state-mutating and external communication tools (`request_expert_intro`, `request_deliverable`, `begin_expert_onboarding`, `submit_basic_info`, `submit_mcp_source`, `finalize_byo_mcp_onboarding`, `expert_onboarding_research`, `submit_expertise_analysis`, `confirm_themes`, `schedule_interview`, `update_user_profile`, `toggle_graph_preference`, `send_feedback`, `sign_up_free_account`, `manage_scheduled_reports`). Signals host models to display confirmation prompts before executing operations with real-world impact.
+  - **Tool Version Bumps**: Bumped `find_expert` to `1.3.0`, `consult_human_agent` to `1.4.0`, `consult_analyst` to `1.2.0`, and `request_expert_intro` to `1.1.0` in `src/tools.ts`.
+- **Claude Connector Expert Deliverables & Advisory Scope (`/claude`)** (`src/index.ts`, `tools-manifest.json`):
+  - Added `request_deliverable`, `check_deliverable_status`, and `request_expert_intro` to `OFFERING_SCOPED_TOOLS['claude']`.
+  - Enables Claude Web, Desktop, and Code users to commission executive briefs and strategic deliverables directly from Human Agents (like Thiago Bersou and Ben Dietz) via `request_deliverable` without hitting "tool unavailable on this connector endpoint" blocks. Automatically guarded by Claude's user confirmation prompt via `consequentialHint: true` and `readOnlyHint: false`.
+
 ## [1.46.118] - 2026-10-15
 
 ### Enhanced & Steered

@@ -795,7 +795,16 @@ export async function createServer(
                 }
             };
         }
-        return (originalServerTool as any)(name, ...args);
+        const registered = (originalServerTool as any)(name, ...args);
+        for (const arg of args) {
+            if (arg && typeof arg === 'object' && arg.outputSchema) {
+                registered.update({ outputSchema: arg.outputSchema });
+                if (registered.annotations) {
+                    delete registered.annotations.outputSchema;
+                }
+            }
+        }
+        return registered;
     };
 
     // Register capabilities and citable fodda:// resource handlers
@@ -1805,7 +1814,34 @@ export async function createServer(
             limit: z.number().optional().default(3).describe('Maximum candidate experts to return (default: 3, max: 3).'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Find Expert Candidates', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        {
+            title: 'Find Expert Candidates',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+            outputSchema: {
+                query: z.string().describe('The search query'),
+                results: z.array(z.object({
+                    analyst_id: z.string(),
+                    display_name: z.string(),
+                    category: z.string(),
+                    consult_tool: z.string(),
+                    credibility_anchor: z.string().nullable().optional(),
+                    reason: z.string().optional(),
+                    status: z.string().optional(),
+                    search_ask_line: z.string().optional(),
+                    why_matched: z.array(z.string()).optional(),
+                    next_step: z.string().optional()
+                })).describe('Ranked candidate specialists'),
+                candidates: z.array(z.any()).optional().describe('Alias for results'),
+                on_request_experts: z.array(z.any()).optional().describe('Specialists available on request'),
+                total_matches: z.number().optional().describe('Total matches found'),
+                next_step: z.string().optional().describe('Recommended next action'),
+                note: z.string().optional().describe('Guidance or referral note'),
+                related_knowledge_graphs: z.array(z.any()).optional().describe('Related graphs if no direct match')
+            }
+        } as any,
         async ({ query, limit, userId: uid }) => {
             try {
                 const effectiveLimit = Math.min(Math.max(limit || 3, 1), 3);
@@ -1907,7 +1943,10 @@ export async function createServer(
                         payload.next_step = onRequestExperts[0].next_step || "Use request_expert_intro to request an introduction.";
                     }
 
-                    return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+                    return {
+                        content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+                        structuredContent: payload
+                    };
                 }
 
                 // Fallback: local findCandidateExperts over active catalog cache
@@ -1955,7 +1994,10 @@ export async function createServer(
                     })
                 };
 
-                return { content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }] };
+                return {
+                    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
+                    structuredContent: payload
+                };
             } catch (err: any) {
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
@@ -5371,7 +5413,7 @@ export async function createServer(
             userContext: z.string().describe('Behavioral framing instructions for this person. Format: one sentence of identity, then numbered FRAMING INSTRUCTIONS. Example: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists." Max 2000 chars.'),
             accountContext: z.string().optional().describe('Description of their company: industry, size, key markets, competitive position, mission. Shared across all users on this account. Max 2000 chars.'),
         },
-        { title: 'Update Research Profile', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Update Research Profile', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as any,
         async ({ userContext, accountContext }) => {
             try {
                 const body: Record<string, string> = {};
@@ -5418,7 +5460,7 @@ export async function createServer(
             enabled: z.boolean().describe('true to enable (turn on), false to disable (turn off).'),
             user_email: z.string().optional().describe('Optional. Use ONLY when operating as an Admin on behalf of another user to specify their email.')
         },
-        { title: 'Toggle Graph or Skill', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Toggle Graph or Skill', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as any,
         async ({ target_id, enabled, user_email }) => {
             try {
                 const body: any = { target_id, enabled };
@@ -5470,7 +5512,7 @@ export async function createServer(
             category: z.string().optional().describe("Category: 'feedback', 'bug', 'feature_request', 'exit_reason', 'complaint'"),
             recent_prompt: z.string().optional().describe('The prompt or question that generated the answer being commented on'),
         },
-        { title: 'Send Feedback', readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Send Feedback', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as any,
         async ({ feedback, user_email, category, recent_prompt }) => {
             try {
                 const userLabel = user_email || (userId !== 'anonymous' ? userId : 'anonymous trial user');
@@ -5565,7 +5607,7 @@ export async function createServer(
             job_title: z.string().optional().describe('User\'s job title (optional)'),
             company: z.string().optional().describe('User\'s company name (optional)'),
         },
-        { title: 'Create Base Account', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Create Base Account', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ email, user_confirmed, name, job_title, company }) => {
             if (!user_confirmed) {
                 return {
@@ -5959,7 +6001,7 @@ export async function createServer(
             brands: z.array(z.string()).optional()
                 .describe('For brand_intelligence: brand names to track (e.g., ["Nike", "Patagonia"])'),
         },
-        { title: 'Manage Scheduled Reports', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        { title: 'Manage Scheduled Reports', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true } as any,
         async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
             try {
                 if (action === 'create') {
@@ -6833,7 +6875,17 @@ export async function createServer(
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
                 ...(result.usage ? { usage: result.usage } : {}),
-                content: [{ type: 'text' as const, text: parts.join('\n') }]
+                content: [{ type: 'text' as const, text: parts.join('\n') }],
+                structuredContent: {
+                    coverage: result.coverage || 'FULL',
+                    credibility_anchor: credibility_anchor || null,
+                    expert: {
+                        name: expertDisplayName,
+                        analyst_id: resolvedAnalystId
+                    },
+                    sources_used: result.sources_used || [],
+                    next_moves: humanAgentNextMoves || null
+                }
             };
         } catch (err: any) {
             const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
@@ -6935,7 +6987,16 @@ export async function createServer(
                         coverage: 'FULL',
                         next_moves: humanAgentNextMoves,
                         sources_used: sources,
-                        content: [{ type: 'text' as const, text: parts.join('\n') }]
+                        content: [{ type: 'text' as const, text: parts.join('\n') }],
+                        structuredContent: {
+                            coverage: 'FULL',
+                            expert: {
+                                name: expertName,
+                                analyst_id: expertId
+                            },
+                            sources_used: sources,
+                            next_moves: humanAgentNextMoves || null
+                        }
                     };
                 } catch (fallbackErr: any) {
                     console.warn('[OnRequestIntercept] Domain search fallback failed:', fallbackErr.message);
@@ -6943,7 +7004,16 @@ export async function createServer(
                     return {
                         coverage: 'PARTIAL',
                         sources_used: sources,
-                        content: [{ type: 'text' as const, text: reportText }]
+                        content: [{ type: 'text' as const, text: reportText }],
+                        structuredContent: {
+                            coverage: 'PARTIAL',
+                            expert: {
+                                name: expertName,
+                                analyst_id: expertId
+                            },
+                            sources_used: sources,
+                            next_moves: null
+                        }
                     };
                 }
             }
@@ -7000,7 +7070,12 @@ export async function createServer(
             content: [{
                 type: 'text' as const,
                 text: `Deep consultation started! The expert is conducting deep background research across specialist graphs and market data.\nJob ID: ${jobId}\n\nIMPORTANT: Call check_research_status with this Job ID to retrieve the completed analysis. The tool will wait server-side (~30s) and return as soon as the expert finishes. Keep calling until status is COMPLETE or FAILED.`
-            }]
+            }],
+            structuredContent: {
+                status: 'RUNNING',
+                job_id: jobId,
+                coverage: 'PENDING'
+            }
         };
     }
 
@@ -7316,7 +7391,17 @@ export async function createServer(
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
                 ...(result.usage ? { usage: result.usage } : {}),
-                content: [{ type: 'text' as const, text: parts.join('\n') }]
+                content: [{ type: 'text' as const, text: parts.join('\n') }],
+                structuredContent: {
+                    coverage: result.coverage || 'FULL',
+                    credibility_anchor: credibility_anchor || null,
+                    expert: {
+                        name: cleanDisplayName(resolvedAnalystId || analyst_id),
+                        analyst_id: resolvedAnalystId || analyst_id
+                    },
+                    sources_used: result.sources_used || [],
+                    next_moves: analystNextMoves || null
+                }
             };
         } catch (err: any) {
             const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
@@ -7391,7 +7476,12 @@ export async function createServer(
             content: [{
                 type: 'text' as const,
                 text: `Deep consultation started! The analyst is conducting deep background research across specialist graphs and market data.\nJob ID: ${jobId}\n\nIMPORTANT: Call check_research_status with this Job ID to retrieve the completed analysis. The tool will wait server-side (~30s) and return as soon as the analyst finishes. Keep calling until status is COMPLETE or FAILED.`
-            }]
+            }],
+            structuredContent: {
+                status: 'RUNNING',
+                job_id: jobId,
+                coverage: 'PENDING'
+            }
         };
     }
 
@@ -7414,7 +7504,25 @@ export async function createServer(
             deep: z.boolean().optional().describe("Set true to have the agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Consult Analyst', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        {
+            title: 'Consult Analyst',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+            outputSchema: {
+                coverage: z.string().optional().describe('Coverage tier: FULL, PARTIAL, or PENDING'),
+                credibility_anchor: z.string().nullable().optional().describe('Pedigree or executive role framing'),
+                expert: z.object({
+                    name: z.string().optional().describe('Display name of the analyst or persona'),
+                    analyst_id: z.string().optional().describe('Identifier of the analyst or persona')
+                }).optional().describe('Analyst information'),
+                sources_used: z.array(z.any()).optional().describe('Sources, citations, and graph evidence cited in the analysis'),
+                next_moves: z.any().optional().describe('Recommended next research or application actions'),
+                status: z.string().optional().describe('Status if running asynchronous deep research'),
+                job_id: z.string().optional().describe('Job identifier if running asynchronous deep research')
+            }
+        } as any,
         async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
@@ -7449,7 +7557,25 @@ export async function createServer(
             deep: z.boolean().optional().describe("Set true to have the human agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Consult Human Agent', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        {
+            title: 'Consult Human Agent',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+            outputSchema: {
+                coverage: z.string().optional().describe('Coverage tier: FULL, PARTIAL, or PENDING'),
+                credibility_anchor: z.string().nullable().optional().describe('Official background credibility anchor of the Human Agent'),
+                expert: z.object({
+                    name: z.string().optional().describe('Display name of the expert'),
+                    analyst_id: z.string().optional().describe('Identifier of the expert')
+                }).optional().describe('Expert information'),
+                sources_used: z.array(z.any()).optional().describe('Sources, citations, and graph evidence cited in the analysis'),
+                next_moves: z.any().optional().describe('Recommended next research or application actions'),
+                status: z.string().optional().describe('Status if running asynchronous deep research'),
+                job_id: z.string().optional().describe('Job identifier if running asynchronous deep research')
+            }
+        } as any,
         async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
@@ -7807,7 +7933,7 @@ export async function createServer(
             message: z.string().optional().describe("Brief description of what you'd like to discuss, project scope, or questions for the expert."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Request Expert Introduction', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        { title: 'Request Expert Introduction', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true } as any,
         async ({ expert_id, requester_email, requester_name, message, userId: uid }) => {
             try {
                 const normalizedEmail = (requester_email || '').trim().toLowerCase();
@@ -7908,7 +8034,7 @@ export async function createServer(
             attachments: z.array(z.object({ content: z.string() })).optional().describe("Optional supporting text files mounted into the analyst's workspace (max 5)."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Request Analyst Deliverable', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Request Analyst Deliverable', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ analyst_id, offering_key, brief, attachments, userId: uid }) => {
             try {
                 logUserQuery(brief, 'skill_deliverable');
@@ -8223,7 +8349,7 @@ export async function createServer(
             byoMcp: z.boolean().optional().describe('Set to true if the expert explicitly confirmed they have their own live MCP endpoint to use as their knowledge base. Defaults to false (standard knowledge-graph onboarding).'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Kick off your Fodda Human Agent onboarding', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ name, email, userEmail: uEmail, knowledgeArea, role, byoMcp, userId: uid }) => {
             const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
             const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
@@ -8412,7 +8538,7 @@ export async function createServer(
             headshotUrl: z.string().optional().describe("Optional public HTTPS URL to the expert's profile headshot image (URL only, no file uploads)."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the expert registration step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the expert registration step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ name, role, knowledgeArea, termsAccepted, email, userEmail: uEmail, callPrice, bio, description, headshotUrl, userId: uid }) => {
             if (termsAccepted !== true) {
                 return formatOnboardingError(null, {
@@ -8491,7 +8617,7 @@ export async function createServer(
             userEmail: z.string().optional().describe("Alternative alias for expert email."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the BYO-MCP endpoint connection step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        { title: 'the BYO-MCP endpoint connection step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true } as any,
         async ({ mcpUrl, mcpAuthType, email, userEmail: uEmail, userId: uid }) => {
             const authType = mcpAuthType || 'none';
             if (authType !== 'none') {
@@ -8609,7 +8735,7 @@ export async function createServer(
             termsAccepted: z.boolean().optional().describe("Optional if already accepted at basic info. The expert must have accepted the Fodda Terms of Service (https://www.fodda.ai/terms) and Privacy Policy (https://www.fodda.ai/privacy)."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the BYO-MCP onboarding final submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the BYO-MCP onboarding final submission step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ name, role, knowledgeArea, mcpUrl, email, userEmail: uEmail, callPrice, expertTopicsRaw, voiceStudyRaw, bio, description, headshotUrl, termsAccepted, userId: uid }) => {
             if (termsAccepted === false) {
                 return formatOnboardingError(null, {
@@ -8703,7 +8829,7 @@ export async function createServer(
             userEmail: z.string().optional().describe("Alternative alias for expert email."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the background research step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the background research step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ email, userEmail: uEmail, userId: uid }) => {
             const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
             const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
@@ -8762,7 +8888,7 @@ export async function createServer(
             userEmail: z.string().optional().describe("Alternative alias for expert email."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the expertise analysis submission step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the expertise analysis submission step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ voiceStudy, expertTopics, termsAccepted, email, userEmail: uEmail, userId: uid }) => {
             if (termsAccepted === false) {
                 return formatOnboardingError(null, {
@@ -8907,7 +9033,7 @@ export async function createServer(
             userEmail: z.string().optional().describe('Alias for email.'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the theme confirmation step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the theme confirmation step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ themes, flaggedFindingIds, flagNote, email, userEmail: uEmail, userId: uid }) => {
             const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
             const effectiveEmail = declaredEmail || resolveUserId(userId, uid);
@@ -9033,7 +9159,7 @@ export async function createServer(
             userEmail: z.string().optional().describe('Alias for email.'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'the interview scheduling step', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'the interview scheduling step', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false } as any,
         async ({ datetime, localTimeStr, now, email, userEmail: uEmail, userId: uid }) => {
             const declaredEmail = email || uEmail || (uid && uid.includes('@') ? uid : '');
             const effectiveEmail = declaredEmail || resolveUserId(userId, uid);

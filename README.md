@@ -18,7 +18,7 @@
 
 ### Claude (Web & Desktop — Scoped Research Connector)
 
-Fodda provides a dedicated scoped endpoint optimized for research in Claude: **`https://mcp.fodda.ai/claude`**. It exposes a curated, read-only 27-tool research suite (knowledge graphs, company earnings transcripts, macroeconomic data, and synthetic analyst consultation) with all internal administrative and expert-onboarding mutators suppressed.
+Fodda provides a dedicated scoped endpoint optimized for research and expert advisory in Claude: **`https://mcp.fodda.ai/claude`**. It exposes a curated 30-tool suite (knowledge graphs, company earnings transcripts, macroeconomic data, synthetic analyst consultation, and commissioned deliverables) with all internal administrative and expert-onboarding mutators suppressed.
 
 1. In Claude, go to **Settings → Connectors → Add custom connector**
 2. Enter Name: **Fodda** and URL: **`https://mcp.fodda.ai/claude`**
