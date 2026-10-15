@@ -798,7 +798,7 @@ export async function createServer(
         const registered = (originalServerTool as any)(name, ...args);
         for (const arg of args) {
             if (arg && typeof arg === 'object' && arg.outputSchema) {
-                registered.update({ outputSchema: arg.outputSchema });
+                registered.outputSchema = z.looseObject(arg.outputSchema);
                 if (registered.annotations) {
                     delete registered.annotations.outputSchema;
                 }
@@ -1822,7 +1822,7 @@ export async function createServer(
             openWorldHint: false,
             outputSchema: {
                 query: z.string().describe('The search query'),
-                results: z.array(z.object({
+                results: z.array(z.looseObject({
                     analyst_id: z.string(),
                     display_name: z.string(),
                     category: z.string(),
@@ -7513,7 +7513,7 @@ export async function createServer(
             outputSchema: {
                 coverage: z.string().optional().describe('Coverage tier: FULL, PARTIAL, or PENDING'),
                 credibility_anchor: z.string().nullable().optional().describe('Pedigree or executive role framing'),
-                expert: z.object({
+                expert: z.looseObject({
                     name: z.string().optional().describe('Display name of the analyst or persona'),
                     analyst_id: z.string().optional().describe('Identifier of the analyst or persona')
                 }).optional().describe('Analyst information'),
@@ -7566,7 +7566,7 @@ export async function createServer(
             outputSchema: {
                 coverage: z.string().optional().describe('Coverage tier: FULL, PARTIAL, or PENDING'),
                 credibility_anchor: z.string().nullable().optional().describe('Official background credibility anchor of the Human Agent'),
-                expert: z.object({
+                expert: z.looseObject({
                     name: z.string().optional().describe('Display name of the expert'),
                     analyst_id: z.string().optional().describe('Identifier of the expert')
                 }).optional().describe('Expert information'),

@@ -5,6 +5,13 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.120] - 2026-10-15
+
+### Fixed
+- **Permissive Output Schema Serialization (`z.looseObject`) for Claude & Host Client Validation** (`src/toolHandlers.ts`):
+  - Converted `registered.outputSchema` and nested output objects (`results` array in `find_expert`, `expert` objects in `consult_analyst` and `consult_human_agent`) to use `z.looseObject(...)` (`additionalProperties: {}`).
+  - Resolves strict Ajv client schema validation failures (`MCP error -32602: Structured content does not match the tool's output schema: data/results/0 must NOT have additional properties`) encountered on Claude (`/claude`) and other MCP host clients when backends return supplementary metadata fields alongside defined schema properties.
+
 ## [1.46.119] - 2026-10-15
 
 ### Added & Enhanced
