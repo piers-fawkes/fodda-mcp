@@ -7,7 +7,7 @@
 
   [![MCP Registry](https://img.shields.io/badge/MCP_Registry-ai.fodda%2Fmcp--server-blue)](https://registry.modelcontextprotocol.io/v0.1/servers?search=ai.fodda/mcp-server)
   [![npm](https://img.shields.io/npm/v/fodda-mcp)](https://www.npmjs.com/package/fodda-mcp)
-  [![Version](https://img.shields.io/badge/version-1.46.117-green)](./CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/version-1.46.121-green)](./CHANGELOG.md)
   [![License](https://img.shields.io/badge/license-Proprietary-red)](https://fodda.ai)
 
 </div>
@@ -93,6 +93,7 @@ The Fodda MCP server exposes a rich suite of 30 tools to search, analyze, brains
 | `check_research_status` | Check progress or retrieve the final narrative report of a deep research job. | ✅ |
 | `get_supplemental_context` | Fetch macro context from up to 10 institutional data sources in a single query. | ❌ |
 | `check_supplemental_status` | Retrieve output from a supplemental context job. | ✅ |
+| `generate_comms_plan` | 2026 Strategy-to-Activation Comms & Retail Media Plan with T1-T5 tasks, 3-layer shopper audience cards, digital shelf intelligence, and activation manifest. | ❌ |
 
 ### Synthetic Analyst & Visualization
 | Tool | Description | Deterministic |

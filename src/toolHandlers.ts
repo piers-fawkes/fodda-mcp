@@ -1153,11 +1153,13 @@ export async function createServer(
                     { endpoint: "POST /v1/search/report", mcp_tool: "get_report_intelligence", description: "Published corporate research, forecast reports, and market decks" },
                     { endpoint: "POST /v1/brand-intelligence/:brand", mcp_tool: "brand_tracker", description: "Multi-graph brand footprint, Google Trends & Wikipedia pageviews" },
                     { endpoint: "GET /v1/statistics", mcp_tool: "search_statistics", description: "Hard numbers and quantitative metrics data layer" },
-                    { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Certified multi-source Evidence Dossier on any topic" }
+                    { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Certified multi-source Evidence Dossier on any topic" },
+                    { endpoint: "POST /v1/planning/comms-plan", mcp_tool: "generate_comms_plan", description: "2026 Strategy-to-Activation Comms & Retail Media Planning Engine" }
                 ],
                 possible_next_actions: [
                     { action: 'challenge', name: 'Pressure-test this', description: 'Search for counter-evidence, disconfirming signals, and untested assumptions.', target_tool: 'verify_market_claim' },
                     { action: 'ask_experts', name: 'Ask an expert', description: 'Consult a named Human Agent or specialist analyst to interpret the findings.', target_tool: 'find_expert' },
+                    { action: 'plan_comms', name: 'Generate Comms & Media Plan', description: 'Turn trend insights into an agency-grade comms and retail media activation plan.', target_tool: 'generate_comms_plan' },
                     { action: 'track', name: 'Track this topic', description: 'Establish recurring intelligence updates for ongoing monitoring.', target_tool: 'manage_scheduled_reports' },
                     { action: 'create_brief', name: 'Create a brief', description: 'Turn completed research into a structured, executive-ready deliverable or article.', target_tool: 'request_deliverable' }
                 ]
@@ -1491,6 +1493,16 @@ export async function createServer(
                         available: true
                     },
                     expertAction,
+                    {
+                        action: 'plan_comms',
+                        name: 'Generate Comms & Media Plan',
+                        description: 'Turn trend insights into an agency-grade comms and retail media activation plan.',
+                        reason: `Bridges cultural tensions into T1-T5 tasks, 3-layer shopper audience cards, and digital shelf intelligence on ${cleanTopic}.`,
+                        target_tool: 'generate_comms_plan',
+                        suggested_prompt: `Generate an agency comms and retail media activation plan for ${cleanTopic}`,
+                        suggested_parameters: { query: cleanTopic, budget_tier: 'growth' },
+                        available: true
+                    },
                     {
                         action: 'track_topic',
                         name: 'Track this topic',
@@ -4670,6 +4682,87 @@ export async function createServer(
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
                 return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+            }
+        }
+    );
+
+    // --- generate_comms_plan ---
+    server.tool(
+        'generate_comms_plan',
+        'Translate cultural trends, brand challenges, and consumer insights into a 2026 Strategy-to-Activation Comms & Retail Media Plan. Generates an agency-grade media deliverable with T1-T5 tasks, 3-layer shopper audience cards (with mandatory exclusions), Amazon/Walmart digital shelf intelligence, tactical placement tables with [LIVE] provenance tags, and a machine-readable activation manifest.',
+        {
+            query: z.string().describe("The trend, category, or strategic challenge to build a comms plan for (e.g. 'Gen Z social running clubs', 'functional mushroom coffee')."),
+            brand: z.string().optional().describe("Target brand name (e.g. 'On Running', 'Olipop', 'Cava'). Defaults to 'Brand'."),
+            budget_tier: z.enum(['emerging', 'growth', 'scale']).optional().describe("Budget allocation scale: 'emerging' (lean test-and-learn), 'growth' (balanced brand & retail media), or 'scale' (full omni-channel saturation). Defaults to 'growth'."),
+            markets: z.array(z.string()).optional().describe("Focus geographic markets (e.g. ['US'], ['UK'])."),
+            userId: z.string().optional().describe('Optional user identifier.')
+        },
+        {
+            title: 'Generate Strategy-to-Activation Comms & Retail Media Plan',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: true,
+            outputSchema: {
+                brief: z.string().optional().describe('Strategic brief / topic investigated'),
+                brand: z.string().optional().describe('Target brand'),
+                planning_window: z.string().optional().describe('Planning window'),
+                plan_on_a_page: z.any().optional().describe('Executive BLUF and strategic focus'),
+                comms_tasks: z.array(z.any()).optional().describe('T1-T5 behavioural ladder comms tasks'),
+                audience_architecture: z.array(z.any()).optional().describe('3-layer shopper audience cards with exclusions'),
+                tactical_placements: z.array(z.any()).optional().describe('Tactical media placement table rows'),
+                retail_media_shelf: z.any().optional().describe('Live Amazon and Walmart digital shelf competition'),
+                activation_manifest: z.any().optional().describe('Machine-readable ad ops activation manifest'),
+                formatted_markdown: z.string().optional().describe('Complete formatted agency deliverable in Markdown')
+            }
+        } as any,
+        async ({ query, brand, budget_tier, markets, userId: uid }) => {
+            try {
+                logUserQuery(query, 'comms_plan');
+
+                const guard = sptGuard('planning');
+                if (guard) return guard;
+
+                const body: Record<string, any> = {
+                    query,
+                    ...(brand ? { brand } : {}),
+                    ...(budget_tier ? { budget_tier } : {}),
+                    ...(Array.isArray(markets) && markets.length > 0 ? { markets } : {})
+                };
+
+                const data = await foddaRequest('POST', '/v1/planning/comms-plan', apiKey, resolveUserId(userId, uid), body);
+
+                const withheld = await settleOrWithhold({
+                    queryTypeCode: 'planning',
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    query,
+                }, 'generate_comms_plan');
+                if (withheld) return withheld;
+
+                const markdown = data?.markdown || '';
+                // Ensure bare dollar signs are escaped to prevent KaTeX rendering math-mode collapse
+                const safeMarkdown = markdown.replace(/(?<!\\)\$([0-9])/g, '\\$$$1');
+
+                const cleanPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+
+                const structuredBlock = {
+                    retail_media_shelf: cleanPayload?.retail_media_shelf,
+                    activation_manifest: cleanPayload?.activation_manifest
+                };
+                const combinedText = safeMarkdown.trim() + '\n\n```json\n' + JSON.stringify(structuredBlock, null, 2) + '\n```';
+
+                return {
+                    ...cleanPayload,
+                    formatted_markdown: safeMarkdown.trim(),
+                    retail_media_shelf: cleanPayload?.retail_media_shelf,
+                    activation_manifest: cleanPayload?.activation_manifest,
+                    content: [{ type: 'text' as const, text: combinedText }],
+                };
+            } catch (err: any) {
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'generate_comms_plan', userId, apiKey, sessionSource);
             }
         }
     );

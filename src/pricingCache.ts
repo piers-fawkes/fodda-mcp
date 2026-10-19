@@ -370,6 +370,18 @@ const DEFAULT_PRICING: QueryPricing[] = [
         includesSupplementals: true,
         absorbsGeminiCost: false,
     },
+    {
+        queryTypeCode: 'planning',
+        queryTypeName: 'Strategy-to-Activation Comms & Retail Media Plan',
+        apiCallsCharged: 1,
+        researchCalls: 1,
+        overheadCalls: 0,
+        mcpToolName: 'generate_comms_plan',
+        meterInteractionType: 'planning',
+        isActive: true,
+        includesSupplementals: true,
+        absorbsGeminiCost: false,
+    },
 ];
 
 // ---------------------------------------------------------------------------

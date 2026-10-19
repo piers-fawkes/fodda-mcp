@@ -41,6 +41,7 @@ const BILLS_AS = {
   draft_linkedin_article: 'linkedin_article',
   verify_market_claim: 'topic_research',
   get_intelligence_dossier: 'topic_research',
+  generate_comms_plan: 'planning',
 };
 
 const CATEGORY = {
@@ -52,6 +53,7 @@ const CATEGORY = {
   consult_analyst: 'Expert', consult_human_agent: 'Expert', verify_claim: 'Expert', list_analysts: 'Expert', find_expert: 'Expert', request_expert_intro: 'Expert',
   get_specialist_intelligence: 'Intelligence', get_expert_intelligence: 'Intelligence',
   verify_market_claim: 'Intelligence', get_intelligence_dossier: 'Intelligence',
+  generate_comms_plan: 'Planning',
   request_deliverable: 'Expert', check_deliverable_status: 'Status',
   brainstorm_topic: 'Ideation', discover_adjacent_trends: 'Ideation',
   read_url: 'Web', get_domain_intelligence: 'Intelligence', get_report_intelligence: 'Intelligence',

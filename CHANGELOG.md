@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.121] - 2026-10-19
+
+### Added
+- **2026 Strategy-to-Activation Comms & Retail Media Plan Engine Tooling (`generate_comms_plan`)** (`src/toolHandlers.ts`, `src/tools.ts`, `src/index.ts`, `src/pricingCache.ts`, `src/foddaClient.ts`, `tools-manifest.json`, `README.md`):
+  - **New MCP Tool `generate_comms_plan`**: Registered new tool translating cultural trends, brand challenges, and consumer insights into a 2026 Strategy-to-Activation Comms & Retail Media Plan deliverable (`POST /v1/planning/comms-plan`).
+  - **Tool Schema & Parameters**: Accepts `query` (required string), `brand` (optional string, defaults to "Brand"), `budget_tier` (optional enum: `emerging`, `growth`, `scale`), and `markets` (optional string array).
+  - **Agency Deliverable & Ad Ops Output**: Returns full formatted Markdown deliverable with executive BLUF, cultural tension, 60/40 brand/activation rationale, behavioural comms tasks (`T1 SEED` through `T5 RETAIN`), 3-layer shopper audience cards (cultural mindset, category entry points, commercial lookback, IAB Content 3.1 & Audience 1.1 purchase-intent codes, canonical RMN shopper archetypes, and mandatory exclusions), live digital shelf competition surveillance (Amazon & Walmart sponsored search index and price floors), tactical placement tables with `[LIVE]` provenance tags, and high-level strategic trade-off focus callouts, accompanied by machine-readable `activation_manifest` JSON for downstream ad ops.
+  - **Host Profile Scoping**: Mounted `generate_comms_plan` across `copilot`, `chatgpt`, `claude`, and general `mcp` (Cursor, Windsurf, Claude Desktop, CLI) profiles in `OFFERING_SCOPED_TOOLS`.
+  - **Infrastructure & Timeout Hardening**: Extended `AXIOS_TIMEOUT_MS` in `foddaClient.ts` to 90 seconds for `/planning/` paths to support multi-source digital shelf and graph synthesis without premature timeout aborts.
+  - **House Rules & Cost Silence Guard**: Output markdown strictly escapes bare dollar signs (`\$`) for KaTeX math mode rendering safety. Tool description strictly conforms to Fodda House Rules (zero token or SPT references).
+
 ## [1.46.120] - 2026-10-15
 
 ### Fixed

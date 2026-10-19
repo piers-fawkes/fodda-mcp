@@ -1,8 +1,8 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 55,
-  "billable": 26,
+  "count": 56,
+  "billable": 27,
   "tools": [
     {
       "name": "begin_expert_onboarding",
@@ -200,6 +200,19 @@
         "grok-brand-context"
       ],
       "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines, credibility anchors, and why matched, distinguishing active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (advisory introduction via request_expert_intro)."
+    },
+    {
+      "name": "generate_comms_plan",
+      "kind": "tool",
+      "bills_as": "planning",
+      "category": "Planning",
+      "profiles": [
+        "mcp",
+        "copilot",
+        "chatgpt",
+        "claude"
+      ],
+      "description": "Translate cultural trends, brand challenges, and consumer insights into a 2026 Strategy-to-Activation Comms & Retail Media Plan. Generates an agency-grade media deliverable with T1-T5 tasks, 3-layer shopper audience cards (with mandatory exclusions), Amazon/Walmart digital shelf intelligence, tactical placement tables with [LIVE] provenance tags, and a machine-readable activation manifest."
     },
     {
       "name": "generate_visual",
