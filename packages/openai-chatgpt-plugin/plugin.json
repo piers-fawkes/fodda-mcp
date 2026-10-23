@@ -1,14 +1,29 @@
 {
   "name": "fodda-intelligence",
   "version": "1.0.2",
-  "title": "Fodda Intelligence",
   "description": "Live market, brand & earnings intelligence grounded in expert knowledge graphs.",
-  "website": "https://fodda.ai",
+  "author": {
+    "name": "Fodda",
+    "email": "support@fodda.ai",
+    "url": "https://fodda.ai"
+  },
+  "homepage": "https://fodda.ai",
   "privacyPolicyUrl": "https://fodda.ai/privacy",
   "termsOfServiceUrl": "https://fodda.ai/terms",
   "supportUrl": "https://app.fodda.ai/support",
   "skills": "./skills/",
   "mcpServers": "./mcp.json",
+  "interface": {
+    "displayName": "Fodda Intelligence",
+    "shortDescription": "Live market, brand & earnings intelligence grounded in expert knowledge graphs.",
+    "longDescription": "Fodda Intelligence gives ChatGPT verified access to expert-curated knowledge graphs across retail, consumer goods, technology, sustainability, and culture. Research emerging market signals, track brand footprints, explore competitive dynamics, and inspect quarterly corporate earnings commentary with citations down to the source quote. Unlike unverified web scrapes, every finding is grounded in structured ontologies maintained by industry analysts, with transparent attribution and supporting evidence for every insight.",
+    "developerName": "Fodda",
+    "category": "Business & Finance",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ]
+  },
   "extensions": {
     "com.openai": {
       "auth": {
