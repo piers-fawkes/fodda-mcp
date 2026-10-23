@@ -1,7 +1,7 @@
 {
   "name": "app-6a997b8bb20881918d0413051bb6f9c5",
   "version": "1.0.2",
-  "description": "Live market, brand & earnings intelligence grounded in expert knowledge graphs.",
+  "description": "Market and brand data intelligence grounded in expert knowledge graphs.",
   "author": {
     "name": "Fodda",
     "email": "support@fodda.ai",
@@ -23,11 +23,11 @@
   "mcpServers": "./mcp.json",
   "interface": {
     "displayName": "Fodda Intelligence",
-    "shortDescription": "Market & brand intelligence",
-    "subtitle": "Market & brand intelligence",
-    "longDescription": "Access expert-curated knowledge graphs across retail, consumer goods, technology, sustainability, and culture. Research emerging market signals, track brand footprints, explore competitive dynamics, and inspect quarterly corporate earnings commentary with citations to source quotes. Findings include structured context maintained by industry analysts, attribution, and supporting evidence.",
+    "shortDescription": "Market intelligence & data",
+    "subtitle": "Market intelligence & data",
+    "longDescription": "Fodda Intelligence provides data and analytics across retail, consumer goods, technology, sustainability, and culture. Analyze market signals, track brand trend data, explore competitive metrics, and query corporate earnings transcripts and analyst commentary with citations to source data.",
     "developerName": "Fodda",
-    "category": "Productivity",
+    "category": "Data & Analytics",
     "capabilities": [
       "Interactive",
       "Read"
