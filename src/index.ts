@@ -507,6 +507,29 @@ const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; desc
     },
 };
 
+app.get(['/mcp.json', '/.well-known/mcp.json'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.json({
+        $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json',
+        mcpServers: {
+            fodda: {
+                type: 'streamable-http',
+                url: `${getServiceUrl()}/chatgpt`,
+                extensions: {
+                    'com.openai': {
+                        auth: {
+                            type: 'oauth',
+                            client: {
+                                mode: 'dcr',
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    });
+});
+
 app.get([
     '/.well-known/mcp-server.json', '/.well-known/mcp',
     '/.well-known/brand-intelligence', '/.well-known/brand-intelligence.json',
@@ -549,6 +572,18 @@ app.get([
                 telemetry: `${getServiceUrl()}/telemetry`,
                 feedback: `${getServiceUrl()}/v1/feedback`,
             },
+            ...(matchedOffering === 'chatgpt' ? {
+                extensions: {
+                    'com.openai': {
+                        auth: {
+                            type: 'oauth',
+                            client: {
+                                mode: 'dcr',
+                            },
+                        },
+                    },
+                },
+            } : {}),
         });
     }
     res.json({

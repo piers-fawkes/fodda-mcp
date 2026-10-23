@@ -1,10 +1,18 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "fodda": {
-      "command": "npx",
-      "args": ["-y", "fodda-mcp"],
-      "env": {
-        "FODDA_API_KEY": ""
+      "type": "streamable-http",
+      "url": "https://mcp.fodda.ai/chatgpt",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "dcr"
+            }
+          }
+        }
       }
     }
   }

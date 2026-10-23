@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.127] - 2026-10-23
+
+### Added
+- **OpenAI Agent Plugin Manifest & Dynamic Client Registration Discovery (`mcp.json`, `src/index.ts`)**:
+  - Configured `mcp.json` to the OpenAI Agent Plugins schema declaring `extensions.com.openai.auth` with `type: "oauth"` and `mode: "dcr"`.
+  - Registered `/mcp.json` and `/.well-known/mcp.json` HTTP discovery endpoints in Express serving the OpenAI manifest.
+  - Added `extensions.com.openai` auth block with DCR specification to `/.well-known/chatgpt.json` server discovery card.
+
 ## [1.46.126] - 2026-10-23
 
 ### Fixed
