@@ -2,17 +2,7 @@
   "mcpServers": {
     "fodda": {
       "type": "streamable-http",
-      "url": "https://mcp.fodda.ai/chatgpt",
-      "extensions": {
-        "com.openai": {
-          "auth": {
-            "type": "oauth",
-            "client": {
-              "mode": "dcr"
-            }
-          }
-        }
-      }
+      "url": "https://mcp.fodda.ai/chatgpt"
     }
   }
 }

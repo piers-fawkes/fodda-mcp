@@ -23,15 +23,5 @@
       "Interactive",
       "Read"
     ]
-  },
-  "extensions": {
-    "com.openai": {
-      "auth": {
-        "type": "oauth",
-        "client": {
-          "mode": "dcr"
-        }
-      }
-    }
   }
 }
