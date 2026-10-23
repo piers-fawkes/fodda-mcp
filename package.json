@@ -1,6 +1,6 @@
 {
   "name": "fodda-mcp",
-  "version": "1.46.124",
+  "version": "1.46.125",
   "mcpName": "ai.fodda/mcp-server",
   "description": "Fodda MCP Server for accessing knowledge graph insights.",
   "keywords": [

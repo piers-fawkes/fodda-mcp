@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.125] - 2026-10-23
+
+### Fixed
+- **`find_expert` Description & Digital Twin Title Alignment (`src/toolHandlers.ts`)**:
+  - Rewrote `find_expert`'s description to standard `"Use when ..."` pattern, clarifying that it discovers candidate AI-powered Human Agent (Digital Twin) expert models and Synthetic Analysts grounded in expert knowledge graphs.
+  - Removed unexposed tool cross-reference (`request_expert_intro`) and updated title to `'Find Expert (Digital Twin) Models'`.
+  - Scoped runtime description sanitization for `find_expert` on `/chatgpt` and `/claude`.
+
 ## [1.46.124] - 2026-10-23
 
 ### Fixed

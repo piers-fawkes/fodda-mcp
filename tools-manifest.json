@@ -197,7 +197,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth ('Who should I ask about X?' or 'What would retail experts make of this?'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines, credibility anchors, and why matched, distinguishing active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (advisory introduction via request_expert_intro)."
+      "description": "Use when seeking candidate AI-powered Human Agent (Digital Twin) expert models or Synthetic Analysts across specialized domains or research questions (e.g. 'Who has expertise in luxury retail?' or 'What would consumer culture analysts say about this?'). Searches Fodda's catalog of 4,000+ domain specialists to return 2–3 ranked expert models with their analytical focus, methodology, credibility anchors, and expert ID for consultation via consult_human_agent or consult_analyst."
     },
     {
       "name": "generate_comms_plan",

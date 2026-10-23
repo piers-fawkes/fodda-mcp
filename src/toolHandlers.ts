@@ -1841,14 +1841,14 @@ export async function createServer(
     // --- find_expert (Visible Expert Matching — Brief 3 & Expert Search API) ---
     server.tool(
         'find_expert',
-        'Use when the user asks what specialists think, seeks an authoritative perspective, or needs practitioner depth (\'Who should I ask about X?\' or \'What would retail experts make of this?\'). Returns 2–3 ranked candidate experts across 4,150+ specialist roster with action lines, credibility anchors, and why matched, distinguishing active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (advisory introduction via request_expert_intro).',
+        "Use when seeking candidate AI-powered Human Agent (Digital Twin) expert models or Synthetic Analysts across specialized domains or research questions (e.g. 'Who has expertise in luxury retail?' or 'What would consumer culture analysts say about this?'). Searches Fodda's catalog of 4,000+ domain specialists to return 2–3 ranked expert models with their analytical focus, methodology, credibility anchors, and expert ID for consultation via consult_human_agent or consult_analyst.",
         {
-            query: z.string().describe('The question, brief, topic, or situation to find candidate experts for.'),
-            limit: z.number().optional().default(3).describe('Maximum candidate experts to return (default: 3, max: 3).'),
+            query: z.string().describe('The question, brief, topic, or situation to find candidate expert models for.'),
+            limit: z.number().optional().default(3).describe('Maximum candidate expert models to return (default: 3, max: 3).'),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         {
-            title: 'Find Expert Candidates',
+            title: 'Find Expert (Digital Twin) Models',
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: true,
@@ -9401,7 +9401,12 @@ export async function createServer(
                 t.description = d;
             }
             if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
-                if (name === 'consult_human_agent') {
+                if (name === 'find_expert') {
+                    t.description = "Use when seeking candidate AI-powered Human Agent (Digital Twin) expert models or Synthetic Analysts across specialized domains or research questions (e.g. 'Who has expertise in luxury retail?' or 'What would consumer culture analysts say about this?'). Searches Fodda's catalog of 4,000+ domain specialists to return 2–3 ranked expert models with their analytical focus, methodology, credibility anchors, and expert ID for consultation via consult_human_agent or consult_analyst.";
+                    if (t.annotations) {
+                        t.annotations.title = 'Find Expert (Digital Twin) Models';
+                    }
+                } else if (name === 'consult_human_agent') {
                     t.description = "Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert's consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Any referrals to other expert graphs are returned in third-person platform voice with an offer to query the referred graph.";
                     if (t.annotations) {
                         t.annotations.title = 'Consult Human Agent (Digital Twin)';
