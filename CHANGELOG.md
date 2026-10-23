@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.126] - 2026-10-23
+
+### Fixed
+- **`server_instructions` Strict Tool Scoping & Catalog Bloat Removal (`src/systemPrompt.ts`)**:
+  - Eliminated catalog dump of 375 graphs from `/chatgpt` and `/claude` `server_instructions`, reducing payload from 58KB to 6KB.
+  - Aligned all tool references in `Tool Routing Guidelines` to strictly match the 28 exposed tools, removing references to unexposed tools (`update_user_profile`, `toggle_graph_preference`, `send_feedback`, `discover_adjacent_trends`, `get_cross_graph_bridges`, `get_node_details`, `paralogy_divergent-thinking-tools-router`).
+  - Scoped user profile preferences and interactive skill router tools to full `/mcp` profile only.
+
 ## [1.46.125] - 2026-10-23
 
 ### Fixed

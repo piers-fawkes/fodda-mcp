@@ -587,17 +587,18 @@ version: 2.0.0
 - Be transparent about coverage: if Fodda's curated graphs have limited or no direct coverage on a topic or brand, state that clearly and distinguish curated graph evidence from supplemental or web context.
 
 ### Tool Routing Guidelines
-- Market trends & consumer behavior: \`search_graph\`, \`discover_adjacent_trends\`, \`get_cross_graph_bridges\`, \`get_node_details\`, \`get_label_values\`
+- Market trends & consumer behavior: \`search_graph\`, \`get_validated_trends\`, \`get_evidence\`, \`get_node\`, \`get_neighbors\`, \`get_label_values\`, \`list_graphs\`, \`read_url\`
 - Brand health, trend footprint & competitive landscape: \`brand_tracker\`
 - Quantitative metrics & market sizes: \`search_statistics\`
 - Expert quotes & qualitative frameworks: \`search_insights\`
 - Multi-graph deep research reports: \`deep_research_topic\` (poll with \`check_research_status\`)
+- Visual representations: \`generate_visual\`
 - Communications & media planning: \`generate_comms_plan\`
 - Public company earnings & verbatim Q&A (517 companies): \`get_earnings_intelligence\`, \`get_company_earnings\`, \`get_earnings_divergence\`
 - Macroeconomic, demographic & public research indicators: \`get_supplemental_context\` (poll with \`check_supplemental_status\`)
 - Claim verification: \`verify_market_claim\` (multi-graph market/brand/macro claim check) and \`verify_claim\` (verifies a claim against a specific practitioner's curated knowledge graph via their AI-powered Human Agent model, returning a structured verdict: confirms, contradicts, partial, or no_coverage)
 - AI Expert Models (Digital Twins & Synthetic Analysts): \`find_expert\` and \`list_analysts\` for discovery; \`consult_human_agent\` to query an authorized Human Agent (an AI expert model / Digital Twin grounded in a named practitioner's curated knowledge graph and methodology); \`consult_analyst\` to query a Synthetic Analyst or Classic Agent
-- Platform capabilities & preferences: \`get_capabilities\`, \`update_user_profile\`, \`toggle_graph_preference\`, \`send_feedback\`
+- Platform capabilities & account status: \`get_capabilities\`, \`get_my_account\`
 
 ### Expert Consultation & Citation Integrity
 - Human Agents (\`consult_human_agent\`) are AI-powered Digital Twin models created with a named practitioner's consent and grounded in their curated knowledge graph — they are AI expert models, not live human operators.
@@ -623,13 +624,15 @@ export function buildSystemPrompt(
     sessionSource?: string,
     allowedTools?: Set<string> | string[]
 ): string {
-    // Try to build dynamic sections from the catalog cache
-    const dynamicSections = buildDynamicPromptSections();
+    const isScopedConnector = sessionSource === 'chatgpt' || sessionSource === 'claude';
 
-    // If catalog is available, use dynamic sections; otherwise fall back to hardcoded
-    const graphNamingBlock = dynamicSections
-        ? dynamicSections
-        : FALLBACK_GRAPH_SECTIONS;
+    // For scoped connectors (ChatGPT & Claude), use a concise graph attribution block
+    // rather than dumping 375 knowledge graph catalog records into the system prompt.
+    const scopedGraphNamingBlock = `GRAPH ATTRIBUTION: Attribute each finding to its named curator or expert graph (call \`list_graphs\` for graph names, curators, and domain details) rather than calling results "the Fodda graph." Fodda serves Curated Graphs (PSFK vertical intelligence), Expert Graphs (domain-specific research reports), and Community Graphs.`;
+
+    const graphNamingBlock = isScopedConnector
+        ? scopedGraphNamingBlock
+        : (buildDynamicPromptSections() || FALLBACK_GRAPH_SECTIONS);
 
     // Build persona framing from account profile
     let personaBlock = '';
@@ -654,8 +657,10 @@ export function buildSystemPrompt(
         if (accountProfile.accountContext) {
             contextParts.push(`Company Context: ${accountProfile.accountContext}`);
         }
-        userContextBlock = `\n\nUSER RESEARCH PROFILE (persisted across sessions — use this to frame all responses):\n${contextParts.join('\n')}\nIf the user asks to update their focus or preferences, call update_user_profile to update their stored profile. The profile is a living document that sharpens as the user clarifies what they value.`;
-    } else if (accountProfile) {
+        userContextBlock = isScopedConnector
+            ? `\n\nUSER RESEARCH PROFILE:\n${contextParts.join('\n')}`
+            : `\n\nUSER RESEARCH PROFILE (persisted across sessions — use this to frame all responses):\n${contextParts.join('\n')}\nIf the user asks to update their focus or preferences, call update_user_profile to update their stored profile. The profile is a living document that sharpens as the user clarifies what they value.`;
+    } else if (accountProfile && !isScopedConnector) {
         // Non-trial user with no stored context — guide Claude to offer saving preferences
         userContextBlock = `\n\nRESEARCH PROFILE PREFERENCES: This user has no stored research profile. If helpful during research, you may offer to save their research preferences and framing guidelines using update_user_profile, or update them whenever the user requests. Only call update_user_profile after the user agrees or asks to save preferences — never save silently.\nWhen saving a profile, write BEHAVIORAL INSTRUCTIONS that tailor how you respond:\n- Role and use case (pitches, ongoing research, client advisory)\n- Preferred evidence types (commercial data vs. design inspiration)\n- Geographic focus (global vs. specific markets)\n- How results should be framed (executive brief vs. deep analysis)\nFormat: one sentence of identity, then numbered directives that guide response framing.\nGood: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces before specifics. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists."\nBad: "CEO of a data company" or "Business professional interested in trends"`;
     }
@@ -696,22 +701,28 @@ Prioritize the "${entryId}" graph in your first search. Lead with trends from th
     if (enabledSkills && enabledSkills.length > 0) {
         const skillList = enabledSkills.map(s => `- ${s.name}`).join('\n');
 
-        // Collect interactive tools across all skills
-        const allInteractiveTools = enabledSkills
-            .filter(s => s.interactiveTools && s.interactiveTools.length > 0)
-            .map(s => ({
-                name: s.name,
-                tools: s.interactiveTools!,
-            }));
+        if (isScopedConnector) {
+            skillsBlock = `\n\nACTIVE SKILLS: The following skills post-process Fodda's search results:
+${skillList}
 
-        let interactiveBlock = '';
-        if (allInteractiveTools.length > 0) {
-            const toolLines = allInteractiveTools.map(s => {
-                const toolList = s.tools.map(t => `  - ${t}`).join('\n');
-                return `${s.name}:\n${toolList}`;
-            }).join('\n');
+When search_graph returns results, any enabled skills will automatically run and their output will appear as ── SKILL: [name] ── blocks appended to the response. Present skill output naturally in your response, attributing the skill by name (e.g. "🔀 Paralogy Reframe:"). If the user asks to skip skills, pass skip_skills: true to search_graph.`;
+        } else {
+            // Collect interactive tools across all skills
+            const allInteractiveTools = enabledSkills
+                .filter(s => s.interactiveTools && s.interactiveTools.length > 0)
+                .map(s => ({
+                    name: s.name,
+                    tools: s.interactiveTools!,
+                }));
 
-            interactiveBlock = `\n\nINTERACTIVE SKILL TOOLS: The following skill tools are available for direct use. Call them when the user explicitly asks for a skill's capability (e.g. "use Paralogy's think_wrong tool" or "challenge my assumptions about X"):
+            let interactiveBlock = '';
+            if (allInteractiveTools.length > 0) {
+                const toolLines = allInteractiveTools.map(s => {
+                    const toolList = s.tools.map(t => `  - ${t}`).join('\n');
+                    return `${s.name}:\n${toolList}`;
+                }).join('\n');
+
+                interactiveBlock = `\n\nINTERACTIVE SKILL TOOLS: The following skill tools are available for direct use. Call them when the user explicitly asks for a skill's capability (e.g. "use Paralogy's think_wrong tool" or "challenge my assumptions about X"):
 ${toolLines}
 
 INTERACTIVE SKILL USAGE:
@@ -719,9 +730,9 @@ INTERACTIVE SKILL USAGE:
 2. Call them when the user explicitly requests a skill's capability, mentions a tool by name, or asks for divergent thinking / creative challenge / reframing.
 3. Pass the user's request as the tool arguments. The skill handles the transformation.
 4. Present the output with the skill's attribution (e.g. "🔀 Paralogy:").`;
-        }
+            }
 
-        skillsBlock = `\n\nACTIVE SKILLS: The user has enabled the following skills that post-process Fodda's search results:
+            skillsBlock = `\n\nACTIVE SKILLS: The user has enabled the following skills that post-process Fodda's search results:
 ${skillList}
 
 When search_graph returns results, any enabled skills will automatically run and their output will appear as ── SKILL: [name] ── blocks appended to the response.
@@ -734,9 +745,9 @@ SKILL OUTPUT HANDLING:
 5. If a skill fails silently (no ── SKILL block appears), proceed normally — do not mention it.
 
 IMPORTANT: Skills (which automatically run on search_graph) are completely separate from Synthetic Analyst tools (consult_[name]). If the user explicitly asks to "Consult" an analyst, you MUST call the specific consult_[name] tool. Do NOT rely on skills to fulfill a consultation request.${interactiveBlock}`;
+        }
     }
 
-    const isScopedConnector = sessionSource === 'chatgpt' || sessionSource === 'claude';
     const behavioralRules = isScopedConnector ? CHATGPT_BEHAVIORAL_RULES : STATIC_BEHAVIORAL_RULES;
     const introNotice = isScopedConnector
         ? `If asked what Fodda offers, its capabilities, features, or "what can you do", summarize the 5 core research capabilities above or call \`get_capabilities\`.`
@@ -776,6 +787,16 @@ ${behavioralRules}${personaBlock}${userContextBlock}${analystEntryBlock}${skills
             'submit_mcp_source',
             'finalize_byo_mcp_onboarding',
             'get_onboarding_status',
+            'update_user_profile',
+            'toggle_graph_preference',
+            'send_feedback',
+            'sign_up_free_account',
+            'get_my_earnings',
+            'discover_adjacent_trends',
+            'get_cross_graph_bridges',
+            'get_node_details',
+            'brainstorm_topic',
+            'paralogy_divergent-thinking-tools-router',
         ];
         for (const t of allConditionalTools) {
             if (!allowedSet.has(t)) {
