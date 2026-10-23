@@ -56,10 +56,15 @@ async function sync() {
         let cleanDesc = desc.trim()
           .replace(/\s*Price:\s*\$[\d.]+(?:\s*(?:per|\/)\s*[^.]+)?\.?/gi, '')
           .replace(/\s*Price:\s*Free\.?/gi, '')
+          .replace(/\bHuman Agents?\s+digital twins\b/gi, 'Human Agents (Digital Twins)')
+          .replace(/\bHuman Agents?\s+digital twin\b/gi, 'Human Agent (Digital Twin)')
+          .replace(/\bpractitioners with digital twins\b/gi, 'practitioners with Digital Twin models')
           .replace(/\bdigital twins\b/gi, 'Human Agents')
           .replace(/\bdigital twin\b/gi, 'Human Agent')
           .replace(/\bexpert twins\b/gi, 'Human Agents')
           .replace(/\bexpert twin\b/gi, 'Human Agent')
+          .replace(/\bHuman Agents?\s+Human Agents\b/gi, 'Human Agents')
+          .replace(/\bHuman Agent\s+Human Agent\b/gi, 'Human Agent')
           .trim();
         descriptionMap.set(toolKey.trim(), cleanDesc);
       }
@@ -76,9 +81,20 @@ async function sync() {
 
     for (const [toolName, newDesc] of descriptionMap.entries()) {
       const escapedDesc = newDesc.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-      const regex = new RegExp(`(server\\.tool\\(\\s*['"]${toolName}['"]\\s*,\\s*)(?:'([^'\\\\]|\\\\.)*'|"([^"\\\\]|\\\\.)*"|\`([^\`\\\\]|\\\\.)*\`)`, 'g');
-      if (regex.test(src)) {
-        src = src.replace(regex, (match, p1) => `${p1}'${escapedDesc}'`);
+      const regex = new RegExp(`(server\\.tool\\(\\s*['"]${toolName}['"]\\s*,\\s*)('(?:[^'\\\\]|\\\\.)*'|"(?:[^"\\\\]|\\\\.)*"|\`(?:[^\`\\\\]|\\\\.)*\`)`, 'g');
+      const match = regex.exec(src);
+      if (match) {
+        const currentDescLiteral = match[2] || '';
+        const currentUnquoted = currentDescLiteral.slice(1, -1);
+        // Preserve canonical "Use when ..." job-first routing descriptions if the Airtable row hasn't been migrated to "Use when ..." yet
+        if (currentUnquoted.startsWith('Use when ') && !newDesc.startsWith('Use when ')) {
+          continue;
+        }
+        // Preserve BYO-MCP persistence clause if missing from Airtable description
+        if (toolName === 'finalize_byo_mcp_onboarding' && !newDesc.includes('Profile is saved once terms are accepted; MCP details are verified and submitted for review here.')) {
+          continue;
+        }
+        src = src.replace(regex, (m, p1) => `${p1}'${escapedDesc}'`);
         updatedCount++;
       }
     }

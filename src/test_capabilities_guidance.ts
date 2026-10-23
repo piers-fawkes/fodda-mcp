@@ -377,8 +377,8 @@ async function runTests() {
     console.log('Test 6: Registered tools count check (maintain consolidation)...');
     const toolNames = Object.keys(registeredTools);
     console.log(`Total registered tools: ${toolNames.length}`);
-    assert.strictEqual(toolNames.length, 55, 'Total registered tools count must remain 55 (no bloat)');
-    console.log('✅ Test 6 Passed: Total registered tools count strictly maintained at 55.\n');
+    assert.strictEqual(toolNames.length, 56, 'Total registered tools count must remain 56 (no bloat)');
+    console.log('✅ Test 6 Passed: Total registered tools count strictly maintained at 56.\n');
 
     // Test 7: Semantic Intent Upgrades & Human Agent Distinctions in Tool Descriptions
     console.log('Test 7: Verify semantic intent descriptions lead with "Use when..." and reflect distinctions');

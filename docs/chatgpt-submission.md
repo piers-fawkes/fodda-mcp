@@ -25,7 +25,7 @@ This document contains all metadata, authentication configurations, sample promp
 
 - **MCP Server URL**: `https://mcp.fodda.ai/chatgpt`
 - **Transport**: Streamable HTTP (POST)
-- **Tool Profile**: `chatgpt` (24 curated tools)
+- **Tool Profile**: `chatgpt` (28 curated tools)
 - **Domain Verification Challenge Endpoint**: `https://mcp.fodda.ai/.well-known/openai-apps-challenge`
 - **RFC 9728 Protected Resource Metadata**: `https://mcp.fodda.ai/.well-known/oauth-protected-resource/chatgpt`
 
@@ -80,7 +80,7 @@ Expected behaviour: each prompt resolves to one profile tool (`search_graph`, `g
 - [ ] **Challenge verification**: `curl -s https://mcp.fodda.ai/.well-known/openai-apps-challenge` returns the challenge token string matching `OPENAI_APPS_CHALLENGE` with status 200 and Content-Type `text/plain; charset=utf-8`.
 - [ ] **Discovery metadata**: `curl -s https://mcp.fodda.ai/.well-known/oauth-protected-resource/chatgpt` returns valid RFC 9728 JSON pointing to the Clerk authorization server issuer.
 - [ ] **Unauthenticated 401 gate**: `curl -s -i -X POST https://mcp.fodda.ai/chatgpt -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{...}}'` responds with HTTP 401 and `WWW-Authenticate: Bearer resource_metadata="https://mcp.fodda.ai/.well-known/oauth-protected-resource/chatgpt"`.
-- [ ] **Tool footprint**: Server exposes exactly 24 tools on `/chatgpt`, including `search_graph`, `brand_tracker`, `get_company_earnings`, `consult_analyst`, and `generate_visual`.
+- [ ] **Tool footprint**: Server exposes exactly 28 tools on `/chatgpt`, including `search_graph`, `brand_tracker`, `get_company_earnings`, `consult_analyst`, `consult_human_agent`, `verify_claim`, `verify_market_claim`, `find_expert`, `generate_comms_plan`, and `generate_visual`.
 - [ ] **Commerce silence & hygiene**:
   - `get_my_account` returns clean account status omitting `stripe_link`, `upgrade_offer`, and overage dollar figures.
   - Credit exhaustion returns `QUOTA_EXHAUSTED` with `manage_url: https://app.fodda.ai/account` and no Stripe URLs.
@@ -92,13 +92,14 @@ Expected behaviour: each prompt resolves to one profile tool (`search_graph`, `g
 
 ## 7. Tool annotation justifications (reviewers ask for one line per tool)
 
-All 24 tools are non-destructive (`destructiveHint: false`). Values below are the live annotations in `src/toolHandlers.ts`.
+All 28 tools are non-destructive (`destructiveHint: false`). Values below are the live annotations in `src/toolHandlers.ts`.
 
 | Tool | readOnly | idempotent | openWorld | Justification |
 |---|---|---|---|---|
 | `get_capabilities` | true | true | false | Static catalogue of platform capabilities. |
 | `list_graphs` | true | true | false | Lists the user's enabled knowledge graphs; no writes. |
 | `list_analysts` | true | true | false | Registry lookup of named experts. |
+| `find_expert` | true | true | false | Ranks candidate experts matching a topic across the specialist registry. |
 | `search_graph` | true | false | true | Vector + graph search; may fan out to supplemental external sources (web, trends APIs). Not idempotent: results depend on live indexes. |
 | `search_statistics` | true | false | false | Type-scoped graph query for statistics; internal data only. |
 | `search_insights` | true | false | false | Type-scoped graph query for expert quotes; internal data only. |
@@ -111,6 +112,9 @@ All 24 tools are non-destructive (`destructiveHint: false`). Values below are th
 | `check_research_status` | true | true | false | Polls a research job by `job_id`. |
 | `consult_analyst` | false | false | false | Conversational turn with a synthetic analyst; persists session context (read/write on the user's own session only). |
 | `consult_human_agent` | false | false | false | Conversational turn with an expert's digital twin; persists session context (user's own session only). |
+| `verify_claim` | true | false | false | Evaluates a claim against a named practitioner's curated knowledge graph via their AI-powered Human Agent model and returns a structured verdict (`confirms`, `contradicts`, `partial`, `no_coverage`). |
+| `verify_market_claim` | true | false | true | Evaluates a market claim against 100+ knowledge graphs and earnings through 5 sequential kill-gates. |
+| `generate_comms_plan` | true | false | true | Synthesizes a 2026 Strategy-to-Activation Comms & Retail Media Plan from graph trends and digital shelf signals. |
 | `get_evidence` | true | true | false | Returns source articles for a trend node. |
 | `get_node` | true | true | false | Node metadata lookup by id. |
 | `get_neighbors` | true | true | false | One-hop graph traversal. |

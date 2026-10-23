@@ -37,7 +37,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Single-brand 360-degree intelligence audit: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., 'Audit Nike's market footprint', 'How is Lululemon performing across consumer trends?'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. 'athleisure trends'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand's multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html."
+      "description": "Use when auditing a single brand's 360-degree intelligence footprint: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., 'Audit Nike's market footprint', 'How is Lululemon performing across consumer trends?'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. 'athleisure trends'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand's multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html."
     },
     {
       "name": "check_deliverable_status",
@@ -47,9 +47,7 @@
       "profiles": [
         "mcp",
         "expert-consult",
-        "copilot",
-        "chatgpt",
-        "claude"
+        "copilot"
       ],
       "description": "Poll a deliverable commissioned with request_deliverable. Pass the job_id from that response. Returns the current status (\"working\" | \"completed\" | \"failed\") and, once completed, the artifact links to present to the user. Polling is free. Deliverables typically take a few minutes — poll every ~15–30s. (Expert deliverable job status poll.)"
     },
@@ -105,7 +103,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Direct interactive consultation with synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives (e.g., 'Ask the Brand CMO persona how to evaluate retail media ROI', 'Consult John Ruskin on craftsmanship in luxury fashion'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for living practitioners (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves."
+      "description": "Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., 'Ask the Brand CMO persona how to evaluate retail media ROI', 'Consult John Ruskin on craftsmanship in luxury fashion'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves."
     },
     {
       "name": "consult_human_agent",
@@ -119,7 +117,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Direct interactive consultation with authorized living Human Agents—verified digital twins of real-world industry leaders, agency founders, and specialists grounded in their verified thinking and proprietary frameworks. Use when seeking real-world practitioner expertise, contrarian perspectives, and battle-tested methodologies (e.g., 'Ask Ben Dietz about luxury brand gravity and streetwear drops', 'Consult Peter Abraham on modern marketing models'). Supports multi-turn dialogue via session_id, corporate brand binding, and deep homework mode (deep: true). Sibling routing: Use consult_human_agent for live interactive dialogue with verified digital twins; use request_expert_intro to book 1-on-1 human advisory time or request an intro to unclaimed experts; use consult_analyst for synthetic/classic personas. Returns conversational practitioner analysis, cited evidence nodes, and structured next moves."
+      "description": "Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner's consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner's voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves."
     },
     {
       "name": "deep_research_topic",
@@ -133,7 +131,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Autonomous multi-pass research agent: orchestrates an exhaustive briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives into a comprehensive executive narrative. Use for high-stakes research inquiries, client deliverables, or market landscape studies (e.g., 'Generate a comprehensive research briefing on the circular fashion economy', 'Deep dive into retail media network adoption'). Runs asynchronously; execution returns a job_id that must be polled to completion using check_research_status. Sibling routing: Use search_graph for fast, single-turn trend lookups; use get_intelligence_dossier for immediate synchronous multi-source dossier assembly; use deep_research_topic when you need an autonomous, multi-step deep dive. Returns job confirmation, estimated processing time, and job_id for status tracking."
+      "description": "Use when commissioning an autonomous multi-pass research report synthesizing cross-graph trends, corporate disclosures, and expert perspectives into a comprehensive executive narrative (e.g., 'Generate a comprehensive research briefing on the circular fashion economy', 'Deep dive into retail media network adoption'). Runs asynchronously; execution returns a job_id that must be polled to completion using check_research_status. Sibling routing: Use search_graph for fast, single-turn trend lookups; use get_intelligence_dossier for immediate synchronous multi-source dossier assembly; use deep_research_topic when you need an autonomous, multi-step deep dive. Returns job confirmation, estimated processing time, and job_id for status tracking."
     },
     {
       "name": "discover_adjacent_trends",
@@ -184,7 +182,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Step 3 (final step) in the Bring-Your-Own-MCP (BYO-MCP) onboarding pathway: persists the completed expert profile and registers the live external MCP grounding in the Fodda Human Agent registry. Prerequisites: submit_basic_info and submit_mcp_source must be completed prior to finalizing; terms must be accepted. Workflow distinction: This tool is strictly for BYO-MCP experts whose knowledge is grounded in an external MCP server—do NOT use for standard graph-backed experts (who proceed through confirm_themes and schedule_interview). Side effects: Creates an active pending-review Human Agent record in Airtable and provisions consultation routing. Returns submission status, analystId, and confirmation details."
+      "description": "Step 3 (final step) in the Bring-Your-Own-MCP (BYO-MCP) onboarding pathway: persists the completed expert profile and registers the live external MCP grounding in the Fodda Human Agent registry. Profile is saved once terms are accepted; MCP details are verified and submitted for review here. Prerequisites: submit_basic_info and submit_mcp_source must be completed prior to finalizing; terms must be accepted. Workflow distinction: This tool is strictly for BYO-MCP experts whose knowledge is grounded in an external MCP server—do NOT use for standard graph-backed experts (who proceed through confirm_themes and schedule_interview). Side effects: Creates an active pending-review Human Agent record in Airtable and provisions consultation routing. Returns submission status, analystId, and confirmation details."
     },
     {
       "name": "find_expert",
@@ -249,7 +247,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Returns Fodda's capabilities, semantic research workflows, Human Agent Human Agents, and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings."
+      "description": "Returns Fodda's capabilities, semantic research workflows, Human Agents (Human Agents), and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings."
     },
     {
       "name": "get_company_earnings",
@@ -507,7 +505,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Catalog and discover all expert personas available on Fodda across 4 categories: living Human Agents (practitioners with Human Agents), C-Suite Agents (corporate executive lenses grounded in earnings), Classic Agents (historical thinkers), and Synthetic Analysts (domain specialists). Use when exploring available experts, finding who to consult for a specific topic, or inspecting available specialist deliverables. Sibling routing: This tool lists and filters agents; to initiate an interactive conversation with a chosen specialist, call consult_human_agent (for living experts) or consult_analyst (for synthetic/classic/C-suite personas); to search experts by query match, use find_expert. Returns an array of agent profiles with analyst_id, canonical_slug, name, role, agent_class, topics, consult_tool, and commissionable offerings."
+      "description": "Catalog and discover all expert personas available on Fodda across 4 categories: living Human Agents (practitioners with Human Agent models), C-Suite Agents (corporate executive lenses grounded in earnings), Classic Agents (historical thinkers), and Synthetic Analysts (domain specialists). Use when exploring available experts, finding who to consult for a specific topic, or inspecting available specialist deliverables. Sibling routing: This tool lists and filters agents; to initiate an interactive conversation with a chosen specialist, call consult_human_agent (for living experts) or consult_analyst (for synthetic/classic/C-suite personas); to search experts by query match, use find_expert. Returns an array of agent profiles with analyst_id, canonical_slug, name, role, agent_class, topics, consult_tool, and commissionable offerings."
     },
     {
       "name": "list_graphs",
@@ -534,10 +532,9 @@
       "category": "Account",
       "profiles": [
         "mcp",
-        "copilot",
-        "chatgpt"
+        "copilot"
       ],
-      "description": "Automated briefing and recurring tracking manager: creates, lists, updates, pauses, resumes, and cancels recurring intelligence digests delivered via email. Use when a user asks to track a topic, monitor a competitor, or set up weekly/monthly briefings (e.g., 'Track sustainability shifts in luxury fashion every Monday', 'Pause my weekly retail digest'). Actions: 'create' registers a new schedule (requires query, email, cadence); 'list' returns all active schedules for the user; 'update' modifies query/cadence for schedule_id; 'pause' and 'resume' temporarily halt or restart delivery; 'cancel' permanently removes the schedule. Returns confirmation status, schedule_id, active frequency, and next delivery date."
+      "description": "Use when a user asks to track a topic, monitor a competitor, or set up, list, update, pause, resume, or cancel recurring weekly/daily intelligence briefings delivered via email (e.g., 'Track sustainability shifts in luxury fashion every Monday', 'Pause my weekly retail digest'). Actions: 'create' registers a new schedule (requires query, email, cadence); 'list' returns all active schedules for the user; 'update' modifies query/cadence for schedule_id; 'pause' and 'resume' temporarily halt or restart delivery; 'cancel' permanently removes the schedule. Returns confirmation status, schedule_id, active frequency, and next delivery date."
     },
     {
       "name": "read_url",
@@ -563,11 +560,9 @@
       "profiles": [
         "mcp",
         "expert-consult",
-        "copilot",
-        "chatgpt",
-        "claude"
+        "copilot"
       ],
-      "description": "Commissions an executive document from an analyst or Human Agent—such as a strategic briefing, market memo, competitive assessment, or publication-ready article. Use when the user requests a formal deliverable rather than conversational chat (e.g., 'Have Ben Dietz write a strategic memo on retail media networks'). Workflow routing: Discover available analysts and their specific commissionable offerings first via list_analysts or consult them interactively via consult_human_agent / consult_analyst. Execution & follow-up: Requests may process asynchronously; returns a job_id that can be polled to completion using check_deliverable_status. Returns job confirmation, estimated completion time, and deliverable status."
+      "description": "Use when commissioning an executive document from an analyst or Human Agent—such as a strategic briefing, market memo, competitive assessment, or publication-ready article—rather than conversational chat (e.g., 'Have Ben Dietz write a strategic memo on retail media networks'). Workflow routing: Discover available analysts and their specific commissionable offerings first via list_analysts or consult them interactively via consult_human_agent / consult_analyst. Execution & follow-up: Requests may process asynchronously; returns a job_id that can be polled to completion using check_deliverable_status. Returns job confirmation, estimated completion time, and deliverable status."
     },
     {
       "name": "request_expert_intro",
@@ -577,11 +572,9 @@
       "profiles": [
         "mcp",
         "expert-consult",
-        "copilot",
-        "chatgpt",
-        "claude"
+        "copilot"
       ],
-      "description": "Executive advisory introduction and inquiry concierge: requests a facilitated advisory introduction or 1-on-1 strategic consultation with an On-Request living specialist or active Human Agent across 4,150+ indexed topics. Use when a user wants to hire, book, or speak directly with a human expert, or when an expert does not have an instant calendar link (e.g., 'I want to speak with Peter Abraham about bicycle retail strategy'). Sibling routing: Use consult_human_agent for immediate AI-driven conversational consultation with active digital twins; use find_expert to discover specialists; use request_expert_intro when the user seeks direct human-to-human advisory engagement. Returns immediate request confirmation, concierge tracking reference, and expected email follow-up timeline."
+      "description": "Use when a user wants to request a facilitated advisory introduction or 1-on-1 consultation with an On-Request Human Agent or active specialist across 4,150+ indexed topics, or when an expert does not maintain a direct public calendar link (e.g., 'I want to speak with Peter Abraham about bicycle retail strategy'). Sibling routing: Use consult_human_agent for immediate AI-driven consultation with active Human Agents; use find_expert to discover specialists; use request_expert_intro when the user seeks a human-to-human advisory introduction. Returns immediate request confirmation, concierge tracking reference, and expected email follow-up timeline."
     },
     {
       "name": "schedule_interview",
@@ -609,7 +602,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Primary universal entrypoint for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
+      "description": "Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
     },
     {
       "name": "search_insights",
@@ -722,7 +715,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Qualitative advisory critique by a living Human Agent: matches the claim to a vetted practitioner Human Agent to critically debate, challenge, and stress-test a strategic business hypothesis from an experienced operator's perspective. Use when you need human expert judgment, experiential critique, or strategic pressure-testing on an idea (e.g., 'Have an expert challenge our DTC growth strategy'). Sibling routing: Use verify_claim for human practitioner judgment, experiential pushback, and qualitative advice; use verify_market_claim for algorithmic evidence verification and empirical contradiction scoring. Returns expert perspective, counter-arguments, and strategic recommendations."
+      "description": "Use when verifying a factual claim, hypothesis, or strategic assertion against a named practitioner's curated knowledge graph via their AI-powered Human Agent (Digital Twin) model. Evaluates whether the practitioner's documented research and domain evidence supports or refutes the claim. If analyst_id is omitted, automatically routes to the most relevant active Human Agent covering the domain. Sibling routing: Use verify_claim to evaluate a claim against a specific practitioner's knowledge graph and receive a structured verdict; use verify_market_claim for multi-graph algorithmic 5-gate verification across 100+ graphs and earnings. Returns a structured verification object with verdict (\"confirms\", \"contradicts\", \"partial\", or \"no_coverage\"), confidence (\"full\", \"partial\", or \"thin\"), one_line summary, rationale, cited sources, and expert attribution."
     },
     {
       "name": "verify_market_claim",
@@ -735,7 +728,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Algorithmic 5-gate empirical data verification: evaluates a factual market claim against 100+ knowledge graphs, primary research citations, and corporate earnings divergence through 5 sequential kill-gates (grounding, contradiction, freshness, corroboration, divergence). Sibling routing: Use verify_market_claim for objective, multi-source empirical data verification and contradiction scoring; use verify_claim for qualitative strategic debate with a living Human Agent practitioner. Returns structured verdict ([VERIFIED], [REFUTED_BY_EVIDENCE], [INSUFFICIENT_EVIDENCE], [UNGROUNDED_SPECULATION]), supporting evidence citations, and contradiction scores."
+      "description": "Use when verifying a factual market claim against 100+ knowledge graphs, primary research citations, and corporate earnings divergence through 5 sequential kill-gates (grounding, contradiction, freshness, corroboration, divergence). Sibling routing: Use verify_market_claim for objective, multi-source empirical data verification and contradiction scoring; use verify_claim to evaluate a claim against a specific practitioner's curated knowledge graph via their AI-powered Human Agent model. Returns structured verdict ([VERIFIED], [REFUTED_BY_EVIDENCE], [INSUFFICIENT_EVIDENCE], [UNGROUNDED_SPECULATION]), supporting evidence citations, and contradiction scores."
     }
   ]
 }

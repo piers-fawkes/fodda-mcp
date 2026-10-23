@@ -39,7 +39,7 @@ import { renderBrandWidget } from './brandTemplate.js';
 import { renderSearchWidget } from './searchTemplate.js';
 import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
 import { MCP_SERVER_VERSION } from './tools.js';
-import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_WIDGET_DESIGN_BRIEF, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
+import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
 import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace, cleanTruncateWhyNow } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
@@ -160,8 +160,12 @@ export function sanitizePayloadForChatGpt(obj: any): any {
     if (typeof obj === 'object') {
         const cleaned: Record<string, any> = {};
         for (const [key, value] of Object.entries(obj)) {
-            // Drop internal keys
-            if (/^(_|record_id$|airtable|debug|trace|internal)/i.test(key)) {
+            // Drop internal keys and commerce/booking rate keys
+            if (/^(_|record_id$|airtable|debug|trace|internal|rate_display$|callPrice$)/i.test(key)) {
+                continue;
+            }
+            if (key === 'book_a_call') {
+                cleaned[key] = null;
                 continue;
             }
             // Drop Airtable record ID string values
@@ -183,14 +187,22 @@ export function sanitizePayloadForChatGpt(obj: any): any {
  * injected by foddaRequest() as _upstream_usage.
  */
 function appendUsageWarning(data: any, userEmail?: string, sessionSource?: string) {
-    if (sessionSource === 'chatgpt') return;
+    if (sessionSource === 'chatgpt' || sessionSource === 'claude') return;
+
+    const u = data?._upstream_usage;
+    const hasCardOrOverage =
+        Boolean(data?.usage?.has_payment_method) ||
+        Boolean(data?._account?.has_payment_method) ||
+        Boolean(data?.has_payment_method) ||
+        data?.usage?.remaining === null ||
+        data?.usage?.credits_remaining === null ||
+        u?.warning === 'overage-active';
 
     // ── Upstream header-based warnings (X-Usage-Warning / X-Usage-Percent / X-Usage-Overage-Tokens) ──
-    if (data?._upstream_usage) {
-        const u = data._upstream_usage;
-        if (u.warning === 'approaching-limit' && u.percent) {
+    if (u) {
+        if (u.warning === 'approaching-limit' && u.percent && !hasCardOrOverage) {
             data._usage_status = `⚠️ You've used ${u.percent}% of your monthly API calls. Consider upgrading or adding a payment method to avoid interruption.`;
-        } else if (u.warning === 'approaching-daily-limit') {
+        } else if (u.warning === 'approaching-daily-limit' && !hasCardOrOverage) {
             const dailyRemaining = u.daily_remaining != null ? ` (${u.daily_remaining} remaining today)` : '';
             data._usage_status = `⚠️ You are approaching the free daily burst limit of 50 calls${dailyRemaining}. Add a payment card at https://app.fodda.ai/billing to remove daily burst limits and continue querying seamlessly.`;
         } else if (u.warning === 'overage-active') {
@@ -202,10 +214,10 @@ function appendUsageWarning(data: any, userEmail?: string, sessionSource?: strin
         }
     }
 
-    if (!data?.usage) return;
+    if (!data?.usage || hasCardOrOverage) return;
 
     const remaining = data.usage.remaining ?? data.usage.credits_remaining;
-    if (remaining === undefined || remaining < 0) return;
+    if (remaining == null || typeof remaining !== 'number' || remaining < 0) return;
 
     const threshold = 15;
     if (remaining >= threshold) return;
@@ -561,6 +573,12 @@ export async function createServer(
     const reconcileCapabilitiesResponse = (obj: any): any => {
         if (!obj || typeof obj !== 'object') return obj;
         const clone = JSON.parse(JSON.stringify(obj));
+        if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
+            delete clone.pricing_url;
+            delete clone.pricing_rule;
+            delete clone.pricing;
+            delete clone.offerings;
+        }
         if (clone.available_next_actions) {
             clone.available_next_actions = reconcileActionList(clone.available_next_actions);
         }
@@ -770,7 +788,7 @@ export async function createServer(
         name: 'fodda_mcp',
         version: MCP_SERVER_VERSION,
     }, {
-        instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId),
+        instructions: buildSystemPrompt(accountProfile, skillPromptMeta, entryId, sessionSource, allowedTools),
     });
 
     // Automatically instrument and time every MCP tool handler execution
@@ -975,7 +993,7 @@ export async function createServer(
                 );
                 sessionTracker.setZeroQueryRetention(isZero);
 
-                const isChatGpt = sessionSource === 'chatgpt';
+                const isScopedConnector = sessionSource === 'chatgpt' || sessionSource === 'claude';
                 const status: Record<string, any> = {
                     plan: account.plan || 'Unknown',
                     queryRetention: account.query_retention || (isZero ? 'zero (contract)' : 'standard'),
@@ -985,7 +1003,7 @@ export async function createServer(
                 // Flag overage status when tokens_remaining is negative (overage billing active)
                 if (typeof status.api_calls_remaining === 'number' && status.api_calls_remaining < 0) {
                     status.overage_active = true;
-                    if (!isChatGpt) {
+                    if (!isScopedConnector) {
                         status.overage_api_calls = Math.abs(status.api_calls_remaining);
                         const overageRate = account.overage_rate_usd != null ? `$${account.overage_rate_usd}` : null;
                         status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply${overageRate ? ` at ${overageRate}/API call` : ''}.`;
@@ -1005,7 +1023,7 @@ export async function createServer(
                     if (account.profile.jobTitle) status.profile.job_title = account.profile.jobTitle;
                 }
                 status.manage_url = 'https://app.fodda.ai/account';
-                if (!isChatGpt) {
+                if (!isScopedConnector) {
                     if (account.stripe_link) status.stripe_link = account.stripe_link;
                     if (account.upsell && account.upsell.plan && account.upsell.price > 0) {
                         status.upgrade_offer = {
@@ -1031,7 +1049,7 @@ export async function createServer(
                 const status = err.response?.status;
                 const errData = err.response?.data?.error || err.response?.data || {};
                 if (status === 402 || errData.code === 'CREDITS_EXHAUSTED' || errData.status === 'CREDITS_EXHAUSTED') {
-                    if (sessionSource === 'chatgpt') {
+                    if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
                         return {
                             content: [{
                                 type: 'text' as const,
@@ -1365,7 +1383,7 @@ export async function createServer(
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
-        'Returns Fodda\'s capabilities, semantic research workflows, Human Agent Human Agents, and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings.',
+        'Returns Fodda\'s capabilities, semantic research workflows, Human Agents (Human Agents), and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings.',
         {
             topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview, workflow recipes, and specialist breakdown."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
@@ -1565,7 +1583,7 @@ export async function createServer(
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: JSON.stringify(localRecon, null, 2)
+                        text: JSON.stringify(reconcileCapabilitiesResponse(localRecon), null, 2)
                     }]
                 };
             }
@@ -1645,7 +1663,7 @@ export async function createServer(
     // --- list_analysts ---
     server.tool(
         'list_analysts',
-        'Catalog and discover all expert personas available on Fodda across 4 categories: living Human Agents (practitioners with Human Agents), C-Suite Agents (corporate executive lenses grounded in earnings), Classic Agents (historical thinkers), and Synthetic Analysts (domain specialists). Use when exploring available experts, finding who to consult for a specific topic, or inspecting available specialist deliverables. Sibling routing: This tool lists and filters agents; to initiate an interactive conversation with a chosen specialist, call consult_human_agent (for living experts) or consult_analyst (for synthetic/classic/C-suite personas); to search experts by query match, use find_expert. Returns an array of agent profiles with analyst_id, canonical_slug, name, role, agent_class, topics, consult_tool, and commissionable offerings.',
+        'Catalog and discover all expert personas available on Fodda across 4 categories: living Human Agents (practitioners with Human Agent models), C-Suite Agents (corporate executive lenses grounded in earnings), Classic Agents (historical thinkers), and Synthetic Analysts (domain specialists). Use when exploring available experts, finding who to consult for a specific topic, or inspecting available specialist deliverables. Sibling routing: This tool lists and filters agents; to initiate an interactive conversation with a chosen specialist, call consult_human_agent (for living experts) or consult_analyst (for synthetic/classic/C-suite personas); to search experts by query match, use find_expert. Returns an array of agent profiles with analyst_id, canonical_slug, name, role, agent_class, topics, consult_tool, and commissionable offerings.',
         {
             category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Human Agent), 'classic_agent' (Classic Agent), 'c_suite_agent' (C-Suite Agent), 'synthetic_agent' (Synthetic Agent), or 'all' (default)."),
             query: z.string().optional().describe("Optional natural language search query to filter analysts by lane, domain, expertise, or topics (e.g. 'streetwear', 'earnings', 'marketing')."),
@@ -1722,7 +1740,8 @@ export async function createServer(
                         }
 
                         const consult_tool = is_human ? 'consult_human_agent' : 'consult_analyst';
-                        const hasOfferings = Array.isArray(a.offerings) && a.offerings.length > 0;
+                        const isScoped = sessionSource === 'chatgpt' || sessionSource === 'claude';
+                        const hasOfferings = isScoped ? false : (Array.isArray(a.offerings) && a.offerings.length > 0);
                         const sanitizedOfferings = hasOfferings ? a.offerings.map((o: any) => ({
                             key: o.key,
                             name: o.name,
@@ -1731,7 +1750,9 @@ export async function createServer(
                             ...(o.description ? { description: o.description } : {}),
                         })) : [];
                         const nameKey = (a.name || '').toLowerCase().trim();
-                        const book_a_call = a.book_a_call !== undefined ? a.book_a_call : (bookACallMap.get(key) ?? (nameKey ? bookACallMap.get(nameKey) : null) ?? (is_human ? null : undefined));
+                        const book_a_call = isScoped
+                            ? null
+                            : (a.book_a_call !== undefined ? a.book_a_call : (bookACallMap.get(key) ?? (nameKey ? bookACallMap.get(nameKey) : null) ?? (is_human ? null : undefined)));
 
                         const credentials = (a.roleTitle || a.yearsExperience != null || a.pastEmployers || a.role_title || a.years_experience != null || a.past_employers) ? {
                             roleTitle: a.roleTitle || a.role_title || undefined,
@@ -1760,7 +1781,7 @@ export async function createServer(
                             ...(book_a_call !== undefined ? { book_a_call } : {}),
                             offerings: sanitizedOfferings,
                             commissionable: hasOfferings,
-                            ...(!hasOfferings ? { note: `Analyst profile available for consultation (${consult_tool}); deliverables not yet commissionable.` } : {})
+                            ...(!hasOfferings && !isScoped ? { note: `Analyst profile available for consultation (${consult_tool}); deliverables not yet commissionable.` } : {})
                         };
                         if (!seen.has(key)) {
                             seen.set(key, enriched);
@@ -1913,7 +1934,9 @@ export async function createServer(
                             candidateObj.status = 'on_request';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
                             if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
-                            candidateObj.next_step = `This specialist is available On Request. Use request_expert_intro(analyst_id: '${analystId}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${analystId}') for domain fallback intelligence.`;
+                            candidateObj.next_step = isToolCallable('request_expert_intro')
+                                ? `This specialist is available On Request. Use request_expert_intro(analyst_id: '${analystId}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${analystId}') for domain fallback intelligence.`
+                                : `This specialist is available On Request (https://www.fodda.ai/experts/${analystId}). Call consult_human_agent(analyst_id: '${analystId}') for domain fallback intelligence.`;
                         } else {
                             candidateObj.status = 'active';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
@@ -1952,7 +1975,7 @@ export async function createServer(
                     } else if (results.length > 0) {
                         payload.next_step = results[0].next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them.";
                     } else if (onRequestExperts.length > 0) {
-                        payload.next_step = onRequestExperts[0].next_step || "Use request_expert_intro to request an introduction.";
+                        payload.next_step = onRequestExperts[0].next_step || (isToolCallable('request_expert_intro') ? "Use request_expert_intro to request an introduction." : "Visit the specialist's profile on https://www.fodda.ai/experts to connect.");
                     }
 
                     return {
@@ -1988,7 +2011,9 @@ export async function createServer(
                         credibility_anchor: c.credibility_anchor || null,
                         status: c.status || 'active',
                         next_step: isOnReq
-                            ? `This specialist is available On Request. Use request_expert_intro(analyst_id: '${c.analyst_id}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${c.analyst_id}') for domain fallback intelligence.`
+                            ? (isToolCallable('request_expert_intro')
+                                ? `This specialist is available On Request. Use request_expert_intro(analyst_id: '${c.analyst_id}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${c.analyst_id}') for domain fallback intelligence.`
+                                : `This specialist is available On Request (https://www.fodda.ai/experts/${c.analyst_id}). Call consult_human_agent(analyst_id: '${c.analyst_id}') for domain fallback intelligence.`)
                             : `Call ${c.consult_tool} with analyst_id: '${c.analyst_id}'.`
                     };
                 });
@@ -2021,7 +2046,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Primary universal entrypoint for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
+        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -2692,8 +2717,8 @@ export async function createServer(
                         return out;
                     });
 
-                    // ChatGPT clients cannot render arbitrary HTML widgets and get bloated by design briefs
-                    if (sessionSource === 'chatgpt') {
+                    // ChatGPT/Claude clients cannot render arbitrary HTML widgets and get bloated by design briefs
+                    if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
                         const cleanData = sanitizePayloadForChatGpt(liteData);
                         chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
@@ -2715,7 +2740,7 @@ export async function createServer(
                     const jsonPayload = JSON.stringify(liteData, null, 2);
                     const totalSize = searchWidget.widget_html.length + jsonPayload.length;
                     if (totalSize > 30000) {
-                        console.error(`[search_graph] Payload too large (${(totalSize / 1024).toFixed(1)}KB) — skipping widget HTML, sending liteData JSON + design brief`);
+                        console.error(`[search_graph] Payload too large (${(totalSize / 1024).toFixed(1)}KB) — skipping widget HTML, sending liteData JSON`);
                         // ── Query-level billing (large payload path) ──
                         chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                             .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
@@ -2723,7 +2748,6 @@ export async function createServer(
                             next_moves: liteData?.next_moves,
                             content: [
                                 { type: 'text' as const, text: jsonPayload },
-                                { type: 'text' as const, text: FODDA_WIDGET_DESIGN_BRIEF },
                             ]
                         };
                     }
@@ -2782,7 +2806,7 @@ export async function createServer(
                     return out;
                 });
 
-                if (sessionSource === 'chatgpt') {
+                if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
                     const cleanData = sanitizePayloadForChatGpt(fallbackData);
                     chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
                         .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
@@ -3848,7 +3872,7 @@ export async function createServer(
 
     server.tool(
         'brand_tracker',
-        'Single-brand 360-degree intelligence audit: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., \'Audit Nike\'s market footprint\', \'How is Lululemon performing across consumer trends?\'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. \'athleisure trends\'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand\'s multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html.',
+        'Use when auditing a single brand\'s 360-degree intelligence footprint: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., \'Audit Nike\'s market footprint\', \'How is Lululemon performing across consumer trends?\'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. \'athleisure trends\'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand\'s multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
@@ -4175,7 +4199,7 @@ export async function createServer(
                             data.next_moves = nextMoves;
                         }
 
-                        const supplementalPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                        const supplementalPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
                         activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(supplementalPayload, null, 2), nextMoves, query });
                     } catch (err: any) {
                         const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Unknown error';
@@ -4468,7 +4492,7 @@ export async function createServer(
     // --- verify_market_claim ---
     server.tool(
         'verify_market_claim',
-        'Algorithmic 5-gate empirical data verification: evaluates a factual market claim against 100+ knowledge graphs, primary research citations, and corporate earnings divergence through 5 sequential kill-gates (grounding, contradiction, freshness, corroboration, divergence). Sibling routing: Use verify_market_claim for objective, multi-source empirical data verification and contradiction scoring; use verify_claim for qualitative strategic debate with a living Human Agent practitioner. Returns structured verdict ([VERIFIED], [REFUTED_BY_EVIDENCE], [INSUFFICIENT_EVIDENCE], [UNGROUNDED_SPECULATION]), supporting evidence citations, and contradiction scores.',
+        'Use when verifying a factual market claim against 100+ knowledge graphs, primary research citations, and corporate earnings divergence through 5 sequential kill-gates (grounding, contradiction, freshness, corroboration, divergence). Sibling routing: Use verify_market_claim for objective, multi-source empirical data verification and contradiction scoring; use verify_claim to evaluate a claim against a specific practitioner\'s curated knowledge graph via their AI-powered Human Agent model. Returns structured verdict ([VERIFIED], [REFUTED_BY_EVIDENCE], [INSUFFICIENT_EVIDENCE], [UNGROUNDED_SPECULATION]), supporting evidence citations, and contradiction scores.',
         {
             claim: z.string().describe("The exact market thesis or assertion to evaluate (e.g. 'Casual golf venues are losing momentum' or 'Gen Z is trading down on essentials to protect beauty spending')."),
             context: z.string().optional().describe("Optional category, brand, or operational context to sharpen evidence retrieval (e.g. 'golf entertainment venues Topgolf Off Golf' or 'beauty personal care')."),
@@ -4549,7 +4573,7 @@ export async function createServer(
                     markdown += `### Contrarian Adversarial Critique\n${data.adversarial_critique}\n\n`;
                 }
 
-                const responsePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                const responsePayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
                 return {
                     ...responsePayload,
                     formatted_markdown: markdown.trim(),
@@ -4672,7 +4696,7 @@ export async function createServer(
                     }
                 }
 
-                const responsePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                const responsePayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
                 return {
                     ...responsePayload,
                     formatted_markdown: markdown.trim(),
@@ -4744,7 +4768,7 @@ export async function createServer(
                 // Ensure bare dollar signs are escaped to prevent KaTeX rendering math-mode collapse
                 const safeMarkdown = markdown.replace(/(?<!\\)\$([0-9])/g, '\\$$$1');
 
-                const cleanPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                const cleanPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
 
                 const structuredBlock = {
                     retail_media_shelf: cleanPayload?.retail_media_shelf,
@@ -5151,7 +5175,7 @@ export async function createServer(
                     formattedPayload.snapshot.citations = citations;
                 }
 
-                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(formattedPayload) : formattedPayload;
+                const earningsPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(formattedPayload) : formattedPayload;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
@@ -5249,7 +5273,7 @@ export async function createServer(
                     }
                 }
 
-                const divergencePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                const divergencePayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(divergencePayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
@@ -5345,7 +5369,7 @@ export async function createServer(
                     case 'coverage': {
                         // Free endpoint — no billing
                         const data = await foddaRequest('GET', '/v1/earnings/coverage', apiKey, resolveUserId(userId, uid));
-                        const coveragePayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(data) : data;
+                        const coveragePayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
                         return { content: [{ type: 'text' as const, text: JSON.stringify(coveragePayload, null, 2) }] };
                     }
                     default:
@@ -5442,7 +5466,7 @@ export async function createServer(
                     }
                 }
 
-                const earningsPayload = sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(responsePayload) : responsePayload;
+                const earningsPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(responsePayload) : responsePayload;
                 return { content: [{ type: 'text' as const, text: JSON.stringify(earningsPayload, null, 2) }] };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
@@ -6077,7 +6101,7 @@ export async function createServer(
     // --- manage_scheduled_reports ---
     server.tool(
         'manage_scheduled_reports',
-        'Automated briefing and recurring tracking manager: creates, lists, updates, pauses, resumes, and cancels recurring intelligence digests delivered via email. Use when a user asks to track a topic, monitor a competitor, or set up weekly/monthly briefings (e.g., \'Track sustainability shifts in luxury fashion every Monday\', \'Pause my weekly retail digest\'). Actions: \'create\' registers a new schedule (requires query, email, cadence); \'list\' returns all active schedules for the user; \'update\' modifies query/cadence for schedule_id; \'pause\' and \'resume\' temporarily halt or restart delivery; \'cancel\' permanently removes the schedule. Returns confirmation status, schedule_id, active frequency, and next delivery date.',
+        'Use when a user asks to track a topic, monitor a competitor, or set up, list, update, pause, resume, or cancel recurring weekly/daily intelligence briefings delivered via email (e.g., \'Track sustainability shifts in luxury fashion every Monday\', \'Pause my weekly retail digest\'). Actions: \'create\' registers a new schedule (requires query, email, cadence); \'list\' returns all active schedules for the user; \'update\' modifies query/cadence for schedule_id; \'pause\' and \'resume\' temporarily halt or restart delivery; \'cancel\' permanently removes the schedule. Returns confirmation status, schedule_id, active frequency, and next delivery date.',
         {
             action: z.enum(['create', 'list', 'cancel', 'update', 'pause', 'resume']).describe("Lifecycle action to perform: 'create' (register new briefing), 'list' (view existing schedules), 'update' (modify query/cadence), 'pause' (suspend delivery), 'resume' (reactivate paused briefing), or 'cancel' (permanently delete)."),
             query: z.string().optional().describe('For "create": the research query to run'),
@@ -6094,7 +6118,7 @@ export async function createServer(
             brands: z.array(z.string()).optional()
                 .describe('For brand_intelligence: brand names to track (e.g., ["Nike", "Patagonia"])'),
         },
-        { title: 'Manage Scheduled Reports', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true } as any,
+        { title: 'Manage Scheduled Reports', readOnlyHint: false, consequentialHint: true, destructiveHint: true, idempotentHint: false, openWorldHint: true } as any,
         async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
             try {
                 if (action === 'create') {
@@ -6222,7 +6246,7 @@ export async function createServer(
     // Call Gemini directly via waverunnerRequest → Stream progress via sendLoggingMessage.
     server.tool(
         'deep_research_topic',
-        'Autonomous multi-pass research agent: orchestrates an exhaustive briefing report synthesizing cross-graph trends, corporate disclosures, and expert perspectives into a comprehensive executive narrative. Use for high-stakes research inquiries, client deliverables, or market landscape studies (e.g., \'Generate a comprehensive research briefing on the circular fashion economy\', \'Deep dive into retail media network adoption\'). Runs asynchronously; execution returns a job_id that must be polled to completion using check_research_status. Sibling routing: Use search_graph for fast, single-turn trend lookups; use get_intelligence_dossier for immediate synchronous multi-source dossier assembly; use deep_research_topic when you need an autonomous, multi-step deep dive. Returns job confirmation, estimated processing time, and job_id for status tracking.',
+        'Use when commissioning an autonomous multi-pass research report synthesizing cross-graph trends, corporate disclosures, and expert perspectives into a comprehensive executive narrative (e.g., \'Generate a comprehensive research briefing on the circular fashion economy\', \'Deep dive into retail media network adoption\'). Runs asynchronously; execution returns a job_id that must be polled to completion using check_research_status. Sibling routing: Use search_graph for fast, single-turn trend lookups; use get_intelligence_dossier for immediate synchronous multi-source dossier assembly; use deep_research_topic when you need an autonomous, multi-step deep dive. Returns job confirmation, estimated processing time, and job_id for status tracking.',
         {
             query: z.string().describe('The research subject as a short phrase, 5–15 words. Do not pass a full brief — long multi-clause queries degrade graph selection. Put detail into sub_themes instead.'),
             sub_themes: z.array(z.string()).optional().describe('3–5 specific angles to investigate (e.g. "category sizing and growth forecasts for wine coolers", "key players across appliance, furniture and glassware", "DTC versus wholesale channel dynamics"). If omitted, generated automatically. This is where research detail belongs — not in the query.'),
@@ -6909,7 +6933,7 @@ export async function createServer(
                 }
             }
 
-            if (result.book_a_call) {
+            if (result.book_a_call && sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
                 const callText = result.book_a_call.rate_display
                     ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
                     : (result.book_a_call.url || '');
@@ -6962,9 +6986,9 @@ export async function createServer(
                 coverage: result.coverage,
                 credibility_anchor,
                 next_moves: humanAgentNextMoves,
-                sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
-                ...(result.analyst ? { analyst: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
-                book_a_call: sessionSource === 'chatgpt' ? (result.book_a_call ? sanitizePayloadForChatGpt(result.book_a_call) : null) : (result.book_a_call ?? null),
+                sources_used: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
+                ...(result.analyst ? { analyst: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
+                book_a_call: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? null : (result.book_a_call ?? null),
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
                 ...(result.usage ? { usage: result.usage } : {}),
@@ -7426,7 +7450,7 @@ export async function createServer(
                 }
             }
 
-            if (result.book_a_call) {
+            if (result.book_a_call && sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
                 const callText = result.book_a_call.rate_display
                     ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
                     : (result.book_a_call.url || '');
@@ -7480,7 +7504,7 @@ export async function createServer(
                 coverage: result.coverage,
                 credibility_anchor,
                 next_moves: analystNextMoves,
-                sources_used: sessionSource === 'chatgpt' ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
+                sources_used: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
                 ...(result.usage ? { usage: result.usage } : {}),
@@ -7588,7 +7612,7 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Direct interactive consultation with synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs. Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives (e.g., \'Ask the Brand CMO persona how to evaluate retail media ROI\', \'Consult John Ruskin on craftsmanship in luxury fashion\'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for living practitioners (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves.',
+        'Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., \'Ask the Brand CMO persona how to evaluate retail media ROI\', \'Consult John Ruskin on craftsmanship in luxury fashion\'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves.',
         {
             analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
@@ -7641,9 +7665,9 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Direct interactive consultation with authorized living Human Agents—verified digital twins of real-world industry leaders, agency founders, and specialists grounded in their verified thinking and proprietary frameworks. Use when seeking real-world practitioner expertise, contrarian perspectives, and battle-tested methodologies (e.g., \'Ask Ben Dietz about luxury brand gravity and streetwear drops\', \'Consult Peter Abraham on modern marketing models\'). Supports multi-turn dialogue via session_id, corporate brand binding, and deep homework mode (deep: true). Sibling routing: Use consult_human_agent for live interactive dialogue with verified digital twins; use request_expert_intro to book 1-on-1 human advisory time or request an intro to unclaimed experts; use consult_analyst for synthetic/classic personas. Returns conversational practitioner analysis, cited evidence nodes, and structured next moves.',
+        'Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner\'s consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner\'s voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves.',
         {
-            analyst_id: z.string().describe("The internal routing ID of the Human Agent (from list_analysts or find_expert). This is an internal routing key; NEVER expose raw IDs (e.g. 'ben-dietz-sic') or words like 'digital twin' to the user; always refer to the expert by their professional name and credentials."),
+            analyst_id: z.string().describe("The expert ID of the Human Agent (from list_analysts or find_expert, e.g. 'ben-dietz-sic'). Refer to the expert by their display name and credentials in user-facing responses."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context across the session. Omit for a one-off question."),
@@ -7651,7 +7675,7 @@ export async function createServer(
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         {
-            title: 'Consult Human Agent',
+            title: 'Consult Human Agent (Digital Twin)',
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: false,
@@ -7694,14 +7718,30 @@ export async function createServer(
     // --- verify_claim ---
     server.tool(
         'verify_claim',
-        'Qualitative advisory critique by a living Human Agent: matches the claim to a vetted practitioner Human Agent to critically debate, challenge, and stress-test a strategic business hypothesis from an experienced operator\'s perspective. Use when you need human expert judgment, experiential critique, or strategic pressure-testing on an idea (e.g., \'Have an expert challenge our DTC growth strategy\'). Sibling routing: Use verify_claim for human practitioner judgment, experiential pushback, and qualitative advice; use verify_market_claim for algorithmic evidence verification and empirical contradiction scoring. Returns expert perspective, counter-arguments, and strategic recommendations.',
+        'Use when verifying a factual claim, hypothesis, or strategic assertion against a named practitioner\'s curated knowledge graph via their AI-powered Human Agent (Digital Twin) model. Evaluates whether the practitioner\'s documented research and domain evidence supports or refutes the claim. If analyst_id is omitted, automatically routes to the most relevant active Human Agent covering the domain. Sibling routing: Use verify_claim to evaluate a claim against a specific practitioner\'s knowledge graph and receive a structured verdict; use verify_market_claim for multi-graph algorithmic 5-gate verification across 100+ graphs and earnings. Returns a structured verification object with verdict ("confirms", "contradicts", "partial", or "no_coverage"), confidence ("full", "partial", or "thin"), one_line summary, rationale, cited sources, and expert attribution.',
         {
             claim: z.string().describe("The factual claim, hypothesis, or statement to verify against expert evidence."),
             analyst_id: z.string().optional().describe("Optional internal expert ID of the Human Agent (from find_expert or list_analysts). If omitted, automatically discovers and routes to the most relevant Human Agent."),
             domain: z.string().optional().describe("Optional domain hint or industry sector (e.g. 'retail', 'tech', 'data privacy', 'supply chain') to assist in discovery when analyst_id is omitted."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
-        { title: 'Verify Claim with Human Agent', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        {
+            title: 'Verify Claim Against Expert Knowledge Graph',
+            readOnlyHint: true,
+            destructiveHint: false,
+            idempotentHint: false,
+            openWorldHint: false,
+            outputSchema: {
+                verdict: z.string().describe('Verification verdict: confirms, contradicts, partial, or no_coverage'),
+                confidence: z.string().describe('Coverage confidence tier: full, partial, or thin'),
+                one_line: z.string().describe('Single-sentence summary of the verification result'),
+                credibility_anchor: z.string().nullable().optional().describe('Pedigree and domain credentials of the expert'),
+                rationale: z.string().describe('Detailed evidence-backed rationale for the verdict'),
+                sources: z.array(z.any()).describe('Cited graph, supplemental, and web sources'),
+                expert: z.string().nullable().optional().describe('Display name of the Human Agent expert'),
+                book_a_call: z.any().nullable().optional().describe('Optional booking info when applicable')
+            }
+        } as any,
         async ({ claim, analyst_id, domain, userId: uid }) => {
             logUserQuery(claim, 'verify_claim');
 
@@ -7944,8 +7984,8 @@ export async function createServer(
                     };
                 });
 
-                const book_a_call = sessionSource === 'chatgpt'
-                    ? (result.book_a_call ? sanitizePayloadForChatGpt(result.book_a_call) : null)
+                const book_a_call = (sessionSource === 'chatgpt' || sessionSource === 'claude')
+                    ? null
                     : (result.book_a_call ?? (match?.book_a_call ? {
                         url: match.book_a_call,
                         ...(match.rate_display ? { rate_display: match.rate_display } : {})
@@ -8018,7 +8058,7 @@ export async function createServer(
     // --- request_expert_intro (Inquiry & Advisory Intro Capture) ---
     server.tool(
         'request_expert_intro',
-        'Executive advisory introduction and inquiry concierge: requests a facilitated advisory introduction or 1-on-1 strategic consultation with an On-Request living specialist or active Human Agent across 4,150+ indexed topics. Use when a user wants to hire, book, or speak directly with a human expert, or when an expert does not have an instant calendar link (e.g., \'I want to speak with Peter Abraham about bicycle retail strategy\'). Sibling routing: Use consult_human_agent for immediate AI-driven conversational consultation with active digital twins; use find_expert to discover specialists; use request_expert_intro when the user seeks direct human-to-human advisory engagement. Returns immediate request confirmation, concierge tracking reference, and expected email follow-up timeline.',
+        'Use when a user wants to request a facilitated advisory introduction or 1-on-1 consultation with an On-Request Human Agent or active specialist across 4,150+ indexed topics, or when an expert does not maintain a direct public calendar link (e.g., \'I want to speak with Peter Abraham about bicycle retail strategy\'). Sibling routing: Use consult_human_agent for immediate AI-driven consultation with active Human Agents; use find_expert to discover specialists; use request_expert_intro when the user seeks a human-to-human advisory introduction. Returns immediate request confirmation, concierge tracking reference, and expected email follow-up timeline.',
         {
             expert_id: z.string().describe("The expert's display name or analyst ID (e.g., 'Peter Abraham' or 'peter-abraham-bicycles-cycling')."),
             requester_email: z.string().describe("The email address of the person requesting the introduction or consultation."),
@@ -8119,7 +8159,7 @@ export async function createServer(
     // --- request_deliverable (Agentic Analysts Phase C) ---
     server.tool(
         'request_deliverable',
-        'Commissions an executive document from an analyst or Human Agent—such as a strategic briefing, market memo, competitive assessment, or publication-ready article. Use when the user requests a formal deliverable rather than conversational chat (e.g., \'Have Ben Dietz write a strategic memo on retail media networks\'). Workflow routing: Discover available analysts and their specific commissionable offerings first via list_analysts or consult them interactively via consult_human_agent / consult_analyst. Execution & follow-up: Requests may process asynchronously; returns a job_id that can be polled to completion using check_deliverable_status. Returns job confirmation, estimated completion time, and deliverable status.',
+        'Use when commissioning an executive document from an analyst or Human Agent—such as a strategic briefing, market memo, competitive assessment, or publication-ready article—rather than conversational chat (e.g., \'Have Ben Dietz write a strategic memo on retail media networks\'). Workflow routing: Discover available analysts and their specific commissionable offerings first via list_analysts or consult them interactively via consult_human_agent / consult_analyst. Execution & follow-up: Requests may process asynchronously; returns a job_id that can be polled to completion using check_deliverable_status. Returns job confirmation, estimated completion time, and deliverable status.',
         {
             analyst_id: z.string().describe("The internal analyst ID producing the deliverable (from list_analysts). This is an internal identifier; the expert's display name is in the response."),
             offering_key: z.string().describe("The offering to commission (e.g., 'marketing_plan'). See the `offerings` array on each analyst from list_analysts."),
@@ -8811,7 +8851,7 @@ export async function createServer(
 
     server.tool(
         'finalize_byo_mcp_onboarding',
-        'Step 3 (final step) in the Bring-Your-Own-MCP (BYO-MCP) onboarding pathway: persists the completed expert profile and registers the live external MCP grounding in the Fodda Human Agent registry. Prerequisites: submit_basic_info and submit_mcp_source must be completed prior to finalizing; terms must be accepted. Workflow distinction: This tool is strictly for BYO-MCP experts whose knowledge is grounded in an external MCP server—do NOT use for standard graph-backed experts (who proceed through confirm_themes and schedule_interview). Side effects: Creates an active pending-review Human Agent record in Airtable and provisions consultation routing. Returns submission status, analystId, and confirmation details.',
+        'Step 3 (final step) in the Bring-Your-Own-MCP (BYO-MCP) onboarding pathway: persists the completed expert profile and registers the live external MCP grounding in the Fodda Human Agent registry. Profile is saved once terms are accepted; MCP details are verified and submitted for review here. Prerequisites: submit_basic_info and submit_mcp_source must be completed prior to finalizing; terms must be accepted. Workflow distinction: This tool is strictly for BYO-MCP experts whose knowledge is grounded in an external MCP server—do NOT use for standard graph-backed experts (who proceed through confirm_themes and schedule_interview). Side effects: Creates an active pending-review Human Agent record in Airtable and provisions consultation routing. Returns submission status, analystId, and confirmation details.',
         {
             name: z.string().describe("The expert's full name"),
             role: z.string().describe("The expert's current role or title"),
@@ -9324,6 +9364,51 @@ export async function createServer(
                     (tool as any).disable();
                 } else {
                     delete registered[name];
+                }
+                continue;
+            }
+            const t = tool as any;
+            if (typeof t.description === 'string') {
+                let d = t.description;
+                if (!allowedSet.has('get_domain_intelligence')) {
+                    d = d
+                        .replace(/;\s*use get_domain_intelligence[^.;]*/gi, '')
+                        .replace(/\s*or get_domain_intelligence\b/gi, '');
+                }
+                if (!allowedSet.has('get_intelligence_dossier')) {
+                    d = d.replace(/;\s*use get_intelligence_dossier[^.;]*/gi, '');
+                }
+                if (!allowedSet.has('check_deliverable_status')) {
+                    d = d.replace(/;\s*use check_deliverable_status[^.;]*/gi, '');
+                }
+                if (!allowedSet.has('request_expert_intro')) {
+                    d = d
+                        .replace(/\s*\(prospective advisors where introductions can be requested via request_expert_intro\)/gi, '')
+                        .replace(/\s*\(advisory introduction via request_expert_intro\)/gi, ' (prospective specialist profiles)')
+                        .replace(/;\s*use request_expert_intro[^.;]*/gi, '');
+                }
+                if (!allowedSet.has('brainstorm_topic')) {
+                    d = d.replace(/;\s*use brainstorm_topic[^.;]*/gi, '');
+                }
+                if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
+                    d = d
+                        .replace(/,\s*and pricing\b/gi, '')
+                        .replace(/\s*or pricing\b/gi, '')
+                        .replace(/,\s*and published offerings\b/gi, '')
+                        .replace(/,\s*and commissionable offerings\b/gi, '')
+                        .replace(/,\s*or inspecting available specialist deliverables\b/gi, '');
+                }
+                t.description = d;
+            }
+            if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
+                if (name === 'consult_human_agent') {
+                    t.description = "Consult an authorized Human Agent (Digital Twin) expert created directly with the named expert's consent, participation, and curated knowledge graph. The expert answers in their voice — one-off questions or multi-turn engagements (pass session_id back to continue). Each human agent has a unique methodology, domain expertise, and analytical lens with a curated evidence base. Call list_analysts first to find the right expert ID. Responses may include a coverage status (in/adjacent/out), source attribution, and referrals to other expert graphs. Any referrals to other expert graphs are returned in third-person platform voice with an offer to query the referred graph.";
+                    if (t.annotations) {
+                        t.annotations.title = 'Consult Human Agent (Digital Twin)';
+                        t.annotations.readOnlyHint = false;
+                    }
+                } else if (name === 'consult_analyst' && t.annotations) {
+                    t.annotations.readOnlyHint = false;
                 }
             }
         }

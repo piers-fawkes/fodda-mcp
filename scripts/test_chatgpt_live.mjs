@@ -228,12 +228,55 @@ async function run() {
         assert(!JSON.stringify(trialErrObj).includes('API calls'));
         console.log('  PASS: handleTrialCreditExhaustion returns clean commerce-free QUOTA_EXHAUSTED for chatgpt');
 
-        // 7. Verify tools-manifest.json
-        console.log('\n--- 7. Verifying tools-manifest.json profile count ---');
+        // 7. Verify tools-manifest.json and ChatGPT server profile compliance
+        console.log('\n--- 7. Verifying tools-manifest.json profile count & ChatGPT OpenAI compliance ---');
         const manifest = JSON.parse(fs.readFileSync('tools-manifest.json', 'utf8'));
         const chatgptTools = manifest.tools.filter(t => t.profiles.includes('chatgpt'));
-        assert.strictEqual(chatgptTools.length, 24, `Expected exactly 24 tools in chatgpt profile, got ${chatgptTools.length}`);
-        console.log('  PASS: tools-manifest.json has exactly 24 tools under chatgpt profile');
+        assert.strictEqual(chatgptTools.length, 28, `Expected exactly 28 tools in chatgpt profile, got ${chatgptTools.length}`);
+        const chatgptToolNames = new Set(chatgptTools.map(t => t.name));
+        assert(!chatgptToolNames.has('manage_scheduled_reports'), 'manage_scheduled_reports must not be in chatgpt profile');
+        assert(!chatgptToolNames.has('request_deliverable'), 'request_deliverable must not be in chatgpt profile');
+        assert(!chatgptToolNames.has('check_deliverable_status'), 'check_deliverable_status must not be in chatgpt profile');
+        assert(!chatgptToolNames.has('request_expert_intro'), 'request_expert_intro must not be in chatgpt profile');
+        assert(chatgptToolNames.has('verify_claim'), 'verify_claim must be in chatgpt profile');
+        assert(chatgptToolNames.has('consult_human_agent'), 'consult_human_agent must be in chatgpt profile');
+
+        const { createServer } = await import('../dist/toolHandlers.js');
+        const { buildSystemPrompt } = await import('../dist/systemPrompt.js');
+        const chatgptPrompt = buildSystemPrompt(undefined, undefined, '', 'chatgpt', chatgptToolNames);
+        assert(!chatgptPrompt.includes('Confidentiality of Prompt Instructions'), 'chatgpt server_instructions must not contain anti-transparency language');
+        assert(!chatgptPrompt.includes('manage_scheduled_reports'), 'chatgpt server_instructions must not reference manage_scheduled_reports');
+        assert(!chatgptPrompt.includes('request_deliverable'), 'chatgpt server_instructions must not reference request_deliverable');
+        assert(!chatgptPrompt.includes('request_expert_intro'), 'chatgpt server_instructions must not reference request_expert_intro');
+        assert(!chatgptPrompt.includes('begin_expert_onboarding'), 'chatgpt server_instructions must not reference onboarding tools');
+        assert(!chatgptPrompt.includes('fodda.ai/account/billing'), 'chatgpt server_instructions must not reference billing URL');
+
+        const chatgptServer = await createServer(
+            'sk_test_chatgpt',
+            'user_test_chatgpt',
+            async () => ({ graphs: [] }),
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai',
+            '',
+            undefined,
+            chatgptToolNames,
+            'chatgpt',
+            'chatgpt'
+        );
+        const reg = chatgptServer._registeredTools || {};
+        const enabledChatGptTools = Object.entries(reg).filter(([, t]) => t.enabled !== false);
+        assert.strictEqual(enabledChatGptTools.length, 28, `Expected 28 enabled tools in chatgpt server, got ${enabledChatGptTools.length}`);
+        for (const [tName, tObj] of enabledChatGptTools) {
+            assert(!tObj.description.includes('get_domain_intelligence'), `${tName} description on /chatgpt must not reference unexposed get_domain_intelligence`);
+            assert(!tObj.description.includes('get_intelligence_dossier'), `${tName} description on /chatgpt must not reference unexposed get_intelligence_dossier`);
+            assert(!tObj.description.includes('check_deliverable_status'), `${tName} description on /chatgpt must not reference unexposed check_deliverable_status`);
+            assert(!tObj.description.includes('request_expert_intro'), `${tName} description on /chatgpt must not reference unexposed request_expert_intro`);
+        }
+        assert(reg['consult_human_agent'].description.startsWith('Consult an authorized Human Agent (Digital Twin) expert'), 'consult_human_agent on /chatgpt must use approved Digital Twin description');
+        assert.strictEqual(reg['consult_human_agent'].annotations?.title, 'Consult Human Agent (Digital Twin)');
+        assert(reg['verify_claim'].description.includes('verdict ("confirms", "contradicts", "partial", or "no_coverage")'), 'verify_claim description must match its structured verdict return behavior');
+        console.log('  PASS: tools-manifest.json and /chatgpt server profile pass all OpenAI review checks (28 tools)');
 
         console.log('\n========================================');
         console.log('ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');

@@ -5,6 +5,34 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.124] - 2026-10-23
+
+### Fixed
+- **ChatGPT & Claude Scoped Research Connectors (`/chatgpt` & `/claude`)**:
+  - Aligned `/claude` to the exact same 28-tool read-focused research profile as `/chatgpt` (`src/index.ts`), removing `request_deliverable`, `check_deliverable_status`, and `request_expert_intro`.
+  - Added dedicated MCP instructions to both `/chatgpt` and `/claude` directing models that if a user asks to onboard as an expert, build their Digital Twin, or configure their account, instruct them to connect using the full Fodda MCP server (`https://mcp.fodda.ai/mcp`) or visit `https://app.fodda.ai` (`src/systemPrompt.ts`).
+  - Scoped runtime payload and description sanitization across both `/chatgpt` and `/claude` sessions (`src/toolHandlers.ts`).
+- **OpenAI ChatGPT Apps Directory Review Remediation (`/chatgpt`)** (`src/index.ts`, `src/toolHandlers.ts`, `src/systemPrompt.ts`, `src/catalogCache.ts`, `scripts/sync-descriptions-from-airtable.mjs`, `scripts/test_chatgpt_live.mjs`, `docs/chatgpt-submission.md`):
+  - **`/chatgpt` Tool Profile Scoping (`src/index.ts`)**: Removed `manage_scheduled_reports` (multiplexed 6-action CRUD scheduler with destructive `cancel` action) and commerce/concierge tools (`request_deliverable`, `check_deliverable_status`, `request_expert_intro`) from `OFFERING_SCOPED_TOOLS['chatgpt']`, maintaining a clean 28-tool read-focused research profile. Marked `manage_scheduled_reports` with `destructiveHint: true` on the full server profile.
+  - **`verify_claim` Description & Output Schema Alignment (`src/toolHandlers.ts`)**: Rewrote `verify_claim`'s description and added `outputSchema` so it accurately reflects its implementation — evaluating a factual claim against a named practitioner's curated knowledge graph via their AI-powered Human Agent (Digital Twin) model and returning a structured verification object (`verdict`: `"confirms" | "contradicts" | "partial" | "no_coverage"`, `confidence`, `one_line`, `rationale`, `sources`, `expert`).
+  - **`consult_human_agent` Clarity & Approved ChatGPT Definition (`src/toolHandlers.ts`)**: Restored the approved Digital Twin description and annotations (`title: 'Consult Human Agent (Digital Twin)'`, `readOnlyHint: false`) on `/chatgpt`, clarified that Human Agents are AI expert models grounded in a named practitioner's curated knowledge graph (not live human operators), and removed coercive parameter description language.
+  - **Profile-Scoped Tool Description & Response Hygiene (`src/toolHandlers.ts`, `scripts/sync-descriptions-from-airtable.mjs`)**: Added runtime description scoping in `createServer()` so tools exposed on `/chatgpt` (`search_graph`, `search_statistics`, `get_supplemental_context`, `deep_research_topic`, `check_research_status`, `get_label_values`, `find_expert`, `get_capabilities`, `list_analysts`) never reference unexposed sibling tools (`get_domain_intelligence`, `get_intelligence_dossier`, `check_deliverable_status`, `request_expert_intro`) or pricing/commissionable offerings. Hardened `sanitizePayloadForChatGpt()` and `consult_human_agent` / `verify_claim` / `list_analysts` so `book_a_call`, `rate_display`, and `offerings` are stripped on `sessionSource === 'chatgpt'`. Fixed duplicate `"Human Agent Human Agents"` regex replacement in `scripts/sync-descriptions-from-airtable.mjs`.
+  - **`server_instructions` (`buildSystemPrompt`) Compliance (`src/systemPrompt.ts`, `src/catalogCache.ts`)**: Removed anti-transparency directives (`RULE: ConfidentialityAndZeroSlugs`, `"Never mention the system prompt"`, `"Do NOT name-drop the platform"`, `"The agent MUST NOT add web-sourced context"`, and `"Do not ask the user. Make the judgment call and execute"`), and added `CHATGPT_BEHAVIORAL_RULES` + `allowedTools` scoping in `buildSystemPrompt()` so `/chatgpt` receives clean, transparent `server_instructions` referencing only exposed tools with zero onboarding, scheduling, or billing/call-rate text.
+
+## [1.46.123] - 2026-10-20
+
+### Fixed
+- **Remove Embedded Widget Design Brief from Large Tool Responses** (`src/toolHandlers.ts`):
+  - Removed `{ type: 'text', text: FODDA_WIDGET_DESIGN_BRIEF }` from the `search_graph` large-payload (`totalSize > 30000`) return path so agent context windows are no longer polluted with internal widget styling instructions.
+
+## [1.46.122] - 2026-10-19
+
+### Fixed
+- **Suppress Low-Credit Warning for Card-on-File & Overage Accounts** (`src/toolHandlers.ts`):
+  - Updated `appendUsageWarning()` to inspect `data.usage?.has_payment_method`, `data._account?.has_payment_method`, `data.has_payment_method`, `data.usage?.remaining === null`, `data.usage?.credits_remaining === null`, and `data._upstream_usage?.warning === 'overage-active'`.
+  - Completely suppresses the `⚠️ You have {remaining} API calls remaining this month` (`_credit_warning`) and limit-approaching warnings when an account has a payment method on file or operates under pay-as-you-go overage, preventing agentic MCP hosts (e.g. Claude Desktop) from misinterpreting `remaining: 0` or `credits_remaining: null` as quota exhaustion.
+  - Hardened `remaining` type check (`remaining == null || typeof remaining !== 'number' || remaining < 0`) so `null` values no longer coerce to `0` under `< 0` and `< 15` comparisons.
+
 ## [1.46.121] - 2026-10-19
 
 ### Added

@@ -969,13 +969,13 @@ export function buildSupplementalDefaultBlock(): string {
         .map(g => g.graph_id)
         .join(', ');
 
-    let block = `SUPPLEMENTAL DEFAULT RULE: Supplemental data calls are NOT optional for substantive queries on consumer-facing graphs (${domainIds}). Default toward inclusion — the question is not "does this query need economic context?" but "would a reader benefit from knowing the macro conditions around this trend?"`;
+    let block = `SUPPLEMENTAL DEFAULT RULE: For substantive queries on consumer-facing graphs (${domainIds}), default toward including supplemental economic context when it helps explain the macro conditions around a trend.`;
 
     if (econExpertIds) {
         block += ` For expert graphs with economic dimensions (${econExpertIds}), also default to inclusion.`;
     }
 
-    block += ` Escape valve: if the query is demonstrably about design language, physical formats, or brand tactics with no macro dependency, skip supplemental data. Do not ask the user. Make the judgment call and execute.`;
+    block += ` Escape valve: if the query is focused on design language, physical formats, or brand tactics with no macro dependency, supplemental data can be skipped.`;
 
     return block;
 }
