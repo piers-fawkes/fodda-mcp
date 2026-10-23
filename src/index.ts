@@ -510,7 +510,6 @@ const OFFERING_CARD_METADATA: Record<string, { name: string; title: string; desc
 app.get(['/mcp.json', '/.well-known/mcp.json'], (_req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.json({
-        $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json',
         mcpServers: {
             fodda: {
                 type: 'streamable-http',
