@@ -1,0 +1,22 @@
+{
+  "name": "fodda-intelligence",
+  "version": "1.0.2",
+  "title": "Fodda Intelligence",
+  "description": "Live market, brand & earnings intelligence grounded in expert knowledge graphs.",
+  "website": "https://fodda.ai",
+  "privacyPolicyUrl": "https://fodda.ai/privacy",
+  "termsOfServiceUrl": "https://fodda.ai/terms",
+  "supportUrl": "https://app.fodda.ai/support",
+  "skills": "./skills/",
+  "mcpServers": "./mcp.json",
+  "extensions": {
+    "com.openai": {
+      "auth": {
+        "type": "oauth",
+        "client": {
+          "mode": "dcr"
+        }
+      }
+    }
+  }
+}

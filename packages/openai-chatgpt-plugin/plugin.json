@@ -7,6 +7,7 @@
   "privacyPolicyUrl": "https://fodda.ai/privacy",
   "termsOfServiceUrl": "https://fodda.ai/terms",
   "supportUrl": "https://app.fodda.ai/support",
+  "skills": "./skills/",
   "mcpServers": "./mcp.json",
   "extensions": {
     "com.openai": {
