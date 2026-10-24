@@ -90,15 +90,25 @@ async function runEvaluation() {
     console.log(`  Baseline MCP: ${baselineMatches}/${totalRuns} (${(baselineMatches / totalRuns * 100).toFixed(1)}%)`);
     console.log(`  New MCP:      ${newMatches}/${totalRuns} (${(newMatches / totalRuns * 100).toFixed(1)}%)\n`);
 
-    console.log(`Per-Label Breakdown (Ground Truth -> Predicted):`);
+    console.log(`Per-Label Breakdown:`);
     for (const label of ['STRONG', 'WEAK', 'MISS']) {
+        const baseActual = Object.values(confusion.baseline[label]).reduce((a, b) => a + b, 0);
+        const basePred = ['STRONG', 'WEAK', 'MISS'].reduce((sum, l) => sum + confusion.baseline[l][label], 0);
         const baseCorrect = confusion.baseline[label][label];
-        const baseTotal = Object.values(confusion.baseline[label]).reduce((a, b) => a + b, 0);
+
+        const newActual = Object.values(confusion.new[label]).reduce((a, b) => a + b, 0);
+        const newPred = ['STRONG', 'WEAK', 'MISS'].reduce((sum, l) => sum + confusion.new[l][label], 0);
         const newCorrect = confusion.new[label][label];
-        const newTotal = Object.values(confusion.new[label]).reduce((a, b) => a + b, 0);
+
+        const baseRecall = baseActual > 0 ? (baseCorrect / baseActual * 100).toFixed(1) : '0.0';
+        const basePrec = basePred > 0 ? (baseCorrect / basePred * 100).toFixed(1) : '0.0';
+
+        const newRecall = newActual > 0 ? (newCorrect / newActual * 100).toFixed(1) : '0.0';
+        const newPrec = newPred > 0 ? (newCorrect / newPred * 100).toFixed(1) : '0.0';
+
         console.log(`  ${label}:`);
-        console.log(`    Baseline Recall: ${baseCorrect}/${baseTotal} (${(baseCorrect / baseTotal * 100).toFixed(1)}%)`);
-        console.log(`    New MCP Recall:  ${newCorrect}/${newTotal} (${(newCorrect / newTotal * 100).toFixed(1)}%)`);
+        console.log(`    Baseline: Recall ${baseCorrect}/${baseActual} (${baseRecall}%) | Precision ${baseCorrect}/${basePred} (${basePrec}%)`);
+        console.log(`    New MCP:  Recall ${newCorrect}/${newActual} (${newRecall}%) | Precision ${newCorrect}/${newPred} (${newPrec}%)`);
     }
 
     console.log('\nFull Confusion Matrix (Ground Truth -> Predicted):');

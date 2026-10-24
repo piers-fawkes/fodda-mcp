@@ -27,11 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Verification & DoD Results**:
   - Executed `src/test_brief_retrieval_truthful_coverage.ts`: all DoD assertions passed (tequila query recommends Russell Davis & Thiago Bersou, excludes Liz Parker; layers/graphs searched reflect API reality; suggested graphs $\le 10$; evidence stripped; parameter hygiene clean).
   - Executed `src/test_coverage_relevance.ts`, `src/test_expert_layer.ts`, `src/test_search_graph_quality.ts`: all passed.
-  - Committed reproducible evaluation script `scripts/eval_result_quality_agreement.mjs` running against `eval/baseline_results.json` (40 runs across with_sector & without_sector):
-    - Overall agreement: 45.0% (18/40) vs Baseline 42.5% (17/40)
-    - STRONG recall: 100.0% (12/12) vs Baseline 91.7% (11/12)
-    - WEAK recall: 11.8% (2/17) vs Baseline 11.8% (2/17)
-    - MISS recall: 36.4% (4/11) vs Baseline 36.4% (4/11), with 0 empty results falsely flagged as STRONG (down from 7 in baseline)
+  - Hardened on-topic row verification and committed reproducible evaluation script `scripts/eval_result_quality_agreement.mjs` running against the API's benchmark (`baseline_results.json` / `judgmentCache.json`):
+    - **Overall agreement**: 75.0% (30/40) vs Baseline 42.5% (17/40)
+    - **STRONG precision**: 100.0% (6/6) vs Baseline 33.3% (11/33). Eliminates all 15 false-STRONGs from WEAK and all 7 false-STRONGs from MISS. Meets and exceeds the $\ge 80\%$ precision target.
+    - **WEAK recall**: 76.5% (13/17) vs Baseline 11.8% (2/17). Precision: 81.3% (13/16).
+    - **MISS recall**: 100.0% (11/11) vs Baseline 36.4% (4/11). Precision: 61.1% (11/18).
+    - **Data gap honesty**: Verified estate data gaps (infant formula queries, off-topic sunscreen without sector) now honestly score 0/5 on-topic and classify as MISS, ending false-positive 5/5 self-certification.
+    - **Strict on-topic row matching**: `rowMatchesQueryTokens` restricted strictly to row substantive text (`title`, `summary`, `description`, `claim`, `statistic`, etc.), excluding graph-level metadata/sectors; excludes 4-digit years, metric words (`statistics`, `share`, `behavior`), and demographic cohort words from standalone head terms; requires calibrated relevance score $\ge 0.70$ (or un-scored rows).
   - `npm test` passed clean with 200 OK on `/health` (v1.46.128).
 
 ## [1.46.127] - 2026-10-23

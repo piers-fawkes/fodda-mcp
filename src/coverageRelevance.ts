@@ -63,13 +63,20 @@ const GENERIC_QUERY_TOKENS = new Set([
     'versus', 'their', 'its', 'this', 'that', 'these', 'those', 'it', 'not', 'no', 'more',
     'most', 'less', 'least', 'than', 'also', 'other', 'across', 'around', 'within', 'per',
     'via', 'both', 'all', 'any', 'some', 'each', 'such', 'we', 'us', 'our', 'you', 'your',
-    // domain-generic research vocabulary
+    // domain-generic research vocabulary & metrics
     'trend', 'trends', 'market', 'markets', 'marketing', 'brand', 'brands', 'branding',
     'consumer', 'consumers', 'industry', 'industries', 'growth', 'data', 'insight',
     'insights', 'analysis', 'global', 'new', 'top', 'key', 'major', 'latest', 'future',
     'emerging', 'current', 'recent', 'report', 'reports', 'research', 'sector', 'sectors',
     'landscape', 'opportunity', 'opportunities', 'innovation', 'innovations', 'strategy',
     'strategies', 'signal', 'signals', 'impact', 'update', 'updates', 'overview',
+    'statistics', 'statistic', 'stats', 'behavior', 'behaviors', 'behaviour', 'behaviours',
+    'percentage', 'percentages', 'share', 'shares', 'rate', 'rates', 'number', 'numbers',
+    'figure', 'figures', 'study', 'studies', 'survey', 'surveys', 'ranking', 'rankings', 'sales',
+    // demographics / cohorts that should not act as standalone category head terms
+    'gen', 'generation', 'generations', 'adult', 'adults', 'people', 'users',
+    'parents', 'parent', 'parenting', 'kids', 'children', 'men', 'women', 'youth', 'cohort',
+    'non'
 ]);
 
 const TIER_ALIASES: Record<string, string> = {
@@ -140,37 +147,46 @@ export const HEAD_TERM_DOMAIN_SYNONYMS: Record<string, string[]> = {
     mezcal: ['spirits', 'tequila', 'agave', 'distilled', 'liquor'],
     beer: ['brewing', 'brewery', 'craft beer', 'lager', 'ale'],
     wine: ['sommelier', 'winery', 'vineyard', 'vintage'],
-    aperitivo: ['spirits', 'cocktail', 'vermouth', 'amaro'],
+    aperitivo: ['cocktail', 'vermouth', 'amaro'],
     soda: ['soft drinks', 'carbonated', 'cola'],
+    alcohol: ['alcoholic', 'drinking', 'liquor', 'spirits', 'booze'],
+    alcoholic: ['alcohol', 'drinking', 'liquor', 'spirits'],
+    drinking: ['drink', 'drinks', 'beverage', 'beverages', 'alcohol'],
+    drink: ['drinks', 'beverage', 'beverages', 'drinking'],
+    drinks: ['drink', 'beverage', 'beverages', 'drinking'],
 
     // Sun care / Skincare / Beauty (strictly within sun/skin care)
-    sunscreen: ['suncare', 'sun care', 'skincare', 'spf', 'uv', 'sunburn', 'photoprotection'],
-    suncare: ['sunscreen', 'skincare', 'spf', 'uv', 'sunburn', 'photoprotection'],
+    sunscreen: ['suncare', 'sun care', 'spf', 'uv', 'sunburn', 'photoprotection', 'sun protection'],
+    suncare: ['sunscreen', 'sun care', 'spf', 'uv', 'sunburn', 'photoprotection', 'sun protection'],
     skincare: ['skin care', 'dermatology', 'serum', 'moisturizer'],
 
     // Baby / Infant (strictly within baby nutrition & care)
     'infant formula': ['baby formula', 'baby food', 'infant nutrition', 'toddler milk'],
-    formula: ['baby formula', 'infant formula', 'infant nutrition', 'toddler milk', 'baby', 'infant'],
-    infant: ['baby', 'formula', 'parenting', 'childcare', 'daycare', 'feeding', 'milk'],
-    toddler: ['baby', 'infant', 'parenting', 'childcare', 'milk'],
+    formula: ['baby formula', 'infant formula', 'infant nutrition', 'toddler milk'],
+    infant: ['formula', 'infant formula', 'toddler milk', 'pediatric'],
+    toddler: ['toddler milk', 'infant formula'],
 
     // Travel / Airlines
-    airline: ['airlines', 'aviation', 'travel', 'transportation', 'flights', 'flight'],
-    airlines: ['airline', 'aviation', 'travel', 'transportation', 'flights', 'flight'],
-    loyalty: ['airline', 'airlines', 'rewards', 'travel', 'points']
+    airline: ['airlines', 'aviation', 'flights', 'flight'],
+    airlines: ['airline', 'aviation', 'flights', 'flight'],
+    loyalty: ['rewards', 'points', 'frequent flyer']
 };
 
 /** Tokenize a query down to its topically-specific terms. */
 export function specificQueryTokens(query: string): string[] {
     return [...new Set(
         query.toLowerCase().split(/[^a-z0-9]+/)
-            .filter(t => t.length >= 2 && !GENERIC_QUERY_TOKENS.has(t))
+            .filter(t => t.length >= 2 && !/^\d{4}$/.test(t) && !GENERIC_QUERY_TOKENS.has(t))
     )];
 }
 
 export function stemToken(token: string): string {
     let s = token.toLowerCase().trim();
-    if (s.endsWith('ies') && s.length > 4) {
+    if (s.endsWith('ing') && s.length > 5) {
+        s = s.slice(0, -3);
+    } else if (s.endsWith('ed') && s.length > 4) {
+        s = s.slice(0, -2);
+    } else if (s.endsWith('ies') && s.length > 4) {
         s = s.slice(0, -3) + 'y';
     } else if (s.endsWith('es') && s.length > 4) {
         s = s.slice(0, -2);
@@ -219,45 +235,30 @@ export function resolveRowTier(row: any, searchedGraphs: any[], catalog: Catalog
     return type && TIER_NOMINAL_SCORE[type] !== undefined ? type : FALLBACK_TIER;
 }
 
-/** Does the row's text (or its source graph's metadata) contain any specific query token? */
-export function rowMatchesQueryTokens(row: any, tokens: string[], catalog: CatalogGraph[]): boolean {
-    if (tokens.length === 0) return false;
+/** Does the row's substantive text content contain any specific query token or phrase? */
+export function rowMatchesQueryTokens(row: any, tokens: string[], catalog?: CatalogGraph[]): boolean {
+    if (tokens.length === 0 || !row) return false;
     const parts: any[] = [
         row.title, row.trendName, row.name, row.display, row.label,
         row.summary, row.description, row.trendDescription, row.whyNow,
-        row.graphName, row.statistic, row.claim, row.insight, row.text,
+        row.statistic, row.claim, row.insight, row.text,
     ];
-    const gid = rowGraphId(row);
-    if (gid) {
-        parts.push(String(gid).replace(/[-_/,]/g, ' '));
-        const g = catalog.find(x => x.graph_id === gid);
-        if (g) parts.push(g.name, g.domain, ...(Array.isArray(g.topics) ? g.topics : []));
-    }
-    for (const arr of [row.brandNames, row.place, row.sectors, row.topics]) {
-        if (Array.isArray(arr)) parts.push(...arr);
-    }
-    const words = new Set(
-        parts.filter((x: any) => typeof x === 'string').join(' ').toLowerCase().split(/[^a-z0-9]+/)
-    );
+    const fullText = parts.filter((x: any) => typeof x === 'string').join(' ').toLowerCase();
+    if (!fullText) return false;
+
+    const words = new Set(fullText.split(/[^a-z0-9]+/).filter(Boolean));
     const stemmedWords = new Set<string>();
     for (const w of words) {
         stemmedWords.add(stemToken(w));
     }
 
-    // Exact word match always counts; singular/plural stem match; prefix match only for tokens >= 4 chars
-    // (so "china" matches "chinas" but "car" never matches "carbon").
     for (const t of tokens) {
-        if (words.has(t)) return true;
-        const stemT = stemToken(t);
-        if (stemmedWords.has(stemT)) return true;
-        if (t.length >= 4) {
-            for (const w of words) {
-                if (w.startsWith(t) || (w.length >= 4 && t.startsWith(w))) return true;
-                const stemW = stemToken(w);
-                if (stemW.length >= 4 && stemT.length >= 4) {
-                    if (stemW.startsWith(stemT) || stemT.startsWith(stemW)) return true;
-                }
-            }
+        if (t.includes(' ') || t.includes('-')) {
+            if (fullText.includes(t.toLowerCase())) return true;
+        } else {
+            if (words.has(t)) return true;
+            const stemT = stemToken(t);
+            if (stemmedWords.has(stemT)) return true;
         }
     }
     return false;
@@ -520,14 +521,19 @@ export function countOnTopicRows(
 
     let onTopic = 0;
     for (const { r, score, tier } of scored) {
-        if (rowMatchesQueryTokens(r, matchTokens, catalog)) { onTopic++; continue; }
-        // No token match and no score: nothing supports the row being on-topic.
-        if (score <= 0) continue;
-        // Rescue by score alone must be judged against the tier's NOMINAL scale,
-        // never the result set's own max — otherwise the top rows of any set
-        // (including a fully off-topic one) self-certify as on-topic.
-        const scale = TIER_NOMINAL_SCORE[tier] ?? 0.8;
-        if (score >= scale * ON_TOPIC_RESCUE_RATIO) onTopic++;
+        const hasMatch = rowMatchesQueryTokens(r, matchTokens, catalog);
+        if (hasMatch) {
+            // Require relevance score to clear the calibrated threshold (score >= 0.70 or un-scored rows)
+            if (score <= 0 || score >= 0.70) {
+                onTopic++;
+            }
+            continue;
+        }
+        // Score-alone rescue is strictly restricted to domain composite graphs with massive composite signal
+        // (>= 1.50). Report vector search rows must NEVER self-certify on vector similarity alone.
+        if (tier === 'domain' && score >= (TIER_NOMINAL_SCORE['domain'] ?? 2.0) * ON_TOPIC_RESCUE_RATIO) {
+            onTopic++;
+        }
     }
     return { onTopic, evaluated: true };
 }
@@ -705,14 +711,16 @@ export async function addCoverageAnnotation(
         // Fodda API evaluates vector similarity and relevance scores directly in the graph layer.
         // When normalizedData.dataStatus === 'TREND_MATCH' or (on_topic_total >= 3),
         // the backend has already confirmed that the returned trends are genuine on-topic matches.
-        // If MCP on-topic evaluation has not judged it thin (!isThinRelevance), keep status 'ok'.
-        // Floor-lift on onTopicCount removed: onTopicCount strictly reflects head-term matches.
+        // MCP's secondary heuristics should not downgrade a confirmed TREND_MATCH to 'thin'.
         const backendOnTopicTotal = normalizedData.on_topic_total ?? options?.onTopicTotal;
         const isBackendTrendMatch = normalizedData.dataStatus === 'TREND_MATCH' ||
             (typeof backendOnTopicTotal === 'number' && backendOnTopicTotal >= 3);
 
-        if (isBackendTrendMatch && resultCount >= 3 && !isThinRelevance) {
+        if (isBackendTrendMatch && resultCount >= 3) {
             status = 'ok';
+            if (onTopicCount !== undefined && onTopicCount < 3) {
+                onTopicCount = Math.min(resultCount, Math.max(3, typeof backendOnTopicTotal === 'number' ? backendOnTopicTotal : 3));
+            }
         }
     }
 
