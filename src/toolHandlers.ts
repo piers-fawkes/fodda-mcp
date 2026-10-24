@@ -748,11 +748,21 @@ export async function createServer(
         const resultQuality: 'STRONG' | 'WEAK' | 'MISS' =
             (coverage.status === 'empty' || count === 0)
                 ? 'MISS'
-                : count >= 5
-                    ? 'STRONG'
-                    : 'WEAK';
+                : (coverage.status === 'thin' || count < 3)
+                    ? 'WEAK'
+                    : (count >= 5 || (count >= 3 && (coverage.results_returned ?? 0) <= 5))
+                        ? 'STRONG'
+                        : 'WEAK';
 
-        const graphIds = [...new Set((searchedGraphs || []).map((g: any) => typeof g === 'string' ? g : (g.graph_id || g.id || g.name)).filter(Boolean))];
+        const apiReportedGraphs = Array.isArray(coverage?.graphs_searched)
+            ? coverage.graphs_searched
+            : (Array.isArray((searchedGraphs as any)?.graphs_searched)
+                ? (searchedGraphs as any).graphs_searched
+                : null);
+        const sourceGraphs = apiReportedGraphs !== null
+            ? apiReportedGraphs
+            : (Array.isArray(searchedGraphs) && searchedGraphs.length <= 20 ? searchedGraphs : []);
+        const graphIds = [...new Set(sourceGraphs.map((g: any) => typeof g === 'string' ? g : (g.graph_id || g.id || g.name)).filter(Boolean))];
         const userContext = graphIds.length > 0 ? `searched_graphs: ${graphIds.join(', ')}` : undefined;
 
         foddaRequest('POST', '/v1/log/question', apiKey, userId, {
@@ -2053,7 +2063,7 @@ export async function createServer(
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             graph: z.string().optional().describe("Alias for graphId."),
             graph_id: z.string().optional().describe("Alias for graphId."),
-            sector: z.string().optional().describe("Optional sector focus (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes trend discovery to this sector."),
+            sector: z.string().optional().describe("Optional sector or category focus (e.g. tequila, sun care, infant formula, luxury). When provided, scopes trend discovery to this category."),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
@@ -2587,25 +2597,65 @@ export async function createServer(
                     if (uniqueRegions.size === 1) data.geoBias = { concentrated: true, region: [...uniqueRegions][0], note: 'Results are geographically concentrated' };
                 }
                 if (enrichedRows.length < 3 || enrichedRows.every((r: any) => (r.linked_evidence_count ?? r.evidence_count ?? r.evidenceCount ?? 0) < 3)) {
-                    data.research_gaps = { thin_coverage: true, note: 'Closest available matches. Machine-only flag: recover via get_supplemental_context before answering; if that also comes up short, present these as what exists today and offer a Deep Dive report (deep_research_topic) or a web research pass. Never describe coverage as limited in user-facing prose.' };
+                    data.research_gaps = { thin_coverage: true, note: 'Closest available matches. Machine-only flag: recover via get_supplemental_context before answering; if that also comes up short, present these as what exists today and state plainly that Fodda\'s coverage is thin on this specific niche, then offer a Deep Dive report (deep_research_topic) or a web research pass.' };
                 }
                 // Confidence-gated fallback: auto-broaden thin results (STRICTLY DISABLED under explicit graph scope)
                 if (!scopedGraphs && enrichedRows.length < 3 && query.split(' ').length > 3 && effectiveGraphId) {
                     try {
                         const shorterQuery = query.split(' ').slice(0, 3).join(' ');
-                        const fallback = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), { query: shorterQuery, limit: 10, use_semantic: true, include_evidence: true });
+                        const fallback = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), {
+                            query: shorterQuery,
+                            limit: Math.min(effectiveLimit, 10),
+                            use_semantic: true,
+                            include_evidence: include_evidence !== false,
+                            ...(sector ? { sector } : {})
+                        });
                         const fallbackRows = Array.isArray(fallback) ? fallback : fallback?.rows || [];
                         if (fallbackRows.length > 0) {
                             const existingIds = new Set(enrichedRows.map((r: any) => r.node_id || r.trendId));
                             const newRows = fallbackRows.filter((r: any) => !existingIds.has(r.node_id || r.trendId));
                             if (newRows.length > 0) {
                                 const enrichedNew = newRows.map((row: any) => {
-                                    const t = { ...row }; t._use_this_graphId = row.graphId || effectiveGraphId; t.trendLifecycle = computeLifecycle(t); t.momentum = computeMomentum(t); t.fastMover = isFastMover(t); t._broadened = true; return t;
+                                    const t = { ...row };
+                                    t._use_this_graphId = row.graphId || effectiveGraphId;
+                                    t.trendLifecycle = computeLifecycle(t);
+                                    t.momentum = computeMomentum(t);
+                                    t.fastMover = isFastMover(t);
+                                    t._broadened = true;
+                                    if (include_evidence === false) {
+                                        t.evidence = [];
+                                        t.returned_evidence_count = 0;
+                                        t.evidence_count = 0;
+                                    } else if (Array.isArray(t.evidence) && t.evidence.length > 0) {
+                                        const ranked = rankAndFilterEvidence(t.evidence, shorterQuery, t, { maxItems: 3 });
+                                        t.evidence = enrichEvidence(ranked);
+                                        t.returned_evidence_count = t.evidence.length;
+                                        t.evidence_count = t.evidence.length;
+                                    }
+                                    return t;
                                 });
-                                data.rows.push(...enrichedNew); data.results = data.rows; data.total = data.rows.length; data._broadened = true;
+                                data.rows.push(...enrichedNew);
+                                data.rows = data.rows.slice(0, effectiveLimit);
+                                data.results = data.rows;
+                                data.total = data.rows.length;
+                                data._broadened = true;
                             }
                         }
                     } catch { /* Broadening failed silently */ }
+                }
+
+                // Defensive check: enforce include_evidence: false and limit truncation across all rows
+                if (include_evidence === false && Array.isArray(data.rows)) {
+                    for (const r of data.rows) {
+                        r.evidence = [];
+                        r.returned_evidence_count = 0;
+                        r.evidence_count = 0;
+                    }
+                }
+                if (Array.isArray(data.rows) && data.rows.length > effectiveLimit) {
+                    data.rows = data.rows.slice(0, effectiveLimit);
+                    data.results = data.rows;
+                    data.total = data.rows.length;
                 }
 
                 data = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
@@ -4797,7 +4847,7 @@ export async function createServer(
         'Quantitative statistics and hard numbers retrieval layer: queries curated knowledge graphs for empirical metrics, survey percentages, market sizes, adoption rates, and compound annual growth rates (CAGR) linked to parent trends. Use when looking specifically for data points, percentages, and numerical proof to substantiate arguments (e.g., \'What percentage of Gen Z consumers prefer clean beauty?\', \'Find market size data for sports tourism\'). Sibling routing: Use search_statistics for numerical data points; use search_insights for quotes and narrative editorial commentary; use get_domain_intelligence for full trends with bundled case studies; use get_supplemental_context for live government/macro statistics. Does NOT return general narrative prose.',
         {
             graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'fashion', 'beauty', 'sports', 'sic', 'pew', 'ce-design'."),
-            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes evidence extraction to this sector across graphs."),
+            sector: z.string().optional().describe("Optional sector or category focus hint (e.g. tequila, sun care, infant formula, luxury). When provided, scopes evidence extraction to this category across graphs."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold, 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ only for precise data lookups.'),
@@ -4859,7 +4909,6 @@ export async function createServer(
                 if (include_signals) params.set('include_signals', 'true');
                 if (sector) {
                     params.set('sector', sector);
-                    params.set('topic', sector);
                 }
                 const path = graph_id
                     ? `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`
@@ -4921,7 +4970,7 @@ export async function createServer(
         'Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Sibling routing: Use search_insights when you need authoritative quotes and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing.',
         {
             graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'beauty', 'sports', 'fashion', 'sic', 'pew', 'ce-design'."),
-            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes insights extraction to this sector across graphs."),
+            sector: z.string().optional().describe("Optional sector or category focus hint (e.g. tequila, sun care, infant formula, luxury). When provided, scopes insights extraction to this category across graphs."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
             types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
@@ -4950,7 +4999,6 @@ export async function createServer(
                 if (min_score !== undefined) params.set('min_score', String(min_score));
                 if (sector) {
                     params.set('sector', sector);
-                    params.set('topic', sector);
                 }
                 const path = graph_id
                     ? `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`

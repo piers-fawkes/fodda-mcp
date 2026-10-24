@@ -77,12 +77,131 @@ const TIER_ALIASES: Record<string, string> = {
     'analyst': 'expert',
 };
 
+/**
+ * Cross-cutting or generic tech/strategy terms that appear across multiple domains.
+ * When evaluating domain fit, matching solely on these words does NOT constitute
+ * genuine domain overlap if the query contains a specific vertical or domain term.
+ */
+export const CROSS_CUTTING_MODIFIERS = new Set([
+    'ai', 'artificial intelligence', 'genai', 'tech', 'technology', 'trends', 'trend',
+    'insights', 'insight', 'strategy', 'strategic', 'systems', 'system',
+    'innovation', 'innovations', 'future', 'futures', 'management', 'data',
+    'analytics', 'research', 'market', 'markets', 'consumer', 'consumers',
+    'culture', 'experience', 'experiences', 'overview', 'summary', 'report',
+    'industry', 'growth', 'landscape', 'benchmarks', 'benchmark'
+]);
+
+/**
+ * Incidental modifiers (occasions, actions, demographics, geography, qualifiers)
+ * that frequently appear in queries but do NOT constitute category head terms.
+ * Matching solely on incidental modifiers (e.g. "home", "weekday", "making") must
+ * NOT certify an off-vertical row or candidate expert as on-topic.
+ */
+export const INCIDENTAL_MODIFIERS = new Set([
+    // Occasions / contexts / situations
+    'home', 'at-home', 'weekday', 'weekdays', 'weekend', 'weekends',
+    'daytime', 'evening', 'evenings', 'night', 'nights', 'morning', 'mornings', 'afternoon', 'afternoons',
+    'daily', 'commute', 'commuting', 'drive', 'driving', 'transit',
+    'swim', 'swimming', 'sport', 'sports', 'athletic', 'sweat', 'sweating', 'outdoor', 'outdoors',
+    'occasion', 'occasions', 'moment', 'moments', 'ritual', 'rituals', 'routine', 'routines',
+    'habit', 'habits', 'lifestyle', 'lifestyles', 'hosting', 'party', 'parties',
+
+    // Actions / behaviors
+    'use', 'using', 'usage', 'making', 'consumption', 'consuming', 'switching', 'reducing',
+    'adoption', 'adopting', 'purchase', 'purchasing', 'buying', 'shopping', 'spend', 'spending',
+    'trade', 'down', 'trade-down', 'reapplication', 'application', 'applying', 'amount', 'amounts',
+    'removing', 'cleansing', 'mixing', 'moderation', 'return', 'returning', 'work', 'working',
+    'go', 'side', 'hustle', 'hustles', 'practices', 'practice', 'behavior', 'behaviors',
+    'behavioral', 'preference', 'preferences', 'choice', 'choices', 'decision', 'decisions',
+
+    // Demographics / actors (when secondary modifiers)
+    'adult', 'adults', 'parent', 'parents', 'kid', 'kids', 'children', 'child',
+    'people', 'person', 'men', 'man', 'women', 'woman', 'youth', 'young',
+    'gen', 'genz', 'boomer', 'boomers', 'millennial', 'millennials',
+    'traveler', 'travelers', 'athlete', 'athletes', 'shopper', 'shoppers',
+    'hispanic', 'latino', 'latina',
+
+    // Geography / Macro regions
+    'us', 'usa', 'united', 'states', 'america', 'american', 'americans',
+    'brazil', 'brazilian', 'brazilians', 'uk', 'britain', 'british',
+    'europe', 'european', 'asia', 'asian', 'china', 'chinese', 'japan', 'japanese',
+    'korea', 'korean', 'global', 'international', 'domestic', 'regional', 'national',
+    'coastal', 'urban', 'rural', 'suburban',
+
+    // Qualifiers / adjectives
+    'smart', 'lowest', 'highest', 'lower', 'higher', 'high', 'low', 'premium', 'luxury',
+    'budget', 'cheap', 'popular', 'dirty', 'clean', 'fast', 'slow', 'first', 'last',
+    'good', 'great', 'super', 'hyper', 'micro', 'macro',
+
+    // Common non-category query nouns
+    'points', 'point', 'program', 'programs', 'share', 'volume', 'rate', 'rates',
+    'number', 'numbers', 'figure', 'figures', 'stat', 'stats', 'statistic', 'statistics',
+    'score', 'scores', 'level', 'levels', 'share-of-wallet',
+]);
+
+/**
+ * Domain & category expansions for head terms to align retrieval matching and expert lane discovery.
+ */
+export const HEAD_TERM_DOMAIN_SYNONYMS: Record<string, string[]> = {
+    // Spirits / Alcoholic Beverages
+    tequila: ['spirits', 'cocktail', 'cocktails', 'alcohol', 'alcoholic', 'beverage', 'beverages', 'drinks', 'drinking', 'mixology', 'bartending', 'bar', 'wine', 'beer', 'liquor'],
+    margarita: ['tequila', 'cocktail', 'cocktails', 'spirits', 'beverage', 'drinks', 'mixology', 'bartending', 'alcohol'],
+    cocktail: ['cocktails', 'spirits', 'mixology', 'bartending', 'beverage', 'beverages', 'drinks', 'bar', 'alcohol', 'alcoholic', 'wine', 'beer'],
+    cocktails: ['cocktail', 'spirits', 'mixology', 'bartending', 'beverage', 'beverages', 'drinks', 'bar', 'alcohol', 'alcoholic', 'wine', 'beer'],
+    spirits: ['liquor', 'alcohol', 'alcoholic', 'cocktail', 'cocktails', 'beverage', 'beverages', 'drinks', 'bar', 'mixology', 'wine', 'beer'],
+    liquor: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
+    vodka: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks', 'cocktail'],
+    whiskey: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
+    whisky: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
+    rum: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks', 'cocktail'],
+    gin: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks', 'cocktail'],
+    mezcal: ['spirits', 'tequila', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
+    beer: ['alcohol', 'alcoholic', 'beverage', 'beverages', 'brewing', 'drinks'],
+    wine: ['alcohol', 'alcoholic', 'beverage', 'beverages', 'sommelier', 'drinks'],
+    aperitivo: ['alcohol', 'alcoholic', 'spirits', 'cocktail', 'beverage', 'drinks'],
+    soda: ['beverage', 'beverages', 'drinks', 'soft drinks'],
+    // Sun care / Skincare / Beauty
+    sunscreen: ['suncare', 'sun care', 'skincare', 'skin', 'beauty', 'spf', 'cosmetics', 'dermatology', 'sun', 'sunburn', 'uv'],
+    suncare: ['sunscreen', 'skincare', 'skin', 'beauty', 'spf', 'cosmetics', 'sun'],
+    tanning: ['suncare', 'sunscreen', 'skin', 'beauty', 'sun', 'spf'],
+    // Baby / Infant Care
+    formula: ['infant', 'baby', 'parenting', 'feeding', 'pediatric', 'milk'],
+    infant: ['baby', 'formula', 'parenting', 'childcare', 'daycare', 'feeding', 'milk'],
+    toddler: ['baby', 'infant', 'parenting', 'childcare', 'milk'],
+    // Travel / Airlines
+    airline: ['airlines', 'aviation', 'travel', 'transportation', 'flights', 'flight', 'loyalty'],
+    airlines: ['airline', 'aviation', 'travel', 'transportation', 'flights', 'flight', 'loyalty'],
+    loyalty: ['airline', 'airlines', 'rewards', 'travel', 'points'],
+};
+
 /** Tokenize a query down to its topically-specific terms. */
 export function specificQueryTokens(query: string): string[] {
     return [...new Set(
         query.toLowerCase().split(/[^a-z0-9]+/)
             .filter(t => t.length >= 2 && !GENERIC_QUERY_TOKENS.has(t))
     )];
+}
+
+export function stemToken(token: string): string {
+    let s = token.toLowerCase().trim();
+    if (s.endsWith('ies') && s.length > 4) {
+        s = s.slice(0, -3) + 'y';
+    } else if (s.endsWith('es') && s.length > 4) {
+        s = s.slice(0, -2);
+    } else if (s.endsWith('s') && !s.endsWith('ss') && s.length > 3) {
+        s = s.slice(0, -1);
+    }
+    return s;
+}
+
+/**
+ * Extract category and product head terms from a query.
+ * Filters out generic query tokens, cross-cutting strategy words, and incidental modifiers.
+ */
+export function extractHeadTerms(query: string): string[] {
+    const tokens = specificQueryTokens(query);
+    const head = tokens.filter(t => !INCIDENTAL_MODIFIERS.has(t) && !CROSS_CUTTING_MODIFIERS.has(t));
+    return head.length > 0 ? head : tokens;
 }
 
 /** Truncate and clean a query for crisp next-move prompts (<= 8 words, no punctuation). */
@@ -134,29 +253,28 @@ export function rowMatchesQueryTokens(row: any, tokens: string[], catalog: Catal
     const words = new Set(
         parts.filter((x: any) => typeof x === 'string').join(' ').toLowerCase().split(/[^a-z0-9]+/)
     );
-    // Exact word match always counts; prefix match only for tokens ≥4 chars
+    const stemmedWords = new Set<string>();
+    for (const w of words) {
+        stemmedWords.add(stemToken(w));
+    }
+
+    // Exact word match always counts; singular/plural stem match; prefix match only for tokens >= 4 chars
     // (so "china" matches "chinas" but "car" never matches "carbon").
     for (const t of tokens) {
         if (words.has(t)) return true;
+        const stemT = stemToken(t);
+        if (stemmedWords.has(stemT)) return true;
         if (t.length >= 4) {
             for (const w of words) {
-                if (w.startsWith(t)) return true;
+                if (w.startsWith(t) || (w.length >= 4 && t.startsWith(w))) return true;
+                const stemW = stemToken(w);
+                if (stemW.length >= 4 && stemT.length >= 4) {
+                    if (stemW.startsWith(stemT) || stemT.startsWith(stemW)) return true;
+                }
             }
         }
     }
     return false;
-}
-
-export function stemToken(token: string): string {
-    let s = token.toLowerCase().trim();
-    if (s.endsWith('ies') && s.length > 4) {
-        s = s.slice(0, -3) + 'y';
-    } else if (s.endsWith('es') && s.length > 4) {
-        s = s.slice(0, -2);
-    } else if (s.endsWith('s') && !s.endsWith('ss') && s.length > 3) {
-        s = s.slice(0, -1);
-    }
-    return s;
 }
 
 /**
@@ -394,10 +512,19 @@ export function countOnTopicRows(
     searchedGraphs: any[],
     catalog: CatalogGraph[] = getGraphs()
 ): OnTopicResult {
-    const tokens = specificQueryTokens(query);
-    if (tokens.length === 0 || rows.length === 0) {
+    const headTokens = extractHeadTerms(query);
+    if (headTokens.length === 0 || rows.length === 0) {
         return { onTopic: rows.length, evaluated: false };
     }
+
+    const expandedTerms = new Set<string>(headTokens);
+    for (const ht of headTokens) {
+        const syns = HEAD_TERM_DOMAIN_SYNONYMS[ht] || HEAD_TERM_DOMAIN_SYNONYMS[stemToken(ht)];
+        if (syns) {
+            for (const s of syns) expandedTerms.add(s);
+        }
+    }
+    const matchTokens = Array.from(expandedTerms);
 
     const scored = rows.map(r => {
         const score = rowScore(r);
@@ -407,7 +534,7 @@ export function countOnTopicRows(
 
     let onTopic = 0;
     for (const { r, score, tier } of scored) {
-        if (rowMatchesQueryTokens(r, tokens, catalog)) { onTopic++; continue; }
+        if (rowMatchesQueryTokens(r, matchTokens, catalog)) { onTopic++; continue; }
         // No token match and no score: nothing supports the row being on-topic.
         if (score <= 0) continue;
         // Rescue by score alone must be judged against the tier's NOMINAL scale,
@@ -456,10 +583,36 @@ export async function addCoverageAnnotation(
         normalizedData = { rows: data, dataStatus: 'ok' };
     }
 
+    // Derive layers_searched and effective searched graphs strictly from API response search reality if present
+    const apiReportedGraphs: any[] | null =
+        Array.isArray(normalizedData.graphs_searched) ? normalizedData.graphs_searched :
+        Array.isArray(normalizedData.metadata?.graphs_searched) ? normalizedData.metadata.graphs_searched :
+        Array.isArray(normalizedData.graphs_with_results) ? normalizedData.graphs_with_results :
+        Array.isArray(normalizedData._routed_graphs) ? normalizedData._routed_graphs :
+        null;
+
     const layerMap: Record<string, string> = {
         'industry report': 'report'
     };
-    const uniqueTypes = new Set(searchedGraphs.map(g => layerMap[g.graph_type] || g.graph_type).filter(Boolean));
+
+    let effectiveSearchedGraphs: any[];
+    if (apiReportedGraphs !== null) {
+        effectiveSearchedGraphs = apiReportedGraphs.map((g: any) => {
+            if (typeof g === 'object' && g !== null) {
+                if (g.graph_type) return g;
+                const gid = g.graph_id || g.id;
+                const match = catalog.find(cg => cg.graph_id === gid) || (Array.isArray(searchedGraphs) ? searchedGraphs.find((sg: any) => (sg.graph_id || sg.id) === gid) : null);
+                return match || g;
+            }
+            const gid = String(g).toLowerCase().trim();
+            const match = catalog.find(cg => cg.graph_id.toLowerCase() === gid) || (Array.isArray(searchedGraphs) ? searchedGraphs.find((sg: any) => (sg.graph_id || sg.id || '').toLowerCase() === gid) : null);
+            return match || { graph_id: g };
+        });
+    } else {
+        effectiveSearchedGraphs = Array.isArray(searchedGraphs) ? searchedGraphs : [];
+    }
+
+    const uniqueTypes = new Set(effectiveSearchedGraphs.map(g => layerMap[g.graph_type] || g.graph_type).filter(Boolean));
     const layersSearched = Array.from(uniqueTypes);
 
     // ── Check for explicit backend errors (e.g. NEO4J_AUTH_MISSING, auth failures, 5xx) ──
@@ -566,16 +719,14 @@ export async function addCoverageAnnotation(
         // Fodda API evaluates vector similarity and relevance scores directly in the graph layer.
         // When normalizedData.dataStatus === 'TREND_MATCH' or (on_topic_total >= 3),
         // the backend has already confirmed that the returned trends are genuine on-topic matches.
-        // MCP's secondary heuristics should not downgrade a confirmed TREND_MATCH to 'thin'.
+        // If MCP on-topic evaluation has not judged it thin (!isThinRelevance), keep status 'ok'.
+        // Floor-lift on onTopicCount removed: onTopicCount strictly reflects head-term matches.
         const backendOnTopicTotal = normalizedData.on_topic_total ?? options?.onTopicTotal;
         const isBackendTrendMatch = normalizedData.dataStatus === 'TREND_MATCH' ||
             (typeof backendOnTopicTotal === 'number' && backendOnTopicTotal >= 3);
 
-        if (isBackendTrendMatch && resultCount >= 3) {
+        if (isBackendTrendMatch && resultCount >= 3 && !isThinRelevance) {
             status = 'ok';
-            if (onTopicCount !== undefined && onTopicCount < 3) {
-                onTopicCount = Math.min(resultCount, Math.max(3, typeof backendOnTopicTotal === 'number' ? backendOnTopicTotal : 3));
-            }
         }
     }
 
@@ -598,12 +749,15 @@ export async function addCoverageAnnotation(
 
         const suggestedArgs: any = { query };
 
-        // Sourced from graph ids present in the result rows, fall back to searchedGraphs
+        // Sourced from graph ids present in the result rows, fall back to searched graphs (capped at <= 10)
         const rowGraphIds = [...new Set(rows.map((r: any) => r.graphId || r._use_this_graphId || r.psfk_graph_slug || r.graph_id).filter(Boolean))] as string[];
         if (rowGraphIds.length > 0) {
-            suggestedArgs.graph_ids = rowGraphIds;
-        } else if (searchedGraphs.length > 0) {
-            suggestedArgs.graph_ids = searchedGraphs.map(g => g.graph_id);
+            suggestedArgs.graph_ids = rowGraphIds.slice(0, 10);
+        } else {
+            const fallbackGraphIds = [...new Set(effectiveSearchedGraphs.map((g: any) => typeof g === 'string' ? g : (g.graph_id || g.id)).filter(Boolean))] as string[];
+            if (fallbackGraphIds.length > 0) {
+                suggestedArgs.graph_ids = fallbackGraphIds.slice(0, 10);
+            }
         }
 
         suggestedAction = {
@@ -617,6 +771,7 @@ export async function addCoverageAnnotation(
         status,
         results_returned: resultCount,
         layers_searched: layersSearched,
+        ...(apiReportedGraphs !== null ? { graphs_searched: apiReportedGraphs.map((g: any) => typeof g === 'string' ? g : (g.graph_id || g.id)).filter(Boolean) } : {}),
     };
     if (onTopicCount !== undefined) {
         normalizedData.coverage.results_on_topic = onTopicCount;
@@ -921,20 +1076,6 @@ export function formatThemePhrase(rawCandidates: string[], fallback: string = 'e
     return `${cleanedThemes[0]} and ${cleanedThemes[1]}`;
 }
 
-/**
- * Cross-cutting or generic tech/strategy terms that appear across multiple domains.
- * When evaluating domain fit, matching solely on these words does NOT constitute
- * genuine domain overlap if the query contains a specific vertical or domain term.
- */
-export const CROSS_CUTTING_MODIFIERS = new Set([
-    'ai', 'artificial intelligence', 'genai', 'tech', 'technology', 'trends', 'trend',
-    'insights', 'insight', 'strategy', 'strategic', 'systems', 'system',
-    'innovation', 'innovations', 'future', 'futures', 'management', 'data',
-    'analytics', 'research', 'market', 'markets', 'consumer', 'consumers',
-    'culture', 'experience', 'experiences', 'overview', 'summary', 'report',
-    'industry', 'growth', 'landscape', 'benchmarks', 'benchmark'
-]);
-
 export interface CandidateExpert {
     analyst_id: string;
     display_name: string;
@@ -962,6 +1103,8 @@ export interface CandidateExpertOptions {
  * Score and rank candidate experts for a query.
  * Reuses the shared scoring spine: domain overlap, blind-spot exclusion,
  * self-recommendation suppression, and honest failure.
+ * Matches expert lanes on category/product head terms (e.g. spirits/drinks for tequila),
+ * never on incidental modifiers like "home".
  */
 export function findCandidateExperts(
     query: string,
@@ -983,8 +1126,17 @@ export function findCandidateExperts(
 
     const qLower = (query || '').toLowerCase().trim();
     const queryTokens = specificQueryTokens(query);
+    const headTerms = extractHeadTerms(query);
+    const headDomainTerms = new Set<string>(headTerms);
+    for (const ht of headTerms) {
+        const syns = HEAD_TERM_DOMAIN_SYNONYMS[ht] || HEAD_TERM_DOMAIN_SYNONYMS[stemToken(ht)];
+        if (syns) {
+            for (const s of syns) headDomainTerms.add(s);
+        }
+    }
+
     const allQueryWords = qLower.split(/[^a-z0-9]+/).filter((w: string) => w.length >= 3 && !GENERIC_QUERY_TOKENS.has(w));
-    const queryDomainWords = allQueryWords.filter(w => !CROSS_CUTTING_MODIFIERS.has(w));
+    const queryDomainWords = allQueryWords.filter(w => !CROSS_CUTTING_MODIFIERS.has(w) && !INCIDENTAL_MODIFIERS.has(w));
 
     const isBrandOrCorporateQuery = Boolean(
         options?.isBrandTracker ||
@@ -1012,6 +1164,7 @@ export function findCandidateExperts(
         score: number;
         hasBlindSpot: boolean;
         hasExplicitMatch: boolean;
+        hasHeadOrDomainMatch: boolean;
         directMatch: boolean;
     }
 
@@ -1023,6 +1176,7 @@ export function findCandidateExperts(
         let baseScore = 0;
         let directMatch = false;
         let hasExplicitMatch = false;
+        let hasHeadOrDomainMatch = headTerms.length === 0;
 
         const category = getCategory(a);
 
@@ -1038,7 +1192,7 @@ export function findCandidateExperts(
         const rawBlindSpots = [
             ...(Array.isArray(a.outside_their_lane) ? a.outside_their_lane : (typeof a.outside_their_lane === 'string' ? [a.outside_their_lane] : [])),
             ...(Array.isArray(a.blind_spots) ? a.blind_spots : (typeof a.blind_spots === 'string' ? [a.blind_spots] : [])),
-        ].join(' ').toLowerCase();
+        ].map(x => typeof x === 'object' && x !== null ? (x.topic || x.name || x.text || '') : String(x)).join(' ').toLowerCase();
         let hasBlindSpot = false;
         if (rawBlindSpots.length > 0) {
             for (const t of queryTokens) {
@@ -1066,19 +1220,53 @@ export function findCandidateExperts(
             if (qLower.length > 5 && expertIn.includes(qLower)) {
                 baseScore += 8;
                 hasExplicitMatch = true;
+                hasHeadOrDomainMatch = true;
             }
             for (const t of queryTokens) {
                 if (expertIn.includes(t)) {
-                    const isDomainToken = queryDomainWords.length === 0 || queryDomainWords.includes(t) || !CROSS_CUTTING_MODIFIERS.has(t);
-                    baseScore += isDomainToken ? 4 : 1.5;
-                    if (t.length >= 4 && isDomainToken) hasExplicitMatch = true;
+                    const isHeadToken = headTerms.includes(t);
+                    const isDomainToken = headDomainTerms.has(t) || (!CROSS_CUTTING_MODIFIERS.has(t) && !INCIDENTAL_MODIFIERS.has(t));
+                    if (isHeadToken) {
+                        baseScore += 5;
+                        if (t.length >= 3) {
+                            hasExplicitMatch = true;
+                            hasHeadOrDomainMatch = true;
+                        }
+                    } else if (isDomainToken) {
+                        baseScore += 3;
+                        if (t.length >= 4) {
+                            hasExplicitMatch = true;
+                            if (headDomainTerms.has(t)) hasHeadOrDomainMatch = true;
+                        }
+                    } else {
+                        baseScore += 0.5;
+                    }
+                }
+            }
+            for (const ht of headTerms) {
+                if (expertIn.includes(ht)) {
+                    baseScore += 4;
+                    hasExplicitMatch = true;
+                    hasHeadOrDomainMatch = true;
+                }
+            }
+            for (const dt of headDomainTerms) {
+                if (expertIn.includes(dt)) {
+                    baseScore += 3;
+                    if (dt.length >= 4) {
+                        hasExplicitMatch = true;
+                        hasHeadOrDomainMatch = true;
+                    }
                 }
             }
             for (const w of allQueryWords) {
                 if (expertIn.includes(w)) {
-                    const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
+                    const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w);
                     baseScore += isDomainWord ? 1.5 : 0.5;
-                    if (w.length >= 4 && isDomainWord) hasExplicitMatch = true;
+                    if (w.length >= 4 && isDomainWord && !INCIDENTAL_MODIFIERS.has(w)) {
+                        hasExplicitMatch = true;
+                        if (headTerms.includes(w) || headDomainTerms.has(w)) hasHeadOrDomainMatch = true;
+                    }
                 }
             }
         }
@@ -1087,41 +1275,84 @@ export function findCandidateExperts(
         if (qLower.includes(aName) && aName.length >= 4) {
             baseScore += 15;
             hasExplicitMatch = true;
+            hasHeadOrDomainMatch = true;
             directMatch = true;
         } else if (aSlug && (qLower.includes(aSlug) || aSlug.includes(qLower))) {
             baseScore += 15;
             hasExplicitMatch = true;
+            hasHeadOrDomainMatch = true;
             directMatch = true;
         } else {
             for (const part of nameParts) {
                 if (queryTokens.includes(part) || allQueryWords.includes(part)) {
                     baseScore += 10;
                     hasExplicitMatch = true;
+                    hasHeadOrDomainMatch = true;
                     directMatch = true;
                     break;
                 }
             }
         }
 
-        // 3. Positive signal: topics
-        const aTopics = (Array.isArray(a.topics) ? a.topics : []).map((t: any) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean);
+        // 3. Positive signal: topics (checks both topics and topic)
+        const rawTopics = a.topics || (a as any).topic;
+        const aTopics = (Array.isArray(rawTopics) ? rawTopics : (typeof rawTopics === 'string' ? [rawTopics] : [])).map((t: any) => (typeof t === 'string' ? t.toLowerCase() : '')).filter(Boolean);
         for (const tp of aTopics) {
+            const isHeadTopic = headTerms.some(ht => ht.includes(tp) || tp.includes(ht));
+            const isDomainTopic = headDomainTerms.has(tp) || (!CROSS_CUTTING_MODIFIERS.has(tp) && !INCIDENTAL_MODIFIERS.has(tp));
             if (qLower.includes(tp) || tp.includes(qLower)) {
-                baseScore += 5;
-                hasExplicitMatch = true;
+                if (isHeadTopic) {
+                    baseScore += 5;
+                    hasExplicitMatch = true;
+                    hasHeadOrDomainMatch = true;
+                } else if (isDomainTopic) {
+                    baseScore += 3;
+                    if (tp.length >= 3) {
+                        hasExplicitMatch = true;
+                        if (headDomainTerms.has(tp)) hasHeadOrDomainMatch = true;
+                    }
+                } else {
+                    baseScore += 0.5;
+                }
             }
             for (const t of queryTokens) {
                 if (tp.includes(t) || t.includes(tp)) {
-                    const isDomainToken = queryDomainWords.length === 0 || queryDomainWords.includes(t) || !CROSS_CUTTING_MODIFIERS.has(t);
-                    baseScore += isDomainToken ? 3 : 1;
-                    if (t.length >= 3 && tp.length >= 3 && isDomainToken) hasExplicitMatch = true;
+                    const isHeadToken = headTerms.includes(t);
+                    const isDomainToken = headDomainTerms.has(t) || (!CROSS_CUTTING_MODIFIERS.has(t) && !INCIDENTAL_MODIFIERS.has(t));
+                    if (isHeadToken) {
+                        baseScore += 4;
+                        if (t.length >= 3 && tp.length >= 3) {
+                            hasExplicitMatch = true;
+                            hasHeadOrDomainMatch = true;
+                        }
+                    } else if (isDomainToken) {
+                        baseScore += 2.5;
+                        if (t.length >= 3 && tp.length >= 3) {
+                            hasExplicitMatch = true;
+                            if (headDomainTerms.has(t) || headDomainTerms.has(tp)) hasHeadOrDomainMatch = true;
+                        }
+                    } else {
+                        baseScore += 0.5;
+                    }
+                }
+            }
+            for (const dt of headDomainTerms) {
+                if (tp.includes(dt) || dt.includes(tp)) {
+                    baseScore += 2.5;
+                    if (dt.length >= 3 && tp.length >= 3) {
+                        hasExplicitMatch = true;
+                        hasHeadOrDomainMatch = true;
+                    }
                 }
             }
             for (const w of allQueryWords) {
                 if (tp.includes(w) || w.includes(tp)) {
-                    const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w) || !CROSS_CUTTING_MODIFIERS.has(w);
+                    const isDomainWord = queryDomainWords.length === 0 || queryDomainWords.includes(w);
                     baseScore += isDomainWord ? 1.5 : 0.5;
-                    if (w.length >= 3 && tp.length >= 3 && isDomainWord) hasExplicitMatch = true;
+                    if (w.length >= 3 && tp.length >= 3 && isDomainWord && !INCIDENTAL_MODIFIERS.has(w)) {
+                        hasExplicitMatch = true;
+                        if (headTerms.includes(w) || headDomainTerms.has(w)) hasHeadOrDomainMatch = true;
+                    }
                 }
             }
         }
@@ -1131,15 +1362,30 @@ export function findCandidateExperts(
         if (desc.length > 0) {
             if (qLower.length > 5 && desc.includes(qLower)) {
                 baseScore += 4;
+                hasExplicitMatch = true;
+                hasHeadOrDomainMatch = true;
+            }
+            for (const ht of headTerms) {
+                if (desc.includes(ht)) {
+                    baseScore += 3;
+                    hasExplicitMatch = true;
+                    hasHeadOrDomainMatch = true;
+                }
+            }
+            for (const dt of headDomainTerms) {
+                if (desc.includes(dt)) {
+                    baseScore += 1.5;
+                    hasHeadOrDomainMatch = true;
+                }
             }
             for (const t of queryTokens) {
-                if (desc.includes(t)) {
-                    baseScore += 2;
+                if (desc.includes(t) && !INCIDENTAL_MODIFIERS.has(t) && !CROSS_CUTTING_MODIFIERS.has(t)) {
+                    baseScore += 1;
                 }
             }
             for (const w of allQueryWords) {
-                if (desc.includes(w)) {
-                    baseScore += 1;
+                if (desc.includes(w) && !INCIDENTAL_MODIFIERS.has(w) && !CROSS_CUTTING_MODIFIERS.has(w)) {
+                    baseScore += 0.5;
                 }
             }
         }
@@ -1161,6 +1407,7 @@ export function findCandidateExperts(
                 if (relScore > 0) {
                     baseScore += relScore * 5.0;
                     hasExplicitMatch = true;
+                    hasHeadOrDomainMatch = true;
                     if (relScore >= 0.5) directMatch = true;
                 }
             }
@@ -1189,13 +1436,13 @@ export function findCandidateExperts(
             }
         }
 
-        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, directMatch });
+        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, hasHeadOrDomainMatch, directMatch });
     }
 
-    // Require minimum threshold score (>= 6.0), explicit domain/topic match, and no disqualifying blind spot match
+    // Require minimum threshold score (>= 6.0), explicit domain/topic match, head/domain alignment, and no disqualifying blind spot match
     const MIN_EXPERT_FIT_SCORE = 6.0;
     const validCandidates = scoredAnalysts
-        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && (s.directMatch || (s.hasExplicitMatch && !s.hasBlindSpot)))
+        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && (s.directMatch || (s.hasExplicitMatch && s.hasHeadOrDomainMatch && !s.hasBlindSpot)))
         .sort((a, b) => b.score - a.score);
 
     const maxLimit = Math.min(Math.max(options?.limit || 3, 1), 3);
@@ -1232,7 +1479,7 @@ export function findCandidateExperts(
             : (cat === 'human_agent' ? 'consult_human_agent' : 'consult_analyst');
 
         return {
-            analyst_id: matchedAnalyst.analyst_id,
+            analyst_id: matchedAnalyst.analyst_id || (matchedAnalyst as any).id || (matchedAnalyst as any).slug,
             display_name: cleanDisplayName(matchedAnalyst.name),
             category: cat,
             status: expertStatus,

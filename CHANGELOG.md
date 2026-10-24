@@ -5,6 +5,30 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.128] - 2026-10-24
+
+### Fixed
+- **B1. Truthful Coverage & Telemetry (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Derived `layers_searched` and logged `searched_graphs` strictly from API search reality (`graphs_searched` / `graphs_with_results`); eliminated candidate list fallback leaks where empty searches logged ~290 graph IDs and 6 layers.
+  - Eliminated artificial floor-lift in `coverageRelevance.ts:565-577` where `results_on_topic` was elevated whenever backend `on_topic_total` was high.
+  - Fixed `resultQuality` scoring in `logQueryResult` (`toolHandlers.ts`) to require matches on query head terms and align with ground-truth judgment: reports `MISS` when results are 0/empty, `WEAK` when status is thin or on-topic count < 3, and `STRONG` when on-topic count >= 5 (or >= 3 in small sets) without thin status.
+  - Softened `research_gaps` guidance note in `search_graph` to speak plainly when coverage is thin on a specific niche and offer the Deep Dive report (`deep_research_topic`) or a web research pass after checking supplemental context.
+- **B2. Parameter Hygiene & Topic Mirroring Removal (`src/toolHandlers.ts`)**:
+  - Reworded `sector` parameter `.describe(...)` strings in `search_graph`, `search_statistics`, and `search_insights` to free-text category hints ("e.g. tequila, sun care, infant formula, luxury") rather than rigid enumerated lists starting with 'Alcoholic Drinks'.
+  - Removed topic mirroring bug (`params.set('topic', sector)`) from `search_statistics` and `search_insights` to prevent double-filtering in API Neo4j lookups.
+- **B3. Payload Size & Evidence Stripping (`src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Capped `suggested_action.arguments.graph_ids` at $\le 10$ graph IDs, preventing 300 IDs from dumping into empty response payloads.
+  - Enforced evidence stripping (`t.evidence = []`, `t.returned_evidence_count = 0`, `t.evidence_count = 0`) and limit truncation (`data.rows.slice(0, effectiveLimit)`) on `search_graph` auto-broadening fallback when `include_evidence: false`, preventing 147KB payload ballooning.
+- **B4. Expert Lane Matching on Head Terms (`src/coverageRelevance.ts`)**:
+  - Extracted category head terms (`extractHeadTerms`) and expanded with domain synonyms (`HEAD_TERM_DOMAIN_SYNONYMS`).
+  - Added `INCIDENTAL_MODIFIERS` (occasions like "home", "weekday", actions, qualifiers) and ensured incidental modifiers do not grant domain overlap or set `hasExplicitMatch`.
+  - Re-anchored `findCandidateExperts` to require category head-term / domain alignment (`hasHeadOrDomainMatch`), ensuring tequila and cocktail queries recommend drinks/spirits experts (Russell Davis, Thiago Bersou) and completely exclude home business strategists (Liz Parker).
+- **Verification & DoD Results**:
+  - Executed `src/test_brief_retrieval_truthful_coverage.ts`: all DoD assertions passed (tequila query recommends Russell Davis & Thiago Bersou, excludes Liz Parker; layers/graphs searched reflect API reality; suggested graphs $\le 10$; evidence stripped; parameter hygiene clean).
+  - Executed `src/test_coverage_relevance.ts`, `src/test_expert_layer.ts`, `src/test_search_graph_quality.ts`: all passed.
+  - Agreement with judged relevance on calibration benchmark (`retrieval_thiago_2026_10/baseline_results.json`) improved from 40.0% to 57.5%.
+  - `npm test` passed clean with 200 OK on `/health` (v1.46.128).
+
 ## [1.46.127] - 2026-10-23
 
 ### Added
