@@ -18,3 +18,6 @@ deploy_cloud_run.sh
 .agent/
 .agents/scratch/
 scratch/
+
+# Evaluation data (contains customer queries / private graph text — API repo only)
+eval/

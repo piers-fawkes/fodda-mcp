@@ -92,86 +92,72 @@ export const CROSS_CUTTING_MODIFIERS = new Set([
 ]);
 
 /**
- * Incidental modifiers (occasions, actions, demographics, geography, qualifiers)
+ * Incidental modifiers (occasions, times of day, and generic actions)
  * that frequently appear in queries but do NOT constitute category head terms.
  * Matching solely on incidental modifiers (e.g. "home", "weekday", "making") must
  * NOT certify an off-vertical row or candidate expert as on-topic.
+ * 
+ * Note: Category terms (luxury, premium, sports, moderation), geography (Brazil, US, UK),
+ * and demographics (travelers, athletes, Gen Z) are strictly EXCLUDED from this set so they
+ * survive as legitimate head terms.
  */
 export const INCIDENTAL_MODIFIERS = new Set([
-    // Occasions / contexts / situations
+    // Occasions / contexts / times of day
     'home', 'at-home', 'weekday', 'weekdays', 'weekend', 'weekends',
     'daytime', 'evening', 'evenings', 'night', 'nights', 'morning', 'mornings', 'afternoon', 'afternoons',
     'daily', 'commute', 'commuting', 'drive', 'driving', 'transit',
-    'swim', 'swimming', 'sport', 'sports', 'athletic', 'sweat', 'sweating', 'outdoor', 'outdoors',
+    'outdoor', 'outdoors',
     'occasion', 'occasions', 'moment', 'moments', 'ritual', 'rituals', 'routine', 'routines',
-    'habit', 'habits', 'lifestyle', 'lifestyles', 'hosting', 'party', 'parties',
+    'habit', 'habits', 'hosting', 'party', 'parties',
 
-    // Actions / behaviors
+    // Generic actions / behavioral verbs
     'use', 'using', 'usage', 'making', 'consumption', 'consuming', 'switching', 'reducing',
     'adoption', 'adopting', 'purchase', 'purchasing', 'buying', 'shopping', 'spend', 'spending',
-    'trade', 'down', 'trade-down', 'reapplication', 'application', 'applying', 'amount', 'amounts',
-    'removing', 'cleansing', 'mixing', 'moderation', 'return', 'returning', 'work', 'working',
-    'go', 'side', 'hustle', 'hustles', 'practices', 'practice', 'behavior', 'behaviors',
-    'behavioral', 'preference', 'preferences', 'choice', 'choices', 'decision', 'decisions',
-
-    // Demographics / actors (when secondary modifiers)
-    'adult', 'adults', 'parent', 'parents', 'kid', 'kids', 'children', 'child',
-    'people', 'person', 'men', 'man', 'women', 'woman', 'youth', 'young',
-    'gen', 'genz', 'boomer', 'boomers', 'millennial', 'millennials',
-    'traveler', 'travelers', 'athlete', 'athletes', 'shopper', 'shoppers',
-    'hispanic', 'latino', 'latina',
-
-    // Geography / Macro regions
-    'us', 'usa', 'united', 'states', 'america', 'american', 'americans',
-    'brazil', 'brazilian', 'brazilians', 'uk', 'britain', 'british',
-    'europe', 'european', 'asia', 'asian', 'china', 'chinese', 'japan', 'japanese',
-    'korea', 'korean', 'global', 'international', 'domestic', 'regional', 'national',
-    'coastal', 'urban', 'rural', 'suburban',
-
-    // Qualifiers / adjectives
-    'smart', 'lowest', 'highest', 'lower', 'higher', 'high', 'low', 'premium', 'luxury',
-    'budget', 'cheap', 'popular', 'dirty', 'clean', 'fast', 'slow', 'first', 'last',
-    'good', 'great', 'super', 'hyper', 'micro', 'macro',
-
-    // Common non-category query nouns
-    'points', 'point', 'program', 'programs', 'share', 'volume', 'rate', 'rates',
-    'number', 'numbers', 'figure', 'figures', 'stat', 'stats', 'statistic', 'statistics',
-    'score', 'scores', 'level', 'levels', 'share-of-wallet',
+    'reapplication', 'application', 'applying', 'amount', 'amounts',
+    'removing', 'cleansing', 'mixing', 'return', 'returning', 'work', 'working',
+    'go', 'side', 'hustle', 'hustles'
 ]);
 
 /**
- * Domain & category expansions for head terms to align retrieval matching and expert lane discovery.
+ * Domain & category expansions for head terms.
+ * STOPGAP: This temporary table will be superseded once API-side config/sector_vocabulary.json
+ * is shipped and exposed over an internal read endpoint. Expansions are kept strictly within-category
+ * (e.g. tequila -> spirits, mezcal, agave, cocktail; never wine, beer, or broad beverage words).
  */
 export const HEAD_TERM_DOMAIN_SYNONYMS: Record<string, string[]> = {
-    // Spirits / Alcoholic Beverages
-    tequila: ['spirits', 'cocktail', 'cocktails', 'alcohol', 'alcoholic', 'beverage', 'beverages', 'drinks', 'drinking', 'mixology', 'bartending', 'bar', 'wine', 'beer', 'liquor'],
-    margarita: ['tequila', 'cocktail', 'cocktails', 'spirits', 'beverage', 'drinks', 'mixology', 'bartending', 'alcohol'],
-    cocktail: ['cocktails', 'spirits', 'mixology', 'bartending', 'beverage', 'beverages', 'drinks', 'bar', 'alcohol', 'alcoholic', 'wine', 'beer'],
-    cocktails: ['cocktail', 'spirits', 'mixology', 'bartending', 'beverage', 'beverages', 'drinks', 'bar', 'alcohol', 'alcoholic', 'wine', 'beer'],
-    spirits: ['liquor', 'alcohol', 'alcoholic', 'cocktail', 'cocktails', 'beverage', 'beverages', 'drinks', 'bar', 'mixology', 'wine', 'beer'],
-    liquor: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
-    vodka: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks', 'cocktail'],
-    whiskey: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
-    whisky: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
-    rum: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks', 'cocktail'],
-    gin: ['spirits', 'alcohol', 'alcoholic', 'beverage', 'drinks', 'cocktail'],
-    mezcal: ['spirits', 'tequila', 'alcohol', 'alcoholic', 'beverage', 'drinks'],
-    beer: ['alcohol', 'alcoholic', 'beverage', 'beverages', 'brewing', 'drinks'],
-    wine: ['alcohol', 'alcoholic', 'beverage', 'beverages', 'sommelier', 'drinks'],
-    aperitivo: ['alcohol', 'alcoholic', 'spirits', 'cocktail', 'beverage', 'drinks'],
-    soda: ['beverage', 'beverages', 'drinks', 'soft drinks'],
-    // Sun care / Skincare / Beauty
-    sunscreen: ['suncare', 'sun care', 'skincare', 'skin', 'beauty', 'spf', 'cosmetics', 'dermatology', 'sun', 'sunburn', 'uv'],
-    suncare: ['sunscreen', 'skincare', 'skin', 'beauty', 'spf', 'cosmetics', 'sun'],
-    tanning: ['suncare', 'sunscreen', 'skin', 'beauty', 'sun', 'spf'],
-    // Baby / Infant Care
-    formula: ['infant', 'baby', 'parenting', 'feeding', 'pediatric', 'milk'],
+    // Spirits / Distilled (strictly within spirits & agave category)
+    tequila: ['spirits', 'cocktail', 'cocktails', 'mezcal', 'agave', 'liquor', 'distilled'],
+    margarita: ['tequila', 'cocktail', 'cocktails', 'spirits', 'mezcal', 'agave'],
+    cocktail: ['cocktails', 'spirits', 'mixology', 'bartending', 'liquor'],
+    cocktails: ['cocktail', 'spirits', 'mixology', 'bartending', 'liquor'],
+    spirits: ['liquor', 'cocktail', 'cocktails', 'distilled'],
+    liquor: ['spirits', 'cocktail', 'cocktails', 'distilled'],
+    vodka: ['spirits', 'cocktail', 'cocktails', 'distilled', 'liquor'],
+    whiskey: ['spirits', 'cocktail', 'cocktails', 'distilled', 'liquor', 'bourbon'],
+    whisky: ['spirits', 'cocktail', 'cocktails', 'distilled', 'liquor', 'scotch'],
+    rum: ['spirits', 'cocktail', 'cocktails', 'distilled', 'liquor'],
+    gin: ['spirits', 'cocktail', 'cocktails', 'distilled', 'liquor'],
+    mezcal: ['spirits', 'tequila', 'agave', 'distilled', 'liquor'],
+    beer: ['brewing', 'brewery', 'craft beer', 'lager', 'ale'],
+    wine: ['sommelier', 'winery', 'vineyard', 'vintage'],
+    aperitivo: ['spirits', 'cocktail', 'vermouth', 'amaro'],
+    soda: ['soft drinks', 'carbonated', 'cola'],
+
+    // Sun care / Skincare / Beauty (strictly within sun/skin care)
+    sunscreen: ['suncare', 'sun care', 'skincare', 'spf', 'uv', 'sunburn', 'photoprotection'],
+    suncare: ['sunscreen', 'skincare', 'spf', 'uv', 'sunburn', 'photoprotection'],
+    skincare: ['skin care', 'dermatology', 'serum', 'moisturizer'],
+
+    // Baby / Infant (strictly within baby nutrition & care)
+    'infant formula': ['baby formula', 'baby food', 'infant nutrition', 'toddler milk'],
+    formula: ['baby formula', 'infant formula', 'infant nutrition', 'toddler milk', 'baby', 'infant'],
     infant: ['baby', 'formula', 'parenting', 'childcare', 'daycare', 'feeding', 'milk'],
     toddler: ['baby', 'infant', 'parenting', 'childcare', 'milk'],
+
     // Travel / Airlines
-    airline: ['airlines', 'aviation', 'travel', 'transportation', 'flights', 'flight', 'loyalty'],
-    airlines: ['airline', 'aviation', 'travel', 'transportation', 'flights', 'flight', 'loyalty'],
-    loyalty: ['airline', 'airlines', 'rewards', 'travel', 'points'],
+    airline: ['airlines', 'aviation', 'travel', 'transportation', 'flights', 'flight'],
+    airlines: ['airline', 'aviation', 'travel', 'transportation', 'flights', 'flight'],
+    loyalty: ['airline', 'airlines', 'rewards', 'travel', 'points']
 };
 
 /** Tokenize a query down to its topically-specific terms. */
