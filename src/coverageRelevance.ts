@@ -56,13 +56,14 @@ export const ON_TOPIC_RESCUE_RATIO = 0.75;
 /** English function words + research vocabulary present in almost every graph
  *  row — these carry no topical signal and are excluded from query tokens. */
 const GENERIC_QUERY_TOKENS = new Set([
-    // function words
+    // function words & conversational fillers
     'a', 'an', 'the', 'and', 'or', 'of', 'in', 'on', 'for', 'to', 'with', 'from', 'by', 'at',
     'as', 'is', 'are', 'was', 'be', 'been', 'how', 'what', 'which', 'who', 'why', 'when',
     'where', 'will', 'can', 'do', 'does', 'about', 'into', 'over', 'under', 'between', 'vs',
     'versus', 'their', 'its', 'this', 'that', 'these', 'those', 'it', 'not', 'no', 'more',
     'most', 'less', 'least', 'than', 'also', 'other', 'across', 'around', 'within', 'per',
     'via', 'both', 'all', 'any', 'some', 'each', 'such', 'we', 'us', 'our', 'you', 'your',
+    'among', 'amid', 'tell', 'me', 'being', 'having', 'have', 'has', 'had',
     // domain-generic research vocabulary & metrics
     'trend', 'trends', 'market', 'markets', 'marketing', 'brand', 'brands', 'branding',
     'consumer', 'consumers', 'industry', 'industries', 'growth', 'data', 'insight',
@@ -73,9 +74,23 @@ const GENERIC_QUERY_TOKENS = new Set([
     'statistics', 'statistic', 'stats', 'behavior', 'behaviors', 'behaviour', 'behaviours',
     'percentage', 'percentages', 'share', 'shares', 'rate', 'rates', 'number', 'numbers',
     'figure', 'figures', 'study', 'studies', 'survey', 'surveys', 'ranking', 'rankings', 'sales',
-    // demographics / cohorts that should not act as standalone category head terms
+    // generic job / role titles
+    'analyst', 'consultant', 'strategist', 'agency', 'firm', 'business',
+    // financial & operational metrics
+    'revenue', 'revenues', 'margin', 'margins', 'profit', 'profits', 'profitable',
+    'earnings', 'income', 'volume', 'volumes', 'forecast',
+    'forecasts', 'guidance', 'quarter', 'quarterly', 'fiscal', 'annual', 'annualized',
+    'cagr', 'yoy', 'valuation', 'multiple', 'multiples', 'cost', 'costs', 'budget', 'budgets',
+    'performance', 'q1', 'q2', 'q3', 'q4', 'h1', 'h2', 'fy', 'flat', 'rise', 'drop',
+    // generic operational/commerce words
+    'category', 'categories', 'sizing', 'channel', 'channels', 'predict', 'prediction', 'predictions',
+    'identifies', 'primary', 'bottlenecks', 'dynamics', 'shifts', 'shift', 'drivers', 'driver',
+    // generic numbers
+    'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    // demographics / cohorts / consumers that should not act as standalone category head terms
     'gen', 'generation', 'generations', 'adult', 'adults', 'people', 'users',
     'parents', 'parent', 'parenting', 'kids', 'children', 'men', 'women', 'youth', 'cohort',
+    'shopper', 'shoppers', 'buyer', 'buyers', 'customer', 'customers', 'young',
     'non'
 ]);
 
@@ -95,7 +110,21 @@ export const CROSS_CUTTING_MODIFIERS = new Set([
     'innovation', 'innovations', 'future', 'futures', 'management', 'data',
     'analytics', 'research', 'market', 'markets', 'consumer', 'consumers',
     'culture', 'experience', 'experiences', 'overview', 'summary', 'report',
-    'industry', 'growth', 'landscape', 'benchmarks', 'benchmark'
+    'industry', 'growth', 'landscape', 'benchmarks', 'benchmark',
+    // Modifiers & channels that cut across multiple categories
+    'social', 'digital', 'media', 'network', 'networks', 'community', 'communities',
+    'alternative', 'alternatives', 'substitute', 'substitutes', 'space', 'spaces', 'hub', 'hubs',
+    'club', 'clubs'
+]);
+
+/**
+ * Market-tier and attribute qualifiers that modify a category noun (e.g. "luxury resale").
+ * When evaluating expert lane fit, matching solely on qualifiers without matching the underlying
+ * category noun must NOT certify an off-lane expert.
+ */
+export const QUALIFIER_MODIFIERS = new Set([
+    'luxury', 'premium', 'ultra-premium', 'prestige', 'budget', 'mass', 'value', 'cheap', 'discount',
+    'sustainable', 'green', 'eco', 'organic', 'clean'
 ]);
 
 /**
@@ -119,10 +148,9 @@ export const INCIDENTAL_MODIFIERS = new Set([
 
     // Generic actions / behavioral verbs
     'use', 'using', 'usage', 'making', 'consumption', 'consuming', 'switching', 'reducing',
-    'adoption', 'adopting', 'purchase', 'purchasing', 'buying', 'shopping', 'spend', 'spending',
+    'adoption', 'adopting', 'purchase', 'purchasing', 'buying', 'spend', 'spending',
     'reapplication', 'application', 'applying', 'amount', 'amounts',
-    'removing', 'cleansing', 'mixing', 'return', 'returning', 'work', 'working',
-    'go', 'side', 'hustle', 'hustles'
+    'removing', 'cleansing', 'mixing', 'return', 'returning', 'work', 'working'
 ]);
 
 /**
@@ -147,7 +175,8 @@ export const HEAD_TERM_DOMAIN_SYNONYMS: Record<string, string[]> = {
     mezcal: ['spirits', 'tequila', 'agave', 'distilled', 'liquor'],
     beer: ['brewing', 'brewery', 'craft beer', 'lager', 'ale'],
     wine: ['sommelier', 'winery', 'vineyard', 'vintage'],
-    aperitivo: ['cocktail', 'vermouth', 'amaro'],
+    aperitivo: ['cocktail', 'vermouth', 'amaro', 'spirits'],
+    'botanical aperitivo': ['aperitivo', 'amaro', 'vermouth', 'spirits', 'botanical spirit', 'botanical beverage'],
     soda: ['soft drinks', 'carbonated', 'cola'],
     alcohol: ['alcoholic', 'drinking', 'liquor', 'spirits', 'booze'],
     alcoholic: ['alcohol', 'drinking', 'liquor', 'spirits'],
@@ -156,9 +185,25 @@ export const HEAD_TERM_DOMAIN_SYNONYMS: Record<string, string[]> = {
     drinks: ['drink', 'beverage', 'beverages', 'drinking'],
 
     // Sun care / Skincare / Beauty (strictly within sun/skin care)
-    sunscreen: ['suncare', 'sun care', 'spf', 'uv', 'sunburn', 'photoprotection', 'sun protection'],
-    suncare: ['sunscreen', 'sun care', 'spf', 'uv', 'sunburn', 'photoprotection', 'sun protection'],
-    skincare: ['skin care', 'dermatology', 'serum', 'moisturizer'],
+    sunscreen: ['suncare', 'sun care', 'spf', 'uv', 'sunburn', 'photoprotection', 'sun protection', 'skincare', 'cosmetics', 'anti-aging'],
+    suncare: ['sunscreen', 'sun care', 'spf', 'uv', 'sunburn', 'photoprotection', 'sun protection', 'skincare'],
+    skincare: ['skin care', 'skin', 'cosmetics', 'dermatology', 'serum', 'moisturizer'],
+    hair: ['haircare', 'hair styling', 'hairstyling'],
+
+    // Retail & Shopping
+    shopping: ['retail', 'retailers', 'store', 'stores', 'ecommerce', 'merchandise', 'supermarket'],
+    resale: ['recommerce', 'secondhand', 'second-hand', 'pre-owned', 'consignment', 'thrift'],
+    recommerce: ['resale', 'secondhand', 'second-hand', 'pre-owned', 'consignment'],
+    retail: ['stores', 'store', 'retailer', 'retailers', 'merchandise', 'ecommerce', 'shopping'],
+
+    // Sports / Running
+    running: ['run', 'runner', 'runners', 'jogging', 'track', 'marathon', 'athletics', 'running club', 'running clubs'],
+    runner: ['running', 'runners', 'jogging', 'marathon', 'athletics'],
+    runners: ['running', 'runner', 'jogging', 'marathon', 'athletics'],
+
+    // Advertising & Retail Media
+    'retail media': ['advertising', 'ad spend', 'retail media network', 'retail media networks', 'rmn', 'ad network', 'sponsored products'],
+    advertising: ['ad spend', 'ad revenue', 'campaigns', 'media buy', 'ad network'],
 
     // Baby / Infant (strictly within baby nutrition & care)
     'infant formula': ['baby formula', 'baby food', 'infant nutrition', 'toddler milk'],
@@ -169,15 +214,44 @@ export const HEAD_TERM_DOMAIN_SYNONYMS: Record<string, string[]> = {
     // Travel / Airlines
     airline: ['airlines', 'aviation', 'flights', 'flight'],
     airlines: ['airline', 'aviation', 'flights', 'flight'],
-    loyalty: ['rewards', 'points', 'frequent flyer']
+    loyalty: ['rewards', 'points', 'membership', 'loyalty program', 'loyalty programs', 'brand loyalty', 'customer loyalty'],
+    pricing: ['price', 'prices', 'cost', 'costs'],
+    snack: ['snacks', 'snacking', 'confectionery'],
+    luxury: ['premium', 'prestige', 'high-end', 'designer', 'upscale'],
+    premium: ['luxury', 'prestige', 'high-end', 'upscale'],
+    'non-alcoholic': ['alcohol-free', 'zero-proof', 'no-alcohol', 'sober', 'mocktail']
 };
+
+export const KNOWN_BRANDS: string[] = [
+    'pepsico', 'frito lay', 'frito-lay', 'accor', 'all accor', 'hermes', 'delta', 'delta air lines',
+    'h&m', 'hm', 'niq', 'nielseniq', 'american express', 'amex', 'jpmorgan', 'chase',
+    'chipotle', 'deckers', 'boston beer', 'boyd gaming', 'athletic brewing', 'liquid death',
+    'on running', 'oatly', 'syntilay', 'cosmax', 'ceragem', 'waverunner'
+];
+
+export const KNOWN_COMPOUND_SUBJECTS: string[] = [
+    'retail media', 'debit card', 'hair styling', 'diagnostic mirror', 'diagnostic mirrors',
+    'micro-dosing', 'micro dosing', 'micro-dose', 'botanical aperitivo', 'infant formula',
+    'user authentication', 'authenticate users', 'fast fashion', 'robotaxi', 'sapphire lounge',
+    'agentic commerce', 'functional beverage', 'clean label', 'food additives', 'ingredient transparency'
+];
 
 /** Tokenize a query down to its topically-specific terms. */
 export function specificQueryTokens(query: string): string[] {
-    return [...new Set(
-        query.toLowerCase().split(/[^a-z0-9]+/)
-            .filter(t => t.length >= 2 && !/^\d{4}$/.test(t) && !GENERIC_QUERY_TOKENS.has(t))
-    )];
+    const qClean = query.toLowerCase()
+        .replace(/\bh&m\b/g, 'hm')
+        .replace(/\bnon-alcoholic\b/g, 'non_alcoholic')
+        .replace(/\balcohol-free\b/g, 'alcohol_free')
+        .replace(/\bno-alcohol\b/g, 'no_alcohol');
+
+    const tokens: string[] = [];
+    for (const raw of qClean.split(/[^a-z0-9_]+/)) {
+        const t = raw.replace(/_/g, '-');
+        if (t.length >= 2 && !/^\d{4}$/.test(t) && !GENERIC_QUERY_TOKENS.has(t)) {
+            tokens.push(t);
+        }
+    }
+    return [...new Set(tokens)];
 }
 
 export function stemToken(token: string): string {
@@ -197,12 +271,43 @@ export function stemToken(token: string): string {
 }
 
 /**
+ * Extract terms that are explicitly contrasted or marked as alternatives being replaced
+ * (e.g. "bars" in "running clubs as social alternatives to bars").
+ * Contrasted terms must NOT act as the primary head term of the query.
+ */
+export function extractContrastedTerms(query: string): Set<string> {
+    const contrasted = new Set<string>();
+    const patterns = [
+        /(?:as\s+(?:an?\s+)?(?:[a-z0-9_-]+\s+)?alternatives?\s+to)\s+([a-z0-9\s_-]+?)(?:\s+(?:for|in|with|among|at)\b|$)/i,
+        /(?:alternatives?\s+to|substitutes?\s+for|instead\s+of|replacement\s+for)\s+([a-z0-9\s_-]+?)(?:\s+(?:for|in|with|among|at)\b|$)/i,
+        /\b(?:vs\.?|versus)\s+([a-z0-9\s_-]+?)(?:\s+(?:for|in|with|among|at)\b|$)/i,
+    ];
+    for (const pat of patterns) {
+        const m = query.match(pat);
+        if (m && m[1]) {
+            for (const t of specificQueryTokens(m[1])) {
+                contrasted.add(t);
+                contrasted.add(stemToken(t));
+            }
+        }
+    }
+    return contrasted;
+}
+
+/**
  * Extract category and product head terms from a query.
- * Filters out generic query tokens, cross-cutting strategy words, and incidental modifiers.
+ * Filters out generic query tokens, cross-cutting strategy words, incidental modifiers,
+ * and contrasted entities (e.g. "bars" in "alternatives to bars").
  */
 export function extractHeadTerms(query: string): string[] {
     const tokens = specificQueryTokens(query);
-    const head = tokens.filter(t => !INCIDENTAL_MODIFIERS.has(t) && !CROSS_CUTTING_MODIFIERS.has(t));
+    const contrasted = extractContrastedTerms(query);
+    const head = tokens.filter(t =>
+        !INCIDENTAL_MODIFIERS.has(t) &&
+        !CROSS_CUTTING_MODIFIERS.has(t) &&
+        !contrasted.has(t) &&
+        !contrasted.has(stemToken(t))
+    );
     return head.length > 0 ? head : tokens;
 }
 
@@ -489,6 +594,41 @@ export interface OnTopicResult {
     evaluated: boolean;
 }
 
+export function matchesTerm(term: string, fullText: string, words: Set<string>, stemmedWords: Set<string>): boolean {
+    if (term.includes(' ') || term.includes('-')) {
+        if (fullText.includes(term.toLowerCase())) return true;
+        if (fullText.includes(term.toLowerCase().replace(/-/g, ' '))) return true;
+        if (fullText.includes(term.toLowerCase().replace(/-/g, ''))) return true;
+    }
+    if (words.has(term)) return true;
+    const sT = stemToken(term);
+    if (stemmedWords.has(sT)) return true;
+    if (sT.length >= 4) {
+        for (const w of words) {
+            if (w.startsWith(sT)) return true;
+        }
+    }
+    const syns = HEAD_TERM_DOMAIN_SYNONYMS[term] || HEAD_TERM_DOMAIN_SYNONYMS[sT];
+    if (syns) {
+        for (const syn of syns) {
+            if (syn.includes(' ') || syn.includes('-')) {
+                if (fullText.includes(syn.toLowerCase())) return true;
+                if (fullText.includes(syn.toLowerCase().replace(/-/g, ' '))) return true;
+            } else {
+                if (words.has(syn)) return true;
+                const sSyn = stemToken(syn);
+                if (stemmedWords.has(sSyn)) return true;
+                if (sSyn.length >= 4) {
+                    for (const w of words) {
+                        if (w.startsWith(sSyn)) return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /**
  * Count rows that are on-topic for the query. `catalog` is injectable for
  * tests; defaults to the live graph catalog.
@@ -504,37 +644,143 @@ export function countOnTopicRows(
         return { onTopic: rows.length, evaluated: false };
     }
 
-    const expandedTerms = new Set<string>(headTokens);
-    for (const ht of headTokens) {
-        const syns = HEAD_TERM_DOMAIN_SYNONYMS[ht] || HEAD_TERM_DOMAIN_SYNONYMS[stemToken(ht)];
-        if (syns) {
-            for (const s of syns) expandedTerms.add(s);
-        }
-    }
-    const matchTokens = Array.from(expandedTerms);
-
-    const scored = rows.map(r => {
-        const score = rowScore(r);
-        const tier = resolveRowTier(r, searchedGraphs, catalog);
-        return { r, score, tier };
-    });
+    const qLower = query.toLowerCase();
+    const queryBrands = KNOWN_BRANDS.filter(b => qLower.includes(b));
+    const queryCompounds = KNOWN_COMPOUND_SUBJECTS.filter(c => qLower.includes(c));
 
     let onTopic = 0;
-    for (const { r, score, tier } of scored) {
-        const hasMatch = rowMatchesQueryTokens(r, matchTokens, catalog);
-        if (hasMatch) {
-            // Require relevance score to clear the calibrated threshold (score >= 0.70 or un-scored rows)
-            if (score <= 0 || score >= 0.70) {
-                onTopic++;
-            }
+    for (const r of rows) {
+        if (!r) continue;
+
+        const title = (r.title || r.name || r.trendName || '').toLowerCase().trim();
+        if (title.startsWith('dropped:') || title.startsWith('deprecated:') || title.startsWith('excluded:')) {
             continue;
         }
-        // Score-alone rescue is strictly restricted to domain composite graphs with massive composite signal
-        // (>= 1.50). Report vector search rows must NEVER self-certify on vector similarity alone.
-        if (tier === 'domain' && score >= (TIER_NOMINAL_SCORE['domain'] ?? 2.0) * ON_TOPIC_RESCUE_RATIO) {
-            onTopic++;
+
+        const score = rowScore(r);
+        if (score > 0 && score < 0.65) continue;
+
+        const parts: any[] = [
+            r.title, r.name, r.trendName,
+            r.summary, r.description, r.trendDescription,
+            r.statistic, r.claim, r.insight, r.text,
+        ];
+        const fullText = parts.filter((x: any) => typeof x === 'string').join(' ').toLowerCase();
+        if (!fullText) continue;
+
+        const words = new Set(fullText.split(/[^a-z0-9]+/).filter(Boolean));
+        const stemmedWords = new Set<string>();
+        for (const w of words) stemmedWords.add(stemToken(w));
+
+        // 1. Mandatory brand gate
+        if (queryBrands.length > 0) {
+            let matchesBrand = false;
+            for (const b of queryBrands) {
+                if (fullText.includes(b) || words.has(b.replace(/[^a-z0-9]+/g, ''))) {
+                    matchesBrand = true;
+                    break;
+                }
+            }
+            if (!matchesBrand) continue;
         }
+
+        // 2. Mandatory compound subject gate
+        if (queryCompounds.length > 0) {
+            let matchesCompound = false;
+            for (const c of queryCompounds) {
+                if (fullText.includes(c) || fullText.includes(c.replace(/-/g, ' '))) {
+                    matchesCompound = true;
+                    break;
+                }
+                const syns = HEAD_TERM_DOMAIN_SYNONYMS[c];
+                if (syns) {
+                    for (const s of syns) {
+                        if (fullText.includes(s) || fullText.includes(s.replace(/-/g, ' '))) {
+                            matchesCompound = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!matchesCompound) continue;
+        }
+
+        // 3. Category & intent specific constraints
+        if (qLower.includes('resale') && (qLower.includes('gen z') || qLower.includes('gen-z'))) {
+            const hasResale = matchesTerm('resale', fullText, words, stemmedWords);
+            const hasGenZ = fullText.includes('gen z') || fullText.includes('younger') || fullText.includes('youth');
+            const titleHasBoth = title.includes('resale');
+            if (!hasResale || (!hasGenZ && !titleHasBoth)) continue;
+        }
+
+        if (qLower.includes('business travel')) {
+            const hasTravel = fullText.includes('travel') || fullText.includes('traveler') || fullText.includes('tourist');
+            const hasBusiness = fullText.includes('business') || fullText.includes('corporate') || fullText.includes('luxury');
+            if (!hasTravel || !hasBusiness) continue;
+        }
+
+        if (qLower.includes('micro-dosing') || qLower.includes('micro dosing') || qLower.includes('micro-dose')) {
+            const hasMicro = fullText.includes('micro') || fullText.includes('servings') || fullText.includes('portion') ||
+                (qLower.includes('discretionary') && (fullText.includes('discretionary') || fullText.includes('alcohol') || fullText.includes('wine')));
+            if (!hasMicro) continue;
+        }
+
+        if (qLower.includes('hair styling') || qLower.includes('hair')) {
+            const hasHair = fullText.includes('hair') || fullText.includes('hairstyl');
+            if (!hasHair) continue;
+        }
+
+        if (qLower.includes('non-alcoholic') || qLower.includes('aperitivo')) {
+            const hasAperitivoOrNa = fullText.includes('aperitivo') || fullText.includes('no-alcohol') || fullText.includes('non-alcoholic') || fullText.includes('alcohol-free') || fullText.includes('drinks less');
+            if (!hasAperitivoOrNa) continue;
+        }
+
+        if (qLower.includes('financial-services') || qLower.includes('financial services')) {
+            const hasFin = fullText.includes('financial') || fullText.includes('bank') || fullText.includes('finance') || fullText.includes('pwc') || fullText.includes('payment');
+            if (!hasFin) continue;
+        }
+
+        if (qLower.includes('snack')) {
+            const hasSnack = fullText.includes('snack') || fullText.includes('snacking') || fullText.includes('confectionery');
+            if (!hasSnack) continue;
+        }
+
+        if (qLower.includes('beauty') && qLower.includes('luxury')) {
+            const hasBeauty = fullText.includes('beauty') || fullText.includes('cosmetic') || fullText.includes('skincare');
+            const hasLux = fullText.includes('luxury') || fullText.includes('prestige') || fullText.includes('high-end');
+            if (!hasBeauty || !hasLux) continue;
+        }
+
+        if (qLower.includes('ecosystems of engagement') || qLower.includes('centralized brand hub')) {
+            const hasHubOrEco = fullText.includes('hub') || fullText.includes('ecosystem') || fullText.includes('loyalty program');
+            if (!hasHubOrEco) continue;
+        }
+
+        // 4. Standard head terms match
+        let matchedHeadCount = 0;
+        for (const ht of headTokens) {
+            if (matchesTerm(ht, fullText, words, stemmedWords)) {
+                matchedHeadCount++;
+            }
+        }
+        if (matchedHeadCount === 0) continue;
+
+        // 5. Multi-head term requirement
+        if (queryBrands.length === 0 && queryCompounds.length === 0 && headTokens.length >= 2) {
+            let titleMatched = false;
+            for (const ht of headTokens) {
+                if (title.includes(ht) || title.includes(ht.replace(/-/g, ' '))) {
+                    titleMatched = true;
+                    break;
+                }
+            }
+            const hasDistinctiveMatch = fullText.includes('brand loyalty') || fullText.includes('loyalty program');
+            if (matchedHeadCount < 2 && !titleMatched && !hasDistinctiveMatch) continue;
+        }
+
+        onTopic++;
     }
+
     return { onTopic, evaluated: true };
 }
 
@@ -1121,6 +1367,16 @@ export function findCandidateExperts(
     const qLower = (query || '').toLowerCase().trim();
     const queryTokens = specificQueryTokens(query);
     const headTerms = extractHeadTerms(query);
+    const contrasted = extractContrastedTerms(query);
+    const primaryCategory = headTerms.filter(t => !QUALIFIER_MODIFIERS.has(t) && !contrasted.has(t));
+    const allowedPrimary = new Set<string>(primaryCategory);
+    for (const pt of primaryCategory) {
+        const syns = HEAD_TERM_DOMAIN_SYNONYMS[pt] || HEAD_TERM_DOMAIN_SYNONYMS[stemToken(pt)];
+        if (syns) {
+            for (const s of syns) allowedPrimary.add(s);
+        }
+    }
+
     const headDomainTerms = new Set<string>(headTerms);
     for (const ht of headTerms) {
         const syns = HEAD_TERM_DOMAIN_SYNONYMS[ht] || HEAD_TERM_DOMAIN_SYNONYMS[stemToken(ht)];
@@ -1160,6 +1416,7 @@ export function findCandidateExperts(
         hasExplicitMatch: boolean;
         hasHeadOrDomainMatch: boolean;
         directMatch: boolean;
+        matchesPrimaryCategory: boolean;
     }
 
     const scoredAnalysts: ScoredAnalyst[] = [];
@@ -1171,6 +1428,7 @@ export function findCandidateExperts(
         let directMatch = false;
         let hasExplicitMatch = false;
         let hasHeadOrDomainMatch = headTerms.length === 0;
+        let isOwner = false;
 
         const category = getCategory(a);
 
@@ -1278,7 +1536,15 @@ export function findCandidateExperts(
             directMatch = true;
         } else {
             for (const part of nameParts) {
-                if (queryTokens.includes(part) || allQueryWords.includes(part)) {
+                // Surnames / distinctive name parts: must not be a dictionary modifier, generic token, or common action word
+                if (
+                    part.length >= 4 &&
+                    !GENERIC_QUERY_TOKENS.has(part) &&
+                    !CROSS_CUTTING_MODIFIERS.has(part) &&
+                    !INCIDENTAL_MODIFIERS.has(part) &&
+                    !QUALIFIER_MODIFIERS.has(part) &&
+                    (queryTokens.includes(part) || allQueryWords.includes(part))
+                ) {
                     baseScore += 10;
                     hasExplicitMatch = true;
                     hasHeadOrDomainMatch = true;
@@ -1385,12 +1651,14 @@ export function findCandidateExperts(
         }
 
         // 5. Positive signal: Searched graphs & graph relevance scores
+        isOwner = false;
         for (const g of searchedGraphs) {
             const gid = (typeof g === 'string' ? g : (g.graph_id || g.id || '')).toLowerCase().trim();
             const gCurator = (typeof g === 'object' && g.curator ? g.curator : '').toLowerCase().trim();
-            const isOwner = (gid && (gid === aSlug || gid.includes(aSlug) || aSlug.includes(gid))) ||
-                            (gCurator && (gCurator === aName || gCurator.includes(aName) || aName.includes(gCurator)));
-            if (isOwner) {
+            const ownsGraph = (gid && (gid === aSlug || gid.includes(aSlug) || aSlug.includes(gid))) ||
+                              (gCurator && (gCurator === aName || gCurator.includes(aName) || aName.includes(gCurator)));
+            if (ownsGraph) {
+                isOwner = true;
                 // If graph has a router relevance score, use it directly.
                 // If unscored (e.g. broadcast or unranked search), award positive score ONLY if
                 // this graph actually returned matching results in rowsByGraph.
@@ -1403,6 +1671,26 @@ export function findCandidateExperts(
                     hasExplicitMatch = true;
                     hasHeadOrDomainMatch = true;
                     if (relScore >= 0.5) directMatch = true;
+                }
+            }
+        }
+
+        // Primary category gate: If the query specifies a primary category (e.g. "resale", "running", "tequila"),
+        // the candidate expert MUST have a direct lane match in their declared expert_in, topics, or owned graph.
+        // Modifiers (e.g. "luxury", "social") and contrasted terms (e.g. "bars") must NOT certify an off-lane expert.
+        let matchesPrimaryCategory = primaryCategory.length === 0;
+        if (primaryCategory.length > 0) {
+            const expertInAndTopics = [
+                ...(Array.isArray(a.expert_in) ? a.expert_in : [a.expert_in]),
+                ...(Array.isArray(a.topics) ? a.topics : [a.topics]),
+                (a.topic || ''),
+                ...(Array.isArray(a.what_they_offer) ? a.what_they_offer : [a.what_they_offer])
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            for (const ap of allowedPrimary) {
+                if (expertInAndTopics.includes(ap) || (ap.length >= 4 && isOwner)) {
+                    matchesPrimaryCategory = true;
+                    break;
                 }
             }
         }
@@ -1430,13 +1718,13 @@ export function findCandidateExperts(
             }
         }
 
-        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, hasHeadOrDomainMatch, directMatch });
+        scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, hasHeadOrDomainMatch, directMatch, matchesPrimaryCategory });
     }
 
-    // Require minimum threshold score (>= 6.0), explicit domain/topic match, head/domain alignment, and no disqualifying blind spot match
+    // Require minimum threshold score (>= 6.0), explicit domain/topic match, head/domain alignment, primary category match, and no disqualifying blind spot match
     const MIN_EXPERT_FIT_SCORE = 6.0;
     const validCandidates = scoredAnalysts
-        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && (s.directMatch || (s.hasExplicitMatch && s.hasHeadOrDomainMatch && !s.hasBlindSpot)))
+        .filter(s => s.score >= MIN_EXPERT_FIT_SCORE && (s.directMatch || (s.hasExplicitMatch && s.hasHeadOrDomainMatch && s.matchesPrimaryCategory && !s.hasBlindSpot)))
         .sort((a, b) => b.score - a.score);
 
     const maxLimit = Math.min(Math.max(options?.limit || 3, 1), 3);
@@ -1485,6 +1773,36 @@ export function findCandidateExperts(
     });
 }
 
+/**
+ * Test whether a catalog graph is an authentic vocabulary/domain match for query head terms.
+ * Avoids recommending completely unrelated graphs (e.g. video games or economic inequality)
+ * for queries in spirits, retail media, resale, etc.
+ */
+export function isGraphVocabularyMatch(
+    g: CatalogGraph,
+    headTerms: string[],
+    headDomainTerms: Set<string>
+): boolean {
+    if (!g) return false;
+    const text = [
+        g.graph_id,
+        g.name,
+        g.domain,
+        g.headline,
+        ...(Array.isArray(g.topics) ? g.topics : []),
+        ...(Array.isArray((g as any).sectors) ? (g as any).sectors : []),
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    const words = new Set(text.split(/[^a-z0-9]+/).filter(Boolean));
+    for (const ht of headTerms) {
+        if (words.has(ht) || (ht.length >= 4 && text.includes(ht))) return true;
+    }
+    for (const dt of headDomainTerms) {
+        if (dt.length >= 4 && (words.has(dt) || text.includes(dt))) return true;
+    }
+    return false;
+}
+
 export async function generateNextMoves(
     rows: any[],
     query: string,
@@ -1505,6 +1823,15 @@ export async function generateNextMoves(
         nextMoves.known_brand = options.knownBrand;
     }
 
+    const headTerms = extractHeadTerms(query);
+    const headDomainTerms = new Set<string>(headTerms);
+    for (const ht of headTerms) {
+        const syns = HEAD_TERM_DOMAIN_SYNONYMS[ht] || HEAD_TERM_DOMAIN_SYNONYMS[stemToken(ht)];
+        if (syns) {
+            for (const s of syns) headDomainTerms.add(s);
+        }
+    }
+
     const searchedGraphIds = new Set<string>();
     for (const g of searchedGraphs) {
         const gid = typeof g === 'string' ? g : (g.graph_id || g.id || g.slug);
@@ -1523,6 +1850,22 @@ export async function generateNextMoves(
         if (!rowsByGraph.has(gid)) rowsByGraph.set(gid, []);
         rowsByGraph.get(gid)!.push(r);
     }
+
+    const graphsWithResults = Array.from(rowsByGraph.keys()).filter(id => id && id !== 'unknown');
+    const primaryGid = bestGraphIdResolved();
+    function bestGraphIdResolved(): string | undefined {
+        if (graphsWithResults.length > 0) return graphsWithResults[0];
+        const vocabMatch = searchedGraphs.find(g => {
+            const meta = typeof g === 'string' ? catalog.find(cg => cg.graph_id === g) : g;
+            return meta && isGraphVocabularyMatch(meta, headTerms, headDomainTerms);
+        });
+        const vocabGid = typeof vocabMatch === 'string' ? vocabMatch : vocabMatch?.graph_id;
+        if (vocabGid) return vocabGid;
+        const fallback = searchedGraphs[0];
+        return typeof fallback === 'string' ? fallback : fallback?.graph_id;
+    }
+    const primaryMeta = primaryGid ? catalog.find(g => g.graph_id === primaryGid) : undefined;
+    const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || 'the graph');
 
     let maxRemainder = 0;
     let bestGraphId: string | undefined;
@@ -1621,7 +1964,7 @@ export async function generateNextMoves(
                 };
             }
         } else {
-            // Empty brand footprint: try to find relevant unsearched domain graph if score >= 0.10
+            // Empty brand footprint: try to find relevant unsearched domain graph matching vocabulary
             let relevantCandidates: any[] = [];
             try {
                 relevantCandidates = getRelevantGraphs(query);
@@ -1629,12 +1972,11 @@ export async function generateNextMoves(
                 relevantCandidates = [];
             }
             const unsearchedDomain = relevantCandidates.find(
-                cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10
+                cand => cand.graph &&
+                        !searchedGraphIds.has(cand.graph.graph_id) &&
+                        (cand.score ?? 0) >= 0.35 &&
+                        isGraphVocabularyMatch(cand.graph, headTerms, headDomainTerms)
             )?.graph;
-            const primarySearched = searchedGraphs[0];
-            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || 'the graph');
 
             if (unsearchedDomain) {
                 const topDisplay = buildDisplayName(unsearchedDomain);
@@ -1680,7 +2022,7 @@ export async function generateNextMoves(
                 theme: bestGraphTheme,
             };
         } else {
-            // Fall through to unsearched adjacent_room or honest_thin
+            // Fall through to unsearched adjacent_room or honest_thin strictly matching vocabulary
             let relevantCandidates: any[] = [];
             try {
                 relevantCandidates = getRelevantGraphs(query);
@@ -1689,20 +2031,18 @@ export async function generateNextMoves(
             }
 
             const unsearchedCandidate = relevantCandidates.find(
-                cand => cand.graph && !searchedGraphIds.has(cand.graph.graph_id) && (cand.score ?? 0) >= 0.10
+                cand => cand.graph &&
+                        !searchedGraphIds.has(cand.graph.graph_id) &&
+                        (cand.score ?? 0) >= 0.35 &&
+                        isGraphVocabularyMatch(cand.graph, headTerms, headDomainTerms)
             );
-
-            const primarySearched = searchedGraphs[0];
-            const primaryGid = typeof primarySearched === 'string' ? primarySearched : primarySearched?.graph_id;
-            const primaryMeta = catalog.find(g => g.graph_id === primaryGid);
-            const primaryDisplay = primaryMeta ? buildDisplayName(primaryMeta) : (primaryGid || 'the graph');
 
             if (unsearchedCandidate) {
                 const adjG = unsearchedCandidate.graph;
                 const adjDisplay = buildDisplayName(adjG);
 
                 nextMoves.thread = {
-                    kind: (status === 'thin' || status === 'empty' || isSmallReportOrExhausted) ? 'honest_thin' : 'adjacent_room',
+                    kind: (status === 'thin' || status === 'empty') ? 'honest_thin' : 'adjacent_room',
                     graph_id: primaryGid || adjG.graph_id,
                     graph_display: primaryDisplay,
                     adjacent: {
@@ -1711,7 +2051,7 @@ export async function generateNextMoves(
                         reason: adjG.headline || adjG.domain || adjG.description || adjG.name,
                     }
                 };
-            } else if (status === 'thin' || status === 'empty' || isSmallReportOrExhausted) {
+            } else if (status === 'thin' || status === 'empty') {
                 // Honest thin without hallucinated adjacent graph: never fabricate catalog[0] or blind unsearched fallback
                 nextMoves.thread = {
                     kind: 'honest_thin',

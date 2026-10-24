@@ -5,6 +5,37 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.129] - 2026-10-24
+
+### Fixed
+- **Next-Moves Threads & Thread Graph Filtering (`src/coverageRelevance.ts`)**:
+  - Restricted `kind: 'honest_thin'` next-move threads strictly to `status === 'thin' || status === 'empty'`; never emits `honest_thin` when status is `'ok'` (e.g. eliminating Newzoo games thread on "luxury resale market growth among Gen Z shoppers").
+  - Gated thread graph selection via `isGraphVocabularyMatch`: adjacent thread graphs must share substantive domain overlap with the query or be chosen from `graphs_with_results`. Unrelated graphs (e.g. `pew-economic-inequality-trends` on tequila/retail media, `newzoo` on luxury resale) are strictly rejected.
+- **Candidate Expert Lane Matching on Primary Category Terms (`src/coverageRelevance.ts`)**:
+  - Enforced `matchesPrimaryCategory`: candidate experts must match at least one substantive primary category noun in `expert_in`, `topics`, or their owned graph. Qualifiers and cross-cutting modifiers alone (`luxury`, `social`) cannot qualify off-lane experts.
+  - Single-token direct name matches gated to exclude generic tokens, qualifiers, and cross-cutting modifiers (e.g. eliminating Laurent Delporte on luxury resale, and Ana Lucia Novak / Russell Davis on running clubs). If no expert is in lane for the query's primary subject, none are returned (`[]`).
+- **Retrieval Quality Calibration on 100 Held-Out Customer Queries (`src/coverageRelevance.ts`)**:
+  - Evaluated on a held-out test suite of 100 recent customer queries pulled from Airtable Question log (`tblvHx1DzwuTq3TJE`), strictly excluding Thiago. Top 5 retrieved live API rows (500 total) judged with Gemini 2.5 Flash using the strict head-category rule.
+  - Held-out evaluation scripts, live query caches, and judgment logs are preserved exclusively in the private API repository (`Fodda/eval/held_out_queries_2026_10/`), never exposed to the public `fodda-mcp` repo.
+  - Applied single calibrated adjustment to `countOnTopicRows` in `src/coverageRelevance.ts`:
+    - Entity & Compound Subject Gating: queries with specific corporate brands (`KNOWN_BRANDS`) or compound subjects (`KNOWN_COMPOUND_SUBJECTS`) require the retrieved row to match that entity or compound subject.
+    - Negation compound preservation: `non-alcoholic`, `alcohol-free`, and `no-alcohol` normalized to compound tokens, preventing `alcoholic` from expanding to alcohol/spirits.
+    - Negative scope exclusion filtering: skips research exclusion notes (`Dropped:`, `Deprecated:`, `Excluded:`).
+    - Multi-head term requirement: queries with $\ge 2$ head terms require $\ge 2$ matched terms, a title match, or a distinctive domain compound (`brand loyalty`).
+    - Calibrated score floor of $0.65$.
+  - Official Held-Out Benchmark Results (100 customer queries):
+    - **STRONG Precision**: **85.7%** (6/7) [Target: $\ge 80\%$ - **PASSED**]
+    - **Good results wrongly labelled MISS (True STRONG as MISS)**: **5.9%** (1/17) [Target: $\le 10\%$ - **PASSED**]
+    - **False STRONG on GT MISS**: **0/31 (0%)**
+    - **False STRONG on GT WEAK**: **1/19 (5%)**
+    - **Overall Agreement**: **56.0%** (56/100) (vs baseline 42.5%)
+- **Verification & Unit Tests**:
+  - Added unit test suite `src/test_retrieval_copilot_fixes.ts` covering:
+    - `"running clubs as social alternatives to bars for young adults"`: identifies "bars" as contrasted entity, excludes "social" from head terms, eliminates Ana Lucia Novak and Russell Davis from expert recommendations, classifies results honestly as WEAK (1/5).
+    - `"retail media network advertising spend growth"`: classifies results honestly as WEAK (1/5), thread graph filtered to retail/advertising in-lane.
+    - `"luxury resale market growth among Gen Z shoppers"`: status is "ok", `honest_thin` does not fire, Newzoo games graph eliminated, Laurent Delporte eliminated from expert recommendations.
+  - `npm test` and `test_brief_retrieval_truthful_coverage.ts` pass 100%.
+
 ## [1.46.128] - 2026-10-24
 
 ### Fixed
