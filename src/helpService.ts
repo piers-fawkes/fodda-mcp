@@ -1,20 +1,22 @@
 /**
  * Help Service — Fetches published llms.txt and llms-full.txt from www.fodda.ai,
  * splits into sections, scores passages against user questions, and returns
- * authoritative help answers.
+ * direct, authoritative help answers.
  *
  * Rules:
  * - 10s timeout, never throw, returns structured fallback on error
  * - Cached for 1 hour (3,600,000 ms)
- * - llms.txt ranked ahead of llms-full.txt
- * - Prices come ONLY from the live pricing source (pricingCache.ts), never computed, no bare '$', no 'tokens'/'SPT'
- * - Graph counts come from live catalog registry (e.g. 100+), not stale llms.txt numbers (300+)
- * - Recommends get_capabilities({ view: 'tools' }) for 'what can you do' inquiries
+ * - Answer the question directly instead of returning raw file sections
+ * - Strip HTML comments (<!-- CONNECTORS_START -->, etc.)
+ * - Exclude internal sections: Core REST Endpoints, Authentication & Billing, llms-full RULE: sections
+ * - No dollar prices: drop PRICING_START; for cost queries, state approximate API calls and link https://www.fodda.ai/pricing
+ * - For connect questions, lead with the matching /connect/... guide link
+ * - Graph count: always uses live catalog registry count, matching toolGuide.ts
+ * - Zero bare or escaped dollar signs in user-facing answers
  */
 
 import axios from 'axios';
-import { getGraphs } from './catalogCache.js';
-import { getToolCostSummary } from './pricingCache.js';
+import { getLiveGraphCount } from './toolGuide.js';
 
 interface CachedDoc {
     text: string;
@@ -75,7 +77,6 @@ async function fetchDocument(url: string, cachedDoc: CachedDoc | null): Promise<
     } catch (err: any) {
         const errMsg = err?.message || String(err);
         console.warn(`[helpService] Failed to fetch ${url}: ${errMsg}`);
-        // Return stale cache if available upon network failure
         if (cachedDoc?.text) {
             console.warn(`[helpService] Serving stale cache for ${url}`);
             return { text: cachedDoc.text };
@@ -85,18 +86,43 @@ async function fetchDocument(url: string, cachedDoc: CachedDoc | null): Promise<
 }
 
 /**
- * Split markdown text into sections by '## ' headings.
- * Preamble before first '## ' is captured as 'Overview'.
+ * Pre-clean raw markdown:
+ * - Strip PRICING blocks
+ * - Strip HTML comments
+ */
+function cleanRawMarkdown(raw: string): string {
+    let text = raw;
+    // Strip dynamic pricing block completely
+    text = text.replace(/<!--\s*PRICING_START\s*-->[\s\S]*?<!--\s*PRICING_END\s*-->/gi, '');
+    // Strip directives block
+    text = text.replace(/<!--\s*DIRECTIVES_START\s*-->[\s\S]*?<!--\s*DIRECTIVES_END\s*-->/gi, '');
+    // Strip any remaining HTML comments
+    text = text.replace(/<!--[\s\S]*?-->/g, '');
+    return text;
+}
+
+/**
+ * Split markdown text into clean sections by '## ' headings.
+ * Excludes internal endpoints, auth/billing, and RULE: sections.
  */
 function splitIntoSections(markdown: string, source: 'llms.txt' | 'llms-full.txt'): Array<{ heading: string; content: string; source: 'llms.txt' | 'llms-full.txt' }> {
+    const cleanMd = cleanRawMarkdown(markdown);
     const sections: Array<{ heading: string; content: string; source: 'llms.txt' | 'llms-full.txt' }> = [];
-    const lines = markdown.split('\n');
+    const lines = cleanMd.split('\n');
     let currentHeading = 'Overview';
     let currentLines: string[] = [];
 
+    const isExcluded = (h: string) => {
+        const lower = h.toLowerCase();
+        return lower.includes('core rest endpoints') ||
+               lower.includes('authentication & billing') ||
+               lower.includes('rule:') ||
+               lower.includes('directives for ai');
+    };
+
     for (const line of lines) {
         if (line.startsWith('## ')) {
-            if (currentLines.length > 0) {
+            if (currentLines.length > 0 && !isExcluded(currentHeading)) {
                 const content = currentLines.join('\n').trim();
                 if (content.length > 0) {
                     sections.push({ heading: currentHeading, content, source });
@@ -109,7 +135,7 @@ function splitIntoSections(markdown: string, source: 'llms.txt' | 'llms-full.txt
         }
     }
 
-    if (currentLines.length > 0) {
+    if (currentLines.length > 0 && !isExcluded(currentHeading)) {
         const content = currentLines.join('\n').trim();
         if (content.length > 0) {
             sections.push({ heading: currentHeading, content, source });
@@ -128,9 +154,6 @@ const STOP_WORDS = new Set([
     'will', 'with', 'would', 'you', 'your'
 ]);
 
-/**
- * Tokenize a query string into searchable terms.
- */
 function tokenize(text: string): string[] {
     return text
         .toLowerCase()
@@ -142,24 +165,20 @@ function tokenize(text: string): string[] {
 /**
  * Score a section against question terms.
  */
-function scoreSection(section: { heading: string; content: string; source: 'llms.txt' | 'llms-full.txt' }, terms: string[]): number {
+function scoreSection(section: { heading: string; content: string; source: 'llms.txt' | 'llms-full.txt' }, terms: string[], rawQuestion: string): number {
     let score = 0;
     const headingLower = section.heading.toLowerCase();
     const contentLower = section.content.toLowerCase();
 
     for (const term of terms) {
-        // High weight for heading match
         if (headingLower.includes(term)) {
             score += 10;
         }
-
-        // Exact word match in heading
         const headingWords = headingLower.split(/[^a-z0-9]+/);
         if (headingWords.includes(term)) {
             score += 5;
         }
 
-        // Count occurrences in content (capped at 5 to avoid long sections dominating)
         let occurrences = 0;
         let pos = 0;
         while ((pos = contentLower.indexOf(term, pos)) !== -1) {
@@ -170,76 +189,87 @@ function scoreSection(section: { heading: string; content: string; source: 'llms
         score += occurrences * 2;
     }
 
-    // Domain query boosts
-    const rawQuestion = terms.join(' ');
-    const isPricingQuery = /cost|price|pricing|charge|bill|rate/i.test(rawQuestion);
-    const isConnectQuery = /claude|connect|setup|install|integration/i.test(rawQuestion);
+    const qLower = rawQuestion.toLowerCase();
+    const isPricingQuery = /cost|price|pricing|charge|bill|rate/i.test(qLower);
+    const isConnectQuery = /claude|connect|setup|install|integration|chatgpt|cursor|copilot/i.test(qLower);
+    const isAboutQuery = /what is fodda|who is fodda|about fodda|overview/i.test(qLower) || terms.includes('fodda');
 
-    if (isPricingQuery && /pricing|billing|authentication/i.test(headingLower)) {
+    if (isPricingQuery && /pricing|about/i.test(headingLower)) {
         score += 35;
     }
-    if (isConnectQuery && /connect|integration/i.test(headingLower)) {
-        score += 35;
+    if (isConnectQuery && /integration|connect|connectors/i.test(headingLower)) {
+        score += 40;
     }
-    if (!isPricingQuery && !isConnectQuery && (/what is fodda|who is fodda|about fodda|overview/i.test(rawQuestion) || terms.includes('fodda'))) {
+    if (isAboutQuery) {
         if (headingLower === 'overview' || headingLower === 'about') {
-            score += 30;
+            score += 45;
         } else if (/core capabilities/i.test(headingLower)) {
-            score += 20;
+            score += 35;
         }
     }
-    if (/tools|capabilities|what can you do|features/i.test(rawQuestion) && /core capabilities|catalog structure/i.test(headingLower)) {
-        score += 25;
+    if (/tools|capabilities|what can you do|features/i.test(qLower) && /core capabilities|catalog structure/i.test(headingLower)) {
+        score += 35;
     }
 
-    // Rule: llms.txt sections ranked ahead of llms-full.txt ones
     if (section.source === 'llms.txt' && score > 0) {
-        score += 3;
+        score += 5;
     }
 
     return score;
 }
 
 /**
- * Sanitize text to follow Fodda money & pricing rules:
- * - Bare $ signs escaped to \$ (prevents KaTeX whitespace collapse)
- * - Machine-only SPT or token references removed
- * - Replace stale 300+ knowledge graph count with live registry count
+ * Clean and sanitize text for output:
+ * - Replaces 300+ / 100+ with the live catalog count
+ * - Strips all dollar amounts ($100, $0.50, etc.)
+ * - Strips machine settlement / SPT phrasing
  */
 function sanitizeOutputText(text: string, liveGraphCount: number): string {
     let out = text;
 
-    // Replace 300+ knowledge graphs with live count
-    out = out.replace(/\b300\+\s*(knowledge\s+graphs|graphs)\b/gi, `${liveGraphCount}+ $1`);
-    out = out.replace(/\bacross 300\+ knowledge graphs\b/gi, `across ${liveGraphCount}+ knowledge graphs`);
+    // Harmonize graph count
+    out = out.replace(/\b(300\+|100\+)\s*(knowledge\s+graphs|graphs)\b/gi, `${liveGraphCount}+ $2`);
+    out = out.replace(/\bacross (300\+|100\+) knowledge graphs\b/gi, `across ${liveGraphCount}+ knowledge graphs`);
 
-    // Remove SPT / token phrasing from human-visible text per house rules
+    // Remove SPT / token phrasing
     out = out.replace(/\s*\(settle via\s*`?Authorization:\s*Bearer\s*spt_[^`)]*`?\)/gi, '');
     out = out.replace(/\bShared Payment Tokens?\s*\(SPT\)/gi, 'API key or direct billing');
-    out = out.replace(/\bvia SPT\b/gi, 'via direct payment');
-    out = out.replace(/\bMachine Settlement via MPP[^:\n]*:/gi, 'Direct Machine Settlement:');
+    out = out.replace(/\bvia SPT\b/gi, 'via direct billing');
+    out = out.replace(/\bMachine Settlement via MPP[^:\n]*:/gi, 'Direct Settlement:');
 
-    // Escape bare $ signs to \$ (using function callback to prevent $$ replacement token bug)
-    out = out.replace(/(^|[^\\])\$([0-9]+(?:\.[0-9]{2})?)/g, (_, p1, p2) => `${p1}\\$${p2}`);
+    // Strip dollar amounts completely
+    out = out.replace(/\\?\$[0-9]+(?:\.[0-9]{2})?/g, '');
+    out = out.replace(/\(\s*\)/g, '');
 
-    return out;
+    return out.trim();
 }
 
 /**
- * Check if llms text has pricing mismatches with live pricingCache
+ * Resolve dedicated connector link based on user question
  */
-function checkPricingMismatches(text: string) {
-    try {
-        const costSummary = getToolCostSummary();
-        // If llms text quotes tool pricing, verify it doesn't conflict
-        const dollarMatches = text.match(/\\?\$([0-9]+(?:\.[0-9]{2})?)/g);
-        if (dollarMatches) {
-            // Live pricing standard is $0.50 per API call
-            // Log for auditing if unusual prices are detected in llms
-        }
-    } catch {
-        // Non-blocking
+function resolveConnectorLink(qLower: string): { name: string; url: string } {
+    if (qLower.includes('claude')) {
+        return { name: 'Claude', url: 'https://www.fodda.ai/connect/claude' };
     }
+    if (qLower.includes('chatgpt') || qLower.includes('chat gpt') || qLower.includes('openai')) {
+        return { name: 'ChatGPT', url: 'https://www.fodda.ai/connect/chatgpt' };
+    }
+    if (qLower.includes('cursor')) {
+        return { name: 'Cursor', url: 'https://www.fodda.ai/connect/cursor' };
+    }
+    if (qLower.includes('copilot') || qLower.includes('microsoft')) {
+        return { name: 'Microsoft Copilot', url: 'https://www.fodda.ai/connect/microsoft' };
+    }
+    if (qLower.includes('google') || qLower.includes('gemini')) {
+        return { name: 'Google', url: 'https://www.fodda.ai/connect/google' };
+    }
+    if (qLower.includes('langchain') || qLower.includes('python')) {
+        return { name: 'LangChain (Python)', url: 'https://www.fodda.ai/connect/langchain' };
+    }
+    if (qLower.includes('grok')) {
+        return { name: 'Grok', url: 'https://www.fodda.ai/connect/grok' };
+    }
+    return { name: 'AI Models & Platforms', url: 'https://www.fodda.ai/connect' };
 }
 
 /**
@@ -247,22 +277,127 @@ function checkPricingMismatches(text: string) {
  */
 export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
     const rawQuestion = (question || '').trim();
+    const liveGraphCount = getLiveGraphCount();
 
     if (!rawQuestion) {
         return {
             ok: true,
             question: '',
             found_answers: true,
-            answer: "Fodda Help Desk: You can ask questions such as 'What is Fodda?', 'How do I connect Fodda to Claude?', 'What does Fodda cost?', or 'What can you do?'. For a complete 5-section guide to all available tools, call get_capabilities with view: 'tools'.",
+            answer: `Fodda Help Desk: You can ask questions such as 'What is Fodda?', 'How do I connect Fodda to Claude?', 'What does Fodda cost?', or 'What can you do?'. For an interactive 5-section guide to all available tools, call get_capabilities with view: 'tools'.`,
             sources: [
                 { title: 'Fodda Documentation', url: 'https://www.fodda.ai/llms.txt' },
-                { title: 'Connect Guides', url: 'https://www.fodda.ai/connect' }
+                { title: 'Connect Guides', url: 'https://www.fodda.ai/connect' },
+                { title: 'Pricing', url: 'https://www.fodda.ai/pricing' }
             ],
             tools_guide_tip: "Call get_capabilities({ view: 'tools' }) for the interactive tool guide."
         };
     }
 
-    // 1. Fetch llms.txt and llms-full.txt
+    const qLower = rawQuestion.toLowerCase();
+    const isWhatCanYouDo = /what can you do|what tools|tools do you have|how would i use|capabilities|offerings/i.test(qLower);
+    const isConnectQuery = /claude|connect|setup|install|integration|chatgpt|cursor|copilot/i.test(qLower);
+    const isPricingQuery = /cost|price|pricing|charge|rate|billing/i.test(qLower);
+    const isWhatIsFodda = /what is fodda|who is fodda|about fodda|overview of fodda/i.test(qLower);
+
+    // 1. Direct answer synthesis for canonical intent queries
+    if (isConnectQuery) {
+        const connector = resolveConnectorLink(qLower);
+        const answer = `To connect Fodda to ${connector.name}, see the setup guide at:
+${connector.url}
+
+Fodda connects to AI models, desktop assistants, and agent workflows via the Model Context Protocol (MCP) and REST APIs:
+- Hosted MCP Endpoint: https://mcp.fodda.ai/mcp
+- Scoped Claude MCP Endpoint: https://mcp.fodda.ai/claude
+- All Connection Guides: https://www.fodda.ai/connect
+
+Once connected, your AI assistant can query Fodda's ${liveGraphCount}+ knowledge graphs, consult specialist Human Agents, and extract corporate earnings intelligence directly in conversation.`;
+
+        return {
+            ok: true,
+            question: rawQuestion,
+            found_answers: true,
+            answer,
+            sources: [
+                { title: `Connect ${connector.name}`, url: connector.url },
+                { title: 'Connect Hub', url: 'https://www.fodda.ai/connect' }
+            ]
+        };
+    }
+
+    if (isPricingQuery) {
+        const answer = `Fodda is billed based on the number of API calls used by research queries, expert consultations, and deliverables.
+
+Typical API-call usage:
+- Basic discovery, account lookups, and help answers: 0 API calls.
+- Standard queries, earnings lookups, and evidence lookups: normally about 1 to 5 API calls.
+- Autonomous multi-graph research, brand tracking, and Strategy-to-Activation plans: normally about 15 to 20 API calls.
+
+See https://www.fodda.ai/pricing for current rates, plans, and credit packages.`;
+
+        return {
+            ok: true,
+            question: rawQuestion,
+            found_answers: true,
+            answer,
+            pricing_note: "Fodda is billed per API call. See https://www.fodda.ai/pricing for current rates.",
+            sources: [
+                { title: 'Pricing & Plans', url: 'https://www.fodda.ai/pricing' }
+            ]
+        };
+    }
+
+    if (isWhatIsFodda) {
+        const answer = `Fodda is an intelligence network providing access to ${liveGraphCount}+ curated and specialized knowledge graphs across retail, consumer goods, media, technology, and culture.
+
+Rather than generating speculative answers from general web training weights, Fodda retrieves structured trend signals, cited proof points, executive earnings calls, and quantitative metrics maintained by domain experts and industry analysts.
+
+Key capabilities include:
+- **Autonomous Research**: Multi-graph search across ${liveGraphCount}+ curated domain and specialist graphs with cited evidence.
+- **Human Agents**: Verified digital twins of named living practitioners and specialist analysts.
+- **Earnings Intelligence**: Corporate disclosures, guidance shifts, and executive commentary across public reporting companies.
+- **Signals**: Real-time macroeconomic, regulatory, and demographic data from FRED, BEA, BLS, and Census.
+
+Learn more at https://www.fodda.ai or explore the Prompt Guide at https://www.fodda.ai/prompt-guide.`;
+
+        return {
+            ok: true,
+            question: rawQuestion,
+            found_answers: true,
+            answer,
+            sources: [
+                { title: 'Fodda Homepage', url: 'https://www.fodda.ai' },
+                { title: 'Prompt Guide', url: 'https://www.fodda.ai/prompt-guide' },
+                { title: 'Knowledge Graphs', url: 'https://www.fodda.ai/graphs' }
+            ]
+        };
+    }
+
+    if (isWhatCanYouDo) {
+        const answer = `Fodda provides five core capabilities:
+
+1. **Research**: Explore market evidence, category trends, brand footprints, and corporate reports across ${liveGraphCount}+ knowledge graphs.
+2. **Pressure-test**: Challenge strategies, hypotheses, or market claims against verified evidence and corporate earnings disclosures.
+3. **Ask an expert**: Consult verified Human Agents (practitioners with digital twins), C-Suite personas, and specialist analysts.
+4. **Make something**: Generate deliverables including research briefs, Strategy-to-Activation comms plans, and executive memos.
+5. **Track**: Establish ongoing intelligence tracking and scheduled briefing monitoring.
+
+For an interactive breakdown of every available tool, when to use it, and sample prompts, run \`get_capabilities\` with \`view: 'tools'\`.`;
+
+        return {
+            ok: true,
+            question: rawQuestion,
+            found_answers: true,
+            answer,
+            tools_guide_tip: "Run get_capabilities({ view: 'tools' }) for the interactive tool guide.",
+            sources: [
+                { title: 'Prompt Guide', url: 'https://www.fodda.ai/prompt-guide' },
+                { title: 'Tool Documentation', url: 'https://www.fodda.ai/api' }
+            ]
+        };
+    }
+
+    // 2. Fallback to passage retrieval from published llms text for non-canonical queries
     const [llmsRes, llmsFullRes] = await Promise.all([
         fetchDocument(LLMS_URL, cachedLlms),
         fetchDocument(LLMS_FULL_URL, cachedLlmsFull)
@@ -291,40 +426,23 @@ export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
             found_answers: false,
             answer: "Unable to retrieve published documentation at this time. Please visit https://www.fodda.ai or contact hello@fodda.ai.",
             sources: [{ title: 'Fodda Website', url: 'https://www.fodda.ai' }],
-            message: 'Both llms.txt and llms-full.txt were unavailable'
+            message: 'Documentation text was temporarily unavailable'
         };
     }
 
-    // 2. Score sections
     let terms = tokenize(rawQuestion);
-    const isWhatCanYouDo = /what can you do|what tools|tools do you have|how would i use|capabilities|offerings/i.test(rawQuestion);
-
-    // If query terms were reduced to empty by stop words, map known intent patterns
     if (terms.length === 0) {
-        if (isWhatCanYouDo) {
-            terms = ['capabilities', 'tools', 'research'];
-        } else if (/what is fodda|about|overview/i.test(rawQuestion)) {
-            terms = ['fodda', 'overview'];
-        } else if (/cost|price|pricing/i.test(rawQuestion)) {
-            terms = ['pricing', 'billing', 'cost'];
-        } else if (/connect|integration/i.test(rawQuestion)) {
-            terms = ['connect', 'integration'];
-        }
+        terms = ['fodda', 'overview'];
     }
 
     const scored: HelpSection[] = sections.map(sec => ({
         ...sec,
-        score: scoreSection(sec, terms)
+        score: scoreSection(sec, terms, rawQuestion)
     }));
 
-    // Filter to sections that had some relevance
     const matched = scored
         .filter(s => s.score > 0)
         .sort((a, b) => b.score - a.score);
-
-    // Live counts & pricing context
-    const loadedGraphs = getGraphs();
-    const liveGraphCount = loadedGraphs.length > 0 ? loadedGraphs.length : 100;
 
     if (matched.length === 0) {
         return {
@@ -339,16 +457,15 @@ export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
         };
     }
 
-    // Pick top 2–3 sections
-    const topSections = matched.slice(0, 3);
+    const topSections = matched.slice(0, 2);
 
-    // Format synthesized answer from top sections
+    // Format clean answer prose from top matching sections
     const formattedPassages = topSections.map(s => {
         const cleanContent = sanitizeOutputText(s.content, liveGraphCount);
-        return `### ${s.heading} (${s.source})\n${cleanContent}`;
+        return cleanContent;
     }).join('\n\n');
 
-    // Extract Markdown links [Title](URL) from selected sections
+    // Extract Markdown links [Title](URL)
     const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
     const sourcesMap = new Map<string, string>();
     let linkMatch: RegExpExecArray | null;
@@ -365,10 +482,7 @@ export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
         sources.push({ title: 'Fodda Documentation', url: 'https://www.fodda.ai/llms.txt' });
     }
 
-    // Check pricing consistency
-    checkPricingMismatches(formattedPassages);
-
-    const responsePayload: HelpResponse = {
+    return {
         ok: true,
         question: rawQuestion,
         found_answers: true,
@@ -376,14 +490,4 @@ export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
         sources,
         sections: topSections.map(s => ({ heading: s.heading, source: s.source }))
     };
-
-    if (/cost|price|pricing|charge|rate|billing/i.test(rawQuestion)) {
-        responsePayload.pricing_note = "Live pricing source of truth: \\$0.50 USD per API call. Free tier includes \\$50 USD of API calls free every month (100 calls). Full details at https://fodda.ai/pricing.";
-    }
-
-    if (isWhatCanYouDo) {
-        responsePayload.tools_guide_tip = "For a comprehensive, five-section breakdown of all available tools (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use each, example prompts, and free vs charged status, run get_capabilities with view: 'tools'.";
-    }
-
-    return responsePayload;
 }

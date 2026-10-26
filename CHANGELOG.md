@@ -5,6 +5,33 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.131] - 2026-10-26
+
+### Fixed & Hardened (Live Inspection Refinements)
+- **Strict No-Price & Zero-Dollar Policy Across Help & Tool Guides**:
+  - Eliminated all dollar signs (`$`), per-tool dollar figures, and "Free" vs "Charged" status labels across `view: 'help'` and `view: 'tools'`.
+  - For tools consuming multiple API calls (`deep_research_topic`, `brand_tracker`, etc.), added approximate call statements: *"Normally about N API calls. See https://www.fodda.ai/pricing for the latest prices."* (derived dynamically from Airtable Query Pricing table `tblHsMfyoW39LqCv8` `apiCallsCharged`).
+  - Tools consuming 0 or 1 API call omit cost mentions completely.
+  - Verified with automated assertions and grep check: zero bare or escaped dollar signs present in help and tools output.
+- **Help Service Direct Answers & Noise Filtering (`src/helpService.ts`)**:
+  - Re-architected `helpService` to synthesize clean, direct answers rather than dumping raw file sections.
+  - Strips HTML comments (`<!-- CONNECTORS_START -->`, etc.) and `<!-- PRICING_START -->` blocks before parsing.
+  - Prioritizes `## About`, `## Core capabilities`, and introductory text above raw endpoint lists.
+  - Filtered out internal REST endpoints, authentication & billing sections, and `RULE:` instruction blocks.
+  - Connect questions lead directly with dedicated guide URLs (`https://www.fodda.ai/connect/claude`, etc.).
+  - Cost questions explain API call usage tiers and direct users to `https://www.fodda.ai/pricing`.
+- **Tool Guide Clean-up & Track Section Guarantee (`src/toolGuide.ts`)**:
+  - Removed `cost` and `api_calls_charged` fields from `ToolGuideItem`.
+  - Replaced internal node IDs (`trend 2507.0`, `seed node 2507.0`) in example prompts with plain English ("regenerative agriculture").
+  - Guaranteed presence of the **Track** section across all surfaces: when `manage_scheduled_reports` is excluded on a scoped endpoint (e.g. app chat sandbox), outputs *"Set up tracking in the app"* linking to `https://app.fodda.ai`.
+- **Knowledge Graph Count Unification**:
+  - Sourced graph counts dynamically via `getLiveGraphCount()` from the catalog cache across both help answers and tool guide descriptions (`381+` active curated knowledge graphs).
+- **Airtable Pricing Sync & Cloud Run Configuration (`src/pricingCache.ts`, `deploy_cloud_run.sh`)**:
+  - Fixed ESM initialization timing for `AIRTABLE_API_KEY` via dynamic getter `getAirtableApiKey()`.
+  - Verified startup log overrides: `[pricingCache] Overrode with 15 query types from Airtable (total: 28)`.
+  - Provisioned secret `AIRTABLE_API_KEY` in Google Cloud Secret Manager for project `fodda-mcp` with IAM access granted to Cloud Run runtime service account (`834694777607-compute@developer.gserviceaccount.com`).
+  - Added `AIRTABLE_API_KEY=AIRTABLE_API_KEY:latest` secret mount to `deploy_cloud_run.sh`.
+
 ## [1.46.130] - 2026-10-26
 
 ### Added

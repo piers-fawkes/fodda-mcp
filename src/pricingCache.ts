@@ -388,15 +388,27 @@ const DEFAULT_PRICING: QueryPricing[] = [
 // Cache State
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Cache State & Configuration
+// ---------------------------------------------------------------------------
+
 let pricingMap: Map<string, QueryPricing> = new Map();
 let lastFetchedAt: number = 0;
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 
-// Environment variable for Airtable direct fetch (Phase 2)
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY || '';
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || 'appXUeeWN1uD9NdCW';
-const PRICING_TABLE_ID = process.env.PRICING_TABLE_ID || 'tblHsMfyoW39LqCv8';
 const PRICING_REFRESH_MS = 60 * 60 * 1000; // 1 hour
+
+function getAirtableApiKey(): string {
+    return process.env.AIRTABLE_API_KEY || '';
+}
+
+function getAirtableBaseId(): string {
+    return process.env.AIRTABLE_BASE_ID || 'appXUeeWN1uD9NdCW';
+}
+
+function getPricingTableId(): string {
+    return process.env.PRICING_TABLE_ID || 'tblHsMfyoW39LqCv8';
+}
 
 // ---------------------------------------------------------------------------
 // Initialization
@@ -411,11 +423,14 @@ export async function initPricingCache(): Promise<void> {
     loadDefaults();
     console.error(`[pricingCache] Loaded ${pricingMap.size} query types from hardcoded defaults`);
 
-    // If Airtable is configured, try to fetch live pricing
-    if (AIRTABLE_API_KEY && PRICING_TABLE_ID) {
+    const apiKey = getAirtableApiKey();
+    const tableId = getPricingTableId();
+
+    // If Airtable is configured, fetch live pricing
+    if (apiKey && tableId) {
         try {
-            await fetchFromAirtable();
-            console.error(`[pricingCache] Overrode with ${pricingMap.size} query types from Airtable`);
+            const count = await fetchFromAirtable();
+            console.error(`[pricingCache] Overrode with ${count} query types from Airtable (total: ${pricingMap.size})`);
         } catch (err: any) {
             console.error(`[pricingCache] Airtable fetch failed — using hardcoded defaults: ${err.message}`);
         }
@@ -424,12 +439,14 @@ export async function initPricingCache(): Promise<void> {
         if (refreshInterval) clearInterval(refreshInterval);
         refreshInterval = setInterval(async () => {
             try {
-                await fetchFromAirtable();
-                console.error(`[pricingCache] Refreshed pricing from Airtable — ${pricingMap.size} query types`);
+                const refreshedCount = await fetchFromAirtable();
+                console.error(`[pricingCache] Refreshed pricing from Airtable — ${refreshedCount} query types updated`);
             } catch {
                 console.error('[pricingCache] Background refresh failed — keeping current cache');
             }
         }, PRICING_REFRESH_MS);
+    } else {
+        console.warn('[pricingCache] AIRTABLE_API_KEY is not configured; using hardcoded defaults');
     }
 }
 
@@ -446,14 +463,19 @@ function loadDefaults(): void {
 
 /**
  * Fetch pricing from Airtable Query Pricing table.
- * Phase 2 — only runs if AIRTABLE_API_KEY and PRICING_TABLE_ID are set.
+ * Returns the number of records updated from Airtable.
  */
-async function fetchFromAirtable(): Promise<void> {
+async function fetchFromAirtable(): Promise<number> {
+    const apiKey = getAirtableApiKey();
+    const baseId = getAirtableBaseId();
+    const tableId = getPricingTableId();
+    if (!apiKey) return 0;
+
     const axios = (await import('axios')).default;
-    const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${PRICING_TABLE_ID}`;
+    const url = `https://api.airtable.com/v0/${baseId}/${tableId}`;
 
     const response = await axios.get(url, {
-        headers: { 'Authorization': `Bearer ${AIRTABLE_API_KEY}` },
+        headers: { 'Authorization': `Bearer ${apiKey}` },
         params: { 'filterByFormula': '{isActive}' },
         timeout: 10000,
     });
@@ -464,6 +486,7 @@ async function fetchFromAirtable(): Promise<void> {
         newMap.set(p.queryTypeCode, p);
     }
 
+    let updatedFromAirtable = 0;
     for (const record of records) {
         const fields = record.fields;
         const code = fields.queryTypeCode;
@@ -483,12 +506,14 @@ async function fetchFromAirtable(): Promise<void> {
             includesSupplementals: fields.includesSupplementals !== undefined ? fields.includesSupplementals === true : (existing?.includesSupplementals ?? false),
             absorbsGeminiCost: fields.absorbsGeminiCost !== undefined ? fields.absorbsGeminiCost === true : (existing?.absorbsGeminiCost ?? false),
         });
+        updatedFromAirtable++;
     }
 
     if (newMap.size > 0) {
         pricingMap = newMap;
         lastFetchedAt = Date.now();
     }
+    return updatedFromAirtable;
 }
 
 // ---------------------------------------------------------------------------
@@ -583,7 +608,7 @@ export function isPricingLoaded(): boolean {
  */
 export function getPricingCacheInfo(): { source: string; count: number; lastFetchedAt: number } {
     return {
-        source: (AIRTABLE_API_KEY && PRICING_TABLE_ID) ? 'airtable' : 'hardcoded',
+        source: (getAirtableApiKey() && getPricingTableId()) ? 'airtable' : 'hardcoded',
         count: pricingMap.size,
         lastFetchedAt,
     };

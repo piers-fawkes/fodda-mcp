@@ -39,7 +39,7 @@ compliance: RFC-2119
 - For questions about Fodda itself ("What is Fodda?", "How do I connect Fodda to Claude?", "How do I connect to ChatGPT / Copilot?", "What does Fodda cost?", "What is your pricing?"):
   CALL \`get_capabilities\` with \`view: 'help', question: "[User question]"\` BEFORE ANY GRAPH SEARCH. Do not search knowledge graphs or guess for meta-questions about Fodda.
 - For questions asking "What can you do?", "What tools do you have?", or "How would I use them?":
-  CALL \`get_capabilities\` with \`view: 'tools'\` to return the Prompt Guide's 5-section tool guide (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use each tool, example prompts, and free vs charged status.
+  CALL \`get_capabilities\` with \`view: 'tools'\` to return the Prompt Guide's 5-section tool guide (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use each tool, and example prompts.
 
 ### RULE: ResponseStructure
 - Responses should combine expert graph trends and institutional data.

@@ -54,7 +54,7 @@ import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingT
 import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit, findCandidateExperts, type CandidateExpert } from './coverageRelevance.js';
 import { buildReportEditorialBriefing } from './reportBriefing.js';
 import { getHelpAnswer } from './helpService.js';
-import { generateToolGuide } from './toolGuide.js';
+import { generateToolGuide, getLiveGraphCount } from './toolGuide.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -1017,8 +1017,7 @@ export async function createServer(
                     status.overage_active = true;
                     if (!isScopedConnector) {
                         status.overage_api_calls = Math.abs(status.api_calls_remaining);
-                        const overageRate = account.overage_rate_usd != null ? `$${account.overage_rate_usd}` : null;
-                        status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage charges apply${overageRate ? ` at ${overageRate}/API call` : ''}.`;
+                        status.overage_note = `You're ${Math.abs(status.api_calls_remaining)} API call(s) over your monthly limit. Overage rates apply — see https://www.fodda.ai/pricing for details.`;
                     }
                 }
                 if (account.tokens_used !== undefined) status.api_calls_used = account.tokens_used;
@@ -1037,11 +1036,10 @@ export async function createServer(
                 status.manage_url = 'https://app.fodda.ai/account';
                 if (!isScopedConnector) {
                     if (account.stripe_link) status.stripe_link = account.stripe_link;
-                    if (account.upsell && account.upsell.plan && account.upsell.price > 0) {
+                    if (account.upsell && account.upsell.plan) {
                         status.upgrade_offer = {
                             target: account.upsell.plan,
-                            price: `$${account.upsell.price}`,
-                            link: account.upsell.link,
+                            link: account.upsell.link || 'https://www.fodda.ai/pricing',
                             action: `Upgrade to ${account.upsell.plan}`
                         };
                     }
@@ -1136,11 +1134,11 @@ export async function createServer(
     const CAPABILITIES_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
     const STATIC_CAPABILITIES_FALLBACK = {
-        pricing_url: "https://fodda.ai/pricing",
-        pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is \\$0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+        pricing_url: "https://www.fodda.ai/pricing",
+        pricing_rule: "Fodda is billed per API call. See https://www.fodda.ai/pricing for rates.",
         scope_rule: "Unqualified questions about offerings, features, capabilities, products, services, or tools refer to these platform capabilities. Analyst-specific offerings apply ONLY when an analyst is explicitly named in the question.",
         platform_scale: {
-            knowledge_graphs: 100,
+            knowledge_graphs: getLiveGraphCount(),
             supplemental_sources: 8,
             specialists: {
                 total: 4150,
@@ -1159,7 +1157,7 @@ export async function createServer(
                 id: 'research',
                 name: 'Research something',
                 headline: 'Synthesize market evidence, trends, and corporate signals on any topic or brand',
-                description: 'Research a market, category, company, or emerging issue using 100+ curated knowledge graphs, published corporate reports, and multi-source market evidence.',
+                description: `Research a market, category, company, or emerging issue using ${getLiveGraphCount()}+ curated knowledge graphs, published corporate reports, and multi-source market evidence.`,
                 use_when: 'User needs an objective landscape, market shift analysis, competitor footprint, consumer behavior change, or broad subject investigation.',
                 sample_prompts: [
                     "What's changing in prestige beauty?",
@@ -1395,9 +1393,9 @@ export async function createServer(
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
-        'Returns Fodda\'s capabilities, semantic research workflows, tools guide, and natural language help. Call this with view: \'help\' for any question about Fodda, how to connect (Claude, ChatGPT, etc.), account features, or pricing; call with view: \'tools\' for a 5-section guide of available tools (Research, Pressure-test, Ask an expert, Make something, Track), what they provide, when to use them, example prompts, and free vs charged status; call with default view or topic for research recipes and specialist breakdown. Always check view: \'help\' before searching graphs when asked about Fodda itself.',
+        'Returns Fodda\'s capabilities, semantic research workflows, tools guide, and natural language help. Call this with view: \'help\' for any question about Fodda, how to connect (Claude, ChatGPT, etc.), account features, or pricing; call with view: \'tools\' for a 5-section guide of available tools (Research, Pressure-test, Ask an expert, Make something, Track), what they provide, when to use them, and example prompts; call with default view or topic for research recipes and specialist breakdown. Always check view: \'help\' before searching graphs when asked about Fodda itself.',
         {
-            view: z.enum(['default', 'help', 'tools']).optional().describe("View mode. 'default': workflow recipes, platform scale, and topic reconnaissance; 'help': authoritative natural language answers from published llms.txt / llms-full.txt for questions about Fodda, connecting (Claude, ChatGPT, Copilot), accounts, pricing, and capabilities; 'tools': runtime 5-section guide (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use, example prompt, and free vs charged status."),
+            view: z.enum(['default', 'help', 'tools']).optional().describe("View mode. 'default': workflow recipes, platform scale, and topic reconnaissance; 'help': authoritative natural language answers from published llms.txt / llms-full.txt for questions about Fodda, connecting (Claude, ChatGPT, Copilot), accounts, pricing, and capabilities; 'tools': runtime 5-section guide (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use, and example prompt."),
             question: z.string().optional().describe("User inquiry to answer when view is 'help' (e.g. 'What is Fodda?', 'How do I connect Fodda to Claude?', 'What does it cost?')."),
             topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview, workflow recipes, and specialist breakdown."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
@@ -1578,8 +1576,8 @@ export async function createServer(
 
                 const localRecon = {
                     ok: true,
-                    pricing_url: "https://fodda.ai/pricing",
-                    pricing_rule: "Airtable is the source of truth for pricing. Standard pricing is \\$0.50 USD per API call. Shared Payment Tokens (SPT) are machine-only and never quoted to humans.",
+                    pricing_url: "https://www.fodda.ai/pricing",
+                    pricing_rule: "Fodda is billed per API call. See https://www.fodda.ai/pricing for rates.",
                     platform_scale: STATIC_CAPABILITIES_FALLBACK.platform_scale,
                     topic_reconnaissance: {
                         query: cleanTopic,

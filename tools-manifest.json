@@ -247,7 +247,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Returns Fodda's capabilities, semantic research workflows, tools guide, and natural language help. Call this with view: 'help' for any question about Fodda, how to connect (Claude, ChatGPT, etc.), account features, or pricing; call with view: 'tools' for a 5-section guide of available tools (Research, Pressure-test, Ask an expert, Make something, Track), what they provide, when to use them, example prompts, and free vs charged status; call with default view or topic for research recipes and specialist breakdown. Always check view: 'help' before searching graphs when asked about Fodda itself."
+      "description": "Returns Fodda's capabilities, semantic research workflows, tools guide, and natural language help. Call this with view: 'help' for any question about Fodda, how to connect (Claude, ChatGPT, etc.), account features, or pricing; call with view: 'tools' for a 5-section guide of available tools (Research, Pressure-test, Ask an expert, Make something, Track), what they provide, when to use them, and example prompts; call with default view or topic for research recipes and specialist breakdown. Always check view: 'help' before searching graphs when asked about Fodda itself."
     },
     {
       "name": "get_company_earnings",

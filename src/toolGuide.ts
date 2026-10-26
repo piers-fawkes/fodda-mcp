@@ -15,6 +15,15 @@
  */
 
 import { getToolCostSummary } from './pricingCache.js';
+import { getGraphs } from './catalogCache.js';
+
+export function getLiveGraphCount(): number {
+    try {
+        const graphs = getGraphs();
+        if (graphs && graphs.length > 0) return graphs.length;
+    } catch {}
+    return 381;
+}
 
 export type ToolGuideSection =
     | 'Research'
@@ -39,7 +48,7 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     // ── 1. Research ───────────────────────────────────────────────
     search_graph: {
         section: 'Research',
-        what_you_get: 'Curated trend signals, evidence nodes, and consumer market developments across 100+ knowledge graphs.',
+        what_you_get: `Curated trend signals, evidence nodes, and consumer market developments across ${getLiveGraphCount()}+ knowledge graphs.`,
         when_to_use: 'Use when exploring a topic, sector, or category to understand emerging signals and market behavior.',
         example_prompt: "What's changing in prestige beauty?"
     },
@@ -81,21 +90,21 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     get_evidence: {
         section: 'Research',
-        what_you_get: 'Primary source citations, publisher articles, and case studies validating a specific trend node.',
-        when_to_use: 'Use when verifying original citations, publisher reports, or concrete brand examples for a trend node.',
+        what_you_get: 'Primary source citations, publisher articles, and case studies validating a specific trend.',
+        when_to_use: 'Use when verifying original citations, publisher reports, or concrete brand examples for a trend.',
         example_prompt: 'Retrieve primary evidence articles backing the circular packaging trend.'
     },
     get_node: {
         section: 'Research',
-        what_you_get: 'Full metadata profile of a trend node: lifecycle stage, signal strength, geographic scope, and properties.',
+        what_you_get: 'Full metadata profile of a trend: lifecycle stage, signal strength, geographic scope, and properties.',
         when_to_use: 'Use when inspecting the complete properties and lifecycle stage of a specific trend.',
-        example_prompt: 'Get full node details and signal strength for trend 2507.0.'
+        example_prompt: 'Get full details and lifecycle stage for the regenerative agriculture trend.'
     },
     get_neighbors: {
         section: 'Research',
-        what_you_get: 'Connected entities, related brands, technologies, and cross-domain links for a seed trend node.',
+        what_you_get: 'Connected entities, related brands, technologies, and cross-domain links for a trend.',
         when_to_use: 'Use after search to map relationships, connected brands, and territory around a trend.',
-        example_prompt: 'Explore connected brands and related trends for seed node 2507.0.'
+        example_prompt: 'Explore connected brands and related developments for regenerative agriculture.'
     },
     get_company_earnings: {
         section: 'Research',
@@ -256,13 +265,14 @@ export interface ToolGuideItem {
     what_you_get: string;
     when_to_use: string;
     example_prompt: string;
-    cost: 'Free' | 'Charged';
-    api_calls_charged?: number;
+    api_calls?: string;
 }
 
 export interface ToolGuideSectionGroup {
     section: ToolGuideSection;
     description: string;
+    note?: string;
+    app_url?: string;
     tools: ToolGuideItem[];
 }
 
@@ -275,7 +285,7 @@ export interface ToolGuideResponse {
 }
 
 const SECTION_DESCRIPTIONS: Record<ToolGuideSection, string> = {
-    'Research': 'Explore market evidence, trends, brand footprints, corporate reports, and statistics across 100+ knowledge graphs.',
+    'Research': `Explore market evidence, trends, brand footprints, corporate reports, and statistics across ${getLiveGraphCount()}+ knowledge graphs.`,
     'Pressure-test': 'Challenge a strategy, hypothesis, or pitch against primary evidence, earnings divergence, and counter-arguments.',
     'Ask an expert': 'Consult verified Human Agents (practitioners with digital twins), C-Suite personas, and specialist analysts.',
     'Make something': 'Turn verified intelligence into finished work product: strategy briefs, comms plans, articles, and executive memos.',
@@ -300,7 +310,11 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
     try {
         const summary = getToolCostSummary();
         for (const item of summary) {
-            billableMap.set(item.tool, item.apiCalls);
+            // Prefer the highest/default call count if multiple modes exist
+            const existing = billableMap.get(item.tool) ?? 0;
+            if (item.apiCalls > existing) {
+                billableMap.set(item.tool, item.apiCalls);
+            }
         }
     } catch {
         // If pricingCache isn't initialized yet, default to empty
@@ -321,16 +335,19 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
 
         exposedCount++;
         const apiCalls = billableMap.get(toolName) ?? 0;
-        const isCharged = apiCalls > 0;
 
         const item: ToolGuideItem = {
             tool: toolName,
             what_you_get: def.what_you_get,
             when_to_use: def.when_to_use,
-            example_prompt: def.example_prompt,
-            cost: isCharged ? 'Charged' : 'Free',
-            ...(isCharged ? { api_calls_charged: apiCalls } : {})
+            example_prompt: def.example_prompt
         };
+
+        // For tools that normally use multiple calls, state approximate count and link pricing.
+        // For tools that use 0 or standard single calls, say nothing about cost.
+        if (apiCalls > 1) {
+            item.api_calls = `Normally about ${apiCalls} API calls. See https://www.fodda.ai/pricing for the latest prices.`;
+        }
 
         const secList = grouped.get(def.section);
         if (secList) {
@@ -338,11 +355,24 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
         }
     }
 
-    const sections: ToolGuideSectionGroup[] = SECTION_ORDER.map(section => ({
-        section,
-        description: SECTION_DESCRIPTIONS[section],
-        tools: grouped.get(section) || []
-    })).filter(g => g.tools.length > 0);
+    // 3. Assemble sections, ensuring Track section is always included even if no tool is callable on this endpoint
+    const sections: ToolGuideSectionGroup[] = SECTION_ORDER.map(section => {
+        const tools = grouped.get(section) || [];
+        if (section === 'Track' && tools.length === 0) {
+            return {
+                section,
+                description: 'Establish recurring intelligence monitoring to stay updated on brand moves, competitor shifts, and category signals.',
+                note: 'Set up tracking in the app: https://app.fodda.ai',
+                app_url: 'https://app.fodda.ai',
+                tools: []
+            };
+        }
+        return {
+            section,
+            description: SECTION_DESCRIPTIONS[section],
+            tools
+        };
+    }).filter(g => g.tools.length > 0 || g.section === 'Track');
 
     return {
         ok: true,
