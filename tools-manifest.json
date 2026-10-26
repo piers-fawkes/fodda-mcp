@@ -247,7 +247,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Returns Fodda's capabilities, semantic research workflows, Human Agents (Human Agents), and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings."
+      "description": "Returns Fodda's capabilities, semantic research workflows, tools guide, and natural language help. Call this with view: 'help' for any question about Fodda, how to connect (Claude, ChatGPT, etc.), account features, or pricing; call with view: 'tools' for a 5-section guide of available tools (Research, Pressure-test, Ask an expert, Make something, Track), what they provide, when to use them, example prompts, and free vs charged status; call with default view or topic for research recipes and specialist breakdown. Always check view: 'help' before searching graphs when asked about Fodda itself."
     },
     {
       "name": "get_company_earnings",
@@ -412,7 +412,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node in Neo4j.)"
+      "description": "Discover what's connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node.)"
     },
     {
       "name": "get_node",
@@ -430,7 +430,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct Neo4j node metadata lookup by ID.)"
+      "description": "Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct node metadata lookup by ID.)"
     },
     {
       "name": "get_onboarding_status",

@@ -35,6 +35,12 @@ version: 2.0.0
 compliance: RFC-2119
 ---
 
+### RULE: HelpDeskAndPlatformRouting
+- For questions about Fodda itself ("What is Fodda?", "How do I connect Fodda to Claude?", "How do I connect to ChatGPT / Copilot?", "What does Fodda cost?", "What is your pricing?"):
+  CALL \`get_capabilities\` with \`view: 'help', question: "[User question]"\` BEFORE ANY GRAPH SEARCH. Do not search knowledge graphs or guess for meta-questions about Fodda.
+- For questions asking "What can you do?", "What tools do you have?", or "How would I use them?":
+  CALL \`get_capabilities\` with \`view: 'tools'\` to return the Prompt Guide's 5-section tool guide (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use each tool, example prompts, and free vs charged status.
+
 ### RULE: ResponseStructure
 - Responses should combine expert graph trends and institutional data.
 - The preferred structure is:
@@ -46,7 +52,7 @@ compliance: RFC-2119
 
 
 ### SEQUENCE: VirtualExpertConsultation
-1. **STEP 1 (Direct Consultation)** — When the user asks to consult an expert (or asks a domain question matching an expert), call **consult_human_agent** (for Human Agents) or **consult_analyst** (for Synthetic Analysts) directly in a single turn with the user's inquiry (e.g. \`analyst_id: "ben-dietz-sic"\`, \`query: "[User's question]"\`). The backend automatically performs internal graph retrieval, Neo4j pre-search, and coverage scoring.
+1. **STEP 1 (Direct Consultation)** — When the user asks to consult an expert (or asks a domain question matching an expert), call **consult_human_agent** (for Human Agents) or **consult_analyst** (for Synthetic Analysts) directly in a single turn with the user's inquiry (e.g. \`analyst_id: "ben-dietz-sic"\`, \`query: "[User's question]"\`). The backend automatically performs internal graph retrieval, pre-search, and coverage scoring.
 2. **STEP 2 (Render with Attribution & Follow-Through)** — Present the response based on the coverage field:
    - **coverage = "in"**: Present the expert's analysis with clear attribution to their Human Agent or analyst persona, and attribute any data lookups by graph name (e.g., "Census ACS numbers — 23% as of 2024").
    - **Cross-expert routing on "in"**: Even when coverage is "in", check whether the topic overlaps another analyst's domain (use list_analysts). If another expert has direct domain expertise on this topic, suggest them as a follow-up: "Another expert who works directly in this space is [Name] — want me to bring them in?"
@@ -73,6 +79,13 @@ compliance: RFC-2119
        - Support with empirical category trends, company signals, and case studies retrieved from Fodda's domain knowledge graphs.
        - Close with balanced next moves, including offering to connect with on-request domain specialists (via request_expert_intro) for deeper vertical formulation, regulatory, or technical advisory work.
        - Answering with a broad, substantiated volume of insights across Fodda's graph layers is always superior to returning a thin, expert-only response.
+- EXPERT DISCOVERY & MATCHING RULES:
+  1. **"Who should I ask about [topic]?"**: When the user asks who to ask about a topic (e.g. "Who should I ask about clean beauty formulation?"), call \`find_expert(query: "[topic]")\`. Present the candidate experts, clearly stating each expert's kind: active Human Agent, On-Request Human Agent, synthetic analyst, C-Suite Agent, or Classic Agent, and provide their real introduction. Do NOT attempt to answer the domain question itself — the user is asking for expert discovery, not a synthesized answer.
+  2. **Named Expert Questions & Expert Page Context**: When the user asks what a specific expert would say (e.g. "What would Ben Dietz say about our streetwear collab strategy?") OR when the prompt provides page context (e.g. "The user is reading the Ben Dietz expert page" + "what would he say about this?"), resolve the expert and call \`consult_human_agent\` (for Human Agents) or \`consult_analyst\` (for synthetic/C-Suite personas) directly.
+  3. **"Ask an expert about [topic]" (no name given)**: Call \`find_expert\` first to find the most suitable active expert, then consult that expert, and explicitly state in the response who was consulted and why.
+  4. **Booking / Hiring Inquiries ("Can I book [Expert]?")**: Provide their real intro and booking route (\`book_a_call\` verbatim rate display sentence and URL), NOT a consult.
+  5. **Out-of-Lane Questions Put to an Expert**: If a question is well outside an expert's field, state plainly that the inquiry is outside their field and suggest who else to ask (via candidate experts from \`find_expert\` or relevant graphs), rather than hallucinating or answering in their voice.
+  6. **Integrity & Classification Rules**: NEVER describe synthetic personas, C-Suite Agents, or Classic Agents as real living people. NEVER call an On-Request Human Agent synthetic (they are living practitioners indexed on Fodda). Always use an expert's real intro, never a one-line tagline or an internal classification slug.
 - DISCOVERY: If the user asks for available experts, the agent MUST call list_analysts.
 - FRAMING: The agent MUST present consult responses beginning with "Consulting [Expert Name]..." followed by the expert's response. Add relevant graph visualizations alongside the analyst's narrative.
 - CONVERSATIONAL FRAMING & STATUS MESSAGING: Frame experts by their human display name (e.g., "Peter Abraham", "Anu Lingala", "Col. John Boyd", "Charles Babbage") as "Human Agents", "Classic Agents", or "Synthetic Analysts" rather than raw internal database slugs (e.g., 'peter-abraham-bicycles-cycling', 'anu-lingala-macro', 'ben-dietz-sic', 'brand-cmo', 'john-boyd', 'charles-babbage').
@@ -598,7 +611,11 @@ version: 2.0.0
 - Macroeconomic, demographic & public research indicators: \`get_supplemental_context\` (poll with \`check_supplemental_status\`)
 - Claim verification: \`verify_market_claim\` (multi-graph market/brand/macro claim check) and \`verify_claim\` (verifies a claim against a specific practitioner's curated knowledge graph via their AI-powered Human Agent model, returning a structured verdict: confirms, contradicts, partial, or no_coverage)
 - AI Expert Models (Digital Twins & Synthetic Analysts): \`find_expert\` and \`list_analysts\` for discovery; \`consult_human_agent\` to query an authorized Human Agent (an AI expert model / Digital Twin grounded in a named practitioner's curated knowledge graph and methodology); \`consult_analyst\` to query a Synthetic Analyst or Classic Agent
-- Platform capabilities & account status: \`get_capabilities\`, \`get_my_account\`
+- Platform capabilities, tool guide & help desk: \`get_capabilities\` (call with \`view: 'help'\` for questions about Fodda, connecting to Claude/ChatGPT, accounts, or pricing; call with \`view: 'tools'\` for the 5-section tool guide), \`get_my_account\`
+
+### Help & Tool Guide Routing
+- If the user asks about Fodda itself, how it works, how to connect (Claude, ChatGPT, etc.), account questions, or pricing, call \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search.
+- If the user asks "what can you do?", what tools are available, or how to use them, call \`get_capabilities\` with \`view: 'tools'\`.
 
 ### Expert Consultation & Citation Integrity
 - Human Agents (\`consult_human_agent\`) are AI-powered Digital Twin models created with a named practitioner's consent and grounded in their curated knowledge graph — they are AI expert models, not live human operators.
@@ -750,8 +767,8 @@ IMPORTANT: Skills (which automatically run on search_graph) are completely separ
 
     const behavioralRules = isScopedConnector ? CHATGPT_BEHAVIORAL_RULES : STATIC_BEHAVIORAL_RULES;
     const introNotice = isScopedConnector
-        ? `If asked what Fodda offers, its capabilities, features, or "what can you do", summarize the 5 core research capabilities above or call \`get_capabilities\`.`
-        : `If asked — in any words — what Fodda offers, its offerings, features, capabilities, products, services, tools, or "what can you do", answer from THIS list (the platform capabilities). Do not answer this with a single analyst's offerings or a \`list_analysts\` dump. "Offerings" means a specific analyst's commissionable services ONLY when the question names an analyst. For capabilities and how to use them, call \`get_capabilities\`.`;
+        ? `If asked about Fodda itself, accounts, pricing, connecting (Claude, ChatGPT, etc.), reach for \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search. If asked "what can you do?" or what tools are available, call \`get_capabilities\` with \`view: 'tools'\` for the 5-section tool guide.`
+        : `If asked about Fodda itself, how it works, accounts, pricing, connecting (Claude, ChatGPT, etc.), reach for \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search. If asked "what can you do?", features, capabilities, or what tools are available, call \`get_capabilities\` with \`view: 'tools'\` for the 5-section tool guide (Research, Pressure-test, Ask an expert, Make something, Track). "Offerings" refers to a specific analyst's commissionable services ONLY when an analyst is explicitly named.`;
 
     let prompt = `You are connected to Fodda — a platform of expert-curated knowledge graphs built by PSFK.
 

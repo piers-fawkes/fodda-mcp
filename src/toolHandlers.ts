@@ -53,6 +53,8 @@ import { buildEvidencePack, QuotaExhaustedError } from './linkedinEngine.js';
 import { runDeepResearch, cleanResearchQuery, fallbackSubThemes, extractRoutingTopic } from './deepResearch.js';
 import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, generateConsultNextMoves, specificQueryTokens, rowMatchesQueryTokens, rowHasDirectTokenMatch, rowScore, TIER_NOMINAL_SCORE, resolveRowTier, computeTierFit, findCandidateExperts, type CandidateExpert } from './coverageRelevance.js';
 import { buildReportEditorialBriefing } from './reportBriefing.js';
+import { getHelpAnswer } from './helpService.js';
+import { generateToolGuide } from './toolGuide.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -1273,7 +1275,7 @@ export async function createServer(
                 ],
                 research_recipe: {
                     objective: "Monitor dynamic intelligence subjects and alert on significant shifts or earnings statements.",
-                    formulation_guidance: "Establish baseline footprint; specify cadence (weekly recommended); monitor trend trajectory across Neo4j graphs, corporate earnings, and search interest; deliver diff briefings.",
+                    formulation_guidance: "Establish baseline footprint; specify cadence (weekly recommended); monitor trend trajectory across curated graphs, corporate earnings, and search interest; deliver diff briefings.",
                     steps: [
                         "1. Run baseline brand or topic intelligence footprint.",
                         "2. Create scheduled report entry with user email and preferred schedule.",
@@ -1393,14 +1395,34 @@ export async function createServer(
     // --- get_capabilities ---
     server.tool(
         'get_capabilities',
-        'Returns Fodda\'s capabilities, semantic research workflows, Human Agents (Human Agents), and pricing. Call this for any question about what Fodda can do, how experts work, available research recipes, or pricing. Sibling routing: Use get_capabilities to discover platform features and workflow recipes; use list_graphs to list specific data graphs; use list_analysts to discover expert personas. Returns platform overview, active specialist counts, workflow descriptions, and published offerings.',
+        'Returns Fodda\'s capabilities, semantic research workflows, tools guide, and natural language help. Call this with view: \'help\' for any question about Fodda, how to connect (Claude, ChatGPT, etc.), account features, or pricing; call with view: \'tools\' for a 5-section guide of available tools (Research, Pressure-test, Ask an expert, Make something, Track), what they provide, when to use them, example prompts, and free vs charged status; call with default view or topic for research recipes and specialist breakdown. Always check view: \'help\' before searching graphs when asked about Fodda itself.',
         {
+            view: z.enum(['default', 'help', 'tools']).optional().describe("View mode. 'default': workflow recipes, platform scale, and topic reconnaissance; 'help': authoritative natural language answers from published llms.txt / llms-full.txt for questions about Fodda, connecting (Claude, ChatGPT, Copilot), accounts, pricing, and capabilities; 'tools': runtime 5-section guide (Research, Pressure-test, Ask an expert, Make something, Track) with what you get, when to use, example prompt, and free vs charged status."),
+            question: z.string().optional().describe("User inquiry to answer when view is 'help' (e.g. 'What is Fodda?', 'How do I connect Fodda to Claude?', 'What does it cost?')."),
             topic: z.string().optional().describe("Optional subject, brand, category, or problem statement to assess topic reconnaissance ('What does Fodda know about [topic]?'). If omitted, returns platform capability overview, workflow recipes, and specialist breakdown."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'Get Fodda Capabilities', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ topic, userId: uid }) => {
+        async ({ view, question, topic, userId: uid }: any) => {
             const targetUserId = resolveUserId(userId, uid);
+
+            // 1. Tool Guide view ('tools')
+            if (view === 'tools') {
+                const guide = generateToolGuide(isToolCallable);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(guide, null, 2) }] };
+            }
+
+            // 2. Help view ('help') or explicit question, or meta-query about Fodda
+            const isFoddaMetaQuery = (q?: string) => Boolean(
+                q && /\b(what is fodda|how (do|to|can) (i|we)?\s*(connect|use|install)|what does (it|fodda) cost|pricing|pricing model|how much does|how to connect|connect (to )?claude|connect (to )?chatgpt|connect (to )?copilot)\b/i.test(q)
+            );
+
+            if (view === 'help' || (question && question.trim()) || isFoddaMetaQuery(topic)) {
+                const helpQ = question || topic || '';
+                const helpResult = await getHelpAnswer(helpQ);
+                return { content: [{ type: 'text' as const, text: JSON.stringify(helpResult, null, 2) }] };
+            }
+
             if (topic && topic.trim()) {
                 const cleanTopic = topic.trim();
                 try {
@@ -1928,15 +1950,34 @@ export async function createServer(
                             ? 'consult_human_agent'
                             : (r.consult_tool || 'consult_analyst');
 
+                        const catLower = (category || '').toLowerCase();
+                        let kind: 'active Human Agent' | 'On-Request Human Agent' | 'synthetic analyst' | 'C-Suite Agent' | 'Classic Agent';
+                        if (catLower.includes('c_suite')) {
+                            kind = 'C-Suite Agent';
+                        } else if (catLower.includes('classic')) {
+                            kind = 'Classic Agent';
+                        } else if (catLower.includes('synthetic')) {
+                            kind = 'synthetic analyst';
+                        } else if (isOnRequest) {
+                            kind = 'On-Request Human Agent';
+                        } else {
+                            kind = 'active Human Agent';
+                        }
+
+                        const realIntro = r.role_title || r.description || (Array.isArray(r.why_matched) && r.why_matched.length > 0 ? `Expertise in ${r.why_matched.join(', ')}` : 'Domain specialist');
+
                         const candidateObj: any = {
                             analyst_id: analystId,
                             display_name: displayName,
                             category,
+                            kind,
+                            expert_kind: kind,
+                            intro: realIntro,
                             consult_tool: consultTool,
                             credibility_anchor: r.credibility_anchor || r.credibilityAnchor || null,
                             reason: Array.isArray(r.why_matched) && r.why_matched.length > 0
                                 ? `covers ${r.why_matched.join(', ')} directly`
-                                : (r.role_title || 'covers this domain directly'),
+                                : realIntro,
                             out_of_lane: false
                         };
 
@@ -2016,8 +2057,25 @@ export async function createServer(
 
                 const candidates = localCandidates.map(c => {
                     const isOnReq = c.status === 'on_request';
+                    const catLower = (c.category || '').toLowerCase();
+                    let kind: 'active Human Agent' | 'On-Request Human Agent' | 'synthetic analyst' | 'C-Suite Agent' | 'Classic Agent';
+                    if (catLower.includes('c_suite')) {
+                        kind = 'C-Suite Agent';
+                    } else if (catLower.includes('classic')) {
+                        kind = 'Classic Agent';
+                    } else if (catLower.includes('synthetic')) {
+                        kind = 'synthetic analyst';
+                    } else if (isOnReq) {
+                        kind = 'On-Request Human Agent';
+                    } else {
+                        kind = 'active Human Agent';
+                    }
+
                     return {
                         ...c,
+                        kind,
+                        expert_kind: kind,
+                        intro: c.reason,
                         credibility_anchor: c.credibility_anchor || null,
                         status: c.status || 'active',
                         next_step: isOnReq
@@ -2915,7 +2973,7 @@ export async function createServer(
     // --- get_neighbors ---
     server.tool(
         'get_neighbors',
-        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node in Neo4j.)',
+        'Discover what\'s connected to a specific trend — related brands, technologies, locations, and cross-domain links. Returns curated editorial connections between trends. Use after search_graph to map the territory around a trend, find which brands are connected, or understand cross-domain relationships. Requires node_id from a prior search_graph result. (1-hop graph relationship traversal from seed node.)',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
@@ -2983,7 +3041,7 @@ export async function createServer(
     // --- get_node ---
     server.tool(
         'get_node',
-        'Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct Neo4j node metadata lookup by ID.)',
+        'Get the full profile of a specific trend — detailed description, lifecycle stage (emerging/building/mature), signal strength, geographic scope, and all properties. Use when you need deeper detail on a single trend after search_graph returned a summary. Requires node_id from a prior search_graph result. (Direct node metadata lookup by ID.)',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             nodeId: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),

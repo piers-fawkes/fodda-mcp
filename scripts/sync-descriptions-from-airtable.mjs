@@ -65,6 +65,8 @@ async function sync() {
           .replace(/\bexpert twin\b/gi, 'Human Agent')
           .replace(/\bHuman Agents?\s+Human Agents\b/gi, 'Human Agents')
           .replace(/\bHuman Agent\s+Human Agent\b/gi, 'Human Agent')
+          .replace(/\s*in Neo4j\b/gi, '')
+          .replace(/\bNeo4j\s*/gi, '')
           .trim();
         descriptionMap.set(toolKey.trim(), cleanDesc);
       }
@@ -92,6 +94,10 @@ async function sync() {
         }
         // Preserve BYO-MCP persistence clause if missing from Airtable description
         if (toolName === 'finalize_byo_mcp_onboarding' && !newDesc.includes('Profile is saved once terms are accepted; MCP details are verified and submitted for review here.')) {
+          continue;
+        }
+        // Preserve get_capabilities canonical routing and view documentation
+        if (toolName === 'get_capabilities') {
           continue;
         }
         src = src.replace(regex, (m, p1) => `${p1}'${escapedDesc}'`);

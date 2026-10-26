@@ -5,6 +5,53 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.130] - 2026-10-26
+
+### Added
+- **Help Answers in `get_capabilities({ view: 'help', question })` (`src/helpService.ts`, `src/toolHandlers.ts`)**:
+  - Answers meta-questions about Fodda itself (*"What is Fodda?"*, *"How do I connect Fodda to Claude?"*, *"What does Fodda cost?"*, *"What can you do?"*) before any graph search.
+  - Ingests published `https://www.fodda.ai/llms.txt` and `https://www.fodda.ai/llms-full.txt` with a 1-hour cache, 10s timeout, and non-throwing error handling (`{ error: true, message, source }`).
+  - Section ranking by keyword relevance and intent boosts; returns top 2–3 passages with authentic markdown links to guides (e.g. `/connect/claude`, `/connect/chatgpt`, `/connect/cursor`).
+  - Pricing source of truth: all pricing quoted in help responses comes solely from live `pricingCache.ts` (`\$0.50 USD per API call`, `$50` free monthly credit) with escaped `\$` syntax to prevent KaTeX math formatting bugs; machine-only SPT terminology is strictly stripped from customer-visible text.
+  - Live count alignment: dynamically replaces static "300+" graphs with live catalog registry count (~100+ active curated graphs).
+  - Recommends `view: 'tools'` whenever users ask "what can you do" or "what tools do you have".
+- **Runtime Tool Guide in `get_capabilities({ view: 'tools' })` (`src/toolGuide.ts`, `src/toolHandlers.ts`)**:
+  - Delivers the Prompt Guide organized into 5 canonical sections: **Research**, **Pressure-test**, **Ask an expert**, **Make something**, and **Track**.
+  - Built dynamically at runtime from registered tools respecting endpoint-scoped filters (`isToolCallable` / `allowedTools`).
+  - Provides a single plain-English line on "what you get", "when to use", and one example prompt per exposed tool.
+  - Dynamically calculates `Free` vs `Charged` status for each tool directly from `getToolCostSummary()` (`pricingCache.ts`), never hardcoded.
+- **Expert Discovery & Classification Enhancements (`src/toolHandlers.ts`)**:
+  - Added explicit `kind` / `expert_kind` (`active Human Agent`, `On-Request Human Agent`, `synthetic analyst`, `C-Suite Agent`, `Classic Agent`) and real `intro` to candidate payloads returned by `find_expert`.
+  - Updated `find_expert` to return candidate experts rather than synthesizing domain answers directly.
+- **System Instructions & Platform Routing (`src/systemPrompt.ts`)**:
+  - Added `RULE: HelpDeskAndPlatformRouting` directing host models to reach for `get_capabilities({ view: 'help' })` on Fodda/pricing/connect queries and `get_capabilities({ view: 'tools' })` on "what can you do" queries before touching graph search.
+  - Updated `SEQUENCE: VirtualExpertConsultation` with 6 explicit expert handling rules (discovery vs consult, page context resolution, verbatim `book_a_call` rate sentence, out-of-lane declination).
+
+### Changed & Fixed
+- **Plain Language & Jargon Stripping**:
+  - Removed internal database terminology (`Neo4j`, `Cypher`, step-by-step research recipes) from `get_capabilities` help and tools views.
+  - Sanitized published tool descriptions in `src/toolHandlers.ts` (`get_neighbors` and `get_node`) and `scripts/sync-descriptions-from-airtable.mjs`.
+- **Zero-Charge Verification for Help & Discovery**:
+  - Live account balance before: `api_calls_used: 1000`, `tokens_used: 894`, `lifetime_used: 894`.
+  - Tools called: `get_capabilities` (default, help, tools), `list_graphs`, `list_analysts`, `find_expert`, `get_my_account`.
+  - Live account balance after: `api_calls_used: 1000`, `tokens_used: 894`, `lifetime_used: 894`.
+  - Verified diff: `0` across all metrics (100% zero-charge discovery confirmed).
+- **Expert Handling Verification (6 Prompt Probes)**:
+  - Probe 1 (*"Who should I ask about clean beauty formulation?"*): Returned candidate specialists via `find_expert` with explicit `kind` (`synthetic analyst`, `On-Request Human Agent`), display names, and real intros without attempting a beauty formulation answer.
+  - Probe 2 (*"What would Ben Dietz say about our streetwear collab strategy?"*): Resolved Ben Dietz and invoked `consult_human_agent(analyst_id: 'ben-dietz-sic')` returning full credibility anchor and consult response.
+  - Probe 3 (Context line *"The user is reading the Ben Dietz expert page"* + *"what would he say about this?"*): Verified that `buildSystemPrompt` resolves `ben-dietz-sic` from page context and instructs immediate routing to `consult_human_agent`.
+  - Probe 4 (*"Can I book Jeremy Bergstein?"*): Verified `list_analysts` provides Jeremy's verbatim booking sentence (`Or book 1 hour with the real Jeremy - $750 live video`) and calendar URL from `book_a_call`, presenting his real booking route without forcing an analytical consult.
+  - Probe 5 (*"Ask an expert about premium business travel"* - no name): Invoked `find_expert` first to discover relevant candidate specialists (Phillip Harvey, Nathan Grotticelli, Michelle Lee) before consulting, identifying who was consulted and why.
+  - Probe 6 (Question well outside an expert's field put to that expert): Tested `consult_human_agent` with Ben Dietz on vitamin C facial serum formulation. Upstream API returned `coverage: "PARTIAL"` (not `"out"` due to margin-based scoring against embedding space); verified that MCP platform note and system prompt instruct host models to decline and suggest who else to ask.
+
+### Documentation & Coordination
+- Updated living bibles in `~/Documents/Fodda API/docs/bibles/`:
+  - `product_and_system_reference.md`: Added `help` and `tools` views to `get_capabilities` section (Section 4b); bumped last updated date to 2026-10-26.
+  - `system_clarifications.md`: Added invariant documenting that help answers source pricing and graph counts solely from live sources, not `llms.txt`.
+- Created cross-repo coordination notes:
+  - `~/Documents/Fodda/coordination_notes/Note_2026-10-26_app-chat-help-and-tools.md`: Hand-off note for `api-agent` covering app chat system prompt routing, excluded sandbox tools (`manage_scheduled_reports`, `draft_linkedin_post`, `draft_linkedin_article`), and `X-Fodda-Session-Kind` header alignment.
+  - `~/Documents/Fodda Website/coordination_notes/Note_2026-10-26_llms-counts-and-links.md`: Hand-off note for website agent covering `llms.txt` 300+ vs live graph count alignment and Perplexity/Notion connect guide links.
+
 ## [1.46.129] - 2026-10-24
 
 ### Fixed
