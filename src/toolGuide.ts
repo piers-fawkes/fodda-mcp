@@ -14,7 +14,7 @@
  * - Absolutely NO internals: no Neo4j, Cypher, graph traversal, or recipe steps
  */
 
-import { getToolCostSummary } from './pricingCache.js';
+import { getQueryTypeForTool, getQueryPricing } from './pricingCache.js';
 import { getGraphs } from './catalogCache.js';
 
 export function getLiveGraphCount(): number {
@@ -305,20 +305,19 @@ const SECTION_ORDER: ToolGuideSection[] = [
  * Filters to only tools exposed on the caller's server endpoint (respecting offering-scoped tool subsets).
  */
 export function generateToolGuide(isToolCallable: (toolName: string) => boolean): ToolGuideResponse {
-    // 1. Get live billable tool summary from pricingCache
-    let billableMap = new Map<string, number>();
-    try {
-        const summary = getToolCostSummary();
-        for (const item of summary) {
-            // Prefer the highest/default call count if multiple modes exist
-            const existing = billableMap.get(item.tool) ?? 0;
-            if (item.apiCalls > existing) {
-                billableMap.set(item.tool, item.apiCalls);
+    // 1. Helper to resolve default-mode API calls charged from Airtable table tblHsMfyoW39LqCv8
+    const getCallsForTool = (toolName: string): number => {
+        try {
+            const queryType = getQueryTypeForTool(toolName);
+            if (queryType) {
+                const pricing = getQueryPricing(queryType);
+                if (pricing && typeof pricing.apiCallsCharged === 'number') {
+                    return pricing.apiCallsCharged;
+                }
             }
-        }
-    } catch {
-        // If pricingCache isn't initialized yet, default to empty
-    }
+        } catch {}
+        return 0;
+    };
 
     // 2. Group callable tools by section
     const grouped = new Map<ToolGuideSection, ToolGuideItem[]>();
@@ -334,7 +333,7 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
         }
 
         exposedCount++;
-        const apiCalls = billableMap.get(toolName) ?? 0;
+        const apiCalls = getCallsForTool(toolName);
 
         const item: ToolGuideItem = {
             tool: toolName,
