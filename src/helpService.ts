@@ -191,7 +191,7 @@ function scoreSection(section: { heading: string; content: string; source: 'llms
 
     const qLower = rawQuestion.toLowerCase();
     const isPricingQuery = /cost|price|pricing|charge|bill|rate/i.test(qLower);
-    const isConnectQuery = /claude|connect|setup|install|integration|chatgpt|cursor|copilot/i.test(qLower);
+    const isConnectQuery = /claude|connect|setup|install|integration|chatgpt|cursor|copilot|perplexity|notion/i.test(qLower);
     const isAboutQuery = /what is fodda|who is fodda|about fodda|overview/i.test(qLower) || terms.includes('fodda');
 
     if (isPricingQuery && /pricing|about/i.test(headingLower)) {
@@ -228,8 +228,8 @@ function sanitizeOutputText(text: string, liveGraphCount: number): string {
     let out = text;
 
     // Harmonize graph count
-    out = out.replace(/\b(300\+|100\+)\s*(knowledge\s+graphs|graphs)\b/gi, `${liveGraphCount}+ $2`);
-    out = out.replace(/\bacross (300\+|100\+) knowledge graphs\b/gi, `across ${liveGraphCount}+ knowledge graphs`);
+    out = out.replace(/\b([0-9]+\+)\s*(knowledge\s+graphs|graphs)\b/gi, `${liveGraphCount}+ $2`);
+    out = out.replace(/\bacross [0-9]+\+ knowledge graphs\b/gi, `across ${liveGraphCount}+ knowledge graphs`);
 
     // Remove SPT / token phrasing
     out = out.replace(/\s*\(settle via\s*`?Authorization:\s*Bearer\s*spt_[^`)]*`?\)/gi, '');
@@ -269,6 +269,12 @@ function resolveConnectorLink(qLower: string): { name: string; url: string } {
     if (qLower.includes('grok')) {
         return { name: 'Grok', url: 'https://www.fodda.ai/connect/grok' };
     }
+    if (qLower.includes('perplexity')) {
+        return { name: 'Perplexity', url: 'https://www.fodda.ai/connect/perplexity' };
+    }
+    if (qLower.includes('notion')) {
+        return { name: 'Notion', url: 'https://www.fodda.ai/connect/notion' };
+    }
     return { name: 'AI Models & Platforms', url: 'https://www.fodda.ai/connect' };
 }
 
@@ -296,7 +302,7 @@ export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
 
     const qLower = rawQuestion.toLowerCase();
     const isWhatCanYouDo = /what can you do|what tools|tools do you have|how would i use|capabilities|offerings/i.test(qLower);
-    const isConnectQuery = /claude|connect|setup|install|integration|chatgpt|cursor|copilot/i.test(qLower);
+    const isConnectQuery = /claude|connect|setup|install|integration|chatgpt|cursor|copilot|perplexity|notion/i.test(qLower);
     const isPricingQuery = /cost|price|pricing|charge|rate|billing/i.test(qLower);
     const isWhatIsFodda = /what is fodda|who is fodda|about fodda|overview of fodda/i.test(qLower);
 
