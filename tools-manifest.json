@@ -103,7 +103,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., 'Ask the Brand CMO persona how to evaluate retail media ROI', 'Consult John Ruskin on craftsmanship in luxury fashion'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves."
+      "description": "Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., 'Ask the Brand CMO persona how to evaluate retail media ROI', 'Consult John Ruskin on craftsmanship in luxury fashion'). A consult perspective is the agent's view, never a quote from the real person. Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves."
     },
     {
       "name": "consult_human_agent",
@@ -117,7 +117,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner's consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner's voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves."
+      "description": "Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner's consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner's voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). A consult perspective is the agent's view, never a quote from the real person. Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves."
     },
     {
       "name": "deep_research_topic",
@@ -328,7 +328,7 @@
         "claude",
         "grok-brand-context"
       ],
-      "description": "Evidence citation lookup: retrieves primary evidence articles, publisher case studies, data points, and source URLs that validate a specific trend node. Prerequisite: Requires a valid for_node_id and graphId obtained from a prior search_graph or get_neighbors call. Use when backing a specific trend with original reporting, verifying publisher citations, or extracting concrete brand examples. Sibling routing: Use search_graph first to discover trends and retrieve their node_id; use get_evidence to inspect the underlying source citations for that node; use get_node for high-level metadata; use search_statistics for standalone numbers. Returns an array of evidence items with title, publication, publication_date, snippet, and source_url."
+      "description": "Evidence citation lookup: retrieves primary evidence articles, publisher case studies, data points, and sourced voices (what executives, analysts and commentators said about the trend, labelled supports / challenges / nuances) that validate a specific trend node. Supports view filter ('articles', 'voices', 'both'). Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Prerequisite: Requires a valid for_node_id and graphId obtained from a prior search_graph or get_neighbors call. Use when backing a specific trend with original reporting, verifying publisher citations, or extracting concrete brand examples. Sibling routing: Use search_graph first to discover trends and retrieve their node_id; use get_evidence to inspect the underlying source citations and voices for that node; use get_node for high-level metadata; use search_statistics for standalone numbers. Returns supporting articles and/or sourced voices."
     },
     {
       "name": "get_expert_intelligence",
@@ -348,7 +348,7 @@
       "profiles": [
         "mcp"
       ],
-      "description": "Certified multi-source evidence dossier generator: synthesizes domain knowledge graph case studies, consulting report findings (PwC, McKinsey, DHL), expert quotes, and live macroeconomic data (FRED, BLS, Census) into a comprehensive intelligence dossier in a single synchronous call. Use when preparing client pitch decks, executive briefings, or comprehensive topic overviews (e.g., 'Build an evidence dossier on sustainable luxury packaging'). Optionally generates an executive 4-beat journalistic briefing (include_editorial: true). Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis; use deep_research_topic for multi-pass autonomous background research; use search_graph for individual trend queries. Returns synthesized strategic narrative, categorized evidence items, quantitative metrics, and contrarian adversarial points."
+      "description": "Certified multi-source evidence dossier generator: synthesizes domain knowledge graph case studies, consulting report findings (PwC, McKinsey, DHL), sourced voices, and live macroeconomic data (FRED, BLS, Census) into a comprehensive intelligence dossier in a single synchronous call. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Use when preparing client pitch decks, executive briefings, or comprehensive topic overviews (e.g., 'Build an evidence dossier on sustainable luxury packaging'). Optionally generates an executive 4-beat journalistic briefing (include_editorial: true). Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis; use deep_research_topic for multi-pass autonomous background research; use search_graph for individual trend queries. Returns synthesized strategic narrative, categorized evidence items, quantitative metrics, and contrarian adversarial points."
     },
     {
       "name": "get_label_values",
@@ -602,7 +602,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
+      "description": "Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
     },
     {
       "name": "search_insights",
@@ -616,7 +616,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Sibling routing: Use search_insights when you need authoritative quotes and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing."
+      "description": "Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing."
     },
     {
       "name": "search_statistics",

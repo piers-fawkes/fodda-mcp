@@ -5,6 +5,37 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.132] - 2026-10-28
+
+### Added & Enhanced (Voice Phase 2 MCP Integration)
+- **`get_evidence` View Modes & Sourced Voices (`src/toolHandlers.ts`)**:
+  - Added `view: z.enum(['articles', 'voices', 'both']).default('both')` parameter passed through to `POST /v1/graphs/{id}/evidence`.
+  - Delivers `voices[]` as a distinct top-level block in the result payload alongside or in place of `evidence[]`.
+  - `view='articles'` returns pure article evidence matching legacy behavior; `view='voices'` returns only sourced third-party voices; `view='both'` returns both blocks.
+  - Updated tool description with rendering guidance: *"Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution."*
+- **`search_insights` Speaker, Claim & Stance Support (`src/toolHandlers.ts`)**:
+  - Added optional `speaker_types` and `stance` (`'supports' | 'challenges' | 'nuances'`) parameters passed through to `/v1/statistics`.
+  - Returns each result's `voice` object carrying `voice.speaker.name`, `claim`, `quote_kind`, `stance`, and `display`.
+  - Defaults `types` to `'quote,interpretation'`.
+  - Updated description to highlight speaker, claim, stance, and quotable rendering rules.
+- **`search_graph` Sourced Voices Passthrough (`src/toolHandlers.ts`)**:
+  - Added `include_voices` (boolean, default `true`) parameter passed to `/v1/graphs/{id}/search`.
+  - Passes enriched `voices[]` through on each trend row; removes `voices` when `include_voices=false` for callers seeking a lighter payload.
+- **`get_intelligence_dossier` Voices Integration (`src/toolHandlers.ts`)**:
+  - Passes `voices[]` through in payload and adds a formatted markdown block `### Sourced Voices & Stakeholder Perspectives`.
+  - Strict quotation marks rule applied: only verbatim quotable voices receive quotation marks.
+- **`consult_analyst` & `consult_human_agent` Perspective Labelling (`src/toolHandlers.ts`)**:
+  - Attached upstream `perspective` object into `structuredContent` and top-level response.
+  - Formatted text output prepends a dedicated perspective label line (`--- ${perspective.label} ---`) directly above the response text.
+  - Updated description with rendering rule: *"A consult perspective is the agent's view, never a quote from the real person."*
+- **Contract Enforcement & Guard Rails (`src/enrichment.ts`, `src/types.ts`)**:
+  - Implemented `enrichVoice(voice)` and `enrichVoices(voices)` per the `Voice` contract: drops `verified='failed'` voices, sets `quote: null` for `license='link_only'`, truncates `excerpt_only` quotes to 60 words, and enforces `display.quotable` strictly for verbatim quotes.
+  - Separated voice processing from article ranking: `rankAndFilterEvidence` and `enrichEvidence` filter out voice items so voices are never merged into `evidence[]`.
+  - Defined `Voice` and `Perspective` interfaces in `src/types.ts`.
+- **Validation & Test Suite (`src/test_voices_mcp_tools.ts`, `package.json`)**:
+  - Added `npm run test:voices` suite covering `enrichVoice` contract rules, `get_evidence` view modes, `search_insights` voice/param passthrough, `search_graph` include_voices flag, consult `structuredContent.perspective` presence, and cost silence.
+  - Verified tool count remains unchanged (56 tools).
+
 ## [1.46.131] - 2026-10-26
 
 ### Fixed & Hardened (Live Inspection Refinements)

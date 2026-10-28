@@ -16,9 +16,9 @@ export const MCP_SERVER_VERSION: string = pkg.version;
 
 export const TOOL_VERSIONS = {
     list_graphs: "1.4.0",
-    search_graph: "1.4.0",
+    search_graph: "1.5.0",
     get_neighbors: "1.2.0",
-    get_evidence: "1.1.0",
+    get_evidence: "1.2.0",
     get_node: "1.0.0",
     get_label_values: "1.3.0",
     psfk_overview: "1.0.0",
@@ -38,7 +38,7 @@ export const TOOL_VERSIONS = {
     get_pubmed_research_trends: "1.0.0",
     get_openalex_research_trends: "1.0.0",
     search_statistics: "1.0.0",
-    search_insights: "1.0.0",
+    search_insights: "1.1.0",
     get_wto_trade_snapshot: "1.0.0",
     get_pew_survey_data: "1.0.0",
     get_openfoodfacts_snapshot: "1.0.0",

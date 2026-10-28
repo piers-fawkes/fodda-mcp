@@ -216,22 +216,111 @@ export function reconcilePlace(currentPlace?: string, title?: string, summary?: 
 }
 
 /**
+ * Detects if an item is a sourced Voice object rather than an article/evidence node.
+ * Sourced Voice objects carry quote_kind, speaker object, claim, or stance.
+ */
+export function isVoiceItem(item: any): boolean {
+    if (!item || typeof item !== 'object') return false;
+    return Boolean(
+        item.quote_kind ||
+        (item.claim && (item.speaker || item.license || item.stance)) ||
+        (item.speaker && typeof item.speaker === 'object' && item.speaker.name)
+    );
+}
+
+/**
+ * Enrich a single sourced voice item per the Voice contract.
+ * Follows rendering rules:
+ * - Failed voices are excluded (returns null)
+ * - link_only voices have quote: null
+ * - excerpt_only trimmed to <= 60 words
+ * - display.quotable is true only for verbatim quotes with non-null quote and not failed
+ * - quotation marks must NEVER be placed on non-quotable voices
+ */
+export function enrichVoice(voice: any): any {
+    if (!voice || typeof voice !== 'object') return voice;
+    const cleanVoice: Record<string, any> = { ...voice };
+
+    // 1. Verified check: dropped if failed
+    if (cleanVoice.verified === 'failed') {
+        return null;
+    }
+
+    // 2. License check: link_only has quote: null
+    if (cleanVoice.license === 'link_only') {
+        cleanVoice.quote = null;
+    }
+
+    // 3. Excerpt check: excerpt_only trimmed to <= 60 words
+    if (cleanVoice.license === 'excerpt_only' && typeof cleanVoice.quote === 'string') {
+        const words = cleanVoice.quote.trim().split(/\s+/);
+        if (words.length > 60) {
+            cleanVoice.quote = words.slice(0, 60).join(' ') + '...';
+        }
+    }
+
+    // 4. Build or respect display object
+    const isVerbatim = cleanVoice.quote_kind === 'verbatim';
+    const hasQuote = cleanVoice.quote !== null && cleanVoice.quote !== undefined && cleanVoice.quote !== '';
+    const isQuotable = Boolean(isVerbatim && hasQuote && cleanVoice.verified !== 'failed');
+
+    const speakerName = cleanVoice.speaker?.name || cleanVoice.speakerName || cleanVoice.speaker || 'Speaker';
+    const speakerTitle = cleanVoice.speaker?.title || cleanVoice.speakerTitle;
+    const speakerOrg = cleanVoice.speaker?.org || cleanVoice.speakerOrg || cleanVoice.organization;
+    const pub = cleanVoice.source?.publication || cleanVoice.publication;
+    const date = cleanVoice.source?.date || cleanVoice.date || cleanVoice.published_at;
+
+    const speakerDetails = [speakerName, speakerTitle, speakerOrg].filter(Boolean).join(', ');
+    const sourceDetails = [pub, date].filter(Boolean).join(', ');
+    const defaultAttribution = sourceDetails ? `${speakerDetails} — ${sourceDetails}` : speakerDetails;
+
+    cleanVoice.display = {
+        quotable: cleanVoice.display?.quotable !== undefined ? Boolean(cleanVoice.display.quotable) : isQuotable,
+        attribution: cleanVoice.display?.attribution || defaultAttribution
+    };
+
+    // 5. Pre-format markdown representation (quotation marks ONLY when display.quotable is true)
+    const url = cleanVoice.source?.url || cleanVoice.source_url || cleanVoice.url;
+    const link = url ? `([Source](${url}))` : '';
+    const textContent = cleanVoice.quote || cleanVoice.claim || '';
+    if (cleanVoice.display.quotable) {
+        cleanVoice.formatted_citation = `"${textContent}" — ${cleanVoice.display.attribution} ${link}`.trim();
+    } else {
+        cleanVoice.formatted_citation = `${textContent} — ${cleanVoice.display.attribution} ${link}`.trim();
+    }
+
+    return cleanVoice;
+}
+
+/**
+ * Enrich an array of sourced voices, dropping failed voices.
+ */
+export function enrichVoices(voices: any[]): any[] {
+    if (!Array.isArray(voices)) return [];
+    return voices
+        .map(enrichVoice)
+        .filter((v): v is any => v !== null);
+}
+
+/**
  * Enrich evidence items with pre-formatted markdown citations and editorial roles.
  * Models are much more likely to pass through a ready-made link than construct one.
  */
 export function enrichEvidence(items: any[], opts: { sortByRecency?: boolean } = {}): any[] {
     if (!Array.isArray(items)) return items;
+    // Voices get their own path — do not merge into evidence[]
+    const articleItems = items.filter(item => !isVoiceItem(item));
     // Preserve the API's relevance order by default — evidence items carry no
     // per-item score, so input array order IS the relevance signal. Sorting by
     // recency here discarded it and surfaced newest-but-off-topic items. Opt-in only.
     if (opts.sortByRecency) {
-        items.sort((a, b) => {
+        articleItems.sort((a, b) => {
             const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
             const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
             return dateB - dateA;
         });
     }
-    return items.map(item => {
+    return articleItems.map(item => {
         const cleanItem: Record<string, any> = { ...item };
 
         // Assign editorial role based on content type — but don't stamp unknown
@@ -381,6 +470,9 @@ export function rankAndFilterEvidence(
     opts: { maxItems?: number } = {}
 ): any[] {
     if (!Array.isArray(items) || items.length === 0) return [];
+    // Voices get their own path — never run through article ranking or merged into evidence[]
+    const articleItems = items.filter(item => !isVoiceItem(item));
+    if (articleItems.length === 0) return [];
     const maxItems = opts.maxItems ?? 3;
 
     const qLower = (query || '').toLowerCase();
@@ -394,7 +486,7 @@ export function rankAndFilterEvidence(
     const trendWords = trendTitle.split(/[^a-z0-9]+/).filter((w: string) => w.length > 2 && !GENERIC_QUERY_STOPWORDS.has(w));
     const isPopUpTrend = /\b(pop-?ups?|temporary store|temporary retail)\b/i.test(trendTitle) || /\b(pop-?ups?)\b/i.test(qLower);
 
-    const scored = items.map((item, idx) => {
+    const scored = articleItems.map((item, idx) => {
         const title = (item.title || '').toLowerCase();
         const summary = (item.summary || item.excerpt || '').toLowerCase();
         const contentType = (item.contentType || '').toLowerCase();

@@ -41,7 +41,7 @@ import { FODDA_COMPONENT_GUIDE, getShellTemplate } from './widgetShell.js';
 import { MCP_SERVER_VERSION } from './tools.js';
 import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_HOUSE_VISUAL_RECIPE_V2_2, FODDA_HOUSE_VISUAL_RECIPE_CONFIRM_THEMES } from './systemPrompt.js';
 import type { AccountProfile } from './systemPrompt.js';
-import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace, cleanTruncateWhyNow } from './enrichment.js';
+import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, enrichVoice, enrichVoices, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace, cleanTruncateWhyNow } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
 import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
@@ -2112,7 +2112,7 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
+        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
@@ -2125,10 +2125,11 @@ export async function createServer(
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
             use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
             include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
+            include_voices: z.boolean().optional().default(true).describe('If true, include sourced voices (quotes, claims, stances) on each trend row. Default: true.'),
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ mode, graphs, graphId, graph, graph_id, sector, query, userId: uid, limit, use_semantic, include_evidence, skip_skills }: any) => {
+        async ({ mode, graphs, graphId, graph, graph_id, sector, query, userId: uid, limit, use_semantic, include_evidence, include_voices, skip_skills }: any) => {
             try {
                 const targetGraphId = graphId || graph || graph_id;
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -2143,6 +2144,7 @@ export async function createServer(
                     // do not drop on-topic trends whose titles lack literal query tokens or penalize scores.
                     // If the caller requested include_evidence === false, evidence is stripped in post-processing.
                     include_evidence: true,
+                    include_voices: include_voices !== false,
                     ...(sector ? { sector } : {}),
                 };
 
@@ -2566,6 +2568,12 @@ export async function createServer(
                         trimmed.momentum = computeMomentum(trimmed, enrichNow);
                         trimmed.fastMover = isFastMover(trimmed, enrichNow);
                         trimmed.graphBadge = GRAPH_BADGES[trimmed._use_this_graphId || targetGraphId || ''] || '○';
+                        // Pass voices[] through on each trend row if requested
+                        if (include_voices !== false && Array.isArray(trimmed.voices)) {
+                            trimmed.voices = enrichVoices(trimmed.voices);
+                        } else if (include_voices === false) {
+                            delete trimmed.voices;
+                        }
                         return trimmed;
                     });
                     // P0 Item 6: Filter out deprecated graph rows
@@ -3007,22 +3015,48 @@ export async function createServer(
     // --- get_evidence ---
     server.tool(
         'get_evidence',
-        'Evidence citation lookup: retrieves primary evidence articles, publisher case studies, data points, and source URLs that validate a specific trend node. Prerequisite: Requires a valid for_node_id and graphId obtained from a prior search_graph or get_neighbors call. Use when backing a specific trend with original reporting, verifying publisher citations, or extracting concrete brand examples. Sibling routing: Use search_graph first to discover trends and retrieve their node_id; use get_evidence to inspect the underlying source citations for that node; use get_node for high-level metadata; use search_statistics for standalone numbers. Returns an array of evidence items with title, publication, publication_date, snippet, and source_url.',
+        'Evidence citation lookup: retrieves primary evidence articles, publisher case studies, data points, and sourced voices (what executives, analysts and commentators said about the trend, labelled supports / challenges / nuances) that validate a specific trend node. Supports view filter (\'articles\', \'voices\', \'both\'). Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Prerequisite: Requires a valid for_node_id and graphId obtained from a prior search_graph or get_neighbors call. Use when backing a specific trend with original reporting, verifying publisher citations, or extracting concrete brand examples. Sibling routing: Use search_graph first to discover trends and retrieve their node_id; use get_evidence to inspect the underlying source citations and voices for that node; use get_node for high-level metadata; use search_statistics for standalone numbers. Returns supporting articles and/or sourced voices.',
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
+            view: z.enum(['articles', 'voices', 'both']).optional().default('both').describe("Filter evidence response view: 'articles' returns supporting articles and case studies only; 'voices' returns sourced executive and commentator voices only; 'both' (default) returns articles and voices."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             top_k: z.number().optional().describe('Number of evidence items to return (default 5)')
         },
         { title: 'Get Supporting Evidence', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ graphId, for_node_id, userId: uid, top_k }) => {
+        async ({ graphId, for_node_id, view, userId: uid, top_k }) => {
             try {
                 if (graphId === 'psfk') graphId = 'retail';
-                const body = { for_node_id, top_k: Math.min(top_k || 5, 10) };
+                const effectiveView = view || 'both';
+                const body: Record<string, any> = {
+                    for_node_id,
+                    top_k: Math.min(top_k || 5, 10),
+                    view: effectiveView
+                };
                 let data: any;
                 data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(graphId)}/evidence`, apiKey, resolveUserId(userId, uid), body);
-                // Enrich evidence with pre-formatted citations
-                if (data?.evidence) data.evidence = enrichEvidence(data.evidence);
+
+                // Handle separate blocks based on view
+                if (effectiveView === 'voices') {
+                    delete data?.evidence;
+                    if (data && typeof data === 'object') {
+                        data.voices = enrichVoices(data.voices || []);
+                    }
+                } else if (effectiveView === 'articles') {
+                    delete data?.voices;
+                    if (data?.evidence) {
+                        data.evidence = enrichEvidence(data.evidence);
+                    }
+                } else {
+                    // 'both'
+                    if (data?.evidence) {
+                        data.evidence = enrichEvidence(data.evidence);
+                    }
+                    if (data && typeof data === 'object') {
+                        data.voices = enrichVoices(data.voices || []);
+                    }
+                }
+
                 appendUsageWarning(data, resolveUserId(userId), sessionSource);
                 const withheld = await settleOrWithhold({ queryTypeCode: 'standalone_evidence', apiKey, userId: resolveUserId(userId, uid), query: for_node_id }, 'get_evidence');
                 if (withheld) return withheld;
@@ -4696,7 +4730,7 @@ export async function createServer(
     // --- get_intelligence_dossier ---
     server.tool(
         'get_intelligence_dossier',
-        'Certified multi-source evidence dossier generator: synthesizes domain knowledge graph case studies, consulting report findings (PwC, McKinsey, DHL), expert quotes, and live macroeconomic data (FRED, BLS, Census) into a comprehensive intelligence dossier in a single synchronous call. Use when preparing client pitch decks, executive briefings, or comprehensive topic overviews (e.g., \'Build an evidence dossier on sustainable luxury packaging\'). Optionally generates an executive 4-beat journalistic briefing (include_editorial: true). Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis; use deep_research_topic for multi-pass autonomous background research; use search_graph for individual trend queries. Returns synthesized strategic narrative, categorized evidence items, quantitative metrics, and contrarian adversarial points.',
+        'Certified multi-source evidence dossier generator: synthesizes domain knowledge graph case studies, consulting report findings (PwC, McKinsey, DHL), sourced voices, and live macroeconomic data (FRED, BLS, Census) into a comprehensive intelligence dossier in a single synchronous call. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Use when preparing client pitch decks, executive briefings, or comprehensive topic overviews (e.g., \'Build an evidence dossier on sustainable luxury packaging\'). Optionally generates an executive 4-beat journalistic briefing (include_editorial: true). Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis; use deep_research_topic for multi-pass autonomous background research; use search_graph for individual trend queries. Returns synthesized strategic narrative, categorized evidence items, quantitative metrics, and contrarian adversarial points.',
         {
             topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
             sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
@@ -4761,6 +4795,25 @@ export async function createServer(
                     markdown += `\n`;
                 }
 
+                const rawVoices = Array.isArray(dossier.voices)
+                    ? dossier.voices
+                    : (Array.isArray(data?.voices) ? data.voices : []);
+                if (rawVoices.length > 0) {
+                    const enrichedVoices = enrichVoices(rawVoices);
+                    dossier.voices = enrichedVoices;
+                    data.voices = enrichedVoices;
+                    markdown += `### Sourced Voices & Stakeholder Perspectives\n`;
+                    for (const v of enrichedVoices) {
+                        const attribution = v?.display?.attribution || [v?.speaker?.name, v?.speaker?.title, v?.speaker?.org].filter(Boolean).join(', ') || 'Source';
+                        const quoteText = v?.display?.quotable ? `"${v?.quote}"` : (v?.quote || v?.claim || '');
+                        const stanceBadge = v?.stance ? ` [${v.stance.toUpperCase()}]` : '';
+                        const url = v?.source?.url;
+                        const link = url ? `([Source](${url}))` : '';
+                        markdown += `- **${attribution}**${stanceBadge} ${link}: ${quoteText}\n`;
+                    }
+                    markdown += `\n`;
+                }
+
                 const citations = dossier.report_citations || [];
                 const quotes = dossier.expert_quotes || [];
                 if ((Array.isArray(citations) && citations.length > 0) || (Array.isArray(quotes) && quotes.length > 0)) {
@@ -4805,6 +4858,7 @@ export async function createServer(
                 const responsePayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
                 return {
                     ...responsePayload,
+                    ...(data?.voices ? { voices: data.voices } : {}),
                     formatted_markdown: markdown.trim(),
                     content: [{ type: 'text' as const, text: markdown.trim() }],
                 };
@@ -5023,18 +5077,20 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        'Narrative and qualitative evidence layer only: returns expert quotes, editorial analysis, and strategic perspectives from named strategists and industry leaders across all graphs, with source attribution and parent trend context. Sibling routing: Use search_insights when you need authoritative quotes and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing.',
+        'Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing.',
         {
             graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'beauty', 'sports', 'fashion', 'sic', 'pew', 'ce-design'."),
             sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes insights extraction to this sector across graphs."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
             types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
+            speaker_types: z.string().optional().describe("Optional filter for speaker types (comma-separated, e.g. 'executive,analyst,founder,columnist,journalist,academic,creator,policymaker,other')."),
+            stance: z.enum(['supports', 'challenges', 'nuances']).optional().describe("Optional filter for stance relative to parent trend: 'supports', 'challenges', or 'nuances'."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ for precise lookups.'),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
         },
         { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-        async ({ graph_id, sector, query, types, limit, min_score, userId: uid }: any) => {
+        async ({ graph_id, sector, query, types, speaker_types, stance, limit, min_score, userId: uid }: any) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search_insights', graph_id || (sector ? `sector:${sector}` : 'multi-graph'));
@@ -5055,6 +5111,12 @@ export async function createServer(
                 if (min_score !== undefined) params.set('min_score', String(min_score));
                 if (sector) {
                     params.set('sector', sector);
+                }
+                if (speaker_types) {
+                    params.set('speaker_types', speaker_types);
+                }
+                if (stance) {
+                    params.set('stance', stance);
                 }
                 const path = graph_id
                     ? `/v1/graphs/${encodeURIComponent(graph_id)}/statistics?${params.toString()}`
@@ -5090,6 +5152,36 @@ export async function createServer(
                             const gid = item.graph_id || item.graphId || graph_id;
                             if (gid) {
                                 item.source_pedigree = getSourcePedigree(gid).display_attribution;
+                            }
+                            if (item.voice) {
+                                item.voice = enrichVoice(item.voice);
+                            } else if (item.speaker || item.speakerName || item.speaker_name) {
+                                const speakerObj = (typeof item.speaker === 'object' && item.speaker) ? item.speaker : {
+                                    name: item.speakerName || item.speaker_name || item.speaker || 'Speaker',
+                                    title: item.speakerTitle || item.speaker_title || null,
+                                    org: item.speakerOrg || item.organization || null,
+                                    type: item.speakerType || 'other'
+                                };
+                                item.voice = enrichVoice({
+                                    id: item.id || item.node_id || 'voice',
+                                    quote: item.quote || item.text || item.summary || null,
+                                    quote_kind: item.quote_kind || 'verbatim',
+                                    claim: item.claim || item.title || item.summary || '',
+                                    speaker: speakerObj,
+                                    source: {
+                                        publication: item.publication || item.source || null,
+                                        url: item.source_url || item.url || null,
+                                        media_type: item.media_type || 'article',
+                                        event: item.event || null,
+                                        date: item.published_at || item.date || null,
+                                        locator: item.locator || null
+                                    },
+                                    brands: item.brands || [],
+                                    verified: item.verified || 'verified',
+                                    license: item.license || 'full',
+                                    stance: item.stance,
+                                    angle: item.angle
+                                });
                             }
                         }
                     }
@@ -6962,6 +7054,9 @@ export async function createServer(
                     ].join('\n'));
                 }
             }
+            if (result.perspective?.label) {
+                parts.push(`--- ${result.perspective.label} ---`);
+            }
             parts.push(reportText);
 
             if (result.timing_ms != null) {
@@ -7094,6 +7189,7 @@ export async function createServer(
                 ...(result.analyst ? { analyst: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
                 book_a_call: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? null : (result.book_a_call ?? null),
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
+                ...(result.perspective ? { perspective: result.perspective } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
                 ...(result.usage ? { usage: result.usage } : {}),
                 content: [{ type: 'text' as const, text: parts.join('\n') }],
@@ -7105,7 +7201,8 @@ export async function createServer(
                         analyst_id: resolvedAnalystId
                     },
                     sources_used: result.sources_used || [],
-                    next_moves: humanAgentNextMoves || null
+                    next_moves: humanAgentNextMoves || null,
+                    ...(result.perspective ? { perspective: result.perspective } : {})
                 }
             };
         } catch (err: any) {
@@ -7480,6 +7577,9 @@ export async function createServer(
                     ].join('\n'));
                 }
             }
+            if (result.perspective?.label) {
+                parts.push(`--- ${result.perspective.label} ---`);
+            }
             parts.push(reportText);
 
             if (result.timing_ms != null) {
@@ -7610,6 +7710,7 @@ export async function createServer(
                 next_moves: analystNextMoves,
                 sources_used: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
+                ...(result.perspective ? { perspective: result.perspective } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
                 ...(result.usage ? { usage: result.usage } : {}),
                 content: [{ type: 'text' as const, text: parts.join('\n') }],
@@ -7621,7 +7722,8 @@ export async function createServer(
                         analyst_id: resolvedAnalystId || analyst_id
                     },
                     sources_used: result.sources_used || [],
-                    next_moves: analystNextMoves || null
+                    next_moves: analystNextMoves || null,
+                    ...(result.perspective ? { perspective: result.perspective } : {})
                 }
             };
         } catch (err: any) {
@@ -7716,7 +7818,7 @@ export async function createServer(
     // --- consult_analyst ---
     server.tool(
         'consult_analyst',
-        'Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., \'Ask the Brand CMO persona how to evaluate retail media ROI\', \'Consult John Ruskin on craftsmanship in luxury fashion\'). Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves.',
+        'Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., \'Ask the Brand CMO persona how to evaluate retail media ROI\', \'Consult John Ruskin on craftsmanship in luxury fashion\'). A consult perspective is the agent\'s view, never a quote from the real person. Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves.',
         {
             analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
@@ -7738,6 +7840,7 @@ export async function createServer(
                     name: z.string().optional().describe('Display name of the analyst or persona'),
                     analyst_id: z.string().optional().describe('Identifier of the analyst or persona')
                 }).optional().describe('Analyst information'),
+                perspective: z.any().optional().describe("The agent's perspective metadata (label, agent_name, agent_slug, agent_type). Never a quote from the real person."),
                 sources_used: z.array(z.any()).optional().describe('Sources, citations, and graph evidence cited in the analysis'),
                 next_moves: z.any().optional().describe('Recommended next research or application actions'),
                 status: z.string().optional().describe('Status if running asynchronous deep research'),
@@ -7769,7 +7872,7 @@ export async function createServer(
     // --- consult_human_agent ---
     server.tool(
         'consult_human_agent',
-        'Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner\'s consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner\'s voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves.',
+        'Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner\'s consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner\'s voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). A consult perspective is the agent\'s view, never a quote from the real person. Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves.',
         {
             analyst_id: z.string().describe("The expert ID of the Human Agent (from list_analysts or find_expert, e.g. 'ben-dietz-sic'). Refer to the expert by their display name and credentials in user-facing responses."),
             query: z.string().describe("The question or topic to discuss with the human agent"),
@@ -7791,6 +7894,7 @@ export async function createServer(
                     name: z.string().optional().describe('Display name of the expert'),
                     analyst_id: z.string().optional().describe('Identifier of the expert')
                 }).optional().describe('Expert information'),
+                perspective: z.any().optional().describe("The agent's perspective metadata (label, agent_name, agent_slug, agent_type). Never a quote from the real person."),
                 sources_used: z.array(z.any()).optional().describe('Sources, citations, and graph evidence cited in the analysis'),
                 next_moves: z.any().optional().describe('Recommended next research or application actions'),
                 status: z.string().optional().describe('Status if running asynchronous deep research'),

@@ -1,6 +1,6 @@
 {
   "name": "fodda-mcp",
-  "version": "1.46.131",
+  "version": "1.46.132",
   "mcpName": "ai.fodda/mcp-server",
   "description": "Fodda MCP Server for accessing knowledge graph insights.",
   "keywords": [
@@ -33,7 +33,8 @@
     "build": "node scripts/sync-descriptions-from-airtable.mjs && node scripts/generate-tools-manifest.mjs && tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "npm run build && node dist/verify_tools_endpoint.js"
+    "test": "npm run build && node dist/verify_tools_endpoint.js",
+    "test:voices": "npx tsx src/test_voices_mcp_tools.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.5.0",
