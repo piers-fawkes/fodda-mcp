@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Validation & Test Suite (`src/test_voices_mcp_tools.ts`, `package.json`)**:
   - Added `npm run test:voices` suite covering `enrichVoice` contract rules, `get_evidence` view modes, `search_insights` voice/param passthrough, `search_graph` include_voices flag, consult `structuredContent.perspective` presence, and cost silence.
   - Verified tool count remains unchanged (56 tools).
+- **Live Verification on Deployed Service (`https://mcp.fodda.ai`)**:
+  - Tested live against Cloud Run revision `fodda-mcp-00678-cs6`:
+    - `get_evidence` (`view: 'both'`): returns both `evidence` and `voices` distinct arrays.
+    - `get_evidence` (`view: 'articles'`): returns only `evidence` array.
+    - `get_evidence` (`view: 'voices'`): returns only `voices` array.
+    - `search_insights` (`speaker_types`, `stance`): accepts parameters and executes with qualitative quote/interpretation focus.
+    - `consult_human_agent` (`ben-dietz-sic`): returns structured practitioner grounding with credibility anchor and perspective support.
 
 ## [1.46.131] - 2026-10-26
 
