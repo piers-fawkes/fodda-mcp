@@ -124,6 +124,6 @@ export const TOOL_VERSIONS = {
     schedule_interview: "1.2.0",
     verify_market_claim: "1.0.0",
     get_intelligence_dossier: "1.0.0",
-    generate_comms_plan: "1.0.0",
+    generate_comms_plan: "1.1.0",
 };
 

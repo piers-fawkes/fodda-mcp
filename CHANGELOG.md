@@ -5,6 +5,30 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.133] - 2026-10-30
+
+### Changed & Enhanced (Brand Connections Plan & Sports/Streaming Media Rights Alignment)
+- **`generate_comms_plan` 7-Section Audience-Led Brand Connections Plan Alignment (`src/toolHandlers.ts`, `src/tools.ts`, `src/toolGuide.ts`, `tools-manifest.json`)**:
+  - Updated `generate_comms_plan` description (pending ChatGPT resubmission for the `/chatgpt` snapshot) so host models (Claude, ChatGPT, Copilot, Cursor) know it produces an **Audience-Led Brand Connections Plan** (`output_classification: "STRATEGIC CONNECTIONS PLAN"`):
+    1. *The Audience & Human Tension* (cultural insight, rituals, Category Entry Points)
+    2. *The Idea or Concept* (creative organizing idea)
+    3. *Connection Points* (contextual moments and named partner candidates)
+    4. *Role of Each Connection* (**Start the Conversation**, **Deepen the Connection**, **Drive Action**)
+    5. *Retail & Commerce Connections* (live Amazon/Walmart digital shelf diagnostics and RMN shopper archetypes)
+    6. *Priorities, Trade-offs & Deliberate Omissions* (strategic activation hypotheses and deliberate channel exclusions)
+    7. *Evidence & Confidence Provenance* (governed by a strict runtime Evidence Ledger `EVID-xxx` that automatically downgrades empty or static records from `[LIVE]` to `[CAPABILITY]` or `[UNVERIFIED]`)
+    - Plus an isolated **Appendix A** housing programmatic IAB/RMN targeting codes, CPC/CPM/eCPM bid mechanics, per-connection buyer verification checklists, and **A.4 Official Live Sports & Tentpole Broadcast/Streaming Rights** (`FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH`).
+  - Updated handler and `outputSchema` to return the complete un-truncated `markdown` / `formatted_markdown` deliverable alongside structured `sports_and_tentpole_media_rights`, `research_diagnostics` (with `evidence_ledger`), `platform_integration_backlog` (`YouGov Profiles MCP`, `MRI-Simmons Sports Fan Study`, `FlixPatrol & Luminate SV(M)`, `GlobalData Sports Media Deals`), `retail_media_shelf`, and `activation_manifest` in both top-level and `structuredContent` outputs.
+- **Consolidated `view` Parameter for Sports Media Rights & Shopper Taxonomy (`src/toolHandlers.ts`, `src/foddaClient.ts`)**:
+  - Added optional `view?: 'full_plan' | 'sports_media_rights' | 'shopper_taxonomy'` (default `'full_plan'`) and `domain?: string` parameters on `generate_comms_plan` (maintaining the 56-tool budget without multiplying standalone tools).
+  - `view: 'sports_media_rights'` routes to `GET /v1/planning/sports-media-rights` via HMAC-signed `callFoddaAPI()` (`foddaRequest`), returning verified first-party US broadcast/streaming rights ground-truth (`FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH`) across Endurance & Olympic Sports (NBCU/Peacock through 2032), NFL (through 2033), NBA (2025–2036), MLB (through 2028), and NHL (through 2028) plus `entertainment_and_audience_integration_backlog`.
+  - `view: 'shopper_taxonomy'` routes to `GET /v1/planning/shopper-taxonomy` via `callFoddaAPI()` for fast IAB 3.1/1.1, RMN shopper archetype, and Alliant segment resolution.
+  - Exported `callFoddaAPI` alias in `src/foddaClient.ts` and bumped `generate_comms_plan` version to `1.1.0` in `src/tools.ts`.
+- **Live Verification (`src/test_comms_plan_live.ts`, `scripts/test_chatgpt_live.mjs`)**:
+  - `npm run build` succeeded with 0 TypeScript errors and passed the Cost Silence Guard (56 tools: 27 billable, 29 free; `generate_comms_plan` billed as `planning` = 1 API call / \$0.50 USD in `pricingCache.ts`, zero prohibited token/SPT mentions).
+  - `npx tsx src/test_comms_plan_live.ts`: 40/40 assertions passed against live `https://api.fodda.ai/v1/planning/comms-plan` and `https://api.fodda.ai/v1/planning/sports-media-rights`.
+  - `node scripts/test_chatgpt_live.mjs`: passed all `/chatgpt` 28-tool profile, RFC 9728 discovery, and payload sanitization checks.
+
 ## [1.46.132] - 2026-10-28
 
 ### Added & Enhanced (Voice Phase 2 MCP Integration)

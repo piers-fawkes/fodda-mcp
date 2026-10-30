@@ -214,3 +214,6 @@ export async function foddaRequest(
 
     return response.data;
 }
+
+export const callFoddaAPI = foddaRequest;
+

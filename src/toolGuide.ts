@@ -228,9 +228,9 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     generate_comms_plan: {
         section: 'Make something',
-        what_you_get: 'Agency-grade comms and retail media activation plan with audience cards and channel strategy.',
-        when_to_use: 'Use to turn trend research into an actionable marketing, media, or retail activation plan.',
-        example_prompt: 'Generate an agency comms and retail media activation plan for non-alcoholic spirits.'
+        what_you_get: '7-section Audience-Led Brand Connections Plan (with Appendix A buyer specs & official US sports/streaming media rights) or standalone broadcast/streaming media rights lookup.',
+        when_to_use: 'Use to turn cultural trends and brand challenges into a Strategic Connections Plan, or pass view="sports_media_rights" for live US sports & tentpole broadcast/streaming rights ground-truth.',
+        example_prompt: 'Generate an Audience-Led Brand Connections Plan for On Running around Gen Z social running clubs.'
     },
     draft_linkedin_post: {
         section: 'Make something',

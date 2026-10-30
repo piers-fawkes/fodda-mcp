@@ -1182,12 +1182,13 @@ export async function createServer(
                     { endpoint: "POST /v1/brand-intelligence/:brand", mcp_tool: "brand_tracker", description: "Multi-graph brand footprint, Google Trends & Wikipedia pageviews" },
                     { endpoint: "GET /v1/statistics", mcp_tool: "search_statistics", description: "Hard numbers and quantitative metrics data layer" },
                     { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Certified multi-source Evidence Dossier on any topic" },
-                    { endpoint: "POST /v1/planning/comms-plan", mcp_tool: "generate_comms_plan", description: "2026 Strategy-to-Activation Comms & Retail Media Planning Engine" }
+                    { endpoint: "POST /v1/planning/comms-plan", mcp_tool: "generate_comms_plan", description: "Audience-Led Brand Connections Planner (7-Section Connections Plan + Appendix A & US Sports/Streaming Media Rights)" },
+                    { endpoint: "GET /v1/planning/sports-media-rights", mcp_tool: "generate_comms_plan", description: "Official US Live Sports & Tentpole Broadcast/Streaming Media Rights Ground-Truth (view='sports_media_rights')" }
                 ],
                 possible_next_actions: [
                     { action: 'challenge', name: 'Pressure-test this', description: 'Search for counter-evidence, disconfirming signals, and untested assumptions.', target_tool: 'verify_market_claim' },
                     { action: 'ask_experts', name: 'Ask an expert', description: 'Consult a named Human Agent or specialist analyst to interpret the findings.', target_tool: 'find_expert' },
-                    { action: 'plan_comms', name: 'Generate Comms & Media Plan', description: 'Turn trend insights into an agency-grade comms and retail media activation plan.', target_tool: 'generate_comms_plan' },
+                    { action: 'plan_comms', name: 'Generate Brand Connections Plan', description: 'Turn trend insights into a 7-section Audience-Led Brand Connections Plan with retail media & sports/streaming rights.', target_tool: 'generate_comms_plan' },
                     { action: 'track', name: 'Track this topic', description: 'Establish recurring intelligence updates for ongoing monitoring.', target_tool: 'manage_scheduled_reports' },
                     { action: 'create_brief', name: 'Create a brief', description: 'Turn completed research into a structured, executive-ready deliverable or article.', target_tool: 'request_deliverable' }
                 ]
@@ -1543,11 +1544,11 @@ export async function createServer(
                     expertAction,
                     {
                         action: 'plan_comms',
-                        name: 'Generate Comms & Media Plan',
-                        description: 'Turn trend insights into an agency-grade comms and retail media activation plan.',
-                        reason: `Bridges cultural tensions into T1-T5 tasks, 3-layer shopper audience cards, and digital shelf intelligence on ${cleanTopic}.`,
+                        name: 'Generate Brand Connections Plan',
+                        description: 'Turn trend insights into a 7-section Audience-Led Brand Connections Plan with retail media and sports/streaming rights.',
+                        reason: `Translates cultural tensions on ${cleanTopic} into a creative organizing idea, contextual connection points, retail/commerce connections, deliberate omissions, a ledger-governed evidence table, and Appendix A buyer specs.`,
                         target_tool: 'generate_comms_plan',
-                        suggested_prompt: `Generate an agency comms and retail media activation plan for ${cleanTopic}`,
+                        suggested_prompt: `Generate an Audience-Led Brand Connections Plan for ${cleanTopic}`,
                         suggested_parameters: { query: cleanTopic, budget_tier: 'growth' },
                         available: true
                     },
@@ -4873,54 +4874,140 @@ export async function createServer(
     // --- generate_comms_plan ---
     server.tool(
         'generate_comms_plan',
-        'Translate cultural trends, brand challenges, and consumer insights into a 2026 Strategy-to-Activation Comms & Retail Media Plan. Generates an agency-grade media deliverable with T1-T5 tasks, 3-layer shopper audience cards (with mandatory exclusions), Amazon/Walmart digital shelf intelligence, tactical placement tables with [LIVE] provenance tags, and a machine-readable activation manifest.',
+        'Use when translating cultural trends, brand challenges, and consumer insights into an Audience-Led Brand Connections Plan, or when looking up official US sports and tentpole broadcast/streaming media rights. By default (view="full_plan"), generates a 7-section Strategy-to-Activation Brand Connections Plan (1. The Audience & Human Tension, 2. The Idea or Concept, 3. Connection Points with named contextual moments and rituals, 4. Role of Each Connection, 5. Retail & Commerce Connections with live Amazon/Walmart digital shelf diagnostics, 6. Priorities, Trade-offs & Deliberate Omissions with strategic activation hypotheses, and 7. Evidence & Confidence Provenance governed by a strict runtime Evidence Ledger [EVID-xxx] that automatically downgrades empty or static records from [LIVE] to [CAPABILITY] or [UNVERIFIED]) plus an isolated Appendix A housing programmatic IAB/RMN targeting codes, CPC/CPM/eCPM bid mechanics, per-connection buyer verification checklists, and A.4 Official Live Sports & Tentpole Broadcast/Streaming Rights (FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH). Pass view="sports_media_rights" to route to GET /v1/planning/sports-media-rights for fast US broadcast/streaming rights ground-truth across Endurance & Olympic Sports (NBCU/Peacock through 2032), NFL (through 2033), NBA (2025-2036), MLB (through 2028), and NHL (through 2028), alongside the entertainment and audience affinity integration backlog (YouGov Profiles MCP, MRI-Simmons Sports Fan Study, FlixPatrol & Luminate SV(M), GlobalData Sports Media Deals). Pass view="shopper_taxonomy" to resolve IAB 3.1/1.1, RMN shopper archetypes, and Alliant segments.',
         {
-            query: z.string().describe("The trend, category, or strategic challenge to build a comms plan for (e.g. 'Gen Z social running clubs', 'functional mushroom coffee')."),
+            query: z.string().optional().default('').describe("The trend, category, strategic challenge, or sports/media property to build a Brand Connections Plan or look up sports/streaming media rights for (e.g. 'Gen Z social running clubs', 'functional mushroom coffee', 'NBA', 'NFL', 'Endurance & Olympic Sports')."),
+            view: z.enum(['full_plan', 'sports_media_rights', 'shopper_taxonomy']).optional().default('full_plan').describe("Execution view mode: 'full_plan' (default) generates the complete 7-section Audience-Led Brand Connections Plan + Appendix A via POST /v1/planning/comms-plan; 'sports_media_rights' routes to GET /v1/planning/sports-media-rights for verified US broadcast/streaming media rights ground-truth and audience affinity integration backlog; 'shopper_taxonomy' routes to GET /v1/planning/shopper-taxonomy for IAB/RMN audience codes."),
+            domain: z.string().optional().describe("Optional domain filter when using view='sports_media_rights' (e.g. 'sports', 'endurance', 'entertainment')."),
             brand: z.string().optional().describe("Target brand name (e.g. 'On Running', 'Olipop', 'Cava'). Defaults to 'Brand'."),
             budget_tier: z.enum(['emerging', 'growth', 'scale']).optional().describe("Budget allocation scale: 'emerging' (lean test-and-learn), 'growth' (balanced brand & retail media), or 'scale' (full omni-channel saturation). Defaults to 'growth'."),
             markets: z.array(z.string()).optional().describe("Focus geographic markets (e.g. ['US'], ['UK'])."),
             userId: z.string().optional().describe('Optional user identifier.')
         },
         {
-            title: 'Generate Strategy-to-Activation Comms & Retail Media Plan',
+            title: 'Generate Audience-Led Brand Connections Plan & Sports Media Rights',
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: false,
             openWorldHint: true,
             outputSchema: {
+                view: z.string().optional().describe('Executed view mode: full_plan, sports_media_rights, or shopper_taxonomy'),
+                query: z.string().optional().describe('Query executed'),
                 brief: z.string().optional().describe('Strategic brief / topic investigated'),
                 brand: z.string().optional().describe('Target brand'),
+                output_classification: z.string().optional().describe('Deliverable classification (e.g. STRATEGIC CONNECTIONS PLAN)'),
                 planning_window: z.string().optional().describe('Planning window'),
-                plan_on_a_page: z.any().optional().describe('Executive BLUF and strategic focus'),
+                adaptive_architecture_rationale: z.string().optional().describe('Adaptive architecture rationale'),
+                plan_on_a_page: z.any().optional().describe('Executive BLUF, cultural tension, creative organizing idea, and strategic focus'),
                 comms_tasks: z.array(z.any()).optional().describe('T1-T5 behavioural ladder comms tasks'),
-                audience_architecture: z.array(z.any()).optional().describe('3-layer shopper audience cards with exclusions'),
-                tactical_placements: z.array(z.any()).optional().describe('Tactical media placement table rows'),
-                retail_media_shelf: z.any().optional().describe('Live Amazon and Walmart digital shelf competition'),
-                activation_manifest: z.any().optional().describe('Machine-readable ad ops activation manifest'),
-                formatted_markdown: z.string().optional().describe('Complete formatted agency deliverable in Markdown')
+                omitted_tasks_and_channels: z.array(z.any()).optional().describe('Deliberately omitted tasks and channels with strategic rationale'),
+                audience_architecture: z.array(z.any()).optional().describe('3-layer shopper audience cards with mandatory exclusions'),
+                media_opportunities: z.array(z.any()).optional().describe('Contextual connection points and named partner candidates'),
+                tactical_placements: z.array(z.any()).optional().describe('Tactical media placement table rows with ledger-governed provenance'),
+                strategic_hypotheses: z.array(z.any()).optional().describe('Strategic activation hypotheses requiring commercial validation'),
+                activation_concept: z.any().optional().describe('Featured signature flagship activation concept'),
+                rejected_channels: z.array(z.any()).optional().describe('Rejected channels and deliberate trade-offs'),
+                retail_media_shelf: z.any().optional().describe('Live Amazon and Walmart digital shelf competition diagnostics'),
+                sports_and_tentpole_media_rights: z.array(z.any()).optional().describe('Verified first-party US broadcast and streaming media rights ground-truth (FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH)'),
+                platform_integration_backlog: z.array(z.any()).optional().describe('Platform, audience affinity, and streaming API integration backlog'),
+                entertainment_and_audience_integration_backlog: z.array(z.any()).optional().describe('Entertainment, sports fan study, and streaming attention API integration backlog'),
+                research_diagnostics: z.any().optional().describe('Runtime research diagnostics including evidence_ledger (EVID-xxx) and downgrade status'),
+                activation_manifest: z.any().optional().describe('Machine-readable ad ops activation manifest including research_diagnostics.evidence_ledger'),
+                taxonomy: z.any().optional().describe('Resolved IAB 3.1/1.1, RMN shopper archetypes, and Alliant segments when view=shopper_taxonomy'),
+                markdown: z.string().optional().describe('Complete formatted 7-section Brand Connections Plan + Appendix A in Markdown'),
+                formatted_markdown: z.string().optional().describe('Complete formatted deliverable in Markdown (KaTeX math-safe)')
             }
         } as any,
-        async ({ query, brand, budget_tier, markets, userId: uid }) => {
+        async ({ query, view, domain, brand, budget_tier, markets, userId: uid }) => {
             try {
-                logUserQuery(query, 'comms_plan');
+                const callFoddaAPI = foddaRequest;
+                const resolvedView = view || 'full_plan';
+                const effectiveQuery = (query || '').trim();
+
+                if (resolvedView === 'sports_media_rights') {
+                    logUserQuery(effectiveQuery || 'all', 'sports_media_rights');
+                    const qs = new URLSearchParams();
+                    if (effectiveQuery) qs.set('query', effectiveQuery);
+                    if (domain && domain.trim()) qs.set('domain', domain.trim());
+                    const endpoint = `/v1/planning/sports-media-rights${qs.toString() ? `?${qs.toString()}` : ''}`;
+                    const data = await callFoddaAPI('GET', endpoint, apiKey, resolveUserId(userId, uid));
+                    const cleanPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
+                    const rights = cleanPayload?.sports_and_tentpole_media_rights || [];
+                    const backlog = cleanPayload?.entertainment_and_audience_integration_backlog || [];
+
+                    const rightsLines: string[] = [
+                        `# Official US Live Sports & Tentpole Broadcast/Streaming Media Rights (\`FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH\`)`,
+                        `**Query:** \`${cleanPayload?.query || effectiveQuery || 'all'}\`${domain ? ` · **Domain:** \`${domain}\`` : ''}`,
+                        '',
+                        '| League / Property | Rights Holders | Key Packages & Broadcast Windows | Contract Term | Buying Routes & Ad Sales | Citation |',
+                        '| :--- | :--- | :--- | :--- | :--- | :--- |',
+                        ...rights.map((r: any) => `| **${r.league_or_property}** | ${(r.rights_holders || []).join('; ')} | ${r.key_packages_and_windows || ''} | ${r.contract_term || ''} | ${r.ad_and_sponsorship_buying_routes || ''} | [Source](${r.primary_citation_url || ''}) (\`${r.provenance_classification || 'FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH'}\`) |`),
+                        '',
+                        `## Entertainment & Audience Affinity Integration Backlog`,
+                        ...backlog.map((b: any) => `- **${b.platform_or_provider} — ${b.opportunity_name}** (\`${b.integration_type}\` · ${b.integration_priority || 'P1'}): ${b.supported_capabilities || ''} ([Docs](${b.documentation_url || ''}))`)
+                    ];
+                    const safeRightsMd = rightsLines.join('\n').replace(/(?<!\\)\$([0-9])/g, '\\$$$1');
+                    const structuredRightsPayload = {
+                        view: 'sports_media_rights',
+                        query: cleanPayload?.query || effectiveQuery || 'all',
+                        ...(domain ? { domain } : {}),
+                        sports_and_tentpole_media_rights: rights,
+                        entertainment_and_audience_integration_backlog: backlog,
+                        platform_integration_backlog: backlog,
+                        markdown: safeRightsMd,
+                        formatted_markdown: safeRightsMd,
+                    };
+                    const combinedRightsText = safeRightsMd + '\n\n```json\n' + JSON.stringify({
+                        query: structuredRightsPayload.query,
+                        sports_and_tentpole_media_rights: rights,
+                        entertainment_and_audience_integration_backlog: backlog,
+                    }, null, 2) + '\n```';
+
+                    return {
+                        ...structuredRightsPayload,
+                        structuredContent: structuredRightsPayload,
+                        content: [{ type: 'text' as const, text: combinedRightsText }],
+                    };
+                }
+
+                if (resolvedView === 'shopper_taxonomy') {
+                    const taxQuery = effectiveQuery || brand || 'consumer retail';
+                    logUserQuery(taxQuery, 'shopper_taxonomy');
+                    const endpoint = `/v1/planning/shopper-taxonomy?query=${encodeURIComponent(taxQuery)}`;
+                    const data = await callFoddaAPI('GET', endpoint, apiKey, resolveUserId(userId, uid));
+                    const cleanPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
+                    const structuredTaxPayload = {
+                        view: 'shopper_taxonomy',
+                        query: cleanPayload?.query || taxQuery,
+                        taxonomy: cleanPayload?.taxonomy || cleanPayload,
+                    };
+                    return {
+                        ...structuredTaxPayload,
+                        structuredContent: structuredTaxPayload,
+                        content: [{ type: 'text' as const, text: JSON.stringify(structuredTaxPayload, null, 2) }],
+                    };
+                }
+
+                const planQuery = effectiveQuery || brand || 'Brand Connections Strategy';
+                logUserQuery(planQuery, 'comms_plan');
 
                 const guard = sptGuard('planning');
                 if (guard) return guard;
 
                 const body: Record<string, any> = {
-                    query,
+                    query: planQuery,
                     ...(brand ? { brand } : {}),
                     ...(budget_tier ? { budget_tier } : {}),
                     ...(Array.isArray(markets) && markets.length > 0 ? { markets } : {})
                 };
 
-                const data = await foddaRequest('POST', '/v1/planning/comms-plan', apiKey, resolveUserId(userId, uid), body);
+                const data = await callFoddaAPI('POST', '/v1/planning/comms-plan', apiKey, resolveUserId(userId, uid), body);
 
                 const withheld = await settleOrWithhold({
                     queryTypeCode: 'planning',
                     apiKey,
                     userId: resolveUserId(userId, uid),
-                    query,
+                    query: planQuery,
                 }, 'generate_comms_plan');
                 if (withheld) return withheld;
 
@@ -4930,17 +5017,36 @@ export async function createServer(
 
                 const cleanPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
 
+                const researchDiagnostics = cleanPayload?.research_diagnostics || cleanPayload?.activation_manifest?.research_diagnostics;
+                const sportsMediaRights = cleanPayload?.sports_and_tentpole_media_rights || cleanPayload?.activation_manifest?.sports_and_tentpole_media_rights || [];
+                const platformIntegrationBacklog = cleanPayload?.platform_integration_backlog || cleanPayload?.activation_manifest?.platform_integration_backlog || [];
+
                 const structuredBlock = {
+                    output_classification: cleanPayload?.output_classification || 'STRATEGIC CONNECTIONS PLAN',
                     retail_media_shelf: cleanPayload?.retail_media_shelf,
+                    sports_and_tentpole_media_rights: sportsMediaRights,
+                    research_diagnostics: researchDiagnostics,
+                    platform_integration_backlog: platformIntegrationBacklog,
                     activation_manifest: cleanPayload?.activation_manifest
                 };
                 const combinedText = safeMarkdown.trim() + '\n\n```json\n' + JSON.stringify(structuredBlock, null, 2) + '\n```';
 
-                return {
+                const fullResultPayload = {
                     ...cleanPayload,
+                    view: 'full_plan',
+                    output_classification: cleanPayload?.output_classification || 'STRATEGIC CONNECTIONS PLAN',
+                    markdown: safeMarkdown.trim(),
                     formatted_markdown: safeMarkdown.trim(),
                     retail_media_shelf: cleanPayload?.retail_media_shelf,
+                    sports_and_tentpole_media_rights: sportsMediaRights,
+                    research_diagnostics: researchDiagnostics,
+                    platform_integration_backlog: platformIntegrationBacklog,
                     activation_manifest: cleanPayload?.activation_manifest,
+                };
+
+                return {
+                    ...fullResultPayload,
+                    structuredContent: fullResultPayload,
                     content: [{ type: 'text' as const, text: combinedText }],
                 };
             } catch (err: any) {

@@ -2,11 +2,14 @@
  * Verification Test: generate_comms_plan Live MCP & API End-to-End Test
  *
  * Verifies:
- * 1. tools-manifest.json entry, categorization, scoped profiles, and Cost Silence
- * 2. Live call to POST /v1/planning/comms-plan with "Gen Z social running clubs" & "On Running"
- * 3. Plan structure: BLUF, T1-T5 comms tasks, 3-layer audience cards with exclusions, retail media shelf
- * 4. Machine-readable activation manifest
- * 5. KaTeX math safety: no bare dollar signs in markdown output
+ * 1. tools-manifest.json entry, categorization, scoped profiles, 7-section Brand Connections Plan description, and Cost Silence
+ * 2. Live call to POST /v1/planning/comms-plan & MCP handler (view='full_plan') with "Gen Z social running clubs" & "On Running"
+ * 3. 7-Section Strategy-to-Activation Brand Connections Plan + Appendix A (A.1-A.4) un-truncated
+ * 4. Runtime Evidence Ledger (research_diagnostics.evidence_ledger, EVID-xxx) & ledger-governed [LIVE]/[CAPABILITY]/[UNVERIFIED] tags
+ * 5. First-party US broadcast/streaming media rights (sports_and_tentpole_media_rights, FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH)
+ * 6. Enterprise audience-affinity & streaming backlog (platform_integration_backlog: YouGov, MRI-Simmons, FlixPatrol & Luminate, GlobalData)
+ * 7. Live call to GET /v1/planning/sports-media-rights & MCP handler (view='sports_media_rights')
+ * 8. KaTeX math safety: no bare dollar signs in markdown output
  */
 
 import 'dotenv/config';
@@ -15,6 +18,8 @@ import path from 'path';
 import axios from 'axios';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { createServer } from './toolHandlers.js';
+import { callFoddaAPI } from './foddaClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,8 +47,8 @@ async function callApi(method: 'GET' | 'POST', endpoint: string, body?: any) {
     const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-Fodda-Timestamp': timestamp,
-        'X-Fodda-Signature': signature,
         'X-Fodda-Billing': 'mcp-orchestrated',
+        'X-Fodda-Signature': signature,
         'X-API-Key': process.env.FODDA_API_KEY || 'sk_live_internal',
     };
 
@@ -78,67 +83,105 @@ async function run() {
         assert(commsTool.profiles.includes('claude'), 'profiles includes "claude"');
         assert(commsTool.profiles.includes('chatgpt'), 'profiles includes "chatgpt"');
         assert(commsTool.profiles.includes('copilot'), 'profiles includes "copilot"');
+        assert(commsTool.description.includes('Audience-Led Brand Connections Plan'), 'Description references Audience-Led Brand Connections Plan');
+        assert(commsTool.description.includes('Appendix A'), 'Description references isolated Appendix A');
+        assert(commsTool.description.includes('sports_media_rights'), 'Description documents view="sports_media_rights"');
         assert(!/\b(?:tokens?|via SPT)\b/i.test(commsTool.description), 'No prohibited token/SPT mentions in description');
     }
 
-    // 2. Live Backend API Execution
-    console.log('\n=== 2. Live API Call to POST /v1/planning/comms-plan ===');
+    // 2. Live MCP Tool Handler & Backend API Execution (view='full_plan')
+    console.log('\n=== 2. Live MCP Handler & API Call: POST /v1/planning/comms-plan (view="full_plan") ===');
     const query = 'Gen Z social running clubs';
     const brand = 'On Running';
+    const apiKey = process.env.FODDA_API_KEY || 'sk_live_internal';
+
+    const server = await createServer(
+        apiKey,
+        'test_comms_plan_verifier',
+        callFoddaAPI as any,
+        async () => ({}),
+        () => '',
+        () => 'https://mcp.fodda.ai'
+    );
+    const registeredTools = (server as any)._registeredTools;
+    const handler = registeredTools['generate_comms_plan']?.handler;
+    assert(typeof handler === 'function', 'generate_comms_plan handler is registered on MCP server');
 
     try {
-        const response = await callApi('POST', '/v1/planning/comms-plan', {
+        const mcpResult = await handler({
             query,
             brand,
             budget_tier: 'growth',
-            markets: ['US']
+            markets: ['US'],
+            view: 'full_plan'
         });
 
-        assert(response.status === 200, `POST /v1/planning/comms-plan returned HTTP ${response.status}`);
-        const data = response.data;
-        assert(data !== null && typeof data === 'object', 'Response payload is valid JSON object');
+        assert(!mcpResult.isError, 'MCP generate_comms_plan(view="full_plan") succeeded without error');
+        assert(mcpResult.output_classification === 'STRATEGIC CONNECTIONS PLAN', `output_classification is "${mcpResult.output_classification}"`);
+        assert(typeof mcpResult.brief === 'string' && mcpResult.brief.length > 0, `Brief is populated: "${mcpResult.brief}"`);
+        assert(mcpResult.brand === brand, `Brand matches target: "${mcpResult.brand}"`);
 
-        // Check BLUF
-        assert(typeof data.brief === 'string' && data.brief.length > 0, `Brief is populated: "${data.brief}"`);
-        assert(data.brand === brand, `Brand matches target: "${data.brand}"`);
-        assert(data.plan_on_a_page !== undefined, 'plan_on_a_page is present');
-        assert(typeof data.plan_on_a_page?.cultural_tension === 'string', `Cultural tension: "${data.plan_on_a_page?.cultural_tension?.slice(0, 80)}..."`);
-        assert(typeof data.plan_on_a_page?.comms_idea === 'string', `Comms idea: "${data.plan_on_a_page?.comms_idea}"`);
-        assert(typeof data.plan_on_a_page?.strategic_focus === 'string', 'High-level strategic focus callout is present');
+        // Check 7-Section Markdown + Appendix A (A.1 - A.4)
+        const md: string = mcpResult.formatted_markdown || mcpResult.markdown || '';
+        assert(md.length > 2000, `Full Markdown deliverable returned (${md.length} chars)`);
+        assert(md.includes('## 1. The Audience & Human Tension'), 'Section 1 (The Audience & Human Tension) present');
+        assert(md.includes('## 2. The Idea or Concept'), 'Section 2 (The Idea or Concept) present');
+        assert(md.includes('## 3. Connection Points'), 'Section 3 (Connection Points) present');
+        assert(md.includes('## 4. Role of Each Connection'), 'Section 4 (Role of Each Connection) present');
+        assert(md.includes('## 5. Retail and Commerce Connections'), 'Section 5 (Retail and Commerce Connections) present');
+        assert(md.includes('## 6. Priorities, Trade-offs & Deliberate Omissions'), 'Section 6 (Priorities, Trade-offs & Deliberate Omissions) present');
+        assert(md.includes('## 7. Evidence & Confidence Provenance'), 'Section 7 (Evidence & Confidence Provenance) present');
+        assert(md.includes('## Appendix A: Optional Media Buyer & Producer Reference'), 'Appendix A present (not stripped or truncated)');
+        assert(md.includes('### A.4 Official Live Sports & Tentpole Broadcast/Streaming Rights Reference'), 'Appendix A.4 Official Live Sports & Tentpole Broadcast/Streaming Rights present');
 
-        // Check Comms Tasks (T1-T5)
-        assert(Array.isArray(data.comms_tasks) && data.comms_tasks.length >= 5, `Comms tasks populated (${data.comms_tasks?.length || 0} tasks)`);
-        const taskIds = (data.comms_tasks || []).map((t: any) => t.task_id);
-        assert(taskIds.includes('T1 SEED') && taskIds.includes('T4 CAPTURE'), 'T1 SEED through T5 RETAIN behavioural ladder present');
+        // Check Runtime Evidence Ledger (research_diagnostics.evidence_ledger)
+        const ledger = mcpResult.research_diagnostics?.evidence_ledger || mcpResult.activation_manifest?.research_diagnostics?.evidence_ledger;
+        assert(Array.isArray(ledger) && ledger.length > 0, `Runtime Evidence Ledger populated (${ledger?.length || 0} EVID-xxx entries)`);
+        assert(ledger.every((e: any) => typeof e.evidence_id === 'string' && e.evidence_id.startsWith('EVID-')), 'All ledger rows have valid EVID-xxx IDs');
 
-        // Check Audience Architecture with Exclusions
-        assert(Array.isArray(data.audience_architecture) && data.audience_architecture.length >= 1, `Audience architecture populated (${data.audience_architecture?.length || 0} cards)`);
-        const allHaveExclusions = (data.audience_architecture || []).every((a: any) => Array.isArray(a.mandatory_exclusions) && a.mandatory_exclusions.length > 0);
-        assert(allHaveExclusions, 'All audience cards contain mandatory exclusions');
+        // Check Sports & Tentpole Media Rights
+        const rights = mcpResult.sports_and_tentpole_media_rights;
+        assert(Array.isArray(rights) && rights.length > 0, `sports_and_tentpole_media_rights populated (${rights?.length || 0} records)`);
+        assert(rights.every((r: any) => r.provenance_classification === 'FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH'), 'All sports rights records carry FIRST_PARTY_PUBLIC_RIGHTS_GROUND_TRUTH');
 
-        // Check Retail Media Shelf
-        assert(data.retail_media_shelf !== undefined, 'retail_media_shelf is present');
-        assert(data.retail_media_shelf?.amazon_competition_index !== undefined, `Amazon competition index: ${data.retail_media_shelf?.amazon_competition_index}`);
+        // Check Platform Integration Backlog
+        const backlog = mcpResult.platform_integration_backlog;
+        assert(Array.isArray(backlog) && backlog.length > 0, `platform_integration_backlog populated (${backlog?.length || 0} records)`);
+        const providers = backlog.map((b: any) => b.platform_or_provider);
+        assert(providers.includes('YouGov') && providers.includes('MRI-Simmons') && providers.includes('FlixPatrol & Luminate') && providers.includes('GlobalData'), 'Backlog includes YouGov, MRI-Simmons, FlixPatrol & Luminate, and GlobalData');
 
-        // Check Tactical Placements
-        assert(Array.isArray(data.tactical_placements) && data.tactical_placements.length > 0, `Tactical placements populated (${data.tactical_placements?.length || 0} rows)`);
-        const provenanceTypes = new Set((data.tactical_placements || []).map((p: any) => p.provenance_type));
-        assert(provenanceTypes.has('LIVE'), 'Tactical placements table includes [LIVE] provenance tags');
-
-        // Check Activation Manifest
-        assert(data.activation_manifest !== undefined && typeof data.activation_manifest === 'object', 'activation_manifest JSON object is present');
-        assert(Array.isArray(data.activation_manifest?.tasks), 'activation_manifest contains tasks array');
-        assert(Array.isArray(data.activation_manifest?.audiences), 'activation_manifest contains audiences array');
-        assert(Array.isArray(data.activation_manifest?.placements), 'activation_manifest contains placements array');
-
-        // Check Markdown Output & Dollar Sign Escaping
-        assert(typeof data.markdown === 'string' && data.markdown.length > 500, `Markdown deliverable length: ${data.markdown?.length || 0} chars`);
-        const bareDollarMatches = data.markdown.match(/(?<!\\)\$[0-9]/g);
+        // Check KaTeX math safety
+        const bareDollarMatches = md.match(/(?<!\\)\$[0-9]/g);
         assert(!bareDollarMatches || bareDollarMatches.length === 0, 'No bare dollar signs in markdown (KaTeX math-safe)');
-
     } catch (err: any) {
-        console.error('API call failed:', err?.response?.data || err?.message);
-        assert(false, `API call failed: ${err?.message}`);
+        console.error('full_plan call failed:', err?.response?.data || err?.message);
+        assert(false, `full_plan call failed: ${err?.message}`);
+    }
+
+    // 3. Live MCP Tool Handler & Backend API Execution (view='sports_media_rights')
+    console.log('\n=== 3. Live MCP Handler & API Call: GET /v1/planning/sports-media-rights (view="sports_media_rights") ===');
+    try {
+        const directRes = await callApi('GET', '/v1/planning/sports-media-rights?query=all&domain=sports');
+        assert(directRes.status === 200, `GET /v1/planning/sports-media-rights returned HTTP ${directRes.status}`);
+
+        const rightsResult = await handler({
+            view: 'sports_media_rights',
+            query: 'all',
+            domain: 'sports'
+        });
+
+        assert(!rightsResult.isError, 'MCP generate_comms_plan(view="sports_media_rights") succeeded without error');
+        assert(rightsResult.view === 'sports_media_rights', 'Returned view is "sports_media_rights"');
+        const allRights = rightsResult.sports_and_tentpole_media_rights || [];
+        const leagues = allRights.map((r: any) => r.league_or_property);
+        assert(allRights.length >= 5, `Returned all ${allRights.length} major sports/tentpole rights records: ${leagues.join(', ')}`);
+        assert(leagues.includes('Endurance & Olympic Sports') && leagues.includes('NFL') && leagues.includes('NBA') && leagues.includes('MLB') && leagues.includes('NHL'), 'Covers Endurance & Olympic Sports, NFL, NBA, MLB, and NHL');
+
+        const entBacklog = rightsResult.entertainment_and_audience_integration_backlog || [];
+        assert(entBacklog.length >= 4, `Returned ${entBacklog.length} entertainment_and_audience_integration_backlog items`);
+    } catch (err: any) {
+        console.error('sports_media_rights call failed:', err?.response?.data || err?.message);
+        assert(false, `sports_media_rights call failed: ${err?.message}`);
     }
 
     console.log(`\n================================================================`);
