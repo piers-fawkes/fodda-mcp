@@ -228,8 +228,8 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     generate_comms_plan: {
         section: 'Make something',
-        what_you_get: '7-section Audience-Led Brand Connections Plan (with Appendix A buyer specs & official US sports/streaming media rights) or standalone broadcast/streaming media rights lookup.',
-        when_to_use: 'Use to turn cultural trends and brand challenges into a Strategic Connections Plan, or pass view="sports_media_rights" for live US sports & tentpole broadcast/streaming rights ground-truth.',
+        what_you_get: '7-section Audience-Led Brand Connections Plan with cultural tension, creative idea, connection points, retail media strategy, and Appendix A buyer specs.',
+        when_to_use: 'Use to turn cultural trends and brand challenges into a Strategic Connections Plan and retail media activation roadmap.',
         example_prompt: 'Generate an Audience-Led Brand Connections Plan for On Running around Gen Z social running clubs.'
     },
     draft_linkedin_post: {

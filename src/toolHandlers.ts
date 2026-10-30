@@ -1182,13 +1182,12 @@ export async function createServer(
                     { endpoint: "POST /v1/brand-intelligence/:brand", mcp_tool: "brand_tracker", description: "Multi-graph brand footprint, Google Trends & Wikipedia pageviews" },
                     { endpoint: "GET /v1/statistics", mcp_tool: "search_statistics", description: "Hard numbers and quantitative metrics data layer" },
                     { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Certified multi-source Evidence Dossier on any topic" },
-                    { endpoint: "POST /v1/planning/comms-plan", mcp_tool: "generate_comms_plan", description: "Audience-Led Brand Connections Planner (7-Section Connections Plan + Appendix A & US Sports/Streaming Media Rights)" },
-                    { endpoint: "GET /v1/planning/sports-media-rights", mcp_tool: "generate_comms_plan", description: "Official US Live Sports & Tentpole Broadcast/Streaming Media Rights Ground-Truth (view='sports_media_rights')" }
+                    { endpoint: "POST /v1/planning/comms-plan", mcp_tool: "generate_comms_plan", description: "Audience-Led Brand Connections Planner (7-Section Connections Plan + Appendix A)" }
                 ],
                 possible_next_actions: [
                     { action: 'challenge', name: 'Pressure-test this', description: 'Search for counter-evidence, disconfirming signals, and untested assumptions.', target_tool: 'verify_market_claim' },
                     { action: 'ask_experts', name: 'Ask an expert', description: 'Consult a named Human Agent or specialist analyst to interpret the findings.', target_tool: 'find_expert' },
-                    { action: 'plan_comms', name: 'Generate Brand Connections Plan', description: 'Turn trend insights into a 7-section Audience-Led Brand Connections Plan with retail media & sports/streaming rights.', target_tool: 'generate_comms_plan' },
+                    { action: 'plan_comms', name: 'Generate Brand Connections Plan', description: 'Turn trend insights into a 7-section Audience-Led Brand Connections Plan and retail media activation strategy.', target_tool: 'generate_comms_plan' },
                     { action: 'track', name: 'Track this topic', description: 'Establish recurring intelligence updates for ongoing monitoring.', target_tool: 'manage_scheduled_reports' },
                     { action: 'create_brief', name: 'Create a brief', description: 'Turn completed research into a structured, executive-ready deliverable or article.', target_tool: 'request_deliverable' }
                 ]
@@ -1545,7 +1544,7 @@ export async function createServer(
                     {
                         action: 'plan_comms',
                         name: 'Generate Brand Connections Plan',
-                        description: 'Turn trend insights into a 7-section Audience-Led Brand Connections Plan with retail media and sports/streaming rights.',
+                        description: 'Turn trend insights into a 7-section Audience-Led Brand Connections Plan and retail media activation strategy.',
                         reason: `Translates cultural tensions on ${cleanTopic} into a creative organizing idea, contextual connection points, retail/commerce connections, deliberate omissions, a ledger-governed evidence table, and Appendix A buyer specs.`,
                         target_tool: 'generate_comms_plan',
                         suggested_prompt: `Generate an Audience-Led Brand Connections Plan for ${cleanTopic}`,
@@ -4885,7 +4884,7 @@ export async function createServer(
             userId: z.string().optional().describe('Optional user identifier.')
         },
         {
-            title: 'Generate Audience-Led Brand Connections Plan & Sports Media Rights',
+            title: 'Generate Brand Connections Plan',
             readOnlyHint: true,
             destructiveHint: false,
             idempotentHint: false,

@@ -5,6 +5,12 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.134] - 2026-10-30
+
+### Changed
+- **Simplified `generate_comms_plan` Display Title (`src/toolHandlers.ts`, `src/toolGuide.ts`)**:
+  - Updated `annotations.title` on `generate_comms_plan` from `'Generate Audience-Led Brand Connections Plan & Sports Media Rights'` to `'Generate Brand Connections Plan'` so Claude and MCP host permission modals show a clean, general planning label rather than highlighting the Appendix A.4 sports media rights reference lookup.
+
 ## [1.46.133] - 2026-10-30
 
 ### Changed & Enhanced (Brand Connections Plan & Sports/Streaming Media Rights Alignment)
