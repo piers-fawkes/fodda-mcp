@@ -108,11 +108,15 @@ async function runQaVerification() {
     const marinaCandidate = findParsed.results[1];
 
     assert.strictEqual(anuCandidate.status, 'active');
-    assert.ok(anuCandidate.next_step.startsWith('Call consult_human_agent'));
+    assert.ok(anuCandidate.next_step.startsWith('Consult Anu Lingala'));
+    assert.ok(!anuCandidate.next_step.includes('Call '));
+    assert.ok(!anuCandidate.next_step.includes('analyst_id:'));
 
     assert.strictEqual(marinaCandidate.status, 'on_request');
-    assert.ok(marinaCandidate.next_step.includes('request_expert_intro'), 'On-Request next_step must mention request_expert_intro');
-    console.log('   ✅ Marina candidate status is "on_request" with advisory intro next_step.');
+    assert.ok(marinaCandidate.next_step.includes('https://www.fodda.ai/experts/marina-reluskoska'));
+    assert.ok(marinaCandidate.next_step.includes('Request a facilitated advisory introduction'));
+    assert.ok(!marinaCandidate.next_step.includes('request_expert_intro('));
+    console.log('   ✅ Marina candidate status is "on_request" with clean advisory intro next_step.');
 
     // Check consult_human_agent domain fallback filtering
     console.log('\n2. Checking consult_human_agent fallback for Marina...');

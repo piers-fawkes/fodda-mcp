@@ -251,8 +251,11 @@ async function runTests() {
     assert.strictEqual(onReqCandidate.status, 'on_request');
     assert.strictEqual(onReqCandidate.search_ask_line, 'Ask Adam about market entry and compliance for nicotine pouches and vaping products.');
     assert.deepStrictEqual(onReqCandidate.why_matched, ['Nicotine pouches', 'Vaping products']);
-    assert.ok(onReqCandidate.next_step.includes('request_expert_intro(analyst_id: \'adam-specialist\')'));
-    assert.ok(onReqCandidate.next_step.includes('consult_human_agent(analyst_id: \'adam-specialist\')'));
+    assert.ok(onReqCandidate.next_step.includes('https://www.fodda.ai/experts/adam-specialist'));
+    assert.ok(onReqCandidate.next_step.includes('Request a facilitated advisory introduction, or consult broader domain intelligence.'));
+    assert.ok(!onReqCandidate.next_step.includes('request_expert_intro('));
+    assert.ok(!onReqCandidate.next_step.includes('consult_human_agent('));
+    assert.ok(!onReqCandidate.next_step.includes('analyst_id:'));
     console.log('✅ find_expert On-Request candidate routing verified.');
 
     // Test 3b.2: Active Human Agent via API
@@ -297,7 +300,9 @@ async function runTests() {
     const activeCandidate = activeParsed.candidates[0];
     assert.strictEqual(activeCandidate.status, 'active');
     assert.strictEqual(activeCandidate.consult_tool, 'consult_human_agent');
-    assert.strictEqual(activeCandidate.next_step, "Call consult_human_agent with analyst_id: 'tara-james-taylor'.");
+    assert.strictEqual(activeCandidate.next_step, "Consult Tara James Taylor directly on this question, or explore their methodology and domain frameworks.");
+    assert.ok(!activeCandidate.next_step.includes('Call '));
+    assert.ok(!activeCandidate.next_step.includes('analyst_id:'));
     console.log('✅ find_expert Active Human Agent routing verified.');
 
     // Test 3b.3: Zero Matches with Related Knowledge Graphs
@@ -332,7 +337,8 @@ async function runTests() {
     assert.deepStrictEqual(graphsParsed.candidates, []);
     assert.ok(graphsParsed.note.includes('No dedicated Human Agent covers this domain yet'));
     assert.ok(graphsParsed.note.includes('PSFK Technology & Enterprise, Mobility & Aerospace Trends'));
-    assert.ok(graphsParsed.note.includes("search_graph(graphId: 'tech', query: 'sub-orbital hypersonic space travel')"));
+    assert.ok(graphsParsed.note.includes("Explore related signals across PSFK Technology & Enterprise, Mobility & Aerospace Trends."));
+    assert.ok(!graphsParsed.note.includes("search_graph("));
     assert.strictEqual(graphsParsed.related_knowledge_graphs.length, 2);
     console.log('✅ find_expert Related Knowledge Graphs recommendation verified.');
 

@@ -284,6 +284,10 @@ compliance: RFC-2119
 - Prefer clear business language over internal schema terms (avoid echoing raw schema labels like "graph_id", "fan-out", "hedge probe", "coverage.status = 'thin'", or "digital twin").
 - Refer to experts by their actual name and role (e.g. "Ben Dietz, founder of [SIC]") and attribute sources clearly by curator or publication name.
 
+### RULE: CleanExecutivePresentation
+- Never expose internal tool names, function signatures, or parameter keys (e.g. consult_analyst, analyst_id) to human readers.
+- Recommend specialists and next actions using natural conversational prose and markdown links ([Name](url)).
+
 ### RULE: AgenticCoaching
 - Users can provide high-level research goals or questions and the assistant will route across the appropriate Fodda research tools.
 

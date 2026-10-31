@@ -5,6 +5,22 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.137] - 2026-10-31
+
+### Fixed & Enhanced (Purge Machine-Oriented Syntax from `find_expert` Payloads & Next Steps)
+- **Purge Function-Calling Pseudo-Code from `find_expert` Text Fields (`src/toolHandlers.ts`)**:
+  - Eliminated raw function signatures (`request_expert_intro(...)`, `consult_human_agent(...)`, `search_graph(...)`) and parameter assignments (`analyst_id: '...'`, `graphId: '...'`) from user-facing `next_step` and `note` string fields across both API and local fallback paths.
+  - **Active Specialists:** Replaced `Call ${consultTool} with analyst_id: '${analystId}'.` with clean executive prose: `Consult ${cleanDisplayName(r.name || analystId)} directly on this question, or explore their methodology and domain frameworks.`
+  - **On-Request Specialists:** Replaced pseudo-code calls with natural advisory copy and clean profile URL: `This specialist is available On Request (${profileUrl}). Request a facilitated advisory introduction, or consult broader domain intelligence.`
+  - **Graph Fallback Notes:** Replaced `Query them using search_graph(...)` with clean exploration guidance: `Explore related signals across ${relatedGraphs.map((g: any) => g.name).join(', ')}.`
+  - **Top-Level Fallback `next_step`:** Replaced developer instruction with natural next-action copy: `"Consult the recommended specialist directly on your inquiry, or request an introduction for bespoke advisory."`
+  - **Preserved Structured Machine Properties:** Left `analyst_id`, `consult_tool`, `status`, `category`, and `search_ask_line` intact on each candidate JSON object so orchestrating agents can execute structured tool calls reliably without leaking pseudo-code to human readers.
+- **Static Rule Reinforcement (`src/systemPrompt.ts`)**:
+  - Added `### RULE: CleanExecutivePresentation` under NLSpec v2 static behavioral rules explicitly instructing host models to never expose internal tool names, function signatures, or parameter keys (e.g. `consult_analyst`, `analyst_id`) to readers and to recommend specialists/next steps in natural prose with markdown links.
+- **Verification (`src/test_find_expert_clean_syntax.ts`, `src/test_expert_layer.ts`, `src/test_marina_dog_food_qa.ts`)**:
+  - Added dedicated test suite verifying zero function signatures or parameter labels in `next_step`/`note` strings across live API responses (query: `"clean beauty formulation"`), mock API envelopes, and local fallback matching.
+  - Updated existing regression tests to assert clean natural guidance and verified that all candidate objects preserve required machine metadata.
+
 ## [1.46.136] - 2026-10-31
 
 ### Added & Enhanced (Dynamic Tier Metering on `generate_comms_plan` & 5-Beat PSFK Newsletter Mode)

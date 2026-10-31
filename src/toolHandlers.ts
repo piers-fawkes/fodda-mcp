@@ -1979,18 +1979,17 @@ export async function createServer(
                             out_of_lane: false
                         };
 
+                        const profileUrl = `https://www.fodda.ai/experts/${analystId}`;
                         if (isOnRequest) {
                             candidateObj.status = 'on_request';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
                             if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
-                            candidateObj.next_step = isToolCallable('request_expert_intro')
-                                ? `This specialist is available On Request. Use request_expert_intro(analyst_id: '${analystId}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${analystId}') for domain fallback intelligence.`
-                                : `This specialist is available On Request (https://www.fodda.ai/experts/${analystId}). Call consult_human_agent(analyst_id: '${analystId}') for domain fallback intelligence.`;
+                            candidateObj.next_step = `This specialist is available On Request (${profileUrl}). Request a facilitated advisory introduction, or consult broader domain intelligence.`;
                         } else {
                             candidateObj.status = 'active';
                             if (r.search_ask_line) candidateObj.search_ask_line = r.search_ask_line;
                             if (Array.isArray(r.why_matched)) candidateObj.why_matched = r.why_matched;
-                            candidateObj.next_step = `Call ${consultTool} with analyst_id: '${analystId}'.`;
+                            candidateObj.next_step = `Consult ${cleanDisplayName(r.name || analystId)} directly on this question, or explore their methodology and domain frameworks.`;
                         }
 
                         return candidateObj;
@@ -2016,15 +2015,15 @@ export async function createServer(
 
                     if (results.length === 0 && onRequestExperts.length === 0) {
                         payload.note = relatedGraphs.length > 0
-                            ? `No dedicated Human Agent covers this domain yet. However, this topic is covered in Fodda Knowledge Graphs: ${relatedGraphs.map((g: any) => g.name).join(', ')}. Query them using search_graph(graphId: '${relatedGraphs[0].id}', query: '${query}').`
+                            ? `No dedicated Human Agent covers this domain yet. However, this topic is covered in Fodda Knowledge Graphs: ${relatedGraphs.map((g: any) => g.name).join(', ')}. Explore related signals across ${relatedGraphs.map((g: any) => g.name).join(', ')}.`
                             : 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.';
                         if (relatedGraphs.length > 0) {
                             payload.related_knowledge_graphs = relatedGraphs;
                         }
                     } else if (results.length > 0) {
-                        payload.next_step = results[0].next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them.";
+                        payload.next_step = results[0].next_step || "Consult the recommended specialist directly on your inquiry, or request an introduction for bespoke advisory.";
                     } else if (onRequestExperts.length > 0) {
-                        payload.next_step = onRequestExperts[0].next_step || (isToolCallable('request_expert_intro') ? "Use request_expert_intro to request an introduction." : "Visit the specialist's profile on https://www.fodda.ai/experts to connect.");
+                        payload.next_step = onRequestExperts[0].next_step || "Consult the recommended specialist directly on your inquiry, or request an introduction for bespoke advisory.";
                     }
 
                     return {
@@ -2069,6 +2068,7 @@ export async function createServer(
                         kind = 'active Human Agent';
                     }
 
+                    const profileUrl = `https://www.fodda.ai/experts/${c.analyst_id}`;
                     return {
                         ...c,
                         kind,
@@ -2077,10 +2077,8 @@ export async function createServer(
                         credibility_anchor: c.credibility_anchor || null,
                         status: c.status || 'active',
                         next_step: isOnReq
-                            ? (isToolCallable('request_expert_intro')
-                                ? `This specialist is available On Request. Use request_expert_intro(analyst_id: '${c.analyst_id}') to request an advisory introduction to this specialist, or call consult_human_agent(analyst_id: '${c.analyst_id}') for domain fallback intelligence.`
-                                : `This specialist is available On Request (https://www.fodda.ai/experts/${c.analyst_id}). Call consult_human_agent(analyst_id: '${c.analyst_id}') for domain fallback intelligence.`)
-                            : `Call ${c.consult_tool} with analyst_id: '${c.analyst_id}'.`
+                            ? `This specialist is available On Request (${profileUrl}). Request a facilitated advisory introduction, or consult broader domain intelligence.`
+                            : `Consult ${cleanDisplayName((c as any).name || c.display_name || c.analyst_id)} directly on this question, or explore their methodology and domain frameworks.`
                     };
                 });
 
@@ -2093,7 +2091,7 @@ export async function createServer(
                     ...(candidates.length === 0 ? {
                         note: 'No active expert directly covers this domain. Fodda fails honestly rather than forcing a weak referral.'
                     } : {
-                        next_step: candidates[0]?.next_step || "Call consult_human_agent or consult_analyst with the candidate's analyst_id to consult them."
+                        next_step: candidates[0]?.next_step || "Consult the recommended specialist directly on your inquiry, or request an introduction for bespoke advisory."
                     })
                 };
 
