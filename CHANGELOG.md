@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.46.136] - 2026-10-31
 
-### Added & Enhanced (5-Beat PSFK Newsletter & Retail Innovation Week Mode on `get_intelligence_dossier`)
+### Added & Enhanced (Dynamic Tier Metering on `generate_comms_plan` & 5-Beat PSFK Newsletter Mode)
+- **Dynamic Tier Metering & Schema Alignment on `generate_comms_plan` (`src/toolHandlers.ts`, `src/pricingCache.ts`, `src/toolGuide.ts`, `tools-manifest.json`)**:
+  - Aligned schema `view` enum to `['full_plan', 'core_plan', 'sports_media_rights', 'shopper_taxonomy']` (default `'full_plan'`).
+  - Documented in `view` parameter description:
+    - `"core_plan"`: Lightweight 7-section strategic plan (~33KB Markdown, 1 API call) grounded in Fodda Knowledge Graph trends (`EVID-FOD-01`) and live cultural signals without Appendix A or the raw JSON manifest. Recommended for fast chat, voice mode, and Base/Trial accounts.
+    - `"full_plan"`: Complete 7-section strategic plan + Appendix A (Buyer & Ad-Ops Execution Pack, IAB/OpenRTB 2.6 specs, live Amazon/Walmart shelf audits) + JSON `activation_manifest` (5 API calls).
+  - Implemented dynamic metering based on executed tier:
+    - Inspects `apiResponse.view` (handling Base/Trial accounts auto-downgraded by the API when `< 5` calls remain).
+    - When `apiResponse.view === "core_plan"`, meters via `POST /v1/research/meter` with `{ type: "planning_light", billable_units: 1 }`.
+    - When `apiResponse.view === "full_plan"`, meters via `POST /v1/research/meter` with `{ type: "planning", billable_units: 5 }`.
+    - When `view === "sports_media_rights"` or `"shopper_taxonomy"`, meters via `POST /v1/research/meter` with `{ type: "standalone_supplemental", billable_units: 1 }`.
+  - Updated `src/pricingCache.ts` with `planning` (5 API calls) and `planning_light` (1 API call) in `DEFAULT_PRICING`.
+  - Updated `get_capabilities(view: 'tools')` with `api_calls_override` noting approximate calls (`1 API call (core_plan) or 5 API calls (full_plan)`) and linking `https://www.fodda.ai/pricing` without bare dollar signs.
+  - Verified live execution across all 4 modes (`full_plan`, `core_plan`, `sports_media_rights`, `shopper_taxonomy`) with 54/54 assertions passing in `src/test_comms_plan_live.ts`.
 - **5-Beat PSFK / Retail Innovation Week Newsletter Architecture (`src/toolHandlers.ts`, `src/toolGuide.ts`, `tools-manifest.json`)**:
   - Upgraded `get_intelligence_dossier` in place (zero new tools added; tool count remains 56) from the legacy 4-beat formatter to the **5-Beat PSFK Weekly / Retail Innovation Week** structure plus the canonical **`### Query Fodda`** footer.
   - Added optional `editorial_mode` (`'blueprint' | 'full' | 'none'`) and `publication_style` (`'psfk_weekly' | 'retail_innovation_week'`, default `'psfk_weekly'`) parameters while keeping `topic`, `sector`, `tickers`, `include_editorial`, and `userId` backward-compatible.

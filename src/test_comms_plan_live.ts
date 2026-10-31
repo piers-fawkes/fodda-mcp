@@ -158,8 +158,42 @@ async function run() {
         assert(false, `full_plan call failed: ${err?.message}`);
     }
 
-    // 3. Live MCP Tool Handler & Backend API Execution (view='sports_media_rights')
-    console.log('\n=== 3. Live MCP Handler & API Call: GET /v1/planning/sports-media-rights (view="sports_media_rights") ===');
+    // 3. Live MCP Tool Handler & Backend API Execution (view='core_plan')
+    console.log('\n=== 3. Live MCP Handler & API Call: POST /v1/planning/comms-plan (view="core_plan") ===');
+    try {
+        const coreResult = await handler({
+            query,
+            brand,
+            budget_tier: 'growth',
+            markets: ['US'],
+            view: 'core_plan'
+        });
+
+        assert(!coreResult.isError, 'MCP generate_comms_plan(view="core_plan") succeeded without error');
+        assert(coreResult.view === 'core_plan', `coreResult.view is "core_plan" (got: "${coreResult.view}")`);
+        assert(coreResult.output_classification === 'STRATEGIC CONNECTIONS PLAN', `output_classification is "${coreResult.output_classification}"`);
+
+        const coreMd: string = coreResult.formatted_markdown || coreResult.markdown || '';
+        assert(coreMd.length > 2000, `Core Markdown deliverable returned (${coreMd.length} chars)`);
+        assert(coreMd.includes('## 1. The Audience & Human Tension'), 'Section 1 present in core_plan');
+        assert(coreMd.includes('## 7. Evidence & Confidence Provenance'), 'Section 7 present in core_plan');
+        assert(!coreMd.includes('## Appendix A: Optional Media Buyer'), 'Appendix A omitted from core_plan deliverable');
+        assert(coreResult.activation_manifest === undefined, 'Raw JSON activation_manifest omitted from core_plan response');
+
+        const contentText: string = coreResult.content?.[0]?.text || '';
+        assert(!contentText.includes('```json'), 'No raw JSON payload block appended to content[0].text in core_plan mode');
+        assert(contentText.length > 1000, 'Clean Markdown returned directly in content[0].text');
+
+        // Check KaTeX math safety in core_plan
+        const bareDollarMatchesCore = coreMd.match(/(?<!\\)\$[0-9]/g);
+        assert(!bareDollarMatchesCore || bareDollarMatchesCore.length === 0, 'No bare dollar signs in core_plan markdown');
+    } catch (err: any) {
+        console.error('core_plan call failed:', err?.response?.data || err?.message);
+        assert(false, `core_plan call failed: ${err?.message}`);
+    }
+
+    // 4. Live MCP Tool Handler & Backend API Execution (view='sports_media_rights')
+    console.log('\n=== 4. Live MCP Handler & API Call: GET /v1/planning/sports-media-rights (view="sports_media_rights") ===');
     try {
         const directRes = await callApi('GET', '/v1/planning/sports-media-rights?query=all&domain=sports');
         assert(directRes.status === 200, `GET /v1/planning/sports-media-rights returned HTTP ${directRes.status}`);
@@ -182,6 +216,21 @@ async function run() {
     } catch (err: any) {
         console.error('sports_media_rights call failed:', err?.response?.data || err?.message);
         assert(false, `sports_media_rights call failed: ${err?.message}`);
+    }
+
+    // 5. Live MCP Tool Handler & Backend API Execution (view='shopper_taxonomy')
+    console.log('\n=== 5. Live MCP Handler & API Call: GET /v1/planning/shopper-taxonomy (view="shopper_taxonomy") ===');
+    try {
+        const taxResult = await handler({
+            view: 'shopper_taxonomy',
+            query: 'running shoes and athletic apparel',
+        });
+        assert(!taxResult.isError, 'MCP generate_comms_plan(view="shopper_taxonomy") succeeded without error');
+        assert(taxResult.view === 'shopper_taxonomy', 'Returned view is "shopper_taxonomy"');
+        assert(Boolean(taxResult.taxonomy), 'Taxonomy object is returned');
+    } catch (err: any) {
+        console.error('shopper_taxonomy call failed:', err?.response?.data || err?.message);
+        assert(false, `shopper_taxonomy call failed: ${err?.message}`);
     }
 
     console.log(`\n================================================================`);

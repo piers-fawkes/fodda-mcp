@@ -116,6 +116,12 @@ async function run() {
             assert(!t.example_prompt.includes('seed node'), `Tool ${t.tool} must not reference seed node`);
         }
     }
+    const commsPlanGuideItem = data5.sections
+        .flatMap((s: any) => s.tools)
+        .find((t: any) => t.tool === 'generate_comms_plan');
+    assert(commsPlanGuideItem, 'generate_comms_plan must be present in tool guide');
+    assert(commsPlanGuideItem.api_calls?.includes('1 API call (core_plan) or 5 API calls (full_plan)'), 'generate_comms_plan documents 1 API call (core_plan) or 5 API calls (full_plan)');
+    assert(commsPlanGuideItem.api_calls?.includes('https://www.fodda.ai/pricing'), 'generate_comms_plan links pricing page');
     const rawGuideText = JSON.stringify(data5);
     assert(!rawGuideText.includes('$'), 'Tool guide must NOT contain any dollar signs ($)');
     assert(!rawGuideText.toLowerCase().includes('neo4j'), 'Tool guide must not contain Neo4j');

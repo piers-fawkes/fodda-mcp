@@ -108,6 +108,12 @@ async function run() {
     const analyst = costs.find(c => c.tool === 'consult_analyst');
     assert(analyst?.apiCalls === 1, `Synthetic Analyst Consult = 1 API call (got: ${analyst?.apiCalls})`);
 
+    const planning = costs.find(c => c.tool === 'generate_comms_plan' && c.mode !== 'core_plan');
+    assert(planning?.apiCalls === 5, `Planning (Full Plan) = 5 API calls (got: ${planning?.apiCalls})`);
+
+    const planningLight = costs.find(c => c.tool === 'generate_comms_plan' && c.mode === 'core_plan');
+    assert(planningLight?.apiCalls === 1, `Planning Light (Core Plan) = 1 API call (got: ${planningLight?.apiCalls})`);
+
     console.log('\n=== 4. Zero Inflation Guard (DoD check) ===');
     const inflated40 = costs.filter(c => c.apiCalls >= 40);
     assert(inflated40.length === 0, `Zero tools charged at 40+ calls (found: ${inflated40.map(c => `${c.tool}:${c.apiCalls}`).join(', ') || 'none'})`);
