@@ -37,6 +37,7 @@ export interface ToolGuideDefinition {
     what_you_get: string;
     when_to_use: string;
     example_prompt: string;
+    api_calls_override?: string;
 }
 
 /**
@@ -78,9 +79,9 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     get_intelligence_dossier: {
         section: 'Research',
-        what_you_get: 'Certified multi-source evidence dossier synthesizing trend nodes, corporate disclosures, and quantitative statistics.',
-        when_to_use: 'Use when preparing a comprehensive evidence dossier for executive review or strategy formulation.',
-        example_prompt: 'Create an evidence dossier on circularity in sportswear.'
+        what_you_get: 'Certified multi-source evidence dossier and optional 5-beat PSFK Weekly or Retail Innovation Week executive newsletter briefing with canonical Fodda links.',
+        when_to_use: 'Use when preparing a comprehensive evidence dossier, a 5-beat executive briefing, or a PSFK Weekly / Retail Innovation Week newsletter article on any topic, sector tension, or company cohort.',
+        example_prompt: 'Write a 5-beat PSFK newsletter briefing on circularity in sportswear.'
     },
     search_statistics: {
         section: 'Research',
@@ -228,9 +229,10 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     generate_comms_plan: {
         section: 'Make something',
-        what_you_get: '7-section Audience-Led Brand Connections Plan with cultural tension, creative idea, connection points, retail media strategy, and Appendix A buyer specs.',
+        what_you_get: '7-section Audience-Led Brand Connections Plan (pass view="core_plan" for fast chat/voice mode, or view="full_plan" for buyer specs & manifest).',
         when_to_use: 'Use to turn cultural trends and brand challenges into a Strategic Connections Plan and retail media activation roadmap.',
-        example_prompt: 'Generate an Audience-Led Brand Connections Plan for On Running around Gen Z social running clubs.'
+        example_prompt: 'Generate an Audience-Led Brand Connections Plan for On Running around Gen Z social running clubs.',
+        api_calls_override: 'Normally about 1 API call (core_plan) or 5 API calls (full_plan). See https://www.fodda.ai/pricing for the latest prices.'
     },
     draft_linkedin_post: {
         section: 'Make something',
@@ -284,8 +286,15 @@ export interface ToolGuideResponse {
     sections: ToolGuideSectionGroup[];
 }
 
+function getSectionDescription(section: ToolGuideSection): string {
+    if (section === 'Research') {
+        return `Explore market evidence, trends, brand footprints, corporate reports, and statistics across ${getLiveGraphCount()}+ knowledge graphs.`;
+    }
+    return SECTION_DESCRIPTIONS[section];
+}
+
 const SECTION_DESCRIPTIONS: Record<ToolGuideSection, string> = {
-    'Research': `Explore market evidence, trends, brand footprints, corporate reports, and statistics across ${getLiveGraphCount()}+ knowledge graphs.`,
+    'Research': '',
     'Pressure-test': 'Challenge a strategy, hypothesis, or pitch against primary evidence, earnings divergence, and counter-arguments.',
     'Ask an expert': 'Consult verified Human Agents (practitioners with digital twins), C-Suite personas, and specialist analysts.',
     'Make something': 'Turn verified intelligence into finished work product: strategy briefs, comms plans, articles, and executive memos.',
@@ -344,7 +353,9 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
 
         // For tools that normally use multiple calls, state approximate count and link pricing.
         // For tools that use 0 or standard single calls, say nothing about cost.
-        if (apiCalls > 1) {
+        if (def.api_calls_override) {
+            item.api_calls = def.api_calls_override;
+        } else if (apiCalls > 1) {
             item.api_calls = `Normally about ${apiCalls} API calls. See https://www.fodda.ai/pricing for the latest prices.`;
         }
 
@@ -368,7 +379,7 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
         }
         return {
             section,
-            description: SECTION_DESCRIPTIONS[section],
+            description: getSectionDescription(section),
             tools
         };
     }).filter(g => g.tools.length > 0 || g.section === 'Track');

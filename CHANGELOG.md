@@ -5,6 +5,37 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.136] - 2026-10-31
+
+### Added & Enhanced (5-Beat PSFK Newsletter & Retail Innovation Week Mode on `get_intelligence_dossier`)
+- **5-Beat PSFK / Retail Innovation Week Newsletter Architecture (`src/toolHandlers.ts`, `src/toolGuide.ts`, `tools-manifest.json`)**:
+  - Upgraded `get_intelligence_dossier` in place (zero new tools added; tool count remains 56) from the legacy 4-beat formatter to the **5-Beat PSFK Weekly / Retail Innovation Week** structure plus the canonical **`### Query Fodda`** footer.
+  - Added optional `editorial_mode` (`'blueprint' | 'full' | 'none'`) and `publication_style` (`'psfk_weekly' | 'retail_innovation_week'`, default `'psfk_weekly'`) parameters while keeping `topic`, `sector`, `tickers`, `include_editorial`, and `userId` backward-compatible.
+  - Defaults interactive Claude and ChatGPT sessions (`sessionSource === 'claude' || sessionSource === 'chatgpt'`) to fast `editorial_mode: 'blueprint'` when `include_editorial: true` (unless `editorial_mode: 'full'` is explicitly set), returning the pre-linked 5-Beat Newsletter Blueprint + Strict Composition Contract without double-LLM timeout.
+  - Embedded all refined PSFK house editorial rules into both the blueprint composition contract and full 5-beat renderer:
+    - **Beat 1 (`### 1.` — Market Condition & The Numbers):** Story and consumer behavior first in 2 breathable paragraphs, capped at 1 sharp contrast metric per company with explicit 2026 financial period.
+    - **Beat 2 (`### 2.` — Core Tension & Published Research):** Woven published research reports (`https://www.fodda.ai/graphs/:slug?q=...`), macro statistics (BLS, Census, PubMed), and 3rd-party non-verbatim commentary (`quotable: false`, paraphrased in 3rd person and never placed inside `"..."`).
+    - **Beat 3 (`### 3.` — Competing Corporate Playbooks):** Company-first hyperlinked earnings call openers (`[During <Company>'s Q3 2026 earnings call](https://www.fodda.ai/?q=...)`) + verbatim executive quotes (`quotable: true` inside `"..."`).
+    - **Beat 4 (`### 4.` — Cross-Domain Case Studies & Expert Frameworks):** Varied, natural PSFK trend framing (*"Under the PSFK trend ... found in the Fodda graph"*, *"Within the trend ..., PSFK researchers highlight how..."*, *"Under another PSFK identified trend, ..."*) + mandatory 4-part Human Agent attribution arc (`https://www.fodda.ai/experts/:slug?q=...` and `[When his/her Human Agent is queried through Fodda](https://www.fodda.ai/experts/:slug)`, never in `"..."`).
+    - **Beat 5 (`### 5.` — Strategic Stakes & Executive Playbook) + `### Query Fodda`:** 4 actionable bulleted executive takeaways + pre-built canonical `https://www.fodda.ai` quick-links.
+    - **Strict Style Hygiene:** Enforces zero em/en dashes, escapes bare `$` signs before digits (`\$`), strips bracketed footnote numbers (`[1]`, `[2]`), and normalizes legacy `claude.ai/new` links to canonical `https://www.fodda.ai` destinations.
+- **Verification (`src/test_intelligence_and_verifier.ts`)**:
+  - Verified 38/38 assertions covering manifest tool count invariance (56 tools), Cost Silence compliance, interactive Claude/ChatGPT `blueprint` mode rendering, `full` 5-beat editorial mode rendering, quote/perspective attribution guards, and live `POST /v1/intelligence/dossier` execution.
+
+## [1.46.135] - 2026-10-31
+
+### Added & Enhanced (Core Plan & Chat Ergonomics on `generate_comms_plan`)
+- **Lightweight `core_plan` View Mode (`src/toolHandlers.ts`, `src/toolGuide.ts`)**:
+  - Added `view: "core_plan" | "full_plan"` support on `generate_comms_plan` (defaulting to `"full_plan"`).
+  - `view: "core_plan"` forwards `view: "core_plan"` to `POST /v1/planning/comms-plan` and returns the clean 7-section strategic markdown deliverable (~33KB) directly in `content[0].text` without appending the raw JSON `activation_manifest` block, making it fast and ergonomic for interactive chat, voice mode, and Base/Trial tier accounts.
+  - Automatically handles API-downgraded trial/base responses (`data.view === "core_plan"` / `plan_tier_executed === "core_plan"`) by omitting the trailing JSON block.
+- **Payload Deduplication & Clean Aliasing (`src/toolHandlers.ts`)**:
+  - Removed deprecated `tactical_placements` and `placements` aliases from `outputSchema` and payload wrappers; reads only `plan.media_opportunities` across both `core_plan` and `full_plan` responses.
+- **Query Pricing Cache Support (`src/pricingCache.ts`)**:
+  - Added `planning_light` query type (1 API call / \$0.50 USD, `mode: 'core_plan'`, `meterInteractionType: 'planning_light'`) to `DEFAULT_PRICING` matching backend metering rules.
+- **Live Verification (`src/test_comms_plan_live.ts`)**:
+  - Verified live `view: "core_plan"` (clean ~38KB markdown deliverable, 0 JSON blocks in content text, Sections 1–7 verified, Appendix A omitted) and `view: "full_plan"` (full 7-section plan + Appendix A + activation manifest).
+
 ## [1.46.134] - 2026-10-30
 
 ### Changed
