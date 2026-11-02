@@ -5,6 +5,16 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.138] - 2026-11-02
+
+### Fixed & Enhanced (Clean Markdown Output on `generate_comms_plan` Default Views)
+- **Omit Trailing JSON Codeblock from Default `full_plan` Responses (`src/toolHandlers.ts`)**:
+  - Updated `generate_comms_plan` handler in `src/toolHandlers.ts` to inspect `executedView`.
+  - Appends the structured JSON activation manifest / diagnostics codeblock (`\n\n```json\n...`) to `content[0].text` only when `executedView === 'diagnostic'`.
+  - In `full_plan` (default) and `core_plan` modes, returns clean client-ready Markdown (`content: [{ type: 'text', text: safeMarkdown.trim() }]`) without trailing JSON payload blocks.
+  - Preserved full structured JSON payloads in `structuredContent` and `fullResultPayload` so tool callers and programmatic consumers retain full access to machine-readable diagnostics, retail media shelf data, and media opportunities.
+  - Supported `view: 'diagnostic'` in input schema `view` enum and forwarded `view: 'diagnostic'` to backend API (`POST /v1/planning/comms-plan`).
+
 ## [1.46.137] - 2026-10-31
 
 ### Fixed & Enhanced (Purge Machine-Oriented Syntax from `find_expert` Payloads & Next Steps)

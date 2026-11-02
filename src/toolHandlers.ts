@@ -5638,7 +5638,7 @@ export async function createServer(
         'Use when translating cultural trends, brand challenges, and consumer insights into an Audience-Led Brand Connections Plan, or when looking up official US sports and tentpole broadcast/streaming media rights. Supports view="core_plan" (returns only the 7 core strategic sections in clean Markdown (~33KB) backed by Fodda Knowledge Graph trends and keyless signal verification, omitting Appendix A and the raw JSON manifest; ideal for interactive chat, voice mode, and Base/Trial accounts) and view="full_plan" (default: complete 7-section strategic plan + Appendix A buyer execution pack with IAB/RMN codes, bid mechanics, and machine-readable activation manifest). Pass view="sports_media_rights" to route to GET /v1/planning/sports-media-rights for fast US broadcast/streaming rights ground-truth across Endurance & Olympic Sports (NBCU/Peacock through 2032), NFL (through 2033), NBA (2025-2036), MLB (through 2028), and NHL (through 2028), alongside the entertainment and audience affinity integration backlog (YouGov Profiles MCP, MRI-Simmons Sports Fan Study, FlixPatrol & Luminate SV(M), GlobalData Sports Media Deals). Pass view="shopper_taxonomy" to resolve IAB 3.1/1.1, RMN shopper archetypes, and Alliant segments.',
         {
             query: z.string().optional().default('').describe("The trend, category, strategic challenge, or sports/media property to build a Brand Connections Plan or look up sports/streaming media rights for (e.g. 'Gen Z social running clubs', 'functional mushroom coffee', 'NBA', 'NFL', 'Endurance & Olympic Sports')."),
-            view: z.enum(['full_plan', 'core_plan', 'sports_media_rights', 'shopper_taxonomy']).optional().default('full_plan').describe("Execution view mode: 'full_plan' (default) returns the complete 7-section strategic plan + Appendix A (Buyer & Ad-Ops Execution Pack, IAB/OpenRTB 2.6 specs, live Amazon/Walmart shelf audits) + JSON activation_manifest (5 API calls); 'core_plan' returns a lightweight 7-section strategic plan (~33KB Markdown, 1 API call) grounded in Fodda Knowledge Graph trends (EVID-FOD-01) and live cultural signals without Appendix A or the raw JSON manifest (recommended for fast chat, voice mode, and Base/Trial accounts); 'sports_media_rights' routes to GET /v1/planning/sports-media-rights for fast US broadcast/streaming rights ground-truth; 'shopper_taxonomy' routes to GET /v1/planning/shopper-taxonomy for IAB/RMN audience codes."),
+            view: z.enum(['full_plan', 'core_plan', 'diagnostic', 'sports_media_rights', 'shopper_taxonomy']).optional().default('full_plan').describe("Execution view mode: 'full_plan' (default) returns the complete 7-section strategic plan + Appendix A (Buyer & Ad-Ops Execution Pack, IAB/OpenRTB 2.6 specs, live Amazon/Walmart shelf audits) in clean client-ready Markdown; 'diagnostic' returns the full strategic plan Markdown plus the appended structured JSON activation manifest and diagnostics codeblock; 'core_plan' returns a lightweight 7-section strategic plan (~33KB Markdown, 1 API call) grounded in Fodda Knowledge Graph trends (EVID-FOD-01) and live cultural signals without Appendix A or the raw JSON manifest (recommended for fast chat, voice mode, and Base/Trial accounts); 'sports_media_rights' routes to GET /v1/planning/sports-media-rights for fast US broadcast/streaming rights ground-truth; 'shopper_taxonomy' routes to GET /v1/planning/shopper-taxonomy for IAB/RMN audience codes."),
             domain: z.string().optional().describe("Optional domain filter when using view='sports_media_rights' (e.g. 'sports', 'endurance', 'entertainment')."),
             brand: z.string().optional().describe("Target brand name (e.g. 'On Running', 'Olipop', 'Cava'). Defaults to 'Brand'."),
             budget_tier: z.enum(['emerging', 'growth', 'scale']).optional().describe("Budget allocation scale: 'emerging' (lean test-and-learn), 'growth' (balanced brand & retail media), or 'scale' (full omni-channel saturation). Defaults to 'growth'."),
@@ -5652,7 +5652,7 @@ export async function createServer(
             idempotentHint: false,
             openWorldHint: true,
             outputSchema: {
-                view: z.string().optional().describe('Executed view mode: core_plan, full_plan, sports_media_rights, or shopper_taxonomy'),
+                view: z.string().optional().describe('Executed view mode: core_plan, full_plan, diagnostic, sports_media_rights, or shopper_taxonomy'),
                 plan_tier: z.string().optional().describe('Executed plan tier (e.g. core_plan, base_trial_auto, full_plan)'),
                 query: z.string().optional().describe('Query executed'),
                 brief: z.string().optional().describe('Strategic brief / topic investigated'),
@@ -5783,7 +5783,7 @@ export async function createServer(
 
                 const body: Record<string, any> = {
                     query: planQuery,
-                    view: resolvedView === 'core_plan' ? 'core_plan' : 'full_plan',
+                    view: resolvedView === 'core_plan' ? 'core_plan' : (resolvedView === 'diagnostic' ? 'diagnostic' : 'full_plan'),
                     ...(brand ? { brand } : {}),
                     ...(budget_tier ? { budget_tier } : {}),
                     ...(Array.isArray(markets) && markets.length > 0 ? { markets } : {})
@@ -5846,11 +5846,9 @@ export async function createServer(
                     platform_integration_backlog: platformIntegrationBacklog,
                     activation_manifest: cleanPayload?.activation_manifest
                 };
-                const combinedText = safeMarkdown.trim() + '\n\n```json\n' + JSON.stringify(structuredBlock, null, 2) + '\n```';
-
                 const fullResultPayload = {
                     ...cleanPayload,
-                    view: 'full_plan',
+                    view: executedView === 'diagnostic' ? 'diagnostic' : 'full_plan',
                     output_classification: cleanPayload?.output_classification || 'STRATEGIC CONNECTIONS PLAN',
                     markdown: safeMarkdown.trim(),
                     formatted_markdown: safeMarkdown.trim(),
@@ -5862,10 +5860,14 @@ export async function createServer(
                     activation_manifest: cleanPayload?.activation_manifest,
                 };
 
+                const responseText = executedView === 'diagnostic'
+                    ? safeMarkdown.trim() + '\n\n```json\n' + JSON.stringify(structuredBlock, null, 2) + '\n```'
+                    : safeMarkdown.trim();
+
                 return {
                     ...fullResultPayload,
                     structuredContent: fullResultPayload,
-                    content: [{ type: 'text' as const, text: combinedText }],
+                    content: [{ type: 'text' as const, text: responseText }],
                 };
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
