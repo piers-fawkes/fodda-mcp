@@ -20,6 +20,7 @@ import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
 import { registerAgentFactsRoute } from './agentFacts.js';
 import { getTelemetryStats, recordFeedbackEntry } from './telemetry.js';
+import { getStoredOAuthToken, storeOAuthToken, getStoredSession, storeSession } from './sessionStore.js';
 import * as dotenv from 'dotenv';
 import {
     API_BASE_URL,
@@ -653,17 +654,23 @@ app.get('/widget/:id', (req, res) => {
 // Session management
 // ---------------------------------------------------------------------------
 
-const transports = new Map<string, StreamableHTTPServerTransport>();
-const sessionApiKeys = new Map<string, string>();
-const sessionUserIds = new Map<string, string>();
-const sessionSources = new Map<string, string>();
+export const transports = new Map<string, StreamableHTTPServerTransport>();
+export const sessionApiKeys = new Map<string, string>();
+export const sessionUserIds = new Map<string, string>();
+export const sessionSources = new Map<string, string>();
 export const sessionClients = new Map<string, string>();
-// SPT-paying anonymous sessions (no API key). Holds the token + the connect-time
-// validate result (cap + price map) so per-task coverage can be checked locally.
-const sessionSpts = new Map<string, { token: string; maxAmountCents: number | null; prices: Record<string, number> }>();
-// Track session creation time in our own Map (transport._createdAt is a private
-// field that is never set by the SDK — reading it always yields undefined).
-const sessionCreatedAt = new Map<string, number>();
+export const sessionSpts = new Map<string, { token: string; maxAmountCents: number | null; prices: Record<string, number> }>();
+export const sessionCreatedAt = new Map<string, number>();
+
+export function clearInMemorySessions(): void {
+    transports.clear();
+    sessionApiKeys.clear();
+    sessionUserIds.clear();
+    sessionSources.clear();
+    sessionClients.clear();
+    sessionSpts.clear();
+    sessionCreatedAt.clear();
+}
 
 
 
@@ -1184,39 +1191,49 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         // If it's not a standard sk_live_ / sk_trial_ key and not internal auth, send it to clerk-resolve.
         const isClerkJwt = !isSpt && !isInternalAuth && rawBearer.length > 0 && !rawBearer.startsWith('sk_live_') && !rawBearer.startsWith('sk_trial_');
         if (isClerkJwt) {
-            // Attempt Clerk JWT → Fodda API key resolution
-            try {
-                const resolveUrl = `${API_BASE_URL}/v1/auth/clerk-resolve`;
-                const resolveResp = await axios.post(resolveUrl, { clerk_jwt: rawBearer }, {
-                    headers: { 'X-Internal-Key': process.env.FODDA_INTERNAL_API_KEY || '' },
-                    timeout: 5000,
-                });
-                if (resolveResp.data?.api_key) {
-                    (req as any).__resolvedApiKey = resolveResp.data.api_key;
-                    (req as any).__resolvedUserId = resolveResp.data.user_id || 'oauth_user';
-                } else {
+            const tokenHash = crypto.createHash('sha256').update(rawBearer).digest('hex');
+            const cachedOAuth = await getStoredOAuthToken(tokenHash);
+            if (cachedOAuth?.apiKey) {
+                (req as any).__resolvedApiKey = cachedOAuth.apiKey;
+                (req as any).__resolvedUserId = cachedOAuth.userId || 'oauth_user';
+            } else {
+                // Attempt Clerk JWT → Fodda API key resolution
+                try {
+                    const resolveUrl = `${API_BASE_URL}/v1/auth/clerk-resolve`;
+                    const resolveResp = await axios.post(resolveUrl, { clerk_jwt: rawBearer }, {
+                        headers: { 'X-Internal-Key': process.env.FODDA_INTERNAL_API_KEY || '' },
+                        timeout: 5000,
+                    });
+                    if (resolveResp.data?.api_key) {
+                        const resKey = resolveResp.data.api_key;
+                        const resUser = resolveResp.data.user_id || 'oauth_user';
+                        (req as any).__resolvedApiKey = resKey;
+                        (req as any).__resolvedUserId = resUser;
+                        await storeOAuthToken(tokenHash, resKey, resUser);
+                    } else {
+                        return sendAuth401(res, {
+                            offeringSlug,
+                            message: 'OAuth token could not be resolved to a Fodda account. Visit https://app.fodda.ai to reconnect.',
+                            invalidToken: true,
+                            id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                        });
+                    }
+                } catch (clerkErr: any) {
+                    const status = clerkErr.response?.status;
+                    if (status === 404 || status === 501) {
+                        return res.status(501).json({
+                            jsonrpc: '2.0',
+                            error: { code: -32000, message: 'OAuth token resolution is not yet available on this server. Please use header API key auth (Authorization: Bearer sk_live_...) from https://app.fodda.ai.' },
+                            id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                        });
+                    }
                     return sendAuth401(res, {
                         offeringSlug,
-                        message: 'OAuth token could not be resolved to a Fodda account. Visit https://app.fodda.ai to reconnect.',
+                        message: 'OAuth token validation failed. Please reconnect at https://app.fodda.ai.',
                         invalidToken: true,
                         id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
                     });
                 }
-            } catch (clerkErr: any) {
-                const status = clerkErr.response?.status;
-                if (status === 404 || status === 501) {
-                    return res.status(501).json({
-                        jsonrpc: '2.0',
-                        error: { code: -32000, message: 'OAuth token resolution is not yet available on this server. Please use header API key auth (Authorization: Bearer sk_live_...) from https://app.fodda.ai.' },
-                        id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
-                    });
-                }
-                return sendAuth401(res, {
-                    offeringSlug,
-                    message: 'OAuth token validation failed. Please reconnect at https://app.fodda.ai.',
-                    invalidToken: true,
-                    id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
-                });
             }
         }
 
@@ -1276,6 +1293,114 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
 
         if (sessionId && transports.has(sessionId)) {
             transport = transports.get(sessionId)!;
+        } else if (sessionId) {
+            // Session ID provided, but not in local memory (e.g. after a deploy or container restart).
+            // Attempt recovery from persistent session store:
+            const body = req.body;
+            const clientInfo = body?.params?.clientInfo;
+            const declaredClientSlug = normalizeClientSlug(clientInfo?.name, clientInfo?.version);
+            const clientSlug = declaredClientSlug || (isChatGptUa ? 'chatgpt' : (isClaudeUa ? 'claude' : ''));
+
+            let effectiveApiKey = apiKey;
+            let effectiveUserId = userId;
+            let effectiveSessionSource: string | undefined = source;
+            let effectiveClientSlug: string | undefined = clientSlug;
+
+            const stored = await getStoredSession(sessionId);
+            if (stored?.apiKey) {
+                effectiveApiKey = effectiveApiKey || stored.apiKey;
+                effectiveUserId = (effectiveUserId && effectiveUserId !== 'anonymous') ? effectiveUserId : stored.userId;
+                effectiveSessionSource = effectiveSessionSource || stored.source || undefined;
+                effectiveClientSlug = clientSlug || stored.clientSlug || undefined;
+
+                const boundFoddaRequest = isSpt
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, effectiveClientSlug)) as typeof foddaRequest)
+                    : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, effectiveSessionSource, undefined, effectiveClientSlug)) as typeof foddaRequest);
+
+                const server = await createServer(
+                    effectiveApiKey,
+                    effectiveUserId,
+                    boundFoddaRequest,
+                    waverunnerRequest,
+                    storeWidget,
+                    getServiceUrl,
+                    entryId,
+                    undefined,
+                    allowedTools,
+                    effectiveSessionSource,
+                    effectiveClientSlug
+                );
+
+                transport = new StreamableHTTPServerTransport({
+                    sessionIdGenerator: () => sessionId,
+                });
+                (transport as any)._webStandardTransport.sessionId = sessionId;
+                (transport as any)._webStandardTransport._initialized = true;
+                await server.connect(transport as any);
+
+                transports.set(sessionId, transport);
+                sessionApiKeys.set(sessionId, effectiveApiKey);
+                sessionUserIds.set(sessionId, effectiveUserId);
+                sessionCreatedAt.set(sessionId, Date.now());
+                if (effectiveSessionSource) sessionSources.set(sessionId, effectiveSessionSource);
+                if (effectiveClientSlug) sessionClients.set(sessionId, effectiveClientSlug);
+
+                storeSession(sessionId, {
+                    apiKey: effectiveApiKey,
+                    userId: effectiveUserId,
+                    source: effectiveSessionSource,
+                    clientSlug: effectiveClientSlug,
+                    offeringSlug,
+                }).catch(() => {});
+            } else if (effectiveApiKey) {
+                // Not in Firestore, but request carries valid credentials (e.g. Bearer token sent with old sessionId)
+                const boundFoddaRequest = isSpt
+                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, effectiveClientSlug)) as typeof foddaRequest)
+                    : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, effectiveSessionSource, undefined, effectiveClientSlug)) as typeof foddaRequest);
+
+                const server = await createServer(
+                    effectiveApiKey,
+                    effectiveUserId,
+                    boundFoddaRequest,
+                    waverunnerRequest,
+                    storeWidget,
+                    getServiceUrl,
+                    entryId,
+                    undefined,
+                    allowedTools,
+                    effectiveSessionSource,
+                    effectiveClientSlug
+                );
+
+                transport = new StreamableHTTPServerTransport({
+                    sessionIdGenerator: () => sessionId,
+                });
+                (transport as any)._webStandardTransport.sessionId = sessionId;
+                (transport as any)._webStandardTransport._initialized = true;
+                await server.connect(transport as any);
+
+                transports.set(sessionId, transport);
+                sessionApiKeys.set(sessionId, effectiveApiKey);
+                sessionUserIds.set(sessionId, effectiveUserId);
+                sessionCreatedAt.set(sessionId, Date.now());
+                if (effectiveSessionSource) sessionSources.set(sessionId, effectiveSessionSource);
+                if (effectiveClientSlug) sessionClients.set(sessionId, effectiveClientSlug);
+
+                storeSession(sessionId, {
+                    apiKey: effectiveApiKey,
+                    userId: effectiveUserId,
+                    source: effectiveSessionSource,
+                    clientSlug: effectiveClientSlug,
+                    offeringSlug,
+                }).catch(() => {});
+            } else {
+                return sendAuth401(res, {
+                    offeringSlug,
+                    message: 'Session expired. Re-authentication required.',
+                    invalidToken: false,
+                    id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                });
+            }
         } else if (!sessionId && req.method === 'POST') {
             const body = req.body;
             const clientInfo = body?.params?.clientInfo;
@@ -1338,6 +1463,17 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                         if (source) sessionSources.set(sid, source);
                         if (clientSlug) sessionClients.set(sid, clientSlug);
                         if (sptInfo) sessionSpts.set(sid, sptInfo);
+                        if (apiKey) {
+                            storeSession(sid, {
+                                apiKey,
+                                userId,
+                                source: source || '',
+                                clientSlug: clientSlug || '',
+                                offeringSlug: offeringSlug || '',
+                            }).catch((err) => {
+                                console.warn(`[sessionStore] Failed to save session ${sid}:`, err?.message);
+                            });
+                        }
                     }
                 });
                 transport.onclose = () => {

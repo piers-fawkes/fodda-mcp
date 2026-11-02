@@ -5,6 +5,15 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.139] - 2026-11-02
+
+### Fixed & Enhanced (Persistent MCP Sessions & OAuth Token Cache across Deploys)
+- **Firestore-Backed Session State & OAuth Token Store (`src/sessionStore.ts`, `src/index.ts`)**:
+  - Implemented persistent storage in Cloud Firestore (`mcp_sessions` and `mcp_oauth_tokens` collections) backed by an in-memory L1 cache to eliminate sign-in loops and 404 errors across Cloud Run redeployments and container recycles.
+  - **OAuth Token Resolution Persistence:** Persists SHA-256 hashed Clerk OAuth tokens and their resolved Fodda credentials (`apiKey`, `userId`) with a 24-hour TTL. Avoids redundant outbound `POST /v1/auth/clerk-resolve` calls and insulates clients from API network latency or transient authorization glitches.
+  - **Session State Recovery on `/claude` and MCP offering routes:** When an MCP client makes a request with `mcp-session-id` after a container restart (where in-memory `transports` Map is empty), the server recovers `apiKey`, `userId`, `source`, and `clientSlug` from Firestore `mcp_sessions` and re-attaches a fresh `StreamableHTTPServerTransport` with identical session ID rather than rejecting the call with `404 Session not found` or `401 Unauthorized`.
+  - **Verified End-to-End (`scratch/test_connect_redeploy_call.mjs`):** Confirmed client connects on `/claude`, server wipes all in-memory maps simulating a redeploy, and subsequent `tools/list` and `tools/call` succeed with 200 OK without re-authenticating or reconnecting.
+
 ## [1.46.138] - 2026-11-02
 
 ### Fixed & Enhanced (Clean Markdown Output on `generate_comms_plan` Default Views)
