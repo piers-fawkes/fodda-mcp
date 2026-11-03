@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.140] - 2026-11-02
+
+### Changed (Gemini 2.5 Deprecation Migration to `gemini-3.5-flash-lite` & `gemini-3.8-flash`)
+- **Deep Research Pipeline (`src/deepResearch.ts`)**:
+  - Updated primary synthesis model selection (line 412) from `gemini-2.5-pro` / `gemini-2.5-flash` to `gemini-3.8-flash` (heavy) and `gemini-3.5-flash-lite` (light).
+  - Updated capacity fallback retry model (lines 440–442) from `gemini-2.5-flash` to `gemini-3.5-flash-lite`.
+- **Tool Handlers & Waverunner Defaults (`src/toolHandlers.ts`, `src/index.ts`, `scripts/profile_graphs.ts`)**:
+  - Updated `read_url` tool model (`src/toolHandlers.ts:7315`) from `gemini-2.5-flash` to `gemini-3.5-flash-lite`.
+  - Updated `waverunnerRequest` default fallback model (`src/index.ts:764`) from `gemini-2.5-flash` to `gemini-3.5-flash-lite`.
+  - Updated `scripts/profile_graphs.ts:160` from `gemini-2.5-pro` to `gemini-3.8-flash`, replaced deprecated `temperature: 0.2` with `thinkingConfig: { thinkingLevel: 'MEDIUM' }`, preserved model content turns, and attached `id: (funcCall as any).id` on `functionResponse` payloads.
+
 ## [1.46.139] - 2026-11-02
 
 ### Fixed & Enhanced (Persistent MCP Sessions & OAuth Token Cache across Deploys)

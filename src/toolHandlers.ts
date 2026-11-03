@@ -7312,7 +7312,7 @@ export async function createServer(
                     apiKey,
                     resolveUserId(userId, uid),
                     {
-                        model: 'gemini-2.5-flash',
+                        model: 'gemini-3.5-flash-lite',
                         input: [
                             { type: 'text', text: `Extract and return the full text content from this URL. Return ONLY the extracted text, preserving headings and structure. Do not add commentary or analysis. URL: ${url}` }
                         ],

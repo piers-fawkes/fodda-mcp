@@ -409,7 +409,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     };
 
     const systemInstruction = buildResearcherInstruction(researchBrief, graphContext);
-    const geminiModel = isHeavy ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    const geminiModel = isHeavy ? 'gemini-3.8-flash' : 'gemini-3.5-flash-lite';
 
     const subThemesInstruction = effectiveSubThemes
         .map((st, i) => `${i + 1}. ${st}`)
@@ -437,9 +437,9 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
     } catch (primaryErr: any) {
         const errMsg = primaryErr?.response?.data?.error?.message || primaryErr?.message || '';
         const isCapacity = errMsg.includes('high demand') || errMsg.includes('overloaded') || errMsg.includes('503');
-        if (isCapacity && geminiModel !== 'gemini-2.5-flash') {
-            console.error(`[deep_research] ${geminiModel} capacity error — retrying with gemini-2.5-flash`);
-            interactionPayload.model = 'gemini-2.5-flash';
+        if (isCapacity && geminiModel !== 'gemini-3.5-flash-lite') {
+            console.error(`[deep_research] ${geminiModel} capacity error — retrying with gemini-3.5-flash-lite`);
+            interactionPayload.model = 'gemini-3.5-flash-lite';
             result = await waverunnerRequest('deep_dive', tokenCost, apiKey, userId, interactionPayload);
         } else {
             throw primaryErr;

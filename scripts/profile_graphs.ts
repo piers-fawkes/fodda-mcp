@@ -157,18 +157,19 @@ The JSON output MUST EXACTLY match this shape (and no markdown formatting or \`\
     while (iterations < 10) {
         iterations++;
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-3.8-flash',
             contents: contents,
             config: {
                 systemInstruction,
                 tools: [toolsDeclaration],
-                temperature: 0.2
+                thinkingConfig: { thinkingLevel: 'MEDIUM' as any }
             }
         });
 
         const funcCall = response.functionCalls?.[0];
         if (funcCall) {
             console.log(`   🛠️  Waverunner called ${funcCall.name}(${JSON.stringify(funcCall.args)})`);
+            const modelContent = response.candidates?.[0]?.content || { role: 'model', parts: [{ functionCall: funcCall }] };
             try {
                 let toolResult;
                 if (funcCall.name === 'search_graph' || funcCall.name === 'search_statistics') {
@@ -177,15 +178,15 @@ The JSON output MUST EXACTLY match this shape (and no markdown formatting or \`\
                     toolResult = { error: 'Native tool not handled correctly, use Fodda tools.' };
                 }
                 
-                contents.push({ role: 'model', parts: [{ functionCall: funcCall }] as any });
+                contents.push(modelContent as any);
                 contents.push({ 
                     role: 'function', 
-                    parts: [{ functionResponse: { name: funcCall.name, response: toolResult } }] as any 
+                    parts: [{ functionResponse: { id: (funcCall as any).id, name: funcCall.name, response: toolResult } }] as any 
                 });
             } catch (err: any) {
                 console.log(`   ❌ Tool failed:`, err.message);
-                contents.push({ role: 'model', parts: [{ functionCall: funcCall }] as any });
-                contents.push({ role: 'function', parts: [{ functionResponse: { name: funcCall.name, response: { error: err.message } } }] as any });
+                contents.push(modelContent as any);
+                contents.push({ role: 'function', parts: [{ functionResponse: { id: (funcCall as any).id, name: funcCall.name, response: { error: err.message } } }] as any });
             }
         } else {
             const jsonText = response.text || '{}';

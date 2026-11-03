@@ -761,7 +761,7 @@ async function waverunnerRequest(
     const { GoogleGenAI } = await import('@google/genai');
     const ai = new GoogleGenAI({ apiKey: geminiKey });
 
-    const model = waverunnerPayload.model || 'gemini-2.5-flash';
+    const model = waverunnerPayload.model || 'gemini-3.5-flash-lite';
     const systemInstruction = waverunnerPayload.system_instruction;
     const inputParts = Array.isArray(waverunnerPayload.input)
         ? waverunnerPayload.input.map((i: any) => i.text || '').filter(Boolean).join('\n\n')
