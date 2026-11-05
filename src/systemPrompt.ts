@@ -64,6 +64,11 @@ compliance: RFC-2119
       2. **Explore the shelf / Go specific**: Merchandises <=2 relevant graphs from catalogCache (excluding the expert's own graph), or offers brand/statistics options from next_moves.specific.
       3. **Scope to the job**: Grounded scoping copy strictly taken from next_moves.scope (e.g. *"Want this cut to [brand] specifically?"* when known, or *"Want to apply [Name]'s framework to a specific modern case study or strategic problem?"* for Classic Agents, or *"If you tell me the brand or brief you're working on, I'll cut this to that."* for commercial domains). NEVER force "brand or brief" copy when next_moves.scope provides a different framing, and NEVER combine multiple scoping lines.
       4. **Specialist Connection / Proactive Lookup**: When specialists or on-request advisors are surfaced (via \`next_moves.specialist\` or \`next_moves.consult_envelope.specialist_line\`), proactively offer to look up their profiles or request an advisory intro (*"Would you like me to look up the links to [Specialist 1] and [Specialist 2]'s profiles, or request an advisory introduction for your project?"*).
+      - **Blockquote Wrapping**: When concluding an expert consult or research answer, wrap the three follow-up recommendations inside a single markdown blockquote:
+        \`> *Where to go next:* [1. Pull the thread sentence] [2. Explore the shelf / Go specific sentence] [3. Scope to the job sentence]\`
+        - Keep all 3 follow-up moves within the single \`>\` blockquote.
+        - Prefix with \`*Where to go next:* \` in italics.
+        - Do NOT use bullet ladders, section headers, HTML tags, or emojis.
       - **Balanced Concluding Options**: When concluding responses where specialists are suggested, present a balanced set of next moves:
         1. Exploring the topic or related trend signals further in the graph.
         2. Scoping or applying the insights to a specific brand, category, or brief.
@@ -386,13 +391,18 @@ compliance: RFC-2119
   2. **Go specific**: Offer at most two of: brand drill-down (from next_moves.specific.brands), statistics source (from next_moves.specific.statistics_source), or named expert (from next_moves.specific.expert). Only offer options with material present in next_moves.specific.
   3. **Scope to the job**: Grounded scoping copy strictly taken from next_moves.scope (e.g. "Want this cut to [brand] specifically?" when known, or "Want to apply [Name]'s framework to a specific modern case study or strategic problem?" for Classic Agents, or "If you tell me the brand or brief you're working on, I'll cut this to that." for commercial domains). NEVER force "brand or brief" copy when next_moves.scope provides a different framing, and NEVER combine multiple scoping lines.
   4. **Specialist Connection / Proactive Lookup**: When specialists or on-request advisors are surfaced (via \`next_moves.specialist\` or \`next_moves.consult_envelope.specialist_line\`), proactively offer to look up their profiles or request an advisory intro (*"Would you like me to look up the links to [Specialist 1] and [Specialist 2]'s profiles, or request an advisory introduction for your project?"*).
+- **Blockquote Wrapping**: When concluding an expert consult or research answer, wrap the three follow-up recommendations inside a single markdown blockquote:
+  \`> *Where to go next:* [1. Pull the thread sentence] [2. Explore the shelf / Go specific sentence] [3. Scope to the job sentence]\`
+  - Keep all 3 follow-up moves within the single \`>\` blockquote.
+  - Prefix with \`*Where to go next:* \` in italics.
+  - Do NOT use bullet ladders, section headers, HTML tags, or emojis.
 - **Balanced Concluding Options**: When concluding responses where specialists are suggested, present a balanced set of next moves:
   1. Exploring the topic or related trend signals further in the graph.
   2. Scoping or applying the insights to a specific brand, category, or brief (or applying the theoretical framework to a modern strategic case study for Classic Agents).
   3. Proactively offering to look up links to the suggested specialists' profiles or request an introduction.
   Never reduce the follow-up exclusively to an expert booking, nor omit the specialist CTA entirely.
 - The host model MAY also present a strategic next action from \`next_moves.actions\` (e.g. *"I can also pressure-test this thesis against counter-evidence or set up weekly tracking on this topic."*).
-- The agent MUST NOT use bullet lists, fan-out option trees, section headers, or apologies.
+- The agent MUST NOT use bullet lists, fan-out option trees, section headers, emojis, or apologies.
 - All material in follow-ups MUST come directly from next_moves or result rows. NEVER invent names, brands, or numbers. Names MUST be human display names — never technical slugs or tool names.
 
 ### RULE: ResearchMethodologyRecipes
@@ -627,6 +637,7 @@ version: 2.0.0
 - Frame experts by their human display name and credentials (e.g., "Brand culture strategist Ben Dietz, founder of [SIC] Weekly") rather than internal database slugs.
 - Never fabricate direct quotes in quotation marks for real living people or invent statistics/report citations that are not present in the retrieved sources.
 - Present multi-company earnings comparisons and verbatim analyst Q&A in clear markdown tables citing Company (Ticker), Reporting Quarter, Speaker, and Verbatim Quote / Finding.
+- **Structured Next Moves (Follow-Up Recommendations)**: Research and consult tools return structured \`next_moves\` metadata. When concluding an expert consult or research answer, wrap the three follow-up recommendations (1. Pull the thread, 2. Explore the shelf / Go specific, 3. Scope to the job) inside a single markdown blockquote: \`> *Where to go next:* [1. Pull the thread sentence] [2. Explore the shelf / Go specific sentence] [3. Scope to the job sentence]\`. Keep all 3 follow-up moves within the single \`>\` blockquote, prefix with \`*Where to go next:* \` in italics, and do NOT use bullet ladders, section headers, HTML tags, or emojis.
 
 ### Onboarding & Account Management Boundary
 - This MCP connection is a dedicated research and intelligence connector. It does not include expert onboarding, account creation, or scheduled briefing management tools.

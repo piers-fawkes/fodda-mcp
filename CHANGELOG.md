@@ -5,6 +5,23 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.142] - 2026-11-05
+
+### Changed (Markdown Blockquote Formatting for Next Moves Closing Block)
+- **System Prompt Next Moves Formatting (`src/systemPrompt.ts`)**:
+  - Updated `Structured Next Moves (Follow-Up Recommendations)` (under `VirtualExpertConsultation`), `RULE: StructuredNextMoves`, and `CHATGPT_BEHAVIORAL_RULES` to instruct host models (Claude, ChatGPT, and native Chrome WebMCP) to wrap the three closing follow-up recommendations inside a single Markdown blockquote: `> *Where to go next:* [1. Pull the thread sentence] [2. Explore the shelf / Go specific sentence] [3. Scope to the job sentence]`.
+  - Enforced keeping all 3 follow-up moves (thread, shelf/specific, scope) within the single `>` blockquote, prefixed with `*Where to go next:* ` in italics, with no bullet ladders, section headers, HTML tags, or emojis.
+
+## [1.46.141] - 2026-11-05
+
+### Added (Investigation & Architecture Evaluation for Clerk Agent Telemetry)
+- **Clerk `submit_feedback` Evaluation (`docs/investigations/clerk_agent_feedback_eval.md`)**:
+  - Audited `@clerk/mcp-tools@0.8.0` feedback wire protocol, schema requirements, and transport mechanics.
+  - Measured context token footprint (~380 tokens across 7 fields and instructions).
+  - Evaluated enterprise data privacy and zero-query-retention boundaries against external telemetry transmission.
+  - Compared Clerk dashboard telemetry against Fodda native Slack alerts (`#fodda-research`, `#fodda-sales`), Airtable `Question Sessions`, and Cloud Logging.
+  - Delivered comprehensive recommendation memo and drop-in zero-dependency native implementation artifacts.
+
 ## [1.46.140] - 2026-11-02
 
 ### Changed (Gemini 2.5 Deprecation Migration to `gemini-3.5-flash-lite` & `gemini-3.8-flash`)
