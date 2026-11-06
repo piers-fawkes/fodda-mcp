@@ -1732,8 +1732,18 @@ export async function createServer(
                         const is_classic = !is_c_suite && (
                             rawSubType === 'Classic Digital Twin' ||
                             /classic digital twin/i.test(rawSubType) ||
+                            /classic/i.test(rawSubType) ||
                             a.is_classic_agent === true ||
-                            a.category === 'classic_agent'
+                            a.category === 'classic_agent' ||
+                            cleanId === 'thorstein-veblen' ||
+                            cleanId === 'jane-austen' ||
+                            cleanId === 'charles-babbage' ||
+                            cleanId === 'john-boyd' ||
+                            cleanId === 'john-ruskin' ||
+                            cleanId === 'adam-smith' ||
+                            cleanId === 'sun-tzu' ||
+                            cleanId === 'josephine-baker' ||
+                            cleanId === 'harry-hollingworth'
                         );
 
                         const is_human = !is_c_suite && !is_classic && Boolean(
@@ -1871,7 +1881,7 @@ export async function createServer(
     // --- find_expert (Visible Expert Matching — Brief 3 & Expert Search API) ---
     server.tool(
         'find_expert',
-        "Use when seeking candidate AI-powered Human Agent (Digital Twin) expert models or Synthetic Analysts across specialized domains or research questions (e.g. 'Who has expertise in luxury retail?' or 'What would consumer culture analysts say about this?'). Searches Fodda's catalog of 4,000+ domain specialists to return 2–3 ranked expert models with their analytical focus, methodology, credibility anchors, and expert ID for consultation via consult_human_agent or consult_analyst.",
+        "Use when seeking candidate AI-powered Human Agent (Digital Twin) expert models, Classic Agents, or Synthetic Analysts across specialized domains or research questions (e.g. 'Who has expertise in luxury retail?', 'Who should I ask about workplace aptitude tests and cognitive fatigue?', or 'What would consumer culture analysts say about this?'). Searches Fodda's catalog of 4,000+ domain specialists to return 2–3 ranked expert models with their analytical focus, methodology, credibility anchors, and expert ID for consultation via consult_human_agent or consult_analyst.",
         {
             query: z.string().describe('The question, brief, topic, or situation to find candidate expert models for.'),
             limit: z.number().optional().default(3).describe('Maximum candidate expert models to return (default: 3, max: 3).'),
@@ -8013,7 +8023,8 @@ export async function createServer(
                 resolvedAnalystId === 'john-ruskin' ||
                 resolvedAnalystId === 'adam-smith' ||
                 resolvedAnalystId === 'sun-tzu' ||
-                resolvedAnalystId === 'josephine-baker'
+                resolvedAnalystId === 'josephine-baker' ||
+                resolvedAnalystId === 'harry-hollingworth'
             );
 
             const parts: string[] = [];
@@ -8122,7 +8133,7 @@ export async function createServer(
                 }
             }
 
-            if (result.book_a_call && sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
+            if (!isClassic && result.book_a_call && sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
                 const callText = result.book_a_call.rate_display
                     ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
                     : (result.book_a_call.url || '');
@@ -8177,7 +8188,7 @@ export async function createServer(
                 next_moves: humanAgentNextMoves,
                 sources_used: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.analyst ? { analyst: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.analyst) : result.analyst } : {}),
-                book_a_call: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? null : (result.book_a_call ?? null),
+                book_a_call: (sessionSource === 'chatgpt' || sessionSource === 'claude' || isClassic) ? null : (result.book_a_call ?? null),
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.perspective ? { perspective: result.perspective } : {}),
                 ...(result.billing ? { billing: result.billing } : {}),
@@ -8536,7 +8547,8 @@ export async function createServer(
                 resolvedAnalystId === 'john-ruskin' ||
                 resolvedAnalystId === 'adam-smith' ||
                 resolvedAnalystId === 'sun-tzu' ||
-                resolvedAnalystId === 'josephine-baker'
+                resolvedAnalystId === 'josephine-baker' ||
+                resolvedAnalystId === 'harry-hollingworth'
             );
 
             const parts: string[] = [];
@@ -8644,7 +8656,7 @@ export async function createServer(
                 }
             }
 
-            if (result.book_a_call && sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
+            if (!isClassic && result.book_a_call && sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
                 const callText = result.book_a_call.rate_display
                     ? `${result.book_a_call.rate_display} — ${result.book_a_call.url}`
                     : (result.book_a_call.url || '');
@@ -8810,7 +8822,7 @@ export async function createServer(
         'consult_analyst',
         'Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., \'Ask the Brand CMO persona how to evaluate retail media ROI\', \'Consult John Ruskin on craftsmanship in luxury fashion\'). A consult perspective is the agent\'s view, never a quote from the real person. Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves.',
         {
-            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
+            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'harry-hollingworth', 'john-ruskin', or 'retail-synthetic'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context across the session. Omit for a one-off question."),

@@ -2547,7 +2547,9 @@ export function generateConsultNextMoves(
         cleanAnalystId === 'john-boyd' ||
         cleanAnalystId === 'john-ruskin' ||
         cleanAnalystId === 'adam-smith' ||
-        cleanAnalystId === 'sun-tzu'
+        cleanAnalystId === 'sun-tzu' ||
+        cleanAnalystId === 'josephine-baker' ||
+        cleanAnalystId === 'harry-hollingworth'
     );
 
     let expertDisplayName = cleanDisplayName(matchedAnalyst?.name);
@@ -3026,7 +3028,7 @@ export function generateConsultNextMoves(
             ...(introToolRes.alternative_route ? { alternative_route: introToolRes.alternative_route } : {}),
         };
     } else {
-        const bookACall = result?.book_a_call || (matchedAnalyst as any)?.book_a_call;
+        const bookACall = !isClassic ? (result?.book_a_call || (matchedAnalyst as any)?.book_a_call) : null;
         if (bookACall?.url) {
             const rateText = bookACall.rate_display ? ` (${bookACall.rate_display})` : '';
             move3 = {

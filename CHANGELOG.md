@@ -5,6 +5,26 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.144] - 2026-11-06
+
+### Added (New Classic Agent Harry Hollingworth: Tool Guidance, Discovery Queries & Attribution Rules)
+- **Classic Agent Recognition & Normalization (`src/catalogCache.ts`, `src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Registered `harry-hollingworth` in `is_classic` categorization and normalization logic (`category: 'classic_agent'`, `category_label: 'Classic Agent'`, `twin_type: 'Classic Agent'`, `consult_tool: 'consult_analyst'`).
+  - Added explicit ID matching in `src/catalogCache.ts`, `src/coverageRelevance.ts`, and `src/toolHandlers.ts` (alongside `josephine-baker`) to guarantee historical thinker classification even if upstream metadata has partial tags.
+- **Classic Agent Attribution Guidance & Book a Call Suppression (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Enforced Fodda standard Classic Agent framing (*"When Harry Hollingworth's Classic Agent on Fodda is consulted..."*) in credibility anchor output.
+  - Prohibited referring to historical thinkers as a "Human Agent" or using "digital twin" terminology.
+  - Strictly suppressed "Book a Call" across `consult_analyst`, `consult_human_agent`, and next moves for all Classic Agents.
+- **Dynamic Next Moves & Scoping (`src/coverageRelevance.ts`)**:
+  - Aligned next moves scoping for Harry Hollingworth to offer application of his conceptual frameworks to modern strategic case studies (`Want to apply Harry Hollingworth's framework to a specific modern case study?`), rejecting client "brand or brief" requests.
+  - Configured Move 2 to route to `modern_application` (`Apply to modern culture & commerce`).
+- **Tool Guidance & Discovery Alignment (`src/systemPrompt.ts`, `src/toolGuide.ts`, `src/toolHandlers.ts`)**:
+  - Added Harry Hollingworth to `systemPrompt.ts` conversational framing examples alongside Peter Abraham, Anu Lingala, and John Boyd.
+  - Aligned `consult_analyst` tool description, parameter schema, and `src/toolGuide.ts` to document Hollingworth's core applied psychology frameworks (redintegration, unstructured interview fallacy, research integrity controls).
+  - Aligned `find_expert` discovery query routing for cognitive architecture, unstructured interview bias, double-blind trials, acute burnout/panic triggers, and cognitive fatigue curves.
+- **Verification Suite (`src/test_harry_hollingworth_classic_agent.ts`)**:
+  - Added 4-part verification suite confirming catalog normalization, attribution guidance framing, "Book a Call" suppression, next-moves modern case study scoping, and local `findCandidateExperts` discovery across all 5 domain query archetypes.
+
 ## [1.46.143] - 2026-11-06
 
 ### Changed (Customer-Facing Newsletter & Executive Briefing Writer Decoupling on `get_intelligence_dossier`)

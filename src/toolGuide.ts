@@ -198,8 +198,8 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     consult_analyst: {
         section: 'Ask an expert',
         what_you_get: 'Consultation with a synthetic domain analyst, C-Suite persona, or classic thinker grounded in domain graphs.',
-        when_to_use: 'Use for executive role pressure-testing (e.g. CMO, CFO) or specialized domain analysis.',
-        example_prompt: "Consult Brand CMO on Nike's direct-to-consumer strategy."
+        when_to_use: 'Use for executive role pressure-testing (e.g. CMO, CFO), Classic Agent historical frameworks (e.g. Harry Hollingworth, John Boyd), or specialized domain analysis.',
+        example_prompt: "Consult Brand CMO on Nike's direct-to-consumer strategy, or ask Harry Hollingworth how his 1916 findings on sales manager interviews apply to modern unstructured tech hiring."
     },
     request_expert_intro: {
         section: 'Ask an expert',
