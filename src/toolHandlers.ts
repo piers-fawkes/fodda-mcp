@@ -1181,7 +1181,7 @@ export async function createServer(
                     { endpoint: "POST /v1/search/report", mcp_tool: "get_report_intelligence", description: "Published corporate research, forecast reports, and market decks" },
                     { endpoint: "POST /v1/brand-intelligence/:brand", mcp_tool: "brand_tracker", description: "Multi-graph brand footprint, Google Trends & Wikipedia pageviews" },
                     { endpoint: "GET /v1/statistics", mcp_tool: "search_statistics", description: "Hard numbers and quantitative metrics data layer" },
-                    { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Certified multi-source Evidence Dossier and 5-Beat PSFK Weekly / Retail Innovation Week newsletter briefing generator" },
+                    { endpoint: "POST /v1/intelligence/dossier", mcp_tool: "get_intelligence_dossier", description: "Researches and drafts an in-depth, research-backed newsletter, executive briefing, or market analysis article synthesized from corporate earnings disclosures, published research, macro data, and expert frameworks" },
                     { endpoint: "POST /v1/planning/comms-plan", mcp_tool: "generate_comms_plan", description: "Audience-Led Brand Connections Planner (7-Section Connections Plan + Appendix A)" }
                 ],
                 possible_next_actions: [
@@ -4862,8 +4862,8 @@ export async function createServer(
         }
         for (const tName of Array.from(trendNames).slice(0, 2)) {
             addBullet(
-                `Explore PSFK Trend: ${tName}`,
-                buildCanonicalFoddaLink(`PSFK Trend ${tName}`)
+                `Explore Trend: ${tName}`,
+                buildCanonicalFoddaLink(`${tName} trend`)
             );
         }
 
@@ -4882,7 +4882,7 @@ export async function createServer(
 
         if (bullets.length === 0) {
             addBullet(
-                `Explore ${topicStr} across corporate disclosures and PSFK research`,
+                `Explore ${topicStr} across corporate disclosures and market research`,
                 buildCanonicalFoddaLink(topicStr)
             );
         }
@@ -4892,7 +4892,7 @@ export async function createServer(
             ``,
             `### Query Fodda`,
             ``,
-            `Explore the corporate disclosures, PSFK graph insights, and Human Agent frameworks cited in this issue directly in the [Fodda Context Layer](https://www.fodda.ai):`,
+            `Explore the corporate disclosures, market trends, and Human Agent frameworks cited in this issue directly in the [Fodda Context Layer](https://www.fodda.ai):`,
             ``,
             ...bullets.map(b => `* **[${b.label}](${b.url})**`),
         ].join('\n');
@@ -4900,13 +4900,13 @@ export async function createServer(
 
     const buildFallbackBeatFourFromDossier = (dossier: any, topicStr: string): string => {
         const trendFramingOpeners = [
-            (trend: string, linkedTitle: string) => `Under the PSFK trend *${trend}* found in the Fodda graph, ${linkedTitle}`,
-            (trend: string, linkedTitle: string) => `Within the trend *${trend}*, PSFK researchers highlight how ${linkedTitle}`,
-            (trend: string, linkedTitle: string) => `Under another PSFK identified trend, *${trend}*, ${linkedTitle}`,
+            (trend: string, linkedTitle: string) => `In market research tracking ${trend}, ${linkedTitle}`,
+            (trend: string, linkedTitle: string) => `Analyzing ${trend}, analysts note how ${linkedTitle}`,
+            (trend: string, linkedTitle: string) => `Within broader category shifts toward ${trend}, ${linkedTitle}`,
         ];
         const formatOpener = (idx: number, trend: string, linked: string): string => {
             const fn = trendFramingOpeners[idx % trendFramingOpeners.length];
-            return fn ? fn(trend, linked) : `Under the PSFK trend *${trend}* found in the Fodda graph, ${linked}`;
+            return fn ? fn(trend, linked) : `Analyzing ${trend}, ${linked}`;
         };
         const caseItems = ((dossier?.evidence_items || []) as any[]).slice(0, 3);
         const psfkTrends = (dossier?.psfk_trends || []) as any[];
@@ -4924,12 +4924,12 @@ export async function createServer(
             psfkTrends.slice(0, 3).forEach((tr, idx) => {
                 const trendName = cleanDossierEmDashes(tr?.name || topicStr);
                 const desc = cleanDossierEmDashes(tr?.description || tr?.summary || 'Brands are restructuring physical and digital touchpoints in 2026.');
-                const linkUrl = buildCanonicalFoddaLink(`PSFK Trend ${trendName}`);
+                const linkUrl = buildCanonicalFoddaLink(`${trendName} trend`);
                 paragraphs.push(`${formatOpener(idx, trendName, `[this strategic movement](${linkUrl})`)} illustrates how category leaders are responding in 2026. ${desc}`);
             });
         } else {
-            const linkUrl = buildCanonicalFoddaLink(`PSFK Trend ${topicStr}`);
-            paragraphs.push(`Under the PSFK trend *${cleanDossierEmDashes(topicStr)}* found in the Fodda graph, [category innovators in 2026](${linkUrl}) are replacing promotional discounting with high-utility product rituals and differentiated service mechanics.`);
+            const linkUrl = buildCanonicalFoddaLink(`${topicStr} market trends`);
+            paragraphs.push(`Within broader category shifts toward *${cleanDossierEmDashes(topicStr)}*, [category innovators in 2026](${linkUrl}) are replacing promotional discounting with high-utility product rituals and differentiated service mechanics.`);
         }
 
         for (const p of ((dossier?.perspectives || []) as any[])) {
@@ -4954,13 +4954,26 @@ export async function createServer(
             topic: string;
             sector?: string | undefined;
             tickers?: string[] | undefined;
-            publicationStyle: 'psfk_weekly' | 'retail_innovation_week';
+            editorialStyle?: string | undefined;
+            publicationStyle?: 'psfk_weekly' | 'retail_innovation_week' | string | undefined;
+            publicationName?: string | undefined;
         }
     ): any => {
         const dossier = data?.dossier || {};
         const existing = data?.newsletter_blueprint || {};
-        const pubStyle = opts.publicationStyle || existing.publication_style || 'psfk_weekly';
-        const pubName = pubStyle === 'retail_innovation_week' ? 'Retail Innovation Week' : 'PSFK Weekly';
+        const edStyle = opts.editorialStyle || existing.editorial_style || (opts.publicationStyle === 'retail_innovation_week' ? 'retail_innovation_week' : (opts.publicationStyle === 'psfk_weekly' ? 'psfk_weekly' : 'market_briefing'));
+        const pubStyle = opts.publicationStyle || existing.publication_style || (edStyle === 'retail_innovation_week' ? 'retail_innovation_week' : 'psfk_weekly');
+        const pubName = opts.publicationName || existing.publication_name || (
+            edStyle === 'retail_innovation_week'
+                ? 'Retail Innovation Week'
+                : edStyle === 'psfk_weekly'
+                ? 'PSFK Weekly'
+                : edStyle === 'industry_newsletter'
+                ? 'Industry Intelligence Briefing'
+                : edStyle === 'executive_memo'
+                ? 'Executive Briefing Memo'
+                : 'Executive Market Briefing'
+        );
         const queryFoddaMarkdown = normalizeDossierEditorialProse(
             existing.query_fodda_markdown || buildCanonicalQueryFoddaMarkdown(dossier, opts.topic, opts.tickers, '2026')
         );
@@ -5123,11 +5136,11 @@ export async function createServer(
             }
         }
 
-        // Beat 4: Varied PSFK trend framing + 4-part Human Agent attribution arc
+        // Beat 4: Varied trend framing + 4-part Human Agent attribution arc
         const trendFramingTemplates = [
-            'Under the PSFK trend *[Trend Name]* found in the Fodda graph, [Brand]...',
-            'Within the trend *[Trend Name]*, PSFK researchers highlight how [Brand]...',
-            'Under another PSFK identified trend, *[Trend Name]*, [Brand]...',
+            'In market research tracking [Trend Name], data indicates that [Brand]...',
+            'Analyzing [Trend Name], analysts note how [Brand]...',
+            'Within broader category shifts toward [Trend Name], [Brand]...',
         ];
         const psfkTrends = (dossier.psfk_trends || []) as any[];
         const evidenceCases = ((dossier.evidence_items || []) as any[]).slice(0, 4).map((ev: any, idx: number) => {
@@ -5136,10 +5149,10 @@ export async function createServer(
             const summary = escapeDossierBareDollarSigns(cleanDossierEmDashes(ev?.summary || ev?.snippet || ev?.content || ''));
             const foddaUrl = buildCanonicalFoddaLink(`${ev?.company || title} ${trendName}`);
             const openerTemplate = idx === 0
-                ? `Under the PSFK trend *${trendName}* found in the Fodda graph, [${title}](${foddaUrl})`
+                ? `In market research tracking ${trendName}, [${title}](${foddaUrl})`
                 : idx === 1
-                ? `Within the trend *${trendName}*, PSFK researchers highlight how [${title}](${foddaUrl})`
-                : `Under another PSFK identified trend, *${trendName}*, [${title}](${foddaUrl})`;
+                ? `Analyzing ${trendName}, [${title}](${foddaUrl})`
+                : `Within broader category shifts toward ${trendName}, [${title}](${foddaUrl})`;
             return {
                 trend_name: trendName,
                 title,
@@ -5196,9 +5209,9 @@ export async function createServer(
                 },
                 {
                     title: 'Anchor Innovation in Verifiable Consumer Rituals',
-                    detail: `Shift capital from generic promotional discounting into tangible product utility, service craft, and community touchpoints documented in PSFK trend research.`,
-                    fodda_url: buildCanonicalFoddaLink(`PSFK trend ${opts.topic} consumer ritual`),
-                    markdown_bullet: `* **[Anchor Innovation in Verifiable Consumer Rituals](${buildCanonicalFoddaLink(`PSFK trend ${opts.topic} consumer ritual`)}):** Shift capital from generic promotional discounting into tangible product utility, service craft, and community touchpoints documented in PSFK trend research.`,
+                    detail: `Shift capital from generic promotional discounting into tangible product utility, service craft, and community touchpoints documented in market trend research.`,
+                    fodda_url: buildCanonicalFoddaLink(`${opts.topic} consumer ritual`),
+                    markdown_bullet: `* **[Anchor Innovation in Verifiable Consumer Rituals](${buildCanonicalFoddaLink(`${opts.topic} consumer ritual`)}):** Shift capital from generic promotional discounting into tangible product utility, service craft, and community touchpoints documented in market trend research.`,
                 },
                 {
                     title: 'Audit Channel Execution Against Peer Earnings Reality',
@@ -5210,17 +5223,18 @@ export async function createServer(
 
         const blueprint = {
             ...existing,
+            editorial_style: edStyle,
             publication_style: pubStyle,
             publication_name: pubName,
             beat_1_market_condition: {
                 section_heading_template: '### 1. [Provocative Section Title]',
-                editorial_beat: 'Beat 1: Market Condition & The Numbers',
+                editorial_beat: 'Section 1: The Market Backdrop & Numbers',
                 storytelling_rule: 'Lead with human and consumer behavior FIRST in 2 breathable paragraphs (Paragraph 1: the market phenomenon and incumbents feeling the pressure; Paragraph 2: the counter-intuitive winners and what they are doing differently). Cite AT MOST 1 sharp contrast metric per company with its explicit 2026 financial period. Never dump 4 to 6 stats in a single sentence or parenthetical clause, and never open with a consulting survey.',
                 company_anchor_metrics: existingBeat1Metrics.length > 0 ? existingBeat1Metrics : derivedBeat1Metrics,
             },
             beat_2_core_tension: {
                 section_heading_template: '### 2. [Provocative Section Title]',
-                editorial_beat: 'Beat 2: Core Tension & Published Research',
+                editorial_beat: 'Section 2: The Core Debate & Published Research',
                 weaving_rule: 'Weave published research reports (https://www.fodda.ai/graphs/:slug?q=...), macro data (BLS, Census, PubMed), and 3rd-party non-verbatim voices (quotable: false) together so physical and digital signals set each other up naturally instead of sitting as isolated one-liners. Never use the word "graph" when referring to consulting/industry reports, and never wrap quotable: false commentary in quotation marks ("...").',
                 report_citations: existing.beat_2_core_tension?.report_citations || reportItems,
                 macro_statistics: existing.beat_2_core_tension?.macro_statistics || macroItems,
@@ -5228,13 +5242,13 @@ export async function createServer(
             },
             beat_3_competing_playbooks: {
                 section_heading_template: '### 3. [Provocative Section Title]',
-                editorial_beat: 'Beat 3: Competing Corporate Playbooks',
+                editorial_beat: 'Section 3: Corporate Strategies & Executive Disclosures',
                 playbook_rule: 'Introduce each company and its strategic model FIRST before referencing the earnings call (never open paragraphs with vague "During their..."). Hyperlink the company-first earnings call reference ([During <Company>\'s Q3 2026 earnings call](https://www.fodda.ai/?q=...)) and quote quotable: true executives verbatim inside "...".',
                 corporate_playbooks: existing.beat_3_competing_playbooks?.corporate_playbooks || quotableVoices,
             },
             beat_4_psfk_fan_out: {
                 section_heading_template: '### 4. [Provocative Section Title]',
-                editorial_beat: 'Beat 4: Cross-Domain Case Studies & Expert Frameworks',
+                editorial_beat: 'Section 4: Category Trends & Expert Frameworks',
                 trend_framing_templates: trendFramingTemplates,
                 human_agent_attribution_rule: 'Mandatory 4-Part Attribution Arc for Human Agents (never put Human Agent perspectives in quotation marks "...") : (1) Frame their framework linked to https://www.fodda.ai/experts/:slug?q=...; (2) Attributed perspective in conditional/third-person prose; (3) Explicit Fodda query attribution ([When his/her Human Agent is queried through Fodda](https://www.fodda.ai/experts/:slug), it explains that ...); (4) Strategic takeaway closing with their core principle.',
                 psfk_trends_and_cases: existing.beat_4_psfk_fan_out?.psfk_trends_and_cases || evidenceCases,
@@ -5242,17 +5256,22 @@ export async function createServer(
             },
             beat_5_strategic_stakes: {
                 section_heading_template: '### 5. [Provocative Section Title]',
-                editorial_beat: 'Beat 5: Strategic Stakes & Executive Playbook',
+                editorial_beat: 'Section 5: Strategic Implications & Actionable Takeaways',
                 takeaway_rule: 'Closing cross-category synthesis + 4 bulleted executive takeaways with inline https://www.fodda.ai/?q=... links.',
                 executive_takeaways: takeaways,
             },
             query_fodda_markdown: queryFoddaMarkdown,
             composition_contract: existing.composition_contract || {
-                structure: '5 numbered beats (### 1. through ### 5.) followed verbatim by ### Query Fodda',
+                structure: '5 numbered sections (### 1. through ### 5.) followed verbatim by ### Query Fodda',
+                section_1_rule: 'Story and consumer behavior first in 2 breathable paragraphs, capped at 1 sharp contrast metric per company with explicit 2026 period',
+                section_2_rule: 'Woven published reports + macro stats + 3rd-party commentary (quotable: false paraphrased without quotes, connecting physical and digital signals)',
+                section_3_rule: 'Company-first earnings call openers ([During <Company>\'s Q3 2026 earnings call](https://www.fodda.ai/?q=...)) + verbatim quotes (quotable: true)',
+                section_4_rule: 'Varied, natural trend framing ("In market research tracking ...", "Analyzing ...", "Within broader category shifts toward ...") + 4-part Human Agent attribution arc (never in quotation marks)',
+                section_5_rule: '4 actionable executive takeaways with canonical https://www.fodda.ai/?q=... links + verbatim ### Query Fodda footer',
                 beat_1_rule: 'Story and consumer behavior first in 2 breathable paragraphs, capped at 1 sharp contrast metric per company with explicit 2026 period',
                 beat_2_rule: 'Woven published reports + macro stats + 3rd-party commentary (quotable: false paraphrased without quotes, connecting physical and digital signals)',
                 beat_3_rule: 'Company-first earnings call openers ([During <Company>\'s Q3 2026 earnings call](https://www.fodda.ai/?q=...)) + verbatim quotes (quotable: true)',
-                beat_4_rule: 'Varied, natural PSFK trend framing ("Under the PSFK trend ... found in the Fodda graph", "Within the trend ..., PSFK researchers highlight how...", "Under another PSFK identified trend, ...") + 4-part Human Agent attribution arc (never in quotation marks)',
+                beat_4_rule: 'Varied, natural trend framing ("In market research tracking ...", "Analyzing ...", "Within broader category shifts toward ...") + 4-part Human Agent attribution arc (never in quotation marks)',
                 beat_5_rule: '4 actionable executive takeaways with canonical https://www.fodda.ai/?q=... links + verbatim ### Query Fodda footer',
                 style_invariants: [
                     'Zero em dashes (no unicode 2014, en dashes, or double hyphens; use commas, colons, or parentheses)',
@@ -5273,24 +5292,53 @@ export async function createServer(
     const renderNewsletterBlueprintMarkdown = (
         blueprint: any,
         topicStr: string,
-        publicationStyle: 'psfk_weekly' | 'retail_innovation_week'
+        editorialStyle?: string,
+        publicationName?: string
     ): string => {
-        const pubName = publicationStyle === 'retail_innovation_week' ? 'Retail Innovation Week' : 'PSFK Weekly';
+        const pubName = publicationName || blueprint?.publication_name;
+        const edStyle = editorialStyle || blueprint?.editorial_style || blueprint?.publication_style || 'market_briefing';
+        const isCustomPublication = Boolean(publicationName || (blueprint?.publication_name && blueprint.publication_name !== 'Executive Market Briefing'));
+        const displayPublication = isCustomPublication
+            ? pubName
+            : (
+                edStyle === 'retail_innovation_week'
+                    ? 'Retail Innovation Week'
+                    : edStyle === 'psfk_weekly'
+                    ? 'PSFK Weekly'
+                    : edStyle === 'industry_newsletter'
+                    ? 'Industry Intelligence Briefing'
+                    : edStyle === 'executive_memo'
+                    ? 'Executive Briefing Memo'
+                    : 'Executive Market Briefing'
+            );
+
         const lines: string[] = [];
 
-        lines.push(`## 5-Beat ${pubName} Newsletter Blueprint & Strict Composition Contract: ${cleanDossierEmDashes(topicStr)}`);
+        const blueprintHeader = isCustomPublication
+            ? `## ${pubName} Newsletter Blueprint & Strict Composition Contract: ${cleanDossierEmDashes(topicStr)}`
+            : edStyle === 'retail_innovation_week'
+            ? `## Retail Innovation Week Newsletter Blueprint & Strict Composition Contract: ${cleanDossierEmDashes(topicStr)}`
+            : edStyle === 'psfk_weekly'
+            ? `## PSFK Weekly Newsletter Blueprint & Strict Composition Contract: ${cleanDossierEmDashes(topicStr)}`
+            : `## Executive Market Briefing Blueprint & Strict Composition Contract: ${cleanDossierEmDashes(topicStr)}`;
+
+        lines.push(blueprintHeader);
         lines.push('');
-        lines.push(`Use the pre-linked evidence below to compose the complete **5-Beat ${pubName} Executive Briefing** immediately. Follow every structural and style invariant below.`);
+        lines.push(`Use the pre-linked evidence below to compose the complete **${displayPublication}** immediately. Follow every structural and style invariant below.`);
         lines.push('');
         lines.push(`### Headline, Subtitle & Executive Summary Contract`);
-        lines.push(`* **Headline (\`# [Headline]\`):** Write a provocative, friction-first journalistic headline leading with the consumer shift or executive conflict (avoid dry academic labels).`);
+        if (isCustomPublication) {
+            lines.push(`* **Headline (\`# [Headline]\`):** Format as \`# ${pubName}: [Headline]\`. Write a provocative, friction-first journalistic headline leading with the consumer shift or executive conflict (avoid dry academic labels).`);
+        } else {
+            lines.push(`* **Headline (\`# [Headline]\`):** Default to \`# Executive Market Briefing: [Topic]\` or write a provocative, friction-first journalistic headline leading with the consumer shift or executive conflict.`);
+        }
         lines.push(`* **Subtitle (\`### [Subtitle]\`):** Highlight the strategic trade-off or investor dilemma in 2026.`);
-        lines.push(`* **Executive Summary (\`**Executive Summary:** ...\`):** Crisp 2-sentence synopsis naming **${pubName}** and framing the core market thesis.`);
+        lines.push(`* **Executive Summary (\`**Executive Summary:** ...\`):** Crisp 2-sentence synopsis ${isCustomPublication ? `naming **${pubName}** and ` : ''}framing the core market thesis.`);
         lines.push('');
 
-        // Beat 1
-        lines.push(`### 1. [Section Title] (Beat 1: Market Condition & The Numbers)`);
-        lines.push(`* **Composition Rule:** Put the **story and consumer behavior FIRST in 2 breathable paragraphs** (Paragraph 1: the market phenomenon and incumbents feeling the pressure; Paragraph 2: the counter-intuitive winners and what they are doing differently). Cite **at most 1 sharp contrast metric per company** with its explicit 2026 financial period. Never dump 4 to 6 stats in a single sentence or parenthetical clause, and never open Beat 1 with a consulting survey.`);
+        // Section 1
+        lines.push(`### 1. [Section Title] (Section 1: The Market Backdrop & Numbers)`);
+        lines.push(`* **Composition Rule:** Put the **story and consumer behavior FIRST in 2 breathable paragraphs** (Paragraph 1: the market phenomenon and incumbents feeling the pressure; Paragraph 2: the counter-intuitive winners and what they are doing differently). Cite **at most 1 sharp contrast metric per company** with its explicit 2026 financial period. Never dump 4 to 6 stats in a single sentence or parenthetical clause, and never open Section 1 with a consulting survey.`);
         const b1Metrics = blueprint?.beat_1_market_condition?.company_anchor_metrics || [];
         if (b1Metrics.length > 0) {
             lines.push(`* **Assigned Company Anchor Metrics (Max 1 Per Company):**`);
@@ -5300,8 +5348,8 @@ export async function createServer(
         }
         lines.push('');
 
-        // Beat 2
-        lines.push(`### 2. [Section Title] (Beat 2: Core Tension & Published Research)`);
+        // Section 2
+        lines.push(`### 2. [Section Title] (Section 2: The Core Debate & Published Research)`);
         lines.push(`* **Composition Rule:** Weave published research reports (\`https://www.fodda.ai/graphs/:slug?q=...\`), macro data (BLS, Census, PubMed), and 3rd-party non-verbatim voices (\`quotable: false\`) together so physical and digital signals set each other up naturally instead of sitting as isolated one-liners. Never use the word "graph" when citing consulting/industry reports, and never wrap \`quotable: false\` voices in quotation marks (\`"..."\`).`);
         const b2Reports = blueprint?.beat_2_core_tension?.report_citations || [];
         if (b2Reports.length > 0) {
@@ -5326,8 +5374,8 @@ export async function createServer(
         }
         lines.push('');
 
-        // Beat 3
-        lines.push(`### 3. [Section Title] (Beat 3: Competing Corporate Playbooks)`);
+        // Section 3
+        lines.push(`### 3. [Section Title] (Section 3: Corporate Strategies & Executive Disclosures)`);
         lines.push(`* **Composition Rule:** Introduce each company's strategy first (sector, company, and operating play), hyperlink the company-first earnings call opener (\`[During <Company>'s Q3 2026 earnings call](https://www.fodda.ai/?q=...)\`, never open with vague "During their..."), and quote \`quotable: true\` executives verbatim inside \`"..."\`.`);
         const b3Playbooks = blueprint?.beat_3_competing_playbooks?.corporate_playbooks || [];
         if (b3Playbooks.length > 0) {
@@ -5338,15 +5386,15 @@ export async function createServer(
         }
         lines.push('');
 
-        // Beat 4
-        lines.push(`### 4. [Section Title] (Beat 4: Cross-Domain Case Studies & Expert Frameworks)`);
-        lines.push(`* **Composition Rule (PSFK Trend Fan-Out):** Anchor case studies in named PSFK Trends using varied, natural phrasing across paragraphs:`);
-        lines.push(`  1. *"Under the PSFK trend *[Trend Name]* found in the Fodda graph, ..."*`);
-        lines.push(`  2. *"Within the trend *[Trend Name]*, PSFK researchers highlight how ..."*`);
-        lines.push(`  3. *"Under another PSFK identified trend, *[Trend Name]*, ..."*`);
+        // Section 4
+        lines.push(`### 4. [Section Title] (Section 4: Category Trends & Expert Frameworks)`);
+        lines.push(`* **Composition Rule (Category & Trend Fan-Out):** Anchor case studies in named market trends using varied, natural phrasing across paragraphs:`);
+        lines.push(`  1. *"In market research tracking [Trend Name], data indicates that..."*`);
+        lines.push(`  2. *"Analyzing [Trend Name], analysts note how [Brand]..."*`);
+        lines.push(`  3. *"Within broader category shifts toward [Trend Name], [Brand]..."*`);
         const b4Cases = blueprint?.beat_4_psfk_fan_out?.psfk_trends_and_cases || [];
         if (b4Cases.length > 0) {
-            lines.push(`* **Assigned PSFK Trends & Case Studies:**`);
+            lines.push(`* **Assigned Trends & Case Studies:**`);
             for (const c of b4Cases) {
                 lines.push(`  - ${c.recommended_opener}: ${escapeDossierBareDollarSigns(cleanDossierEmDashes(String(c.summary || '')))}`);
             }
@@ -5367,8 +5415,8 @@ export async function createServer(
         }
         lines.push('');
 
-        // Beat 5
-        lines.push(`### 5. [Section Title] (Beat 5: Strategic Stakes & Executive Playbook)`);
+        // Section 5
+        lines.push(`### 5. [Section Title] (Section 5: Strategic Implications & Actionable Takeaways)`);
         lines.push(`* **Composition Rule:** Closing cross-category synthesis + **4 bulleted executive takeaways** with inline \`https://www.fodda.ai/?q=...\` links.`);
         const b5Takeaways = blueprint?.beat_5_strategic_stakes?.executive_takeaways || [];
         for (const t of b5Takeaways) {
@@ -5377,7 +5425,7 @@ export async function createServer(
         lines.push('');
 
         // Strict Style Invariants
-        lines.push(`### Strict Style Invariants (Enforce Across All 5 Beats)`);
+        lines.push(`### Strict Style Invariants (Enforce Across All 5 Sections)`);
         lines.push(`* **Zero Em Dashes:** Do not output unicode em dashes, en dashes, or double hyphens in prose. Use commas, colons, or parentheses.`);
         lines.push(`* **Zero Bare Dollar Signs:** Never output an unescaped dollar sign before a number; write \`dollars\` in words or escape as \`\\$\`.`);
         lines.push(`* **Canonical Natural Hyperlinks:** Use the exact \`https://www.fodda.ai\` URLs above on natural prose anchor text.`);
@@ -5391,26 +5439,29 @@ export async function createServer(
 
     server.tool(
         'get_intelligence_dossier',
-        'Use when assembling a certified multi-source evidence dossier or writing a 5-beat PSFK Weekly or Retail Innovation Week newsletter-style article / executive briefing on any commercial topic, sector tension, or company cohort (e.g., \'Write a PSFK newsletter-style article on retail margin defense\', \'Create a Retail Innovation Week briefing on autonomous checkout\', \'Write a 5-beat executive briefing on functional beverages\', \'Build an evidence dossier on sustainable luxury packaging\'). Synthesizes domain knowledge graph case studies, PSFK trends, published consulting and industry research reports, sourced voices, active Human Agent perspectives, and live macroeconomic data (FRED, BLS, Census, PubMed) in a single synchronous call. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution, and never put Human Agent perspectives in quotation marks. Set include_editorial: true (with optional editorial_mode: \'blueprint\' | \'full\' | \'none\' and publication_style: \'psfk_weekly\' | \'retail_innovation_week\') to generate a 5-beat PSFK / Retail Innovation Week briefing + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis and 5-beat PSFK newsletter briefings; use deep_research_topic for multi-pass autonomous background research; use search_graph for individual trend queries.',
+        'Use when researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article on any commercial topic, sector trend, or company cohort (e.g. \'Draft a newsletter on retail margin defense\', \'Write an executive briefing on functional beverage trends\', \'Analyze autonomous checkout strategies\', \'Build an evidence dossier on sustainable luxury packaging\'). Synthesizes corporate earnings disclosures, published research reports, macro data (FRED, BLS, Census), and expert commentary into a structured editorial narrative with cited sources and interactive explore links. Set include_editorial: true (with optional editorial_mode: \'blueprint\' | \'full\' and publication_name) to generate a complete publication-ready article or blueprint + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis and newsletter-style drafting; use deep_research_topic for multi-pass background deep dives; use search_graph for individual trend lookups.',
         {
             topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
             sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
             tickers: z.array(z.string()).optional().describe("Optional corporate tickers to cross-reference against earnings call Q&A intelligence (e.g. ['NKE', 'DECK'])."),
-            include_editorial: z.boolean().optional().describe("Set to true to generate a publication-ready 5-beat PSFK Weekly or Retail Innovation Week executive briefing (story-first Beat 1, woven research + 3rd-party commentary Beat 2, company-first earnings playbooks Beat 3, PSFK trend fan-out + 4-part Human Agent framework Beat 4, 4 executive takeaways Beat 5 + ### Query Fodda footer, zero em dashes, zero bare dollar signs)."),
-            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (default when include_editorial is true in Claude/ChatGPT) returns a fast 5-beat PSFK newsletter blueprint, pre-built www.fodda.ai hyperlinks, and composition contract so the assistant can write a full 5-beat newsletter article without timeout; 'full' runs server-side 5-beat article generation; 'none' returns raw dossier only."),
-            publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().default('psfk_weekly').describe("Newsletter lens: 'psfk_weekly' for cross-category strategic briefings, or 'retail_innovation_week' for retail and commerce innovation."),
+            include_editorial: z.boolean().optional().describe("Set to true to generate a publication-ready newsletter, executive briefing, or market analysis article (Section 1: The Market Backdrop & Numbers, Section 2: The Core Debate & Published Research, Section 3: Corporate Strategies & Executive Disclosures, Section 4: Category Trends & Expert Frameworks, Section 5: Strategic Implications & Actionable Takeaways + ### Query Fodda footer, zero em dashes, zero bare dollar signs)."),
+            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (default when include_editorial is true in Claude/ChatGPT) returns a fast newsletter blueprint, pre-built www.fodda.ai hyperlinks, and composition contract so the assistant can write a full publication article without timeout; 'full' runs server-side article generation; 'none' returns raw dossier only."),
+            publication_name: z.string().optional().describe("Optional custom publication or newsletter name (e.g. 'The Retail Signal', 'Omnichannel Executive', 'Consumer Tech Digest'). If omitted, defaults to a neutral executive briefing title."),
+            editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing').describe("Editorial tone and format: 'market_briefing' for strategic cross-category analysis, 'industry_newsletter' for category and brand trends, 'executive_memo' for concise decision-maker briefings, or 'psfk_weekly' / 'retail_innovation_week' for PSFK house style."),
+            publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().describe("Backward-compatible alias for editorial_style: 'psfk_weekly' or 'retail_innovation_week'. Prefer editorial_style."),
             userId: z.string().optional().describe('Optional user identifier.'),
         },
         { title: 'Assemble Unified Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ topic, sector, tickers, include_editorial, editorial_mode, publication_style, userId: uid }) => {
+        async ({ topic, sector, tickers, include_editorial, editorial_mode, editorial_style, publication_style, publication_name, userId: uid }) => {
             try {
                 logUserQuery(topic, 'intelligence_dossier');
 
                 const guard = sptGuard('topic_research');
                 if (guard) return guard;
 
+                const resolvedEditorialStyle = editorial_style || (publication_style ? (publication_style as any) : 'market_briefing');
                 const resolvedPublicationStyle: 'psfk_weekly' | 'retail_innovation_week' =
-                    publication_style === 'retail_innovation_week' ? 'retail_innovation_week' : 'psfk_weekly';
+                    resolvedEditorialStyle === 'retail_innovation_week' ? 'retail_innovation_week' : 'psfk_weekly';
 
                 // Default to fast 'blueprint' mode for interactive LLM clients (Claude/ChatGPT) when include_editorial is true
                 // unless editorial_mode is explicitly set to 'full' or 'none'.
@@ -5429,9 +5480,10 @@ export async function createServer(
                         ? { include_editorial: resolvedEditorialMode === 'blueprint' ? false : include_editorial }
                         : (resolvedEditorialMode === 'full' ? { include_editorial: true } : {})),
                     ...(resolvedEditorialMode ? { editorial_mode: resolvedEditorialMode } : {}),
-                    ...((resolvedEditorialMode && resolvedEditorialMode !== 'none') || publication_style
-                        ? { publication_style: resolvedPublicationStyle }
+                    ...((resolvedEditorialMode && resolvedEditorialMode !== 'none') || editorial_style || publication_style
+                        ? { editorial_style: resolvedEditorialStyle, publication_style: resolvedPublicationStyle }
                         : {}),
+                    ...(publication_name ? { publication_name } : {}),
                 };
 
                 const data = await foddaRequest('POST', '/v1/intelligence/dossier', apiKey, resolveUserId(userId, uid), body);
@@ -5531,19 +5583,27 @@ export async function createServer(
                     markdown += `\n`;
                 }
 
-                const pubStyleLabel = resolvedPublicationStyle === 'retail_innovation_week'
+                const pubStyleLabel = publication_name
+                    ? publication_name
+                    : resolvedEditorialStyle === 'retail_innovation_week'
                     ? 'Retail Innovation Week Briefing'
-                    : 'PSFK Weekly Executive Briefing';
+                    : resolvedEditorialStyle === 'psfk_weekly'
+                    ? 'PSFK Weekly Executive Briefing'
+                    : resolvedEditorialStyle === 'industry_newsletter'
+                    ? 'Industry Intelligence Briefing'
+                    : resolvedEditorialStyle === 'executive_memo'
+                    ? 'Executive Briefing Memo'
+                    : 'Executive Market Briefing';
 
-                // Render 5-Beat Full Editorial when editorial_mode === 'full' or data?.editorial is present (and not overridden by blueprint mode)
+                // Render Full Editorial when editorial_mode === 'full' or data?.editorial is present (and not overridden by blueprint mode)
                 if (data?.editorial && resolvedEditorialMode !== 'blueprint' && resolvedEditorialMode !== 'none') {
                     const ed = data.editorial;
                     const rawSections = ed.sections?.structured || ed.sections || {};
                     const beat4Section = rawSections.graph_fan_out?.content
                         ? rawSections.graph_fan_out
                         : {
-                            section_title: 'Cross-Domain Case Studies & Expert Frameworks',
-                            editorial_beat: 'Beat 4: PSFK Knowledge Graph Fan-Out & Human Agent Frameworks',
+                            section_title: 'Category Trends & Expert Frameworks',
+                            editorial_beat: 'Section 4: Category Trends & Expert Frameworks',
                             content: buildFallbackBeatFourFromDossier(dossier, topic),
                         };
 
@@ -5563,34 +5623,34 @@ export async function createServer(
                         || data?.newsletter_blueprint?.query_fodda_markdown
                         || buildCanonicalQueryFoddaMarkdown(dossier, topic, tickers, '2026');
 
-                    markdown += `## 5-Beat ${pubStyleLabel}: ${normalizeDossierEditorialProse(ed.headline || topic)}\n\n`;
+                    markdown += `## ${pubStyleLabel}: ${normalizeDossierEditorialProse(ed.headline || topic)}\n\n`;
                     if (ed.subtitle) markdown += `### ${normalizeDossierEditorialProse(ed.subtitle)}\n\n`;
                     if (ed.summary) markdown += `**Executive Summary:** ${normalizeDossierEditorialProse(ed.summary)}\n\n---\n\n`;
 
                     if (normalizedSections.market_lede?.content || normalizedSections.core_debate?.content) {
                         if (normalizedSections.market_lede?.content) {
-                            markdown += `### 1. ${normalizeDossierEditorialProse(normalizedSections.market_lede.section_title || 'Market Condition & The Numbers')}\n`;
-                            markdown += `*(Editorial Arc: Beat 1: Market Condition & The Numbers)*\n\n`;
+                            markdown += `### 1. ${normalizeDossierEditorialProse(normalizedSections.market_lede.section_title || 'The Market Backdrop & Numbers')}\n`;
+                            markdown += `*(Editorial Arc: Section 1: The Market Backdrop & Numbers)*\n\n`;
                             markdown += `${normalizeDossierEditorialProse(normalizedSections.market_lede.content)}\n\n---\n\n`;
                         }
                         if (normalizedSections.core_debate?.content) {
-                            markdown += `### 2. ${normalizeDossierEditorialProse(normalizedSections.core_debate.section_title || 'Core Tension & Published Research')}\n`;
-                            markdown += `*(Editorial Arc: Beat 2: Core Tension & Published Research)*\n\n`;
+                            markdown += `### 2. ${normalizeDossierEditorialProse(normalizedSections.core_debate.section_title || 'The Core Debate & Published Research')}\n`;
+                            markdown += `*(Editorial Arc: Section 2: The Core Debate & Published Research)*\n\n`;
                             markdown += `${normalizeDossierEditorialProse(normalizedSections.core_debate.content)}\n\n---\n\n`;
                         }
                         if (normalizedSections.competing_playbooks?.content) {
-                            markdown += `### 3. ${normalizeDossierEditorialProse(normalizedSections.competing_playbooks.section_title || 'Competing Corporate Playbooks')}\n`;
-                            markdown += `*(Editorial Arc: Beat 3: Competing Corporate Playbooks)*\n\n`;
+                            markdown += `### 3. ${normalizeDossierEditorialProse(normalizedSections.competing_playbooks.section_title || 'Corporate Strategies & Executive Disclosures')}\n`;
+                            markdown += `*(Editorial Arc: Section 3: Corporate Strategies & Executive Disclosures)*\n\n`;
                             markdown += `${normalizeDossierEditorialProse(normalizedSections.competing_playbooks.content)}\n\n---\n\n`;
                         }
                         if (normalizedSections.graph_fan_out?.content) {
-                            markdown += `### 4. ${normalizeDossierEditorialProse(normalizedSections.graph_fan_out.section_title || 'Cross-Domain Case Studies & Expert Frameworks')}\n`;
-                            markdown += `*(Editorial Arc: Beat 4: PSFK Knowledge Graph Fan-Out & Human Agent Frameworks)*\n\n`;
+                            markdown += `### 4. ${normalizeDossierEditorialProse(normalizedSections.graph_fan_out.section_title || 'Category Trends & Expert Frameworks')}\n`;
+                            markdown += `*(Editorial Arc: Section 4: Category Trends & Expert Frameworks)*\n\n`;
                             markdown += `${normalizeDossierEditorialProse(normalizedSections.graph_fan_out.content)}\n\n---\n\n`;
                         }
                         if (normalizedSections.strategic_stakes?.content) {
-                            markdown += `### 5. ${normalizeDossierEditorialProse(normalizedSections.strategic_stakes.section_title || 'Strategic Stakes & Executive Playbook')}\n`;
-                            markdown += `*(Editorial Arc: Beat 5: Strategic Stakes & Executive Playbook)*\n\n`;
+                            markdown += `### 5. ${normalizeDossierEditorialProse(normalizedSections.strategic_stakes.section_title || 'Strategic Implications & Actionable Takeaways')}\n`;
+                            markdown += `*(Editorial Arc: Section 5: Strategic Implications & Actionable Takeaways)*\n\n`;
                             markdown += `${normalizeDossierEditorialProse(normalizedSections.strategic_stakes.content)}\n\n`;
                         }
                         if (!markdown.includes('### Query Fodda')) {
@@ -5608,9 +5668,11 @@ export async function createServer(
                         topic,
                         ...(sector ? { sector } : {}),
                         ...(tickers ? { tickers } : {}),
+                        editorialStyle: resolvedEditorialStyle,
                         publicationStyle: resolvedPublicationStyle,
+                        publicationName: publication_name,
                     });
-                    markdown += `${renderNewsletterBlueprintMarkdown(blueprint, topic, resolvedPublicationStyle)}\n\n`;
+                    markdown += `${renderNewsletterBlueprintMarkdown(blueprint, topic, resolvedEditorialStyle, publication_name)}\n\n`;
                 }
 
                 const finalMarkdown = escapeDossierBareDollarSigns(cleanDossierEmDashes(markdown)).trim();
@@ -5620,7 +5682,9 @@ export async function createServer(
                     ...(data?.voices ? { voices: data.voices } : {}),
                     ...(data?.newsletter_blueprint ? { newsletter_blueprint: data.newsletter_blueprint } : {}),
                     editorial_mode: resolvedEditorialMode || 'none',
+                    editorial_style: resolvedEditorialStyle,
                     publication_style: resolvedPublicationStyle,
+                    ...(publication_name ? { publication_name } : {}),
                     formatted_markdown: finalMarkdown,
                     content: [{ type: 'text' as const, text: finalMarkdown }],
                 };

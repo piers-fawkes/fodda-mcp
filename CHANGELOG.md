@@ -5,6 +5,28 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.143] - 2026-11-06
+
+### Changed (Customer-Facing Newsletter & Executive Briefing Writer Decoupling on `get_intelligence_dossier`)
+- **Customer-Facing Tool Description & Parameters (`src/toolHandlers.ts`)**:
+  - Replaced internal jargon ("5-beat", "PSFK Weekly", "Retail Innovation Week") with outcome-oriented language positioning `get_intelligence_dossier` as an editorial drafting engine for newsletters, executive briefings, and market analysis articles across commercial topics, sector trends, and company cohorts.
+  - Added optional parameter `publication_name: z.string().optional()` allowing callers to brand resulting newsletters and briefings with their custom publication name (e.g. 'The Retail Signal', 'Omnichannel Executive', 'Consumer Tech Digest'). Defaults cleanly to neutral executive briefing title when omitted.
+  - Added optional parameter `editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing')` for strategic cross-category analysis, category/brand trends, and concise decision-maker briefings, while maintaining `publication_style` as a backward-compatible alias.
+- **Section Concept Headings & Composition Blueprint (`src/toolHandlers.ts`)**:
+  - Replaced internal "beat" jargon in returned blueprints and editorial rendering with universal journalistic concepts:
+    - `Section 1: The Market Backdrop & Numbers` (formerly Beat 1)
+    - `Section 2: The Core Debate & Published Research` (formerly Beat 2)
+    - `Section 3: Corporate Strategies & Executive Disclosures` (formerly Beat 3)
+    - `Section 4: Category Trends & Expert Frameworks` (formerly Beat 4)
+    - `Section 5: Strategic Implications & Actionable Takeaways` (formerly Beat 5)
+  - Upgraded Section 4 trend framing to natural journalistic templates (*"In market research tracking [Trend Name], data indicates that..."*, *"Analyzing [Trend Name], analysts note how [Brand]..."*, *"Within broader category shifts toward [Trend Name], [Brand]..."*).
+  - Maintained strict style invariants: zero em dashes, zero bare dollar signs, verbatim executive quotes, and 4-part Human Agent attribution arcs without fabricated quotes.
+- **Capabilities & Tool Guide Alignment (`src/toolHandlers.ts`, `src/toolGuide.ts`)**:
+  - Updated `get_capabilities` capability catalog and `src/toolGuide.ts` entry for `get_intelligence_dossier` to reflect decoupled, outcome-based newsletter and briefing drafting descriptions.
+- **Tests & Manifest Validation (`src/test_intelligence_and_verifier.ts`, `tools-manifest.json`)**:
+  - Updated test suite verifying custom `publication_name`, `editorial_style`, professional section concept headers, natural trend phrasing, and zero em-dash / bare-dollar invariants across blueprint and full modes.
+  - Re-synced `tools-manifest.json` ensuring tool count remains invariant at 56 with Cost Silence compliance.
+
 ## [1.46.142] - 2026-11-05
 
 ### Changed (Markdown Blockquote Formatting for Next Moves Closing Block)

@@ -176,7 +176,7 @@ async function run() {
     if (mDossier) {
         assert(mDossier.bills_as === 'topic_research', 'get_intelligence_dossier bills_as is "topic_research"');
         assert(mDossier.category === 'Intelligence', 'get_intelligence_dossier category is "Intelligence"');
-        assert(mDossier.description.includes('5-beat') && mDossier.description.includes('PSFK Weekly') && mDossier.description.includes('Retail Innovation Week'), 'Description routes 5-beat PSFK Weekly & Retail Innovation Week prompts to get_intelligence_dossier');
+        assert(mDossier.description.includes('newsletter') && mDossier.description.includes('executive briefing'), 'Description routes newsletter & executive briefing prompts to get_intelligence_dossier');
         assert(!/\b(?:tokens?|via SPT)\b/i.test(mDossier.description), 'get_intelligence_dossier description has NO token/SPT phrasing');
         assert(!/\$[0-9]/.test(mDossier.description), 'get_intelligence_dossier description has NO price figures');
     }
@@ -211,34 +211,46 @@ async function run() {
         sector: 'retail',
         tickers: ['CMG', 'TGT'],
         include_editorial: true,
-        publication_style: 'retail_innovation_week',
+        publication_name: 'The Retail Signal',
+        editorial_style: 'industry_newsletter',
     });
 
     assert(capturedRequestBody?.editorial_mode === 'blueprint', `Claude session with include_editorial: true defaults editorial_mode to "blueprint" (got: ${capturedRequestBody?.editorial_mode})`);
-    assert(capturedRequestBody?.publication_style === 'retail_innovation_week', `Passes publication_style: "retail_innovation_week" to API`);
+    assert(capturedRequestBody?.editorial_style === 'industry_newsletter', `Passes editorial_style: "industry_newsletter" to API`);
+    assert(capturedRequestBody?.publication_name === 'The Retail Signal', `Passes publication_name: "The Retail Signal" to API`);
     assert(blueprintRes.editorial_mode === 'blueprint', 'Response payload marks editorial_mode: "blueprint"');
+    assert(blueprintRes.editorial_style === 'industry_newsletter', 'Response payload marks editorial_style: "industry_newsletter"');
+    assert(blueprintRes.publication_name === 'The Retail Signal', 'Response payload marks publication_name: "The Retail Signal"');
     assert(Boolean(blueprintRes.newsletter_blueprint), 'Response payload includes structured newsletter_blueprint');
 
     const bpMd: string = blueprintRes.formatted_markdown || '';
-    assert(bpMd.includes('## 5-Beat Retail Innovation Week Newsletter Blueprint & Strict Composition Contract'), 'Blueprint header names Retail Innovation Week');
-    assert(bpMd.includes('### 1. [Section Title] (Beat 1: Market Condition & The Numbers)'), 'Blueprint renders Beat 1 header');
-    assert(bpMd.includes('story and consumer behavior FIRST in 2 breathable paragraphs') && bpMd.includes('at most 1 sharp contrast metric per company'), 'Beat 1 enforces story-first 2 paragraphs & max 1 stat per company');
-    assert(bpMd.includes('### 2. [Section Title] (Beat 2: Core Tension & Published Research)'), 'Blueprint renders Beat 2 header');
-    assert(bpMd.includes('https://www.fodda.ai/graphs/mckinsey-consumer?q='), 'Beat 2 links published report to canonical https://www.fodda.ai/graphs/:slug?q=...');
+    assert(bpMd.includes('## The Retail Signal Newsletter Blueprint & Strict Composition Contract: Restaurant and retail pricing power vs discounting'), 'Blueprint header formats custom publication_name');
+    assert(bpMd.includes('### 1. [Section Title] (Section 1: The Market Backdrop & Numbers)'), 'Blueprint renders Section 1 concept header');
+    assert(bpMd.includes('story and consumer behavior FIRST in 2 breathable paragraphs') && bpMd.includes('at most 1 sharp contrast metric per company'), 'Section 1 enforces story-first 2 paragraphs & max 1 stat per company');
+    assert(bpMd.includes('### 2. [Section Title] (Section 2: The Core Debate & Published Research)'), 'Blueprint renders Section 2 concept header');
+    assert(bpMd.includes('https://www.fodda.ai/graphs/mckinsey-consumer?q='), 'Section 2 links published report to canonical https://www.fodda.ai/graphs/:slug?q=...');
     assert(!bpMd.includes('"Promotional meal bundles create a brand gravity trap'), 'quotable: false voice is NEVER rendered in quotation marks ("...")');
-    assert(bpMd.includes('### 3. [Section Title] (Beat 3: Competing Corporate Playbooks)'), 'Blueprint renders Beat 3 header');
-    assert(bpMd.includes('[During Chipotle\'s Q3 2026 earnings call](https://www.fodda.ai/?q='), 'Beat 3 renders company-first hyperlinked earnings call opener');
-    assert(bpMd.includes('"We refuse to enter a \\$5 discount war, our culinary hospitality drives sustainable transaction growth."'), 'Beat 3 quotes quotable: true executive verbatim with escaped dollar sign and cleaned em dash');
-    assert(bpMd.includes('### 4. [Section Title] (Beat 4: Cross-Domain Case Studies & Expert Frameworks)'), 'Blueprint renders Beat 4 header');
-    assert(bpMd.includes('Under the PSFK trend *Two-Tiered Own-Brand Architecture* found in the Fodda graph'), 'Beat 4 includes varied PSFK trend framing #1');
-    assert(bpMd.includes('Within the trend *Affordable Sensory Indulgence*, PSFK researchers highlight how'), 'Beat 4 includes varied PSFK trend framing #2');
-    assert(bpMd.includes('Under another PSFK identified trend, *Transparent Value Lock-Ins*'), 'Beat 4 includes varied PSFK trend framing #3');
-    assert(bpMd.includes('[When their Human Agent is queried through Fodda](https://www.fodda.ai/experts/ben-dietz)'), 'Beat 4 includes 4-part Human Agent attribution arc link');
+    assert(bpMd.includes('### 3. [Section Title] (Section 3: Corporate Strategies & Executive Disclosures)'), 'Blueprint renders Section 3 concept header');
+    assert(bpMd.includes('[During Chipotle\'s Q3 2026 earnings call](https://www.fodda.ai/?q='), 'Section 3 renders company-first hyperlinked earnings call opener');
+    assert(bpMd.includes('"We refuse to enter a \\$5 discount war, our culinary hospitality drives sustainable transaction growth."'), 'Section 3 quotes quotable: true executive verbatim with escaped dollar sign and cleaned em dash');
+    assert(bpMd.includes('### 4. [Section Title] (Section 4: Category Trends & Expert Frameworks)'), 'Blueprint renders Section 4 concept header');
+    assert(bpMd.includes('In market research tracking Two-Tiered Own-Brand Architecture'), 'Section 4 includes natural trend opener #1');
+    assert(bpMd.includes('Analyzing Affordable Sensory Indulgence'), 'Section 4 includes natural trend opener #2');
+    assert(bpMd.includes('Within broader category shifts toward Transparent Value Lock-Ins'), 'Section 4 includes natural trend opener #3');
+    assert(bpMd.includes('[When their Human Agent is queried through Fodda](https://www.fodda.ai/experts/ben-dietz)'), 'Section 4 includes 4-part Human Agent attribution arc link');
     assert(!bpMd.includes('"When legacy dining chains discount core combos'), 'Human Agent perspective is NEVER rendered in quotation marks ("...")');
-    assert(bpMd.includes('### 5. [Section Title] (Beat 5: Strategic Stakes & Executive Playbook)'), 'Blueprint renders Beat 5 header');
+    assert(bpMd.includes('### 5. [Section Title] (Section 5: Strategic Implications & Actionable Takeaways)'), 'Blueprint renders Section 5 concept header');
     assert(bpMd.includes('### Query Fodda'), 'Blueprint renders canonical ### Query Fodda footer');
     assert(!/[—–]/.test(bpMd), 'Zero unicode em/en dashes in formatted blueprint markdown');
     assert(!/(?<!\\)\$[0-9]/.test(bpMd), 'Zero unescaped bare dollar signs before digits in formatted blueprint markdown');
+
+    const defaultBpRes = await claudeHandler({
+        topic: 'Autonomous checkout adoption',
+        include_editorial: true,
+    });
+    const defaultBpMd: string = defaultBpRes.formatted_markdown || '';
+    assert(defaultBpMd.includes('## Executive Market Briefing Blueprint & Strict Composition Contract: Autonomous checkout adoption'), 'Unprovided publication_name defaults to Executive Market Briefing header');
+    assert(defaultBpMd.includes('# Executive Market Briefing: [Topic]'), 'Unprovided publication_name defaults headline contract to Executive Market Briefing');
 
     console.log('\n=== 3. Full 5-Beat Editorial Rendering Mode (editorial_mode: "full") ===');
     const mockFullFoddaRequest = async (_method: string, endpoint: string, _apiKey?: string, _userId?: string, body?: any) => {
@@ -297,18 +309,28 @@ async function run() {
         tickers: ['CMG', 'TGT'],
         include_editorial: true,
         editorial_mode: 'full',
-        publication_style: 'psfk_weekly',
+        publication_name: 'The Retail Signal',
     });
 
     assert(capturedRequestBody?.editorial_mode === 'full' && capturedRequestBody?.include_editorial === true, 'Explicit editorial_mode: "full" overrides blueprint default and sends include_editorial: true');
+    assert(capturedRequestBody?.publication_name === 'The Retail Signal', 'Passes publication_name to API in full mode');
     const fullMd: string = fullRes.formatted_markdown || '';
-    assert(fullMd.includes('## 5-Beat PSFK Weekly Executive Briefing:'), 'Full mode renders 5-Beat PSFK Weekly Executive Briefing header');
-    assert(fullMd.includes('### 1. The High Cost of Cheap Traffic'), 'Full mode renders Beat 1');
-    assert(fullMd.includes('### 2. Structural Barbell or Temporary Hedge'), 'Full mode renders Beat 2');
-    assert(fullMd.includes('### 3. Hospitality Moats vs. Unbundled Value'), 'Full mode renders Beat 3');
-    assert(fullMd.includes('### 4. PSFK Trend Innovations & Human Agent Lens'), 'Full mode renders Beat 4');
-    assert(fullMd.includes('### 5. Executive Playbook for 2026'), 'Full mode renders Beat 5');
+    assert(fullMd.includes('## The Retail Signal: Why Hospitality Operators Refuse the \\$5 Bundle Trap'), 'Full mode renders custom publication name in header without 5-beat prefix');
+    assert(fullMd.includes('### 1. The High Cost of Cheap Traffic'), 'Full mode renders Section 1');
+    assert(fullMd.includes('*(Editorial Arc: Section 1: The Market Backdrop & Numbers)*'), 'Full mode includes Section 1 editorial arc note');
+    assert(fullMd.includes('### 2. Structural Barbell or Temporary Hedge'), 'Full mode renders Section 2');
+    assert(fullMd.includes('*(Editorial Arc: Section 2: The Core Debate & Published Research)*'), 'Full mode includes Section 2 editorial arc note');
+    assert(fullMd.includes('### 3. Hospitality Moats vs. Unbundled Value'), 'Full mode renders Section 3');
+    assert(fullMd.includes('*(Editorial Arc: Section 3: Corporate Strategies & Executive Disclosures)*'), 'Full mode includes Section 3 editorial arc note');
+    assert(fullMd.includes('### 4. PSFK Trend Innovations & Human Agent Lens'), 'Full mode renders Section 4');
+    assert(fullMd.includes('*(Editorial Arc: Section 4: Category Trends & Expert Frameworks)*'), 'Full mode includes Section 4 editorial arc note');
+    assert(fullMd.includes('### 5. Executive Playbook for 2026'), 'Full mode renders Section 5');
+    assert(fullMd.includes('*(Editorial Arc: Section 5: Strategic Implications & Actionable Takeaways)*'), 'Full mode includes Section 5 editorial arc note');
     assert(fullMd.includes('### Query Fodda'), 'Full mode appends canonical ### Query Fodda footer');
+    assert(!fullMd.includes('claude.ai/new'), 'Legacy claude.ai links are normalized to canonical https://www.fodda.ai links');
+    assert(!/\[\d+\]/.test(fullMd), 'Bracketed footnote numbers ([1]) are stripped from editorial prose');
+    assert(!/[—–]/.test(fullMd), 'Zero unicode em/en dashes in full mode markdown');
+    assert(!/(?<!\\)\$[0-9]/.test(fullMd), 'Zero unescaped bare dollar signs before digits in full mode markdown');
     assert(!fullMd.includes('claude.ai/new'), 'Legacy claude.ai links are normalized to canonical https://www.fodda.ai links');
     assert(!/\[\d+\]/.test(fullMd), 'Bracketed footnote numbers ([1]) are stripped from editorial prose');
     assert(!/[—–]/.test(fullMd), 'Zero unicode em/en dashes in full mode markdown');

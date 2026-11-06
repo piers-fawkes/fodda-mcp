@@ -97,7 +97,7 @@ async function sync() {
           continue;
         }
         // Preserve get_capabilities canonical routing and view documentation
-        if (toolName === 'get_capabilities') {
+        if (toolName === 'get_capabilities' || toolName === 'get_intelligence_dossier') {
           continue;
         }
         src = src.replace(regex, (m, p1) => `${p1}'${escapedDesc}'`);

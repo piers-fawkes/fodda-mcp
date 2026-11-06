@@ -79,9 +79,9 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     get_intelligence_dossier: {
         section: 'Research',
-        what_you_get: 'Certified multi-source evidence dossier and optional 5-beat PSFK Weekly or Retail Innovation Week executive newsletter briefing with canonical Fodda links.',
-        when_to_use: 'Use when preparing a comprehensive evidence dossier, a 5-beat executive briefing, or a PSFK Weekly / Retail Innovation Week newsletter article on any topic, sector tension, or company cohort.',
-        example_prompt: 'Write a 5-beat PSFK newsletter briefing on circularity in sportswear.'
+        what_you_get: 'Multi-source evidence dossier and structured, research-backed newsletter or executive briefing with cited corporate disclosures, research reports, and interactive Fodda links.',
+        when_to_use: 'Use when researching and drafting an in-depth newsletter, executive briefing, or market analysis article on any commercial topic, sector trend, or company cohort.',
+        example_prompt: 'Draft an executive market briefing on retail margin defense.'
     },
     search_statistics: {
         section: 'Research',
