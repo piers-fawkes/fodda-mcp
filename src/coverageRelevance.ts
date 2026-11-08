@@ -2549,7 +2549,9 @@ export function generateConsultNextMoves(
         cleanAnalystId === 'adam-smith' ||
         cleanAnalystId === 'sun-tzu' ||
         cleanAnalystId === 'josephine-baker' ||
-        cleanAnalystId === 'harry-hollingworth'
+        cleanAnalystId === 'harry-hollingworth' ||
+        cleanAnalystId === 'christine-frederick' ||
+        cleanAnalystId === 'gabriel-tarde'
     );
 
     let expertDisplayName = cleanDisplayName(matchedAnalyst?.name);
