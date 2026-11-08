@@ -5,6 +5,26 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.146] - 2026-11-08
+
+### Added (Support 6 New Classic Agents: Ibn Khaldun, Kautilya, Walker, Follett, Gilbreth, Simmel)
+- **Classic Agent Recognition & Normalization (`src/catalogCache.ts`, `src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Registered 6 new Classic Agents across global thought, organizational design, DTC commerce, and network sociology: `ibn-khaldun`, `kautilya`, `madam-cj-walker`, `mary-parker-follett`, `lillian-gilbreth`, and `georg-simmel`.
+  - Added explicit ID bindings in `src/catalogCache.ts`, `src/coverageRelevance.ts`, and `src/toolHandlers.ts` (`category: 'classic_agent'`, `category_label: 'Classic Agent'`, `twin_type: 'Classic Agent'`, `consult_tool: 'consult_analyst'`).
+- **Classic Agent Attribution Guidance & Book a Call Suppression (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Enforced standard Classic Agent framing across all 6 thinkers (*"When [Name]'s Classic Agent on Fodda is consulted..."*).
+  - Prohibited referring to any of the historical figures as a "Human Agent" or using "digital twin" terminology.
+  - Strictly suppressed "Book a Call" across `consult_analyst`, `consult_human_agent`, and next moves.
+- **Dynamic Next Moves & Scoping (`src/coverageRelevance.ts`)**:
+  - Grounded follow-ups in application to modern strategic case studies (`"Want to apply [Name]'s framework to a specific modern case study?"`), rejecting client "brand or brief" requests.
+  - Configured Move 2 to route to `modern_application` (`Apply to modern culture & commerce`).
+- **Tool Guidance & Discovery Alignment (`src/systemPrompt.ts`, `src/toolGuide.ts`, `src/toolHandlers.ts`)**:
+  - Added Ibn Khaldun, Kautilya, Madam C.J. Walker, Mary Parker Follett, Lillian Gilbreth, and Georg Simmel to `src/systemPrompt.ts` conversational framing rules and internal routing slugs.
+  - Updated `consult_analyst` description, parameter schema, and `src/toolGuide.ts` to document their core historical and strategic frameworks.
+  - Aligned discovery queries: Ibn Khaldun (organizational culture, Asabiyyah, lifecycle decay, platform take-rate), Kautilya (supply chain resilience, buffer reserves, marketplace fraud controls, realpolitik), Madam C.J. Walker (decentralized sales agent networks, DTC distribution, community brand trust), Mary Parker Follett (lateral authority, constructive conflict, integration over compromise, law of the situation), Lillian Gilbreth (workplace ergonomics, motion study, therbligs, kitchen work triangle, fatigue elimination), and Georg Simmel (philosophy of money, abstract pricing, sensory overload, blasé attitude, fashion dialectic).
+- **Verification Suite (`src/test_six_new_classic_agents.ts`)**:
+  - Added comprehensive 4-part test suite verifying catalog normalization, attribution guidance, "Book a Call" suppression, next-moves modern case study scoping, and local candidate discovery across all 6 domain query archetypes.
+
 ## [1.46.145] - 2026-11-08
 
 ### Added (New Classic Agents Christine Frederick & Gabriel Tarde: Tool Guidance, Discovery Queries & Attribution Rules)

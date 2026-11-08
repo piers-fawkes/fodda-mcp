@@ -1745,7 +1745,13 @@ export async function createServer(
                             cleanId === 'josephine-baker' ||
                             cleanId === 'harry-hollingworth' ||
                             cleanId === 'christine-frederick' ||
-                            cleanId === 'gabriel-tarde'
+                            cleanId === 'gabriel-tarde' ||
+                            cleanId === 'ibn-khaldun' ||
+                            cleanId === 'kautilya' ||
+                            cleanId === 'madam-cj-walker' ||
+                            cleanId === 'mary-parker-follett' ||
+                            cleanId === 'lillian-gilbreth' ||
+                            cleanId === 'georg-simmel'
                         );
 
                         const is_human = !is_c_suite && !is_classic && Boolean(
@@ -8028,7 +8034,13 @@ export async function createServer(
                 resolvedAnalystId === 'josephine-baker' ||
                 resolvedAnalystId === 'harry-hollingworth' ||
                 resolvedAnalystId === 'christine-frederick' ||
-                resolvedAnalystId === 'gabriel-tarde'
+                resolvedAnalystId === 'gabriel-tarde' ||
+                resolvedAnalystId === 'ibn-khaldun' ||
+                resolvedAnalystId === 'kautilya' ||
+                resolvedAnalystId === 'madam-cj-walker' ||
+                resolvedAnalystId === 'mary-parker-follett' ||
+                resolvedAnalystId === 'lillian-gilbreth' ||
+                resolvedAnalystId === 'georg-simmel'
             );
 
             const parts: string[] = [];
@@ -8554,7 +8566,13 @@ export async function createServer(
                 resolvedAnalystId === 'josephine-baker' ||
                 resolvedAnalystId === 'harry-hollingworth' ||
                 resolvedAnalystId === 'christine-frederick' ||
-                resolvedAnalystId === 'gabriel-tarde'
+                resolvedAnalystId === 'gabriel-tarde' ||
+                resolvedAnalystId === 'ibn-khaldun' ||
+                resolvedAnalystId === 'kautilya' ||
+                resolvedAnalystId === 'madam-cj-walker' ||
+                resolvedAnalystId === 'mary-parker-follett' ||
+                resolvedAnalystId === 'lillian-gilbreth' ||
+                resolvedAnalystId === 'georg-simmel'
             );
 
             const parts: string[] = [];
@@ -8828,7 +8846,7 @@ export async function createServer(
         'consult_analyst',
         'Use when seeking role-specific strategic guidance, executive decision frameworks, or historical perspectives from synthetic domain analysts, corporate C-Suite executive personas, or classic historical thinkers grounded in specialist knowledge graphs (e.g., \'Ask the Brand CMO persona how to evaluate retail media ROI\', \'Consult John Ruskin on craftsmanship in luxury fashion\'). A consult perspective is the agent\'s view, never a quote from the real person. Supports multi-turn dialogue via session_id, corporate brand binding via company, and comprehensive deep research (deep: true). Sibling routing: Use consult_human_agent for authorized Human Agents (Human Agents) (e.g. Ben Dietz); use consult_analyst for synthetic personas, C-Suite roles, and classic thinkers; use list_analysts to browse available personas. Returns synthesized analyst response, cited graph insights, and recommended next moves.',
         {
-            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'christine-frederick', 'gabriel-tarde', 'harry-hollingworth', or 'john-ruskin'). This is an internal identifier; the agent's display name is in the response."),
+            analyst_id: z.string().describe("The internal ID of the agent (from list_analysts or find_expert, e.g. 'brand-cmo', 'ibn-khaldun', 'kautilya', 'madam-cj-walker', 'mary-parker-follett', 'lillian-gilbreth', 'georg-simmel'). This is an internal identifier; the agent's display name is in the response."),
             query: z.string().describe("The question or topic to discuss with the analyst"),
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context across the session. Omit for a one-off question."),
