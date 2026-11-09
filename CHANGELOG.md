@@ -5,6 +5,32 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.149] - 2026-11-09
+
+### Added (Support 4 Classic Agents: Hopkins, Bly, Barnum, Vidocq)
+- **Classic Agent Recognition & Normalization (`src/catalogCache.ts`, `src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Registered 4 Classic Agents covering major user query demand areas:
+    1. Claude C. Hopkins (`claude-hopkins`): Performance marketing, attribution, CAC, sampling economics, reason-why copy specificity, vanity metrics auditing.
+    2. Nellie Bly (`nellie-bly`): Undercover operational auditing, frontline ground truth, floor reality vs. executive fiction, speed as competitive moat, breaking gatekeeper vetoes.
+    3. P.T. Barnum (`pt-barnum`): Retail visual merchandising, storefront theater, attention architecture, exterior magnetism, curiosity loops (the brick-man), customer circulation ('the Egress'), harmless humbug.
+    4. Eugène-François Vidocq (`eugene-francois-vidocq`): Adversarial security, criminal forensics, undercover infiltration, zero-trust, reformed threat actors, controlled delivery stings, institutional corruption auditing ('the leather gloves rule').
+  - Added explicit ID bindings in `src/catalogCache.ts`, `src/coverageRelevance.ts`, and `src/toolHandlers.ts` (`category: 'classic_agent'`, `category_label: 'Classic Agent'`, `twin_type: 'Classic Agent'`, `consult_tool: 'consult_analyst'`).
+- **Platform Scale Alignment (`src/toolHandlers.ts`)**:
+  - Updated `platform_scale.specialists.breakdown.classic_agents` counter from `25` to `27`.
+- **Classic Agent Attribution Guidance & Book a Call Suppression (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Enforced standard Classic Agent framing: *"When [Name]'s Classic Agent on Fodda is consulted..."*.
+  - Prohibited referring to historical figures as a "Human Agent" or using "digital twin" terminology.
+  - Strictly suppressed "Book a Call" across `consult_analyst`, `consult_human_agent`, and next moves.
+- **Dynamic Next Moves & Scoping (`src/coverageRelevance.ts`)**:
+  - Grounded follow-ups in application to modern strategic case studies (`"Want to apply [Name]'s framework to a specific modern case study?"`), rejecting client "brand or brief" requests.
+  - Configured Move 2 to route to `modern_application` (`Apply to modern culture & commerce`).
+- **Tool Guidance & Discovery Alignment (`src/systemPrompt.ts`, `src/toolGuide.ts`, `src/toolHandlers.ts`)**:
+  - Added Claude Hopkins, Nellie Bly, P.T. Barnum, and Eugène-François Vidocq to `src/systemPrompt.ts` conversational framing rules and internal routing slugs.
+  - Updated `consult_analyst` description, parameter schema, and `src/toolGuide.ts` with domain prompts.
+  - Aligned discovery queries: Hopkins (performance marketing attribution, CAC economics, reason-why copy), Bly (undercover operational audit, frontline labor conditions, executive fiction vs. floor reality), Barnum (retail visual merchandising, storefront theater, attention architecture, curiosity loops, customer circulation), Vidocq (adversarial security, criminal forensics, undercover infiltration, zero-trust, reformed threat actors, leather gloves rule).
+- **Verification Suite (`src/test_four_classic_agents_hopkins_bly_barnum_vidocq.ts`)**:
+  - Added comprehensive 5-part test suite verifying catalog normalization, attribution guidance, "Book a Call" suppression, next-moves modern case study scoping, local candidate discovery across all 8 trigger queries, and cost silence verification (no `$`, tokens, or SPT).
+
 ## [1.46.148] - 2026-11-09
 
 ### Added (Support Claude Hopkins & Nellie Bly Classic Agents)

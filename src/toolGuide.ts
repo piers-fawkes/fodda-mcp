@@ -198,8 +198,8 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     consult_analyst: {
         section: 'Ask an expert',
         what_you_get: 'Consultation with a synthetic domain analyst, C-Suite persona, or classic thinker grounded in domain graphs.',
-        when_to_use: 'Use for executive role pressure-testing (e.g. CMO, CFO), Classic Agent historical frameworks (e.g. Ibn Khaldun, Kautilya, Madam C.J. Walker, Mary Parker Follett, Lillian Gilbreth, Georg Simmel, Joseph Schumpeter, Claude Hopkins, Nellie Bly), or specialized domain analysis.',
-        example_prompt: "Consult Claude Hopkins on pre-digital CAC and reason-why copy, ask Nellie Bly about undercover frontline auditing, or consult Ibn Khaldun on team cohesion (Asabiyyah)."
+        when_to_use: 'Use for executive role pressure-testing (e.g. CMO, CFO), Classic Agent historical frameworks (e.g. Ibn Khaldun, Kautilya, Madam C.J. Walker, Mary Parker Follett, Lillian Gilbreth, Georg Simmel, Joseph Schumpeter, Claude Hopkins, Nellie Bly, P.T. Barnum, Eugène-François Vidocq), or specialized domain analysis.',
+        example_prompt: "Consult P.T. Barnum on retail storefront theater and attention architecture, ask Eugène-François Vidocq about zero-trust security and adversarial forensics, or consult Claude Hopkins on pre-digital CAC."
     },
     request_expert_intro: {
         section: 'Ask an expert',
