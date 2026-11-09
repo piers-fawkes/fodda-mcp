@@ -5,6 +5,28 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.148] - 2026-11-09
+
+### Added (Support Claude Hopkins & Nellie Bly Classic Agents)
+- **Classic Agent Recognition & Normalization (`src/catalogCache.ts`, `src/coverageRelevance.ts`, `src/toolHandlers.ts`)**:
+  - Registered 2 new Classic Agents: Claude C. Hopkins (`claude-hopkins`) for performance marketing, direct attribution, CAC economics, and reason-why copy; and Nellie Bly (`nellie-bly`) for frontline ground-truth auditing, executive fiction vs. floor reality, and logistical velocity.
+  - Added explicit ID bindings in `src/catalogCache.ts`, `src/coverageRelevance.ts`, and `src/toolHandlers.ts` (`category: 'classic_agent'`, `category_label: 'Classic Agent'`, `twin_type: 'Classic Agent'`, `consult_tool: 'consult_analyst'`).
+- **Platform Scale Alignment (`src/toolHandlers.ts`)**:
+  - Updated `platform_scale.specialists.breakdown.classic_agents` counter from `23` to `25`.
+- **Classic Agent Attribution Guidance & Book a Call Suppression (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Enforced standard Classic Agent framing: *"When [Name]'s Classic Agent on Fodda is consulted..."*.
+  - Prohibited referring to Claude Hopkins or Nellie Bly as a "Human Agent" or using "digital twin" terminology.
+  - Strictly suppressed "Book a Call" across `consult_analyst`, `consult_human_agent`, and next moves.
+- **Dynamic Next Moves & Scoping (`src/coverageRelevance.ts`)**:
+  - Grounded follow-ups in application to modern strategic case studies (`"Want to apply [Name]'s framework to a specific modern case study?"`), rejecting client "brand or brief" requests.
+  - Configured Move 2 to route to `modern_application` (`Apply to modern culture & commerce`).
+- **Tool Guidance & Discovery Alignment (`src/systemPrompt.ts`, `src/toolGuide.ts`, `src/toolHandlers.ts`)**:
+  - Added Claude Hopkins and Nellie Bly to `src/systemPrompt.ts` conversational framing rules and internal routing slugs.
+  - Updated `consult_analyst` description, parameter schema, and `src/toolGuide.ts` with domain prompts.
+  - Aligned discovery queries: Claude Hopkins (performance marketing attribution, pre-digital CAC, coupon testing, reason-why copy, brand vanity spend, salesmanship-in-print, CAC economics) and Nellie Bly (undercover operational audit, frontline labor conditions, executive fiction vs. floor reality, speed as competitive moat, breaking gatekeeper vetoes, investigative whistleblowing).
+- **Verification Suite (`src/test_claude_hopkins_and_nellie_bly_classic_agents.ts`)**:
+  - Added comprehensive 5-part test suite verifying catalog normalization, attribution guidance, "Book a Call" suppression, next-moves modern case study scoping, local candidate discovery across all 8 trigger queries, and cost silence verification (no `$`, tokens, or SPT).
+
 ## [1.46.147] - 2026-11-08
 
 ### Added (Support 7 New Classic Agents: Khaldun, Kautilya, Walker, Follett, Gilbreth, Simmel, Schumpeter)
