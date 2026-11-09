@@ -162,7 +162,8 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         cleanId === 'madam-cj-walker' ||
         cleanId === 'mary-parker-follett' ||
         cleanId === 'lillian-gilbreth' ||
-        cleanId === 'georg-simmel'
+        cleanId === 'georg-simmel' ||
+        cleanId === 'joseph-schumpeter'
     );
 
     // 3. Human Agents: real living industry figures with consented digital twins

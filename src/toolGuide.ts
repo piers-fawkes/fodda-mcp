@@ -198,8 +198,8 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     consult_analyst: {
         section: 'Ask an expert',
         what_you_get: 'Consultation with a synthetic domain analyst, C-Suite persona, or classic thinker grounded in domain graphs.',
-        when_to_use: 'Use for executive role pressure-testing (e.g. CMO, CFO), Classic Agent historical frameworks (e.g. Ibn Khaldun, Kautilya, Madam C.J. Walker, Mary Parker Follett, Lillian Gilbreth, Georg Simmel), or specialized domain analysis.',
-        example_prompt: "Consult Ibn Khaldun on team cohesion (Asabiyyah) and lifecycle decay, or ask Kautilya about supply chain buffer reserves and fraud controls."
+        when_to_use: 'Use for executive role pressure-testing (e.g. CMO, CFO), Classic Agent historical frameworks (e.g. Ibn Khaldun, Kautilya, Madam C.J. Walker, Mary Parker Follett, Lillian Gilbreth, Georg Simmel, Joseph Schumpeter), or specialized domain analysis.',
+        example_prompt: "Consult Ibn Khaldun on team cohesion (Asabiyyah) and lifecycle decay, or ask Joseph Schumpeter about creative destruction and AI innovation swarms."
     },
     request_expert_intro: {
         section: 'Ask an expert',
