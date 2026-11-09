@@ -229,9 +229,9 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     generate_comms_plan: {
         section: 'Make something',
-        what_you_get: '7-section Audience-Led Brand Connections Plan (pass view="core_plan" for fast chat/voice mode, or view="full_plan" for buyer specs & manifest).',
-        when_to_use: 'Use to turn cultural trends and brand challenges into a Strategic Connections Plan and retail media activation roadmap.',
-        example_prompt: 'Generate an Audience-Led Brand Connections Plan for On Running around Gen Z social running clubs.',
+        what_you_get: 'Agency-grade 7-section Strategy-to-Activation Brand Connections Plan with isolated Appendix A buyer execution pack, or official US live sports/streaming media rights.',
+        when_to_use: 'Use to translate cultural insights and brand objectives into a strategic Connections Plan, retail media roadmap, and partner activations, or query verified US sports/streaming broadcast rights.',
+        example_prompt: 'Generate a Brand Connections Plan for On Running around Gen Z social running clubs, or query official NBA streaming rights.',
         api_calls_override: 'Normally about 1 API call (core_plan) or 5 API calls (full_plan). See https://www.fodda.ai/pricing for the latest prices.'
     },
     draft_linkedin_post: {

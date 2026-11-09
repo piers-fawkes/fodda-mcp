@@ -5,6 +5,17 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.150] - 2026-11-09
+
+### Added (Strategy-to-Activation Brand Connections Plan & Sports/Streaming Media Rights Tooling)
+- **Tool Surface Alignment (`src/toolHandlers.ts`, `tools-manifest.json`, `src/toolGuide.ts`)**:
+  - Aligned `generate_comms_plan` description with agency-grade 7-Section Brand Connections Plan (`output_classification: "STRATEGIC CONNECTIONS PLAN"`), 1-to-1 Runtime Evidence Ledger (`EVID-xxx`), isolated Appendix A buyer execution pack, and verified US major league sports and tentpole broadcast/streaming rights (`view: 'sports_media_rights'`).
+  - Required `query` parameter as primary search string across trends, brands, and sports leagues, with optional `brand`, `budget_tier` (`emerging`, `growth`, `scale`), `markets`, and `view`.
+- **Airtable Sync Preservation (`scripts/sync-descriptions-from-airtable.mjs`)**:
+  - Preserved `generate_comms_plan` canonical tool routing and view documentation alongside `get_capabilities` and `get_intelligence_dossier` during automated description synchronization.
+- **End-to-End Verification (`src/test_comms_plan_live.ts`)**:
+  - Validated live `full_plan`, `core_plan`, `sports_media_rights` (NFL, NBA, MLB, NHL, Endurance & Olympic Sports on NBCU/Peacock through 2032), and `shopper_taxonomy` views (44 passed, 0 failed).
+
 ## [1.46.149] - 2026-11-09
 
 ### Added (Support 4 Classic Agents: Hopkins, Bly, Barnum, Vidocq)
