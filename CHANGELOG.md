@@ -5,6 +5,14 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.151] - 2026-11-09
+
+### Added (Iterative Planning Guidance & Parameter Refinements)
+- **Iterative Planning Host Guidance (`src/systemPrompt.ts`)**:
+  - Injected conversational instruction instructing LLMs (Claude/ChatGPT) to treat `generate_comms_plan` as an iterative planning dialogue and always conclude responses by highlighting 2–3 concrete Planner Steering Levers from Section 7.
+- **Enriched Parameter Documentation (`src/toolHandlers.ts`)**:
+  - Clarified parameter descriptions for `query` (audience/occasion required), `brand` (first-party ecosystem & competitor exclusion), `budget_tier` (`emerging` vs `growth` vs `scale`), `markets` (city-level localization), and `view` (`core_plan` for 1-credit rapid iteration vs `full_plan`).
+
 ## [1.46.150] - 2026-11-09
 
 ### Added (Strategy-to-Activation Brand Connections Plan & Sports/Streaming Media Rights Tooling)
