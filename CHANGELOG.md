@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Specific Brands Cross-Graph Hygiene (`src/coverageRelevance.ts`, `src/enrichment.ts`)**:
   - Weighted brand mentions in the top 3 ranked rows and rows with selected evidence (3.0x) over lower-ranked / adjacent report graphs (1.0x), deduping brand occurrences per row.
   - Filtered mass budget brands (`MASS_BUDGET_BRANDS`) and mass e-commerce marketplaces (`MASS_MARKETPLACE_BRANDS`: `Amazon`, `Walmart`, `Temu`, `Shein`, etc.) from `next_moves.specific.brands` on luxury boutique / fashion flagship queries and contexts.
+- **Deployment & Verification**:
+  - Unit test suite (`src/test_180_day_case_study_ranking_and_date_normalization.ts`) passing all 5 test cases.
+  - Build verified (`npm run build` with zero TypeScript errors).
+  - Deployed to Google Cloud Run (`fodda-mcp`, `us-east4`): revision `fodda-mcp-00713-qfx`.
+  - Verified live endpoint: `curl -s https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.152"}`.
 
 ## [1.46.151] - 2026-11-09
 
