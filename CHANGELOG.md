@@ -5,6 +5,22 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.152] - 2026-11-10
+
+### Fixed (180-Day-First Case Study Ranking, Date Normalization & Brand Hygiene)
+- **`published_at` Canonical Date Resolution (`src/enrichment.ts`)**:
+  - Normalized publication dates across all canonical variants (`item.publishedAt || item.published_at || item.published_date || item.date || item.Date`).
+  - Stamped camelCase `cleanItem.publishedAt` as an ISO string so downstream LLM synthesizers (Claude, ChatGPT, Copilot) reliably access publication dates.
+  - Injected human-readable `Month YYYY` (e.g. `September 2026`, `February 2026`) into `cleanItem.short_citation` and `cleanItem.formatted_citation` when available.
+  - Added snake_case `published_at` inspection to `reconcileFreshnessDays()` and `row.evidence[0]`.
+- **180-Day-First Tiering with Recall Backfill (`src/enrichment.ts`)**:
+  - Enforced strict 180-day (`daysAgo <= 180`) priority tiering for standard discovery queries, ranking recent case studies ahead of older archive items.
+  - Implemented automatic backfill from older archive items (`daysAgo > 180` or undated) when `< maxItems` recent items exist, guaranteeing zero thin result regressions.
+  - Added recall query detection (`/(\bremember\b|\byou featured\b|\bin one newsletter\b|\bpast newsletter\b|\bhistoric|\b202[0-5]\b)/i`) so queries targeting past newsletter features or historic examples prioritize topical relevance score without recency demotion.
+- **Specific Brands Cross-Graph Hygiene (`src/coverageRelevance.ts`, `src/enrichment.ts`)**:
+  - Weighted brand mentions in the top 3 ranked rows and rows with selected evidence (3.0x) over lower-ranked / adjacent report graphs (1.0x), deduping brand occurrences per row.
+  - Filtered mass budget brands (`MASS_BUDGET_BRANDS`) and mass e-commerce marketplaces (`MASS_MARKETPLACE_BRANDS`: `Amazon`, `Walmart`, `Temu`, `Shein`, etc.) from `next_moves.specific.brands` on luxury boutique / fashion flagship queries and contexts.
+
 ## [1.46.151] - 2026-11-09
 
 ### Added (Iterative Planning Guidance & Parameter Refinements)

@@ -35,7 +35,7 @@
 import { getGraphs, getLiveGraphs, buildDisplayName, cleanDisplayName, getRelevantGraphs, getAnalysts } from './catalogCache.js';
 import type { CatalogGraph, CatalogAnalyst } from './catalogCache.js';
 import type { FoddaRequestFn } from './types.js';
-import { LUXURY_KEYWORDS, LUXURY_BRANDS, MASS_BUDGET_KEYWORDS, MASS_BUDGET_BRANDS } from './enrichment.js';
+import { LUXURY_KEYWORDS, LUXURY_BRANDS, MASS_BUDGET_KEYWORDS, MASS_BUDGET_BRANDS, MASS_MARKETPLACE_BRANDS } from './enrichment.js';
 
 /** Nominal on-topic relevance-score scale per graph tier (observed in QA:
  *  domain composites ~2.0, report vector scores ~0.8; expert sits between). */
@@ -2083,6 +2083,21 @@ export async function generateNextMoves(
             const publisherTokens = buildPublisherExclusionSet(searchedGraphs, catalog, onTopicRows);
             const brandCounts = new Map<string, { count: number; displayName: string }>();
 
+            const qLow = query.toLowerCase();
+            const hasLuxuryQuery =
+                [...LUXURY_KEYWORDS].some(k => qLow.includes(k)) ||
+                /\b(boutiques?|flagships?|couture|haute|designer|luxury|high-end|prestige)\b/i.test(qLow) ||
+                [...LUXURY_BRANDS].some(b => qLow.includes(b));
+
+            const hasLuxuryContext = hasLuxuryQuery || rows.slice(0, 3).some(r => {
+                const txt = `${r.trendName || r.title || ''} ${r.summary || ''}`.toLowerCase();
+                const bList = Array.isArray(r.brandNames) ? r.brandNames : (Array.isArray(r.brands) ? r.brands : []);
+                const hasBrand = bList.some((b: string) => LUXURY_BRANDS.has(normalizeBrandKey(String(b))));
+                return [...LUXURY_KEYWORDS].some(k => txt.includes(k)) ||
+                    /\b(boutiques?|flagships?|couture|haute|designer|luxury|high-end|prestige)\b/i.test(txt) ||
+                    hasBrand;
+            });
+
             for (const r of onTopicRows) {
                 if (!isRowBrandEligible(r)) continue;
 
@@ -2095,6 +2110,21 @@ export async function generateNextMoves(
                 else if (Array.isArray(r.Brand)) brandList.push(...r.Brand);
                 if (typeof r.company === 'string' && r.company) brandList.push(r.company);
                 if (Array.isArray(r.entities?.brands)) brandList.push(...r.entities.brands);
+                if (Array.isArray(r.evidence)) {
+                    for (const ev of r.evidence) {
+                        if (Array.isArray(ev.brandNames)) brandList.push(...ev.brandNames);
+                        else if (typeof ev.brandNames === 'string') brandList.push(...ev.brandNames.split('|'));
+                        if (typeof ev.brand === 'string' && ev.brand) brandList.push(ev.brand);
+                        if (typeof ev.Brand === 'string' && ev.Brand) brandList.push(ev.Brand);
+                    }
+                }
+
+                const rowIndex = rows.indexOf(r);
+                const isTop3 = rowIndex >= 0 && rowIndex < 3;
+                const hasSelectedEvidence = Array.isArray(r.evidence) && r.evidence.length > 0;
+                const rowWeight = (isTop3 || hasSelectedEvidence) ? 3.0 : 1.0;
+
+                const seenInRow = new Set<string>();
 
                 for (const b of brandList) {
                     if (typeof b === 'string' && b.trim().length > 1) {
@@ -2102,23 +2132,33 @@ export async function generateNextMoves(
                         const norm = normalizeBrandKey(clean);
                         if (!norm) continue;
 
+                        if (seenInRow.has(norm)) continue;
+                        seenInRow.add(norm);
+
                         if (isPublisherBrand(clean, publisherTokens)) continue;
+
+                        if (hasLuxuryContext && (MASS_BUDGET_BRANDS.has(norm) || MASS_MARKETPLACE_BRANDS.has(norm))) {
+                            continue;
+                        }
 
                         const existing = brandCounts.get(norm);
                         if (existing) {
-                            existing.count++;
+                            existing.count += rowWeight;
                         } else {
-                            brandCounts.set(norm, { count: 1, displayName: clean });
+                            brandCounts.set(norm, { count: rowWeight, displayName: clean });
                         }
                     }
                 }
             }
 
             if (brandCounts.size > 0) {
-                const qLow = query.toLowerCase();
                 const sortedBrands = [...brandCounts.values()]
                     .filter(b => {
                         const bLow = b.displayName.toLowerCase();
+                        const bNorm = normalizeBrandKey(b.displayName);
+                        if (hasLuxuryContext && (MASS_BUDGET_BRANDS.has(bNorm) || MASS_MARKETPLACE_BRANDS.has(bNorm))) {
+                            return false;
+                        }
                         return bLow !== qLow && !qLow.includes(bLow) && !bLow.includes(qLow);
                     })
                     .sort((a, b) => b.count - a.count)
