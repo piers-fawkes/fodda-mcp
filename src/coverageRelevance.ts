@@ -1701,6 +1701,13 @@ export function findCandidateExperts(
         // Require base token relevance score >= 6 before applying any status preference boost
         // so irrelevant profiles (sam-horn, taxtalk-online) are excluded on local fallback.
         if (baseScore >= 6) {
+            const rawStatus = (a.status || (a as any).Status || '').toLowerCase().trim();
+            const isActiveTwin = rawStatus === 'active';
+            if (isActiveTwin) {
+                // Active, verified Digital Twins take top precedence for expert consultations and recommendations
+                score += 10.0;
+            }
+
             if (category === 'c_suite_agent') {
                 if (isBrandOrCorporateQuery) {
                     score += 6.0;

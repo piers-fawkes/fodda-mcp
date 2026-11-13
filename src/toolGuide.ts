@@ -34,10 +34,74 @@ export type ToolGuideSection =
 
 export interface ToolGuideDefinition {
     section: ToolGuideSection;
+    label?: string;
     what_you_get: string;
     when_to_use: string;
     example_prompt: string;
     api_calls_override?: string;
+}
+
+/**
+ * Human-friendly labels for Fodda tools.
+ * Host models MUST use these natural language labels when communicating with end users,
+ * and NEVER leak raw internal snake_case tool names into user-facing text.
+ */
+export const TOOL_HUMAN_LABELS: Record<string, string> = {
+    // Research
+    search_graph: "Fodda's trend discovery",
+    brand_tracker: "Fodda's brand intelligence",
+    deep_research_topic: "Fodda's deep research report",
+    get_domain_intelligence: "Fodda's domain intelligence",
+    get_report_intelligence: "Fodda's corporate report intelligence",
+    get_intelligence_dossier: "Fodda's intelligence dossier",
+    search_statistics: "Fodda's market statistics",
+    get_evidence: "Fodda's primary evidence & case studies",
+    get_node: "Fodda's trend profile details",
+    get_neighbors: "Fodda's connected trends & territory map",
+    get_company_earnings: "Fodda's company earnings records",
+    get_earnings_intelligence: "Fodda's earnings intelligence",
+    get_validated_trends: "Fodda's earnings-validated trends",
+    get_supplemental_context: "Fodda's macroeconomic & demographic data",
+    read_url: "Fodda's webpage analysis",
+    list_graphs: "Fodda's specialist knowledge graphs directory",
+    get_label_values: "Fodda's category taxonomies",
+    search_insights: "Fodda's expert quotes & qualitative insights",
+    discover_adjacent_trends: "Fodda's adjacent trend signals",
+
+    // Pressure-test
+    verify_market_claim: "Fodda's market claim verifier",
+    verify_claim: "Fodda's expert claim verifier",
+    get_earnings_divergence: "Fodda's earnings divergence analysis",
+
+    // Ask an expert
+    find_expert: "Fodda's specialist expert matching",
+    consult_human_agent: "Fodda's Human Agent consultation",
+    consult_analyst: "Fodda's synthetic analyst consultation",
+    request_expert_intro: "Fodda's advisory introduction service",
+    list_analysts: "Fodda's expert roster directory",
+
+    // Make something
+    request_deliverable: "Fodda's commissioned executive deliverables",
+    check_deliverable_status: "Fodda's deliverable progress tracking",
+    generate_comms_plan: "Fodda's Brand Connections Plan",
+    draft_linkedin_post: "Fodda's thought leadership post generator",
+    draft_linkedin_article: "Fodda's executive article generator",
+    brainstorm_topic: "Fodda's strategic brainstorm map",
+
+    // Track
+    manage_scheduled_reports: "Fodda's scheduled tracking & briefings",
+
+    // Capabilities / System
+    get_capabilities: "Fodda's capabilities & guide",
+    get_my_account: "Fodda's account & usage details"
+};
+
+export function getToolHumanLabel(toolName: string): string {
+    if (TOOL_HUMAN_LABELS[toolName]) {
+        return TOOL_HUMAN_LABELS[toolName];
+    }
+    const clean = toolName.replace(/^(?:get_|search_|manage_|check_|request_|draft_|generate_)/, '').replace(/_/g, ' ');
+    return `Fodda's ${clean}`;
 }
 
 /**
@@ -264,6 +328,7 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
 
 export interface ToolGuideItem {
     tool: string;
+    label?: string;
     what_you_get: string;
     when_to_use: string;
     example_prompt: string;
@@ -346,6 +411,7 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
 
         const item: ToolGuideItem = {
             tool: toolName,
+            label: def.label || TOOL_HUMAN_LABELS[toolName] || getToolHumanLabel(toolName),
             what_you_get: def.what_you_get,
             when_to_use: def.when_to_use,
             example_prompt: def.example_prompt

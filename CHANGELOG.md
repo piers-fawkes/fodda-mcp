@@ -5,6 +5,23 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.153] - 2026-11-13
+
+### Added (Proactive Fodda Routing, Multi-Tool Chaining, Next-Step Experts & User-Friendly Tool Labels)
+- **Proactive Fodda Triggering (`src/systemPrompt.ts`)**:
+  - Injected prominent host steering instructions in `buildSystemPrompt()`, `STATIC_BEHAVIORAL_RULES`, and `CHATGPT_BEHAVIORAL_RULES` commanding LLMs (Claude/ChatGPT) to check Fodda first for queries on retail, CPG, food & beverage, alcoholic beverages, luxury, fashion, beauty, sports, and consumer culture—even when the user does not explicitly say `"ask Fodda"`.
+- **Multi-Tool Research Chaining (`src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Updated `ResponseStructure`, `CompleteResearchWorkflow`, and runtime `buildRenderInstructions` rules requiring host models to chain qualitative trend exploration (`search_graph` / `get_validated_trends`) with quantitative market data (`search_statistics`), corporate earnings disclosures (`get_earnings_intelligence` / `get_company_earnings`), and specialist publisher graphs (`list_graphs`) before concluding that research gaps exist.
+- **Active Digital Twin Prioritization & Next-Step Experts (`src/coverageRelevance.ts`)**:
+  - Added an active digital twin status boost (+10.0 score) in `findCandidateExperts()` so verified active Human Agents (such as Thiago Bersou for alcoholic beverages & spirits) take top precedence over unclaimed/on-request profiles on relevant domain queries.
+  - Ensured structured `next_moves` seamlessly surfaces Thiago Bersou as the recommended specialist with a clean, conversational lookup / consultation move for alc-bev queries.
+- **User-Friendly Tool Labels (No Raw `snake_case` Names) (`src/toolGuide.ts`, `src/systemPrompt.ts`, `src/toolHandlers.ts`)**:
+  - Created `TOOL_HUMAN_LABELS` dictionary and `getToolHumanLabel()` in `src/toolGuide.ts`, mapping every internal tool identifier to natural human-friendly descriptions (e.g. `search_statistics` -> *"Fodda's market statistics"*, `get_earnings_intelligence` -> *"Fodda's earnings intelligence"*, `search_graph` -> *"Fodda's trend discovery"*).
+  - Exposed `label` on each tool in `generateToolGuide()` output.
+  - Strengthened `RULE: CleanExecutivePresentation` across both `STATIC_BEHAVIORAL_RULES` and `CHATGPT_BEHAVIORAL_RULES` and in `buildRenderInstructions()`, strictly forbidding the host model from leaking raw `snake_case` tool names (e.g. `search_statistics`, `get_earnings_intelligence`) in user-facing prose.
+- **Verification (`src/test_proactive_routing_and_tool_chaining.ts`)**:
+  - Added end-to-end unit test suite validating human label mapping, tool guide labels, proactive prompt instructions, active Human Agent ranking for Thiago Bersou, and clean next moves without raw tool syntax. All tests passing (100%).
+
 ## [1.46.152] - 2026-11-10
 
 ### Fixed (180-Day-First Case Study Ranking, Date Normalization & Brand Hygiene)
