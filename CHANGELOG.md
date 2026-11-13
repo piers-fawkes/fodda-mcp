@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Created `TOOL_HUMAN_LABELS` dictionary and `getToolHumanLabel()` in `src/toolGuide.ts`, mapping every internal tool identifier to natural human-friendly descriptions (e.g. `search_statistics` -> *"Fodda's market statistics"*, `get_earnings_intelligence` -> *"Fodda's earnings intelligence"*, `search_graph` -> *"Fodda's trend discovery"*).
   - Exposed `label` on each tool in `generateToolGuide()` output.
   - Strengthened `RULE: CleanExecutivePresentation` across both `STATIC_BEHAVIORAL_RULES` and `CHATGPT_BEHAVIORAL_RULES` and in `buildRenderInstructions()`, strictly forbidding the host model from leaking raw `snake_case` tool names (e.g. `search_statistics`, `get_earnings_intelligence`) in user-facing prose.
-- **Verification (`src/test_proactive_routing_and_tool_chaining.ts`)**:
-  - Added end-to-end unit test suite validating human label mapping, tool guide labels, proactive prompt instructions, active Human Agent ranking for Thiago Bersou, and clean next moves without raw tool syntax. All tests passing (100%).
+- **Deployment & Verification**:
+  - Unit test suite (`src/test_proactive_routing_and_tool_chaining.ts`) passing all test cases.
+  - Build verified (`npm run build` with zero TypeScript errors).
+  - Deployed to Google Cloud Run (`fodda-mcp`, `us-east4`): revision `fodda-mcp-00719-xdv` (serving 100% of traffic).
+  - Verified live endpoint: `curl -s https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.153"}`.
 
 ## [1.46.152] - 2026-11-10
 
