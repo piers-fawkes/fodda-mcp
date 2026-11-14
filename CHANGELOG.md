@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Testing & Verification**:
   - Added dedicated unit test suite `src/test_search_graph_timeout_mitigation.ts` testing fast completion under 10,000 ms for target graph query `{"query": "alcoholic beverages retail spirits wine beer", "graphId": "food"}`, the 4,000 ms supplemental macro fetch bound, and primary backend hang timeout handling.
   - Full test suites passed: `npm test` (compilation, Airtable sync, manifest generation, health check) and `npx tsx src/test_search_graph_quality.ts` (all 12 quality tests passing).
+- **Deployment & Verification**:
+  - Deployed to Google Cloud Run (`fodda-mcp`, `us-east4`): revision `fodda-mcp-00721-b7l` (serving 100% of traffic).
+  - Verified live endpoint: `curl -s https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.154"}`.
 
 ## [1.46.153] - 2026-11-13
 
