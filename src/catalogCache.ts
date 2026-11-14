@@ -499,7 +499,11 @@ export function buildGraphNamingBlock(): string {
  * Build a human-friendly display name for a graph.
  */
 export function buildDisplayName(g: CatalogGraph): string {
-    const possessive = (name: string) => name.endsWith('s') ? `${name}'` : `${name}'s`;
+    const possessive = (name: string) => {
+        const n = (name || '').trim();
+        return n.endsWith('s') ? `${n}'` : `${n}'s`;
+    };
+    const curator = g.curator || (g as any).author || '';
 
     // Domain graphs curated by PSFK Editorial
     if (g.curator === 'PSFK Editorial') {
@@ -509,21 +513,21 @@ export function buildDisplayName(g: CatalogGraph): string {
     }
 
     // Graphs with a company name — use company + graph name, but avoid duplication
-    if (g.company && g.company !== g.curator) {
+    if (g.company && g.company !== curator) {
         // If graph name already contains the company name, just use curator + name
         if (g.name.toLowerCase().includes(g.company.toLowerCase())) {
-            return `${possessive(g.curator)} ${g.name}`;
+            return curator ? `${possessive(curator)} ${g.name}` : `${g.company} ${g.name}`;
         }
-        return `${possessive(g.curator)} ${g.company} ${g.name}`;
+        return curator ? `${possessive(curator)} ${g.company} ${g.name}` : `${g.company} ${g.name}`;
     }
 
     // Default: curator's graph name — but avoid duplication
-    if (g.curator) {
+    if (curator) {
         // If graph name already starts with or contains the curator name, just use the name
-        if (g.name.toLowerCase().includes(g.curator.toLowerCase())) {
+        if (g.name.toLowerCase().includes(curator.toLowerCase())) {
             return g.name;
         }
-        return `${possessive(g.curator)} ${g.name}`;
+        return `${possessive(curator)} ${g.name}`;
     }
 
     return g.name;

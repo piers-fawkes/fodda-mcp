@@ -184,6 +184,56 @@ export function sanitizePayloadForChatGpt(obj: any): any {
 }
 
 /**
+ * Dedupe aliased fields, keep capped evidence inline, and attach authoritative source pedigree.
+ * Used for both rich widget liteData, fallback responses, and deadline-timeout partial returns.
+ */
+export function formatLiteData(data: any, targetGraphId?: string): any {
+    if (!data) return data;
+    const liteData = { ...data };
+    delete liteData.results;       // exact copy of rows
+    delete liteData.weak_signals;  // subset of rows
+    delete liteData.theme;         // CSS color tokens are for HTML widgets, not LLM reasoning
+    delete liteData.queryTimeline;
+    delete liteData.geoBias;
+    delete liteData.mainstream;
+    liteData.rows = (data.rows || []).map((r: any) => {
+        const out = { ...r };
+        // ID aliases → keep node_id
+        delete out.trendId; delete out.nodeId; delete out.uuid;
+        if (out.node_id) { delete out.id; delete out._id; }
+        // Score aliases → keep relevance_score
+        if (!out.relevance_score) out.relevance_score = out.semantic_score || out._score || out.score || null;
+        delete out._score; delete out.semantic_score; delete out.score;
+        // Description aliases → keep summary
+        delete out.description; delete out.trendDescription;
+        // Drop adjacentPossibilities and evidenceCount (canonical is evidence_count)
+        delete out.adjacentPossibilities;
+        delete out.evidenceCount;
+        delete out.suggested_drill_down;
+        delete out.graphBadge;
+        delete out.brand_count;
+        delete out.place_count;
+        if (Array.isArray(out.place) && (out.place.length === 0 || out.place.every((p: any) => isPlaceholderPlace(p)))) delete out.place;
+        if (typeof out.place === 'string' && isPlaceholderPlace(out.place)) delete out.place;
+        if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
+
+        // Add authoritative source pedigree to bump credibility without ruining flow
+        const rowGraphId = out.graphId || out.graph_id || out.graph || targetGraphId;
+        if (rowGraphId) {
+            out.source_pedigree = getSourcePedigree(rowGraphId).display_attribution;
+        }
+        if (Array.isArray(out.evidence)) {
+            out.evidence = out.evidence.map((ev: any) => ({
+                ...ev,
+                source_pedigree: getSourcePedigree(ev.graphId || ev.graph_id || rowGraphId).display_attribution
+            }));
+        }
+        return out;
+    });
+    return liteData;
+}
+
+/**
  * Append a low-credit warning to the response data if API calls are running low.
  * Utilizes new dynamic Stripe links and upsell data provided by the Fodda API.
  *
@@ -2153,8 +2203,19 @@ export async function createServer(
         },
         { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ mode, graphs, graphId, graph, graph_id, sector, query, userId: uid, limit, use_semantic, include_evidence, include_voices, skip_skills }: any) => {
-            try {
-                const targetGraphId = graphId || graph || graph_id;
+            const SEARCH_GRAPH_TIMEOUT_MS = 25000;
+            const startTime = Date.now();
+            const getRemainingTime = () => Math.max(0, SEARCH_GRAPH_TIMEOUT_MS - (Date.now() - startTime));
+
+            let coreData: any = null;
+            let deadlineTimer: NodeJS.Timeout | undefined;
+            const deadlinePromise = new Promise<{ __isDeadline: true }>((resolve) => {
+                deadlineTimer = setTimeout(() => resolve({ __isDeadline: true }), SEARCH_GRAPH_TIMEOUT_MS);
+            });
+
+            const targetGraphId = graphId || graph || graph_id;
+
+            const executeSearchGraph = async (): Promise<any> => {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(query, 'search', targetGraphId || (sector ? `sector:${sector}` : 'all'));
 
@@ -2236,11 +2297,27 @@ export async function createServer(
                     searchedGraphs = graphsToSearch;
 
                     const perGraphLimit = Math.max(5, Math.ceil(effectiveLimit / Math.max(graphsToSearch.length, 1)));
-                    const results = await Promise.allSettled(
-                        graphsToSearch.map(g =>
-                            foddaRequest('POST', `/v1/graphs/${encodeURIComponent(g.graph_id)}/search`, apiKey, resolveUserId(userId, uid), { ...body, limit: perGraphLimit })
-                        )
-                    );
+                    const PRIMARY_FANOUT_TIMEOUT_MS = Math.min(15000, Math.max(2000, getRemainingTime() - 4000));
+                    let primaryTimer: NodeJS.Timeout | undefined;
+                    const primaryTimeoutPromise = new Promise<never>((_, reject) => {
+                        primaryTimer = setTimeout(() => reject(new Error('primary graph fanout search timeout')), PRIMARY_FANOUT_TIMEOUT_MS);
+                    });
+                    let results: PromiseSettledResult<any>[];
+                    try {
+                        results = await Promise.race([
+                            Promise.allSettled(
+                                graphsToSearch.map(g =>
+                                    foddaRequest('POST', `/v1/graphs/${encodeURIComponent(g.graph_id)}/search`, apiKey, resolveUserId(userId, uid), { ...body, limit: perGraphLimit })
+                                )
+                            ),
+                            primaryTimeoutPromise
+                        ]);
+                        if (primaryTimer) clearTimeout(primaryTimer);
+                    } catch (e: any) {
+                        if (primaryTimer) clearTimeout(primaryTimer);
+                        console.error(`[search_graph] Fanout primary search error/timeout: ${e.message}`);
+                        results = [];
+                    }
                     // Merge rows, deduplicate by trendId + near-duplicate name detection
                     const allRows: any[] = [];
                     // Capture any per-graph rejection caused by credit/quota exhaustion, so an
@@ -2502,7 +2579,17 @@ export async function createServer(
                     if (matchedGraph) {
                         searchedGraphs = [matchedGraph];
                     }
-                    data = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(targetGraphId)}/search`, apiKey, resolveUserId(userId, uid), body);
+                    const PRIMARY_SINGLE_TIMEOUT_MS = Math.min(15000, Math.max(2000, getRemainingTime() - 4000));
+                    let primaryTimer: NodeJS.Timeout | undefined;
+                    const primaryTimeoutPromise = new Promise<never>((_, reject) => {
+                        primaryTimer = setTimeout(() => reject(new Error('primary graph search timeout')), PRIMARY_SINGLE_TIMEOUT_MS);
+                    });
+                    data = await Promise.race([
+                        foddaRequest('POST', `/v1/graphs/${encodeURIComponent(targetGraphId)}/search`, apiKey, resolveUserId(userId, uid), body),
+                        primaryTimeoutPromise
+                    ]).finally(() => {
+                        if (primaryTimer) clearTimeout(primaryTimer);
+                    });
                 }
 
                 // ── Track search for frustration detection ──
@@ -2623,6 +2710,10 @@ export async function createServer(
                     data.results = data.rows;
                     if (data.total === undefined) data.total = data.rows.length;
                 }
+
+                // Core results snapshot — safe baseline available even if auxiliary enrichments fail or timeout
+                coreData = data;
+
                 // When graphId was omitted (all-graph search), use first result's graph, scoped graph, or 'retail'
                 const effectiveGraphId = targetGraphId || (data?.rows?.[0]?._use_this_graphId) || (data?.rows?.[0]?.graphId) || (scopedGraphs ? scopedGraphs[0]?.graph_id : 'retail');
                 data.theme = getFoddaTheme(effectiveGraphId);
@@ -2688,47 +2779,61 @@ export async function createServer(
                 }
                 // Confidence-gated fallback: auto-broaden thin results (STRICTLY DISABLED under explicit graph scope)
                 if (!scopedGraphs && enrichedRows.length < 3 && query.split(' ').length > 3 && effectiveGraphId) {
-                    try {
-                        const shorterQuery = query.split(' ').slice(0, 3).join(' ');
-                        const fallback = await foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), {
-                            query: shorterQuery,
-                            limit: Math.min(effectiveLimit, 10),
-                            use_semantic: true,
-                            include_evidence: include_evidence !== false,
-                            ...(sector ? { sector } : {})
-                        });
-                        const fallbackRows = Array.isArray(fallback) ? fallback : fallback?.rows || [];
-                        if (fallbackRows.length > 0) {
-                            const existingIds = new Set(enrichedRows.map((r: any) => r.node_id || r.trendId));
-                            const newRows = fallbackRows.filter((r: any) => !existingIds.has(r.node_id || r.trendId));
-                            if (newRows.length > 0) {
-                                const enrichedNew = newRows.map((row: any) => {
-                                    const t = { ...row };
-                                    t._use_this_graphId = row.graphId || effectiveGraphId;
-                                    t.trendLifecycle = computeLifecycle(t);
-                                    t.momentum = computeMomentum(t);
-                                    t.fastMover = isFastMover(t);
-                                    t._broadened = true;
-                                    if (include_evidence === false) {
-                                        t.evidence = [];
-                                        t.returned_evidence_count = 0;
-                                        t.evidence_count = 0;
-                                    } else if (Array.isArray(t.evidence) && t.evidence.length > 0) {
-                                        const ranked = rankAndFilterEvidence(t.evidence, shorterQuery, t, { maxItems: 3 });
-                                        t.evidence = enrichEvidence(ranked);
-                                        t.returned_evidence_count = t.evidence.length;
-                                        t.evidence_count = t.evidence.length;
-                                    }
-                                    return t;
-                                });
-                                data.rows.push(...enrichedNew);
-                                data.rows = data.rows.slice(0, effectiveLimit);
-                                data.results = data.rows;
-                                data.total = data.rows.length;
-                                data._broadened = true;
+                    if (getRemainingTime() < 12000) {
+                        console.warn(`[search_graph] Skipping auto-broadening fallback: low time budget (${getRemainingTime()}ms remaining)`);
+                    } else {
+                        try {
+                            const shorterQuery = query.split(' ').slice(0, 3).join(' ');
+                            const AUTO_BROADEN_TIMEOUT_MS = Math.min(4000, Math.max(1000, getRemainingTime() - 6000));
+                            let autoTimer: NodeJS.Timeout | undefined;
+                            const autoTimeoutPromise = new Promise<never>((_, reject) => {
+                                autoTimer = setTimeout(() => reject(new Error('auto-broaden timeout')), AUTO_BROADEN_TIMEOUT_MS);
+                            });
+                            const fallback = await Promise.race([
+                                foddaRequest('POST', `/v1/graphs/${encodeURIComponent(effectiveGraphId)}/search`, apiKey, resolveUserId(userId, uid), {
+                                    query: shorterQuery,
+                                    limit: Math.min(effectiveLimit, 10),
+                                    use_semantic: true,
+                                    include_evidence: include_evidence !== false,
+                                    ...(sector ? { sector } : {})
+                                }),
+                                autoTimeoutPromise
+                            ]).finally(() => {
+                                if (autoTimer) clearTimeout(autoTimer);
+                            });
+                            const fallbackRows = Array.isArray(fallback) ? fallback : fallback?.rows || [];
+                            if (fallbackRows.length > 0) {
+                                const existingIds = new Set(enrichedRows.map((r: any) => r.node_id || r.trendId));
+                                const newRows = fallbackRows.filter((r: any) => !existingIds.has(r.node_id || r.trendId));
+                                if (newRows.length > 0) {
+                                    const enrichedNew = newRows.map((row: any) => {
+                                        const t = { ...row };
+                                        t._use_this_graphId = row.graphId || effectiveGraphId;
+                                        t.trendLifecycle = computeLifecycle(t);
+                                        t.momentum = computeMomentum(t);
+                                        t.fastMover = isFastMover(t);
+                                        t._broadened = true;
+                                        if (include_evidence === false) {
+                                            t.evidence = [];
+                                            t.returned_evidence_count = 0;
+                                            t.evidence_count = 0;
+                                        } else if (Array.isArray(t.evidence) && t.evidence.length > 0) {
+                                            const ranked = rankAndFilterEvidence(t.evidence, shorterQuery, t, { maxItems: 3 });
+                                            t.evidence = enrichEvidence(ranked);
+                                            t.returned_evidence_count = t.evidence.length;
+                                            t.evidence_count = t.evidence.length;
+                                        }
+                                        return t;
+                                    });
+                                    data.rows.push(...enrichedNew);
+                                    data.rows = data.rows.slice(0, effectiveLimit);
+                                    data.results = data.rows;
+                                    data.total = data.rows.length;
+                                    data._broadened = true;
+                                }
                             }
-                        }
-                    } catch { /* Broadening failed silently */ }
+                        } catch { /* Broadening failed silently */ }
+                    }
                 }
 
                 // Defensive check: enforce include_evidence: false and limit truncation across all rows
@@ -2745,18 +2850,60 @@ export async function createServer(
                     data.total = data.rows.length;
                 }
 
-                data = await addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
-                    total: data.total,
-                    onTopicTotal: data.on_topic_total,
-                    include_evidence: include_evidence !== false,
-                    knownBrand: getKnownBrand(),
-                    foddaRequest,
-                    apiKey,
-                    userId: resolveUserId(userId, uid),
-                    sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
-                    sessionTracker,
-                    suggestPromise,
-                });
+                // Keep coreData snapshot up to date
+                coreData = data;
+
+                if (getRemainingTime() < 4000) {
+                    console.warn(`[search_graph] Skipping addCoverageAnnotation: low time budget (${getRemainingTime()}ms remaining)`);
+                    if (!data.coverage) {
+                        data.coverage = {
+                            status: (data.rows || []).length >= 3 ? 'ok' : ((data.rows || []).length > 0 ? 'thin' : 'empty'),
+                            results_returned: (data.rows || []).length,
+                            layers_searched: searchedGraphs.map((g: any) => g.graph_id || g.id || g),
+                        };
+                    }
+                } else {
+                    const COVERAGE_TIMEOUT_MS = Math.min(5000, Math.max(1000, getRemainingTime() - 3000));
+                    let covTimer: NodeJS.Timeout | undefined;
+                    const covTimeoutPromise = new Promise<any>((resolve) => {
+                        covTimer = setTimeout(() => resolve(null), COVERAGE_TIMEOUT_MS);
+                    });
+                    try {
+                        const annotated = await Promise.race([
+                            addCoverageAnnotation(data, query, searchedGraphs, limit, false, getGraphs(), {
+                                total: data.total,
+                                onTopicTotal: data.on_topic_total,
+                                include_evidence: include_evidence !== false,
+                                knownBrand: getKnownBrand(),
+                                foddaRequest,
+                                apiKey,
+                                userId: resolveUserId(userId, uid),
+                                sessionId: (sessionTracker as any).sessionId || resolveUserId(userId, uid),
+                                sessionTracker,
+                                suggestPromise,
+                            }),
+                            covTimeoutPromise
+                        ]);
+                        if (covTimer) clearTimeout(covTimer);
+                        if (annotated) {
+                            data = annotated;
+                        } else {
+                            console.warn(`[search_graph] addCoverageAnnotation timed out, using baseline coverage`);
+                            if (!data.coverage) {
+                                data.coverage = {
+                                    status: (data.rows || []).length >= 3 ? 'ok' : ((data.rows || []).length > 0 ? 'thin' : 'empty'),
+                                    results_returned: (data.rows || []).length,
+                                    layers_searched: searchedGraphs.map((g: any) => g.graph_id || g.id || g),
+                                };
+                            }
+                        }
+                    } catch (covErr: any) {
+                        if (covTimer) clearTimeout(covTimer);
+                        console.error(`[search_graph] addCoverageAnnotation failed: ${covErr.message}`);
+                    }
+                }
+
+                coreData = data;
                 sessionTracker.postGapToSlack(resolveUserId(userId, uid), 'search_graph', query, data?.coverage);
                 logQueryResult(query, 'search', data?.coverage, searchedGraphs, data?.next_moves);
                 if (data?.coverage?.status === 'error' || data?.error) {
@@ -2773,14 +2920,33 @@ export async function createServer(
                 const isThinCoverage = resultCount < 2 || data?.coverage?.status === 'thin';
 
                 if (resultCount >= 1 && (isStatsShaped || isThinCoverage)) {
-                    const [googleTrendsResult, censusResult] = await Promise.allSettled([
-                        foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(query)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
-                        foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid)),
-                    ]);
-                    supplemental = {
-                        google_trends: googleTrendsResult.status === 'fulfilled' ? googleTrendsResult.value : null,
-                        census_retail: censusResult.status === 'fulfilled' ? censusResult.value : null,
-                    };
+                    if (getRemainingTime() < 5000) {
+                        console.warn(`[search_graph] Skipping supplemental macro fetch: low time budget (${getRemainingTime()}ms remaining)`);
+                    } else {
+                        const SUPPLEMENTAL_TIMEOUT_MS = Math.min(4000, Math.max(1000, getRemainingTime() - 3000));
+                        let suppTimer: NodeJS.Timeout | undefined;
+                        const suppTimeoutPromise = new Promise<never>((_, reject) => {
+                            suppTimer = setTimeout(() => reject(new Error('supplemental fetch timeout (4000ms)')), SUPPLEMENTAL_TIMEOUT_MS);
+                        });
+                        try {
+                            const results = await Promise.race([
+                                Promise.allSettled([
+                                    foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(query)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
+                                    foddaRequest('GET', `/v1/supplemental/census/retail-snapshot`, apiKey, resolveUserId(userId, uid)),
+                                ]),
+                                suppTimeoutPromise,
+                            ]);
+                            if (suppTimer) clearTimeout(suppTimer);
+                            const [googleTrendsResult, censusResult] = results;
+                            supplemental = {
+                                google_trends: googleTrendsResult.status === 'fulfilled' ? googleTrendsResult.value : null,
+                                census_retail: censusResult.status === 'fulfilled' ? censusResult.value : null,
+                            };
+                        } catch (suppErr: any) {
+                            if (suppTimer) clearTimeout(suppTimer);
+                            console.error(`[search_graph] Supplemental macro fetch skipped/timed out: ${suppErr.message}`);
+                        }
+                    }
                 } else {
                     // Skipped for general qualitative trend queries with healthy coverage to eliminate 1-3s latency
                 }
@@ -2788,16 +2954,34 @@ export async function createServer(
                 // ── Skill post-processing — call enabled output skills via Core API ──
                 let skillResults: SkillResult[] = [];
                 if (!skip_skills && sessionSkills.length > 0 && resultCount >= 1) {
-                    const skillInput = buildSkillInput(query, data, effectiveGraphId, primaryGraphName, supplemental);
-                    skillResults = await callOutputSkills(sessionSkills, skillInput, apiKey, resolveUserId(userId, uid));
-                    const applied = skillResults.filter(r => r.success);
-                    if (applied.length > 0) {
-                        data._skills_applied = applied.map(r => ({ id: r.skillId, name: r.skillName, durationMs: r.durationMs }));
-                        console.error(`[search_graph] ${applied.length} skill(s) applied: ${applied.map(r => r.skillName).join(', ')}`);
-                    }
-                    const failed = skillResults.filter(r => !r.success);
-                    if (failed.length > 0) {
-                        console.error(`[search_graph] ${failed.length} skill(s) failed: ${failed.map(r => `${r.skillName}: ${r.error}`).join(', ')}`);
+                    if (getRemainingTime() < 4000) {
+                        console.warn(`[search_graph] Skipping output skills: low time budget (${getRemainingTime()}ms remaining)`);
+                    } else {
+                        const SKILL_TIMEOUT_MS = Math.min(4000, Math.max(1000, getRemainingTime() - 2000));
+                        const skillInput = buildSkillInput(query, data, effectiveGraphId, primaryGraphName, supplemental);
+                        let skillTimer: NodeJS.Timeout | undefined;
+                        const skillTimeoutPromise = new Promise<never>((_, reject) => {
+                            skillTimer = setTimeout(() => reject(new Error('skills timeout')), SKILL_TIMEOUT_MS);
+                        });
+                        try {
+                            skillResults = await Promise.race([
+                                callOutputSkills(sessionSkills, skillInput, apiKey, resolveUserId(userId, uid)),
+                                skillTimeoutPromise
+                            ]);
+                            if (skillTimer) clearTimeout(skillTimer);
+                            const applied = skillResults.filter(r => r.success);
+                            if (applied.length > 0) {
+                                data._skills_applied = applied.map(r => ({ id: r.skillId, name: r.skillName, durationMs: r.durationMs }));
+                                console.error(`[search_graph] ${applied.length} skill(s) applied: ${applied.map(r => r.skillName).join(', ')}`);
+                            }
+                            const failed = skillResults.filter(r => !r.success);
+                            if (failed.length > 0) {
+                                console.error(`[search_graph] ${failed.length} skill(s) failed: ${failed.map(r => `${r.skillName}: ${r.error}`).join(', ')}`);
+                            }
+                        } catch (skillErr: any) {
+                            if (skillTimer) clearTimeout(skillTimer);
+                            console.error(`[search_graph] Output skills timed out/aborted: ${skillErr.message}`);
+                        }
                     }
                 } else if (skip_skills && sessionSkills.length > 0) {
                     console.error(`[search_graph] Skills skipped (user requested skip_skills)`);
@@ -2811,48 +2995,7 @@ export async function createServer(
                     // Also cache for direct browser access via /widget/:id
                     storeWidget(searchWidget.widget_html);
 
-                    // P0 Item 3+4: Dedupe aliased fields; keep capped evidence inline
-                    const liteData = { ...data };
-                    delete liteData.results;       // exact copy of rows
-                    delete liteData.weak_signals;  // subset of rows
-                    delete liteData.theme;         // CSS color tokens are for HTML widgets, not LLM reasoning
-                    delete liteData.queryTimeline;
-                    delete liteData.geoBias;
-                    delete liteData.mainstream;
-                    liteData.rows = (data.rows || []).map((r: any) => {
-                        const out = { ...r };
-                        // ID aliases → keep node_id
-                        delete out.trendId; delete out.nodeId; delete out.uuid;
-                        if (out.node_id) { delete out.id; delete out._id; }
-                        // Score aliases → keep relevance_score
-                        if (!out.relevance_score) out.relevance_score = out.semantic_score || out._score || out.score || null;
-                        delete out._score; delete out.semantic_score; delete out.score;
-                        // Description aliases → keep summary
-                        delete out.description; delete out.trendDescription;
-                        // Drop adjacentPossibilities and evidenceCount (canonical is evidence_count)
-                        delete out.adjacentPossibilities;
-                        delete out.evidenceCount;
-                        delete out.suggested_drill_down;
-                        delete out.graphBadge;
-                        delete out.brand_count;
-                        delete out.place_count;
-                        if (Array.isArray(out.place) && (out.place.length === 0 || out.place.every((p: any) => isPlaceholderPlace(p)))) delete out.place;
-                        if (typeof out.place === 'string' && isPlaceholderPlace(out.place)) delete out.place;
-                        if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
-
-                        // Add authoritative source pedigree to bump credibility without ruining flow
-                        const rowGraphId = out.graphId || out.graph_id || out.graph || targetGraphId;
-                        if (rowGraphId) {
-                            out.source_pedigree = getSourcePedigree(rowGraphId).display_attribution;
-                        }
-                        if (Array.isArray(out.evidence)) {
-                            out.evidence = out.evidence.map((ev: any) => ({
-                                ...ev,
-                                source_pedigree: getSourcePedigree(ev.graphId || ev.graph_id || rowGraphId).display_attribution
-                            }));
-                        }
-                        return out;
-                    });
+                    const liteData = formatLiteData(data, targetGraphId);
 
                     // ChatGPT/Claude clients cannot render arbitrary HTML widgets and get bloated by design briefs
                     if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
@@ -2916,32 +3059,7 @@ export async function createServer(
                 const shellSources = [...new Set((data?.rows || []).map((r: any) => r.graphName).filter(Boolean))] as string[];
                 const shellHtml = getShellTemplate(`Search: ${query}`, shellSources.length ? shellSources : [primaryGraphName as string]);
 
-                // P0 Item 3+4: Dedupe aliased fields in fallback path; keep capped evidence inline
-                const fallbackData = { ...data };
-                delete fallbackData.results;
-                delete fallbackData.weak_signals;
-                delete fallbackData.theme;
-                delete fallbackData.queryTimeline;
-                delete fallbackData.geoBias;
-                delete fallbackData.mainstream;
-                fallbackData.rows = (data.rows || []).map((r: any) => {
-                    const out = { ...r };
-                    delete out.trendId; delete out.nodeId; delete out.uuid;
-                    if (out.node_id) { delete out.id; delete out._id; }
-                    if (!out.relevance_score) out.relevance_score = out.semantic_score || out._score || out.score || null;
-                    delete out._score; delete out.semantic_score; delete out.score;
-                    delete out.description; delete out.trendDescription;
-                    delete out.adjacentPossibilities;
-                    delete out.evidenceCount;
-                    delete out.suggested_drill_down;
-                    delete out.graphBadge;
-                    delete out.brand_count;
-                    delete out.place_count;
-                    if (Array.isArray(out.place) && (out.place.length === 0 || out.place.every((p: any) => isPlaceholderPlace(p)))) delete out.place;
-                    if (typeof out.place === 'string' && isPlaceholderPlace(out.place)) delete out.place;
-                    if (Array.isArray(out.brandNames) && out.brandNames.length === 0) delete out.brandNames;
-                    return out;
-                });
+                const fallbackData = formatLiteData(data, targetGraphId);
 
                 if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
                     const cleanData = sanitizePayloadForChatGpt(fallbackData);
@@ -2988,7 +3106,47 @@ export async function createServer(
                         return hint ? [{ type: 'text' as const, text: `\n---\n${hint}\n---` }] : [];
                     })()),
                 ] };
+            };
+
+            try {
+                const raceResult: any = await Promise.race([executeSearchGraph(), deadlinePromise]);
+                if (deadlineTimer) clearTimeout(deadlineTimer);
+
+                if (raceResult && raceResult.__isDeadline) {
+                    if (coreData && Array.isArray(coreData.rows)) {
+                        console.error('[search_graph] Enrichment deadline reached, returning core results');
+                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
+                            .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+
+                        const finalData = formatLiteData(coreData, targetGraphId);
+                        const payload = (sessionSource === 'chatgpt' || sessionSource === 'claude')
+                            ? sanitizePayloadForChatGpt(finalData)
+                            : finalData;
+                        return {
+                            next_moves: payload?.next_moves,
+                            content: [
+                                { type: 'text' as const, text: JSON.stringify(payload, null, 2) }
+                            ]
+                        };
+                    } else {
+                        console.error('[search_graph] Total deadline reached before primary graph results arrived');
+                        return {
+                            content: [{
+                                type: 'text' as const,
+                                text: JSON.stringify({
+                                    rows: [],
+                                    total: 0,
+                                    dataStatus: 'TIMEOUT',
+                                    message: 'Search query exceeded time limit. Upstream graph search took too long to respond.',
+                                }, null, 2)
+                            }]
+                        };
+                    }
+                }
+
+                return raceResult;
             } catch (err: any) {
+                if (deadlineTimer) clearTimeout(deadlineTimer);
                 // Trial-aware credit exhaustion, then structured access/credit handling.
                 // (Routes credit errors through handleAccessError so payment details are
                 // returned as structured fields, not baked into a raw message string.)

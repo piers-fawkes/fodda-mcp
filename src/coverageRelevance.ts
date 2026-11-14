@@ -1239,7 +1239,7 @@ export async function fetchSupplementalSuggest(
 
         let timer: any;
         const timeoutPromise = new Promise<never>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('suggest timeout (3000ms)')), 3000);
+            timer = setTimeout(() => reject(new Error('suggest timeout (2500ms)')), 2500);
         });
 
         const data = await Promise.race([suggestPromise, timeoutPromise]);
@@ -1249,6 +1249,7 @@ export async function fetchSupplementalSuggest(
         return sources;
     } catch (err: any) {
         console.error(`[next_moves] suggest fetch failed: ${err.message}`);
+        setSuggestCacheEntry(cacheKey, []);
         return null;
     }
 }

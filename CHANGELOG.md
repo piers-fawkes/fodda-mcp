@@ -5,6 +5,30 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.154] - 2026-11-14
+
+### Fixed (`search_graph` 60s Timeout Mitigation & Request Bounding Envelope)
+- **Total Execution Timeout Envelope (`src/toolHandlers.ts`)**:
+  - Wrapped the entire `search_graph` tool handler in an internal race with a fail-safe deadline of 25,000 ms (`SEARCH_GRAPH_TIMEOUT_MS`).
+  - Guarantees MCP tool execution never reaches the 60,000 ms MCP client transport timeout limit (`MCP error -32001: Request timed out`) or outer gateway 504 timeouts under any network condition.
+- **Graceful Partial Return on Deadline (`src/toolHandlers.ts`)**:
+  - If auxiliary enrichments (auto-broadening, supplemental suggest/census/trends, output skills, widget rendering) exceed the budget, logs `[search_graph] Enrichment deadline reached, returning core results` and immediately returns the verified core graph rows without error.
+  - Introduced canonical `formatLiteData(data, targetGraphId)` helper to format and dedupe aliased fields, preserve capped evidence, and attach source pedigree across widget, fallback, and deadline timeout paths.
+  - Preserved query-level billing via `chargeQuery` across all response paths.
+  - Handled edge cases where the primary search backend hangs before returning results by cleanly returning a structured `TIMEOUT` status response rather than crashing or timing out the transport.
+- **Capped Cascading Upstream Requests (`src/toolHandlers.ts`, `src/coverageRelevance.ts`)**:
+  - Bounded supplemental macro data queries (`/v1/supplemental/google-trends`, `/v1/supplemental/census/retail-snapshot`) to 4,000 ms max (overriding axios 35s default) and skipped if remaining time budget is under 5,000 ms.
+  - Auto-broadening fallback now skips if remaining time budget is under 12,000 ms, and is bounded to 4,000 ms max.
+  - Output skills execution (`callOutputSkills`) bounded to 4,000 ms max and skipped if remaining budget is under 4,000 ms.
+  - Bounded `addCoverageAnnotation` to 5,000 ms max, falling back gracefully to baseline coverage metrics on timeout.
+  - Tightened `fetchSupplementalSuggest` timeout to 2,500 ms in `src/coverageRelevance.ts` and cached empty results on failure/timeout to prevent cascading sequential calls.
+  - Primary graph search bounded to 15,000 ms.
+- **Display Name Defensiveness (`src/catalogCache.ts`)**:
+  - Hardened `buildDisplayName()` to handle catalog entries where `curator` is absent or named in `author` or `company`, preventing undefined property access.
+- **Testing & Verification**:
+  - Added dedicated unit test suite `src/test_search_graph_timeout_mitigation.ts` testing fast completion under 10,000 ms for target graph query `{"query": "alcoholic beverages retail spirits wine beer", "graphId": "food"}`, the 4,000 ms supplemental macro fetch bound, and primary backend hang timeout handling.
+  - Full test suites passed: `npm test` (compilation, Airtable sync, manifest generation, health check) and `npx tsx src/test_search_graph_quality.ts` (all 12 quality tests passing).
+
 ## [1.46.153] - 2026-11-13
 
 ### Added (Proactive Fodda Routing, Multi-Tool Chaining, Next-Step Experts & User-Friendly Tool Labels)
