@@ -5,6 +5,33 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.155] - 2026-11-15
+
+### Added & Changed (Expose & Route `get_intelligence_dossier` as Turn-1 Layer Cake on Claude & ChatGPT)
+- **Expose `get_intelligence_dossier` on `/claude` and `/chatgpt` (`src/index.ts`, `tools-manifest.json`)**:
+  - Added `'get_intelligence_dossier'` to `OFFERING_SCOPED_TOOLS['claude']` and `OFFERING_SCOPED_TOOLS['chatgpt']`, expanding both scoped profiles to 29 research and intelligence tools.
+  - Automatically regenerated `tools-manifest.json` ensuring `get_intelligence_dossier` includes `profiles: ["mcp", "chatgpt", "claude"]` while maintaining the total tool count at 56 and `bills_as: "topic_research"`.
+- **Repositioned `get_intelligence_dossier` Description & Default Fast Blueprint Mode (`src/toolHandlers.ts`, `src/toolGuide.ts`)**:
+  - Framed `get_intelligence_dossier` as Fodda's primary Turn-1 multi-layer market and category intelligence tool for commercial questions, market dynamics, and sector trends (e.g. *"what are the alcoholic beverage trends in US retail"*), in addition to newsletters, executive briefings, and market analysis articles.
+  - Recommended `editorial_mode: "blueprint"` by default for fast (~6–8s) 5-layer synthesis (corporate earnings disclosures & Wall Street Q&A, published research reports, macro data from FRED/BLS/Census, PSFK trends & case studies, and active Human Agent frameworks) with pre-built www.fodda.ai explore links and `### Query Fodda` footer.
+  - Scoped `resolvedEditorialMode` in `createServer()` to default to `'blueprint'` for Claude and ChatGPT sessions when omitted, avoiding client timeouts while preserving explicit `'full'` and `'none'` overrides.
+  - Updated `TOOL_GUIDE_DEFINITIONS` in `src/toolGuide.ts` to reflect the Turn-1 multi-layer intelligence dossier capability.
+- **Turn-1 Host Steering & Multi-Tool Routing (`src/systemPrompt.ts`)**:
+  - In `RULE: ToolRoutingPreference`, added explicit Turn-1 routing directing broad market, sector, or category trend queries to `get_intelligence_dossier` first on Turn 1 (recommending `editorial_mode: 'blueprint'`), followed on Turn 2 by `search_graph`, `search_statistics`, `get_earnings_intelligence`, or `consult_human_agent` to drill into specific layers or experts.
+  - In `SEQUENCE: CompleteResearchWorkflow`, structured Step 1 as Turn 1 (broad market & category queries via `get_intelligence_dossier`) and Step 2 as Turn 2 (deep dive into specific layers or experts), preserving single-layer direct routing for narrow queries.
+  - Aligned `CHATGPT_BEHAVIORAL_RULES` (Research Workflow & Source Attribution, Tool Routing Guidelines) and `MULTI-TOOL RESEARCH CHAINING` prompt directives to instruct Claude and ChatGPT to route broad category queries to `get_intelligence_dossier` first on Turn 1.
+- **Testing & Verification**:
+  - Updated `src/test_claude_offering_surfaces.ts` to assert that `get_intelligence_dossier` is present in both `OFFERING_SCOPED_TOOLS['claude']` and `['chatgpt']` with 29 tools each, while strictly asserting that unexposed onboarding, scheduler, and commerce tools remain excluded. Test passed (100%).
+  - Updated `scripts/test_chatgpt_live.mjs` asserting 29 tools in ChatGPT profile and verifying `get_intelligence_dossier` presence.
+  - Executed `src/test_intelligence_and_verifier.ts`: verified pricing cache registration, tools-manifest tool count (56 tools), cost silence rules, interactive blueprint mode, full 5-beat editorial mode, and live API multi-layer intelligence return (62 passed, 0 failed).
+  - Executed live smoke test for `"what are the alcoholic beverage trends when it comes to retail in the US"` on `/claude`: confirmed fast Turn-1 execution in 6.8s–7.2s returning all 5 layers:
+    - Layer 1 (Earnings Disclosures & Executive Voices): 10 voices, 5 Q&A exchanges
+    - Layer 2 (Published Research Reports): Report citations
+    - Layer 3 (PSFK Trends & Case Studies): Domain trend synthesis
+    - Layer 4 (Live Macro Data / Statistics): U.S. Census Bureau Food Services and Drinking Places retail data
+    - Layer 5 (Active Human Agent POV): Thiago Bersou (`thiago-bersou`, Alcoholic Beverage & CPG Brand Strategist) with mandatory 4-part attribution arc and Fodda Context Layer explore links.
+  - Full test suites passed: `npm test` (`npm run build && node dist/verify_tools_endpoint.js` -> 200 OK, v1.46.155).
+
 ## [1.46.154] - 2026-11-14
 
 ### Fixed (`search_graph` 60s Timeout Mitigation & Request Bounding Envelope)

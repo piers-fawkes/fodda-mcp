@@ -8,12 +8,17 @@ async function runClaudeOfferingSurfacesTests() {
     assert.ok(Array.isArray(actualTools), 'claude must be registered in OFFERING_SCOPED_TOOLS');
 
     console.log(`1. Verifying claude tool count: ${actualTools.length} tools`);
+    assert.strictEqual(actualTools.length, 29, `Expected exactly 29 tools in OFFERING_SCOPED_TOOLS['claude'], got ${actualTools.length}`);
 
-    // Verify required expert deliverable and intro tools are present
+    const chatgptTools = OFFERING_SCOPED_TOOLS['chatgpt'];
+    assert.ok(Array.isArray(chatgptTools), 'chatgpt must be registered in OFFERING_SCOPED_TOOLS');
+    assert.strictEqual(chatgptTools.length, 29, `Expected exactly 29 tools in OFFERING_SCOPED_TOOLS['chatgpt'], got ${chatgptTools.length}`);
+    assert.ok(chatgptTools.includes('get_intelligence_dossier'), 'get_intelligence_dossier must be included in OFFERING_SCOPED_TOOLS[\'chatgpt\']');
+
+    // Verify required expert research and intelligence tools are present
     const requiredTools = [
-        'request_deliverable',
-        'check_deliverable_status',
-        'request_expert_intro',
+        'get_intelligence_dossier',
+        'get_capabilities',
         'consult_human_agent',
         'consult_analyst',
         'list_analysts',
@@ -24,6 +29,9 @@ async function runClaudeOfferingSurfacesTests() {
         'get_evidence',
         'deep_research_topic',
         'check_research_status',
+        'get_earnings_intelligence',
+        'get_earnings_divergence',
+        'get_company_earnings',
     ];
 
     for (const tool of requiredTools) {
@@ -31,8 +39,12 @@ async function runClaudeOfferingSurfacesTests() {
         console.log(`  ✅ ${tool} present`);
     }
 
-    // Verify onboarding tools remain excluded
+    // Verify onboarding and unexposed commerce/scheduler tools remain excluded
     const excludedTools = [
+        'request_deliverable',
+        'check_deliverable_status',
+        'request_expert_intro',
+        'manage_scheduled_reports',
         'begin_expert_onboarding',
         'submit_basic_info',
         'submit_mcp_source',

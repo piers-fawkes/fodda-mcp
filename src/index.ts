@@ -390,6 +390,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
     ],
     'chatgpt': [
         'get_capabilities',
+        'get_intelligence_dossier',
         'search_graph',
         'search_statistics',
         'search_insights',
@@ -420,6 +421,7 @@ export const OFFERING_SCOPED_TOOLS: Record<string, string[]> = {
     ],
     'claude': [
         'get_capabilities',
+        'get_intelligence_dossier',
         'search_graph',
         'search_statistics',
         'search_insights',

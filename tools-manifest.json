@@ -346,9 +346,11 @@
       "bills_as": "topic_research",
       "category": "Intelligence",
       "profiles": [
-        "mcp"
+        "mcp",
+        "chatgpt",
+        "claude"
       ],
-      "description": "Use when researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article on any commercial topic, sector trend, or company cohort (e.g. 'Draft a newsletter on retail margin defense', 'Write an executive briefing on functional beverage trends', 'Analyze autonomous checkout strategies', 'Build an evidence dossier on sustainable luxury packaging'). Synthesizes corporate earnings disclosures, published research reports, macro data (FRED, BLS, Census), and expert commentary into a structured editorial narrative with cited sources and interactive explore links. Set include_editorial: true (with optional editorial_mode: 'blueprint' | 'full' and publication_name) to generate a complete publication-ready article or blueprint + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis and newsletter-style drafting; use deep_research_topic for multi-pass background deep dives; use search_graph for individual trend lookups."
+      "description": "Use as Fodda's primary Turn-1 multi-layer market and category intelligence tool for commercial questions, market dynamics, and sector trends (e.g. 'What are the alcoholic beverage trends in US retail', 'What is happening in retail margin defense', 'Analyze autonomous checkout strategies', 'What are the luxury footwear trends'), as well as researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article (e.g. 'Draft a newsletter on retail margin defense', 'Write an executive briefing on functional beverage trends'). Synthesizes Fodda's full 5-layer intelligence—corporate earnings disclosures (Wall Street Q&A), published research reports, macro data (FRED, BLS, Census), PSFK trends and case studies, and active Human Agent frameworks—in a single call with cited sources and interactive explore links. Recommend editorial_mode: 'blueprint' by default for fast (~6–8s) 5-layer synthesis; set include_editorial: true (with optional editorial_mode: 'blueprint' | 'full' and publication_name) for publication drafting + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier first on Turn 1 for broad market/category synthesis; use search_graph, search_statistics, get_earnings_intelligence, or consult_human_agent on Turn 2 to drill into a specific layer or expert; use deep_research_topic for multi-pass background deep dives."
     },
     {
       "name": "get_label_values",

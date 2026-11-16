@@ -232,7 +232,7 @@ async function run() {
         console.log('\n--- 7. Verifying tools-manifest.json profile count & ChatGPT OpenAI compliance ---');
         const manifest = JSON.parse(fs.readFileSync('tools-manifest.json', 'utf8'));
         const chatgptTools = manifest.tools.filter(t => t.profiles.includes('chatgpt'));
-        assert.strictEqual(chatgptTools.length, 28, `Expected exactly 28 tools in chatgpt profile, got ${chatgptTools.length}`);
+        assert.strictEqual(chatgptTools.length, 29, `Expected exactly 29 tools in chatgpt profile, got ${chatgptTools.length}`);
         const chatgptToolNames = new Set(chatgptTools.map(t => t.name));
         assert(!chatgptToolNames.has('manage_scheduled_reports'), 'manage_scheduled_reports must not be in chatgpt profile');
         assert(!chatgptToolNames.has('request_deliverable'), 'request_deliverable must not be in chatgpt profile');
@@ -240,6 +240,7 @@ async function run() {
         assert(!chatgptToolNames.has('request_expert_intro'), 'request_expert_intro must not be in chatgpt profile');
         assert(chatgptToolNames.has('verify_claim'), 'verify_claim must be in chatgpt profile');
         assert(chatgptToolNames.has('consult_human_agent'), 'consult_human_agent must be in chatgpt profile');
+        assert(chatgptToolNames.has('get_intelligence_dossier'), 'get_intelligence_dossier must be in chatgpt profile');
 
         const { createServer } = await import('../dist/toolHandlers.js');
         const { buildSystemPrompt } = await import('../dist/systemPrompt.js');
@@ -266,17 +267,16 @@ async function run() {
         );
         const reg = chatgptServer._registeredTools || {};
         const enabledChatGptTools = Object.entries(reg).filter(([, t]) => t.enabled !== false);
-        assert.strictEqual(enabledChatGptTools.length, 28, `Expected 28 enabled tools in chatgpt server, got ${enabledChatGptTools.length}`);
+        assert.strictEqual(enabledChatGptTools.length, 29, `Expected 29 enabled tools in chatgpt server, got ${enabledChatGptTools.length}`);
         for (const [tName, tObj] of enabledChatGptTools) {
             assert(!tObj.description.includes('get_domain_intelligence'), `${tName} description on /chatgpt must not reference unexposed get_domain_intelligence`);
-            assert(!tObj.description.includes('get_intelligence_dossier'), `${tName} description on /chatgpt must not reference unexposed get_intelligence_dossier`);
             assert(!tObj.description.includes('check_deliverable_status'), `${tName} description on /chatgpt must not reference unexposed check_deliverable_status`);
             assert(!tObj.description.includes('request_expert_intro'), `${tName} description on /chatgpt must not reference unexposed request_expert_intro`);
         }
         assert(reg['consult_human_agent'].description.startsWith('Consult an authorized Human Agent (Digital Twin) expert'), 'consult_human_agent on /chatgpt must use approved Digital Twin description');
         assert.strictEqual(reg['consult_human_agent'].annotations?.title, 'Consult Human Agent (Digital Twin)');
         assert(reg['verify_claim'].description.includes('verdict ("confirms", "contradicts", "partial", or "no_coverage")'), 'verify_claim description must match its structured verdict return behavior');
-        console.log('  PASS: tools-manifest.json and /chatgpt server profile pass all OpenAI review checks (28 tools)');
+        console.log('  PASS: tools-manifest.json and /chatgpt server profile pass all OpenAI review checks (29 tools)');
 
         console.log('\n========================================');
         console.log('ALL VERIFICATION TESTS PASSED SUCCESSFULLY!');

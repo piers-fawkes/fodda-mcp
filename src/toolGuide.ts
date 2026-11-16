@@ -143,9 +143,9 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     get_intelligence_dossier: {
         section: 'Research',
-        what_you_get: 'Multi-source evidence dossier and structured, research-backed newsletter or executive briefing with cited corporate disclosures, research reports, and interactive Fodda links.',
-        when_to_use: 'Use when researching and drafting an in-depth newsletter, executive briefing, or market analysis article on any commercial topic, sector trend, or company cohort.',
-        example_prompt: 'Draft an executive market briefing on retail margin defense.'
+        what_you_get: 'Fodda\'s primary Turn-1 5-layer intelligence dossier (corporate earnings Q&A, CE reports, PSFK trends/case studies, macro data from BLS/Census, and active Human Agent framework) with structured blueprint and interactive explore links.',
+        when_to_use: 'Use on Turn 1 for primary multi-layer market and category intelligence, or when researching and drafting an in-depth newsletter, executive briefing, or market analysis article.',
+        example_prompt: 'What are the alcoholic beverage trends in US retail? (or: Draft an executive market briefing on retail margin defense.)'
     },
     search_statistics: {
         section: 'Research',

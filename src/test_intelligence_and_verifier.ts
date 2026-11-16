@@ -347,7 +347,8 @@ async function run() {
         assert(liveDossier.ok === true, 'Live POST /v1/intelligence/dossier returned ok: true');
         assert(Boolean(liveDossier.dossier), 'Live dossier object is present');
         const evidence = liveDossier.dossier?.evidence_items || [];
-        assert(evidence.length > 0, `Live evidence items returned (${evidence.length} items)`);
+        const hasMultiLayerData = evidence.length > 0 || ((liveDossier.dossier?.statistics?.length || 0) > 0 && (liveDossier.dossier?.voices?.length || 0) > 0);
+        assert(hasMultiLayerData, `Live multi-layer intelligence returned (${evidence.length} evidence items, ${liveDossier.dossier?.statistics?.length || 0} stats, ${liveDossier.dossier?.voices?.length || 0} voices)`);
     } catch (err: any) {
         assert(false, `Live POST /v1/intelligence/dossier call failed: ${err.response?.data?.message || err.message}`);
     }

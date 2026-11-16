@@ -5622,13 +5622,13 @@ export async function createServer(
 
     server.tool(
         'get_intelligence_dossier',
-        'Use when researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article on any commercial topic, sector trend, or company cohort (e.g. \'Draft a newsletter on retail margin defense\', \'Write an executive briefing on functional beverage trends\', \'Analyze autonomous checkout strategies\', \'Build an evidence dossier on sustainable luxury packaging\'). Synthesizes corporate earnings disclosures, published research reports, macro data (FRED, BLS, Census), and expert commentary into a structured editorial narrative with cited sources and interactive explore links. Set include_editorial: true (with optional editorial_mode: \'blueprint\' | \'full\' and publication_name) to generate a complete publication-ready article or blueprint + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier for instant, single-turn multi-source synthesis and newsletter-style drafting; use deep_research_topic for multi-pass background deep dives; use search_graph for individual trend lookups.',
+        'Use as Fodda\'s primary Turn-1 multi-layer market and category intelligence tool for commercial questions, market dynamics, and sector trends (e.g. \'What are the alcoholic beverage trends in US retail\', \'What is happening in retail margin defense\', \'Analyze autonomous checkout strategies\', \'What are the luxury footwear trends\'), as well as researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article (e.g. \'Draft a newsletter on retail margin defense\', \'Write an executive briefing on functional beverage trends\'). Synthesizes Fodda\'s full 5-layer intelligence—corporate earnings disclosures (Wall Street Q&A), published research reports, macro data (FRED, BLS, Census), PSFK trends and case studies, and active Human Agent frameworks—in a single call with cited sources and interactive explore links. Recommend editorial_mode: \'blueprint\' by default for fast (~6–8s) 5-layer synthesis; set include_editorial: true (with optional editorial_mode: \'blueprint\' | \'full\' and publication_name) for publication drafting + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier first on Turn 1 for broad market/category synthesis; use search_graph, search_statistics, get_earnings_intelligence, or consult_human_agent on Turn 2 to drill into a specific layer or expert; use deep_research_topic for multi-pass background deep dives.',
         {
             topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
             sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
             tickers: z.array(z.string()).optional().describe("Optional corporate tickers to cross-reference against earnings call Q&A intelligence (e.g. ['NKE', 'DECK'])."),
             include_editorial: z.boolean().optional().describe("Set to true to generate a publication-ready newsletter, executive briefing, or market analysis article (Section 1: The Market Backdrop & Numbers, Section 2: The Core Debate & Published Research, Section 3: Corporate Strategies & Executive Disclosures, Section 4: Category Trends & Expert Frameworks, Section 5: Strategic Implications & Actionable Takeaways + ### Query Fodda footer, zero em dashes, zero bare dollar signs)."),
-            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (default when include_editorial is true in Claude/ChatGPT) returns a fast newsletter blueprint, pre-built www.fodda.ai hyperlinks, and composition contract so the assistant can write a full publication article without timeout; 'full' runs server-side article generation; 'none' returns raw dossier only."),
+            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (recommended default for fast ~6–8s 5-layer synthesis) returns a structured intelligence blueprint, pre-built www.fodda.ai hyperlinks, and composition contract without client timeout; 'full' runs complete server-side article generation; 'none' returns raw dossier only."),
             publication_name: z.string().optional().describe("Optional custom publication or newsletter name (e.g. 'The Retail Signal', 'Omnichannel Executive', 'Consumer Tech Digest'). If omitted, defaults to a neutral executive briefing title."),
             editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing').describe("Editorial tone and format: 'market_briefing' for strategic cross-category analysis, 'industry_newsletter' for category and brand trends, 'executive_memo' for concise decision-maker briefings, or 'psfk_weekly' / 'retail_innovation_week' for PSFK house style."),
             publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().describe("Backward-compatible alias for editorial_style: 'psfk_weekly' or 'retail_innovation_week'. Prefer editorial_style."),
@@ -5646,14 +5646,16 @@ export async function createServer(
                 const resolvedPublicationStyle: 'psfk_weekly' | 'retail_innovation_week' =
                     resolvedEditorialStyle === 'retail_innovation_week' ? 'retail_innovation_week' : 'psfk_weekly';
 
-                // Default to fast 'blueprint' mode for interactive LLM clients (Claude/ChatGPT) when include_editorial is true
-                // unless editorial_mode is explicitly set to 'full' or 'none'.
+                // Default to fast 'blueprint' mode for interactive LLM clients (Claude/ChatGPT)
+                // or when include_editorial is true, unless editorial_mode is explicitly set to 'full' or 'none'.
                 const resolvedEditorialMode: 'blueprint' | 'full' | 'none' | undefined =
                     editorial_mode !== undefined
                         ? editorial_mode
-                        : include_editorial
-                        ? ((sessionSource === 'claude' || sessionSource === 'chatgpt') ? 'blueprint' : 'full')
-                        : (include_editorial === false ? 'none' : undefined);
+                        : include_editorial === false
+                        ? 'none'
+                        : (include_editorial || sessionSource === 'claude' || sessionSource === 'chatgpt')
+                        ? 'blueprint'
+                        : undefined;
 
                 const body: Record<string, any> = {
                     topic,
