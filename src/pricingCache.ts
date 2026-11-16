@@ -639,6 +639,11 @@ export interface ChargeQueryParams {
     graphsSearched?: string[];
     /** When set, this is an anonymous SPT session — settle by charging the SPT, not credits. */
     spt?: string | undefined;
+    /**
+     * Override the billable units charged (e.g. for offerings that bill per completed underlying API call).
+     * If set to <= 0: zero means free (uncharged, returns without hitting /v1/research/meter).
+     */
+    billableUnitsOverride?: number;
     /** foddaRequest function — injected from index.ts to avoid circular deps */
     foddaRequest: (method: 'GET' | 'POST', path: string, apiKey: string, userId: string, body?: any, requestId?: string, source?: string, spt?: string) => Promise<any>;
 }
@@ -651,20 +656,28 @@ export interface ChargeQueryResult {
 }
 
 /**
- * Charge a fixed-price query fee via POST /v1/research/meter.
+ * Charge a query fee via POST /v1/research/meter.
  *
  * Call this ONCE at the end of each query completion.
  * The X-Fodda-Billing header on foddaRequest() prevents per-call billing,
  * so this is the only debit that hits the user's account.
  *
- * For free query types (visual, admin) — returns immediately, no API call.
+ * For free query types (visual, admin) or zero billable units — returns immediately, no API call.
  * For trial users — increments trial usage instead.
  * For paid users — fires the meter call (fire-and-forget, non-blocking).
  */
 export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQueryResult> {
-    const { queryTypeCode, apiKey, userId, query, graphsSearched, foddaRequest, spt } = params;
+    const { queryTypeCode, apiKey, userId, query, graphsSearched, foddaRequest, spt, billableUnitsOverride } = params;
 
-    const price = getQueryPrice(queryTypeCode);
+    // Per brief: "Zero means free. If the count is 0 or missing, charge nothing and log console.error"
+    if (billableUnitsOverride !== undefined) {
+        if (billableUnitsOverride <= 0) {
+            console.error(`[chargeQuery] ${queryTypeCode} completed with 0 billable units (override=${billableUnitsOverride}) — zero means free (uncharged).`);
+            return { charged: false, apiCallsCharged: 0 };
+        }
+    }
+
+    const price = billableUnitsOverride !== undefined ? billableUnitsOverride : getQueryPrice(queryTypeCode);
 
     // Free query types — no charge
     if (price === 0) {

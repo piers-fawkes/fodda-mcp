@@ -665,7 +665,7 @@ export async function createServer(
     const settleOrWithhold = async (params: Omit<ChargeQueryParams, 'foddaRequest' | 'spt'>, label: string): Promise<{ isError: true; content: { type: 'text'; text: string }[] } | null> => {
         if (sptCtx) {
             const r = await chargeQuery({ ...params, foddaRequest, spt: sptCtx.token });
-            if (!r.charged) {
+            if (!r.charged && r.error) {
                 return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'SPT_SETTLEMENT_FAILED', message: r.error || 'Payment could not be completed; result withheld.' }) }] };
             }
             return null;
@@ -3547,6 +3547,7 @@ export async function createServer(
         const competitorGraphs: Record<string, Set<string>> = {};  // track which graphs each competitor appears in
         let usedCypherEndpoint = false;
         let marketData: any = null;
+        let apiCompletedCalls = 0;
 
         // ── Strategy 1: Single Cypher endpoint (fast path) ──
         try {
@@ -3558,6 +3559,10 @@ export async function createServer(
                 `/v1/brand-intelligence/${encodeURIComponent(brandName)}?${params.toString()}`,
                 apiKey, resolveUserId(userId, uid)
             );
+
+            if (typeof cypherData?.usage?.completed_calls === 'number') {
+                apiCompletedCalls = cypherData.usage.completed_calls;
+            }
 
             if (cypherData?.ok && cypherData.trend_footprint) {
                 usedCypherEndpoint = true;
@@ -4188,7 +4193,14 @@ export async function createServer(
             storeWidget(widget.widget_html);
         }
 
-        return { profile, widget, EDITORIAL_INSTRUCTION };
+        // Count completed supplemental calls made directly in MCP (Amazon & Census) that returned without error
+        const amazonVal = isRetailCPG && amazonResult.status === 'fulfilled' ? amazonResult.value : null;
+        const amazonSucceeded = !!(amazonVal && !amazonVal.error);
+        const censusVal = isRetailCPG && beaResult.status === 'fulfilled' ? beaResult.value : null;
+        const censusSucceeded = !!(censusVal && !censusVal.error);
+        const totalCompletedCalls = apiCompletedCalls + (amazonSucceeded ? 1 : 0) + (censusSucceeded ? 1 : 0);
+
+        return { profile, widget, EDITORIAL_INSTRUCTION, completedCalls: totalCompletedCalls };
     };
 
     server.tool(
@@ -4218,7 +4230,7 @@ export async function createServer(
                 const isDataOnly = format === 'data_only';
                 const shouldRenderWidget = include_widget !== undefined ? include_widget : (!isCompact && !isDataOnly);
 
-                const { profile, widget, EDITORIAL_INSTRUCTION } = await executeBrandTracker(
+                const { profile, widget, EDITORIAL_INSTRUCTION, completedCalls } = await executeBrandTracker(
                     brand_name,
                     uid,
                     graph_ids,
@@ -4228,7 +4240,15 @@ export async function createServer(
                 );
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
-                const withheld = await settleOrWithhold({ queryTypeCode: 'brand_intelligence', apiKey, userId: resolveUserId(userId, uid), query: brand_name }, 'brand_tracker');
+                // Piers (2026-11-16): Bill completed calls only; zero means free.
+                const billableUnits = typeof completedCalls === 'number' ? completedCalls : 0;
+                const withheld = await settleOrWithhold({
+                    queryTypeCode: 'brand_intelligence',
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    query: brand_name,
+                    billableUnitsOverride: billableUnits,
+                }, 'brand_tracker');
                 if (withheld) return withheld;
 
                 const brandLower = brand_name.toLowerCase();
@@ -6047,11 +6067,17 @@ export async function createServer(
                     : (data?.view || resolvedView);
                 const executedQueryType = executedView === 'core_plan' ? 'planning_light' : 'planning';
 
+                // Piers (2026-11-16): Bill completed calls only; zero means free.
+                const completedCalls = typeof data?.usage?.completed_calls === 'number'
+                    ? data.usage.completed_calls
+                    : 0;
+
                 const withheld = await settleOrWithhold({
                     queryTypeCode: executedQueryType,
                     apiKey,
                     userId: resolveUserId(userId, uid),
                     query: planQuery,
+                    billableUnitsOverride: completedCalls,
                 }, 'generate_comms_plan');
                 if (withheld) return withheld;
 

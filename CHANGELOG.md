@@ -5,11 +5,23 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.46.156] - 2026-11-16
 
-### Changed
-- **Ignore and untrack `briefs/` (`.gitignore`)**:
-  - Added `briefs/` to `.gitignore` and removed tracked `briefs/` files from git (`git rm -r --cached briefs/`) so internal briefs are not published to the public GitHub repository while keeping local copies on disk.
+### Changed (Per-Completed-Call Billing for Brand Intelligence & Connections Plan)
+- **Bill Completed Calls Only (`src/pricingCache.ts`, `src/toolHandlers.ts`)**:
+  - Extended `ChargeQueryParams` with `billableUnitsOverride?: number` allowing tools to meter dynamically based on the exact number of completed underlying API calls executed rather than a flat interaction fee.
+  - In `chargeQuery`, when `billableUnitsOverride` is provided, the meter payload passes `billable_units: price` (using the override).
+  - Enforced "Zero Means Free": if `billableUnitsOverride <= 0`, `chargeQuery` logs internal error telemetry and immediately returns `{ charged: false, apiCallsCharged: 0 }` without making an upstream meter request.
+  - In `brand_tracker`: computed completed calls from API response `usage.completed_calls`, adding successful supplemental calls executed directly in MCP (Amazon and Census supplemental calls returning without error).
+  - In `generate_comms_plan`: dynamic metering uses `data.usage.completed_calls` from the API response for both full and core plan views.
+  - In `settleOrWithhold`: updated SPT settlement gate to ensure free queries (0 billable units, uncharged with no error) deliver safely without withholding results.
+- **Verification & Testing (`src/test_per_call_billing.ts`)**:
+  - Implemented comprehensive unit test suite verifying:
+    - `generate_comms_plan` with API `usage.completed_calls: 7` sends `billable_units: 7` in the meter body.
+    - `brand_tracker` with API `completed_calls: 5`, Amazon OK and Census failing sends `billable_units: 6` in the meter body.
+    - Zero completed calls (`completed_calls: 0`) results in 0 meter calls (zero means free).
+    - SPT sessions with 0 completed calls deliver safely without withholding.
+  - All test suites passed: 20 passed, 0 failed. `npm run build` compiled with 0 errors.
 
 ## [1.46.155] - 2026-11-15
 
