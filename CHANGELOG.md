@@ -5,6 +5,12 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Ignore and untrack `briefs/` (`.gitignore`)**:
+  - Added `briefs/` to `.gitignore` and removed tracked `briefs/` files from git (`git rm -r --cached briefs/`) so internal briefs are not published to the public GitHub repository while keeping local copies on disk.
+
 ## [1.46.155] - 2026-11-15
 
 ### Added & Changed (Expose & Route `get_intelligence_dossier` as Turn-1 Layer Cake on Claude & ChatGPT)

@@ -21,3 +21,6 @@ scratch/
 
 # Evaluation data (contains customer queries / private graph text — API repo only)
 eval/
+
+# Internal agent briefs — keep local only
+briefs/
