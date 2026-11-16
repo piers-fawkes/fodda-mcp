@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Layer 4 (Live Macro Data / Statistics): U.S. Census Bureau Food Services and Drinking Places retail data
     - Layer 5 (Active Human Agent POV): Thiago Bersou (`thiago-bersou`, Alcoholic Beverage & CPG Brand Strategist) with mandatory 4-part attribution arc and Fodda Context Layer explore links.
   - Full test suites passed: `npm test` (`npm run build && node dist/verify_tools_endpoint.js` -> 200 OK, v1.46.155).
+- **Deployment & Live Verification**:
+  - Deployed to Google Cloud Run (`fodda-mcp`, `us-east4`): revision `fodda-mcp-00724-pgx` (serving 100% of traffic).
+  - Verified live endpoint: `curl -s https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.155"}`.
 
 ## [1.46.154] - 2026-11-14
 
