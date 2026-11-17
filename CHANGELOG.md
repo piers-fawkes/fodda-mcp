@@ -28,14 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Test 8: Verified Wikipedia disambiguation maps Adidas to canonical article.
   - All test suites passed: 33 passed, 0 failed. `npm run build` compiled with 0 errors.
 - **Deployment & Production Verification**:
-  - Deployed to Google Cloud Run (`fodda-mcp`, `us-east4`): revision `fodda-mcp-00729-vj8` serving 100% of traffic.
+  - Deployed to Google Cloud Run (project: `fodda-mcp`, region: `us-east4`): revision `fodda-mcp-00729-vj8` serving 100% of traffic.
   - Verified live endpoint: `curl -s https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.157"}`.
-  - Live production verification: executed `brand_tracker` for Adidas via live MCP server (`https://mcp.fodda.ai/mcp`).
-  - Cloud Logging confirmed:
-    - Google Trends query strictly brand-only: `[GoogleTrends] Fetching trends for "Adidas" (US, today 12-m)...`
-    - Wikipedia query strictly brand-only: `[Wikipedia] Fetching pageviews for resolved title "Adidas" (original: "Adidas", 30 days)`
-    - Meter charged full 12 units (7 API + 5 MCP completed supplemental calls): `[Research Meter] Variable billing for brand_intelligence: 12 billable unit(s) (baseline: 4)`
-    - Zero HMAC warnings and zero per-call double billing downgrades.
+  - Live production verification: executed live `brand_tracker` audit run, confirming brand-only headline signals, full call count metering (including all completed supplemental calls), and zero HMAC or double-billing warnings.
 
 ## [1.46.156] - 2026-11-16
 
