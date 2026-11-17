@@ -119,7 +119,7 @@ export const TOOL_GUIDE_DEFINITIONS: Record<string, ToolGuideDefinition> = {
     },
     brand_tracker: {
         section: 'Research',
-        what_you_get: '360-degree brand health, trend footprint, competitor co-occurrences, and search momentum.',
+        what_you_get: '360-degree brand health, trend footprint, co-occurring brands ("appears alongside"), and search momentum.',
         when_to_use: 'Use whenever a prompt names a specific commercial brand or company to audit its market footprint.',
         example_prompt: "Research Nike's current positioning."
     },

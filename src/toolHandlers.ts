@@ -3516,7 +3516,14 @@ export async function createServer(
     );
 
     // --- brand_tracker ---
-    const executeBrandTracker = async (brand_name: string, uid: string | undefined, graph_ids?: string[], include_evidence?: boolean, max_evidence?: number, options?: { shouldRenderWidget?: boolean }) => {
+    const executeBrandTracker = async (
+        brand_name: string,
+        uid: string | undefined,
+        graph_ids?: string[],
+        include_evidence?: boolean,
+        max_evidence?: number,
+        options?: { shouldRenderWidget?: boolean; compare_to?: string | string[] | undefined }
+    ) => {
         const brandName = brand_name.trim();
         const includeEvidence = include_evidence !== false;
         const maxEv = Math.min(max_evidence || 10, 25);
@@ -4099,8 +4106,8 @@ export async function createServer(
             supplemental_signals: null as any,
             suggested_next_prompts: [
                 {
-                    label: `vs ${competitors[0]?.brand || 'competitors'}`,
-                    prompt: `Compare ${brandName}'s innovation activity with ${competitors[0]?.brand || 'its top competitor'}. Which trends are they both pursuing and where do they diverge?`,
+                    label: `vs ${competitors[0]?.brand || 'related brands'}`,
+                    prompt: `Compare ${brandName}'s innovation activity with ${competitors[0]?.brand || 'brands that appear alongside it'}. Which trends are they both pursuing and where do they diverge?`,
                     type: 'competitive_comparison',
                 },
                 {
@@ -4121,9 +4128,6 @@ export async function createServer(
             (profile as any).coverage = { status: 'empty', note: `Fodda has no curated trend evidence mentioning ${brandName} yet.` };
         }
 
-        const topCompetitors = competitors.slice(0, 2).map(c => c.brand);
-        const comparisonQuery = [brandName, ...topCompetitors].join(',');
-
         // Wikipedia disambiguation: map brand names to canonical article titles
         const wikiDisambig: Record<string, string> = {
             'Nike': 'Nike, Inc.',
@@ -4131,15 +4135,57 @@ export async function createServer(
             'Apple': 'Apple Inc.',
             'Amazon': 'Amazon (company)',
             'Meta': 'Meta Platforms',
-            'Target': 'Target Corporation'
+            'Target': 'Target Corporation',
+            'Adidas': 'Adidas',
         };
-        const wikiArticles = [brandName, ...topCompetitors].map(b => wikiDisambig[b] || b).join(',');
-        const [googleTrendsResult, wikipediaResult, amazonResult, beaResult, earningsResult] = await Promise.allSettled([
-            foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(comparisonQuery)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
-            foddaRequest('GET', `/v1/supplemental/wikipedia/pageviews?articles=${encodeURIComponent(wikiArticles)}&period=monthly`, apiKey, resolveUserId(userId, uid)),
+        const resolveWikiTitle = (b: string): string => {
+            const trimmed = b.trim();
+            const lower = trimmed.toLowerCase();
+            const matchedKey = Object.keys(wikiDisambig).find(k => k.toLowerCase() === lower);
+            return (matchedKey && wikiDisambig[matchedKey]) ? wikiDisambig[matchedKey]! : trimmed;
+        };
+
+        // Headline supplemental calls use the brand alone
+        const headlineTrendsQuery = brandName;
+        const headlineWikiArticle = resolveWikiTitle(brandName);
+
+        // Optional comparative supplemental calls when explicitly requested via compare_to
+        const rawCompareTo = options?.compare_to;
+        const compareBrands: string[] = (
+            typeof rawCompareTo === 'string'
+                ? rawCompareTo.split(',').map(s => s.trim())
+                : Array.isArray(rawCompareTo)
+                ? rawCompareTo.map(s => String(s).trim())
+                : []
+        ).filter(b => b.length > 0 && b.toLowerCase() !== brandLower);
+
+        const compareTrendsPromise = compareBrands.length > 0
+            ? foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent([brandName, ...compareBrands].join(','))}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid))
+                .catch((e: any) => { console.warn('[brand_tracker] comparative trends failed:', e?.message); return null; })
+            : Promise.resolve(null);
+
+        const compareWikiArticles = [brandName, ...compareBrands].map(b => resolveWikiTitle(b)).join(',');
+        const compareWikiPromise = compareBrands.length > 0
+            ? foddaRequest('GET', `/v1/supplemental/wikipedia/pageviews?articles=${encodeURIComponent(compareWikiArticles)}&period=monthly`, apiKey, resolveUserId(userId, uid))
+                .catch((e: any) => { console.warn('[brand_tracker] comparative wikipedia failed:', e?.message); return null; })
+            : Promise.resolve(null);
+
+        const [
+            googleTrendsResult,
+            wikipediaResult,
+            amazonResult,
+            beaResult,
+            earningsResult,
+            compareTrendsResult,
+            compareWikiResult,
+        ] = await Promise.allSettled([
+            foddaRequest('GET', `/v1/supplemental/google-trends?query=${encodeURIComponent(headlineTrendsQuery)}&geo=US&timeframe=today+12-m`, apiKey, resolveUserId(userId, uid)),
+            foddaRequest('GET', `/v1/supplemental/wikipedia/pageviews?articles=${encodeURIComponent(headlineWikiArticle)}&period=monthly`, apiKey, resolveUserId(userId, uid)),
             amazonPromise,
             censusPromise,
             foddaRequest('GET', `/v1/supplemental/earnings/snapshot?brand=${encodeURIComponent(brandName)}&limit=5`, apiKey, resolveUserId(userId, uid)),
+            compareTrendsPromise,
+            compareWikiPromise,
         ]);
 
         // Unwrap .snapshot nesting — supplemental API wraps actual data inside .snapshot alongside metadata
@@ -4160,6 +4206,16 @@ export async function createServer(
             census_retail: isEligibleForRetailSupplemental && beaResult.status === 'fulfilled' ? unwrapSnapshot(beaResult.value) : null,
         };
 
+        if (compareBrands.length > 0) {
+            const compTrendsRaw = compareTrendsResult.status === 'fulfilled' ? unwrapSnapshot(compareTrendsResult.value) : null;
+            const compWikiRaw = compareWikiResult.status === 'fulfilled' ? unwrapSnapshot(compareWikiResult.value) : null;
+            (profile as any).comparative_signals = {
+                compared_brands: compareBrands,
+                google_trends: compTrendsRaw && !compTrendsRaw.error ? compTrendsRaw : null,
+                wikipedia: compWikiRaw && !compWikiRaw.error ? compWikiRaw : null,
+            };
+        }
+
         // ── Earnings Intelligence (for publicly traded brands) ──
         const earningsRaw = earningsResult.status === 'fulfilled' ? earningsResult.value : null;
         const earningsSnapshot = earningsRaw?.snapshot || earningsRaw;  // unwrap .snapshot if present
@@ -4171,6 +4227,9 @@ export async function createServer(
         (profile as any).validatedTrends = earningsRaw?.validatedTrends || earningsSnapshot?.validated_trends || undefined;
         (profile as any).analystQA = earningsRaw?.analystQA || undefined;
         if (marketData) {
+            if (marketData.status === 'withheld') {
+                marketData.note = marketData.note || 'market data withheld: could not verify the company';
+            }
             (profile as any).market_data = marketData;
         }
 
@@ -4193,21 +4252,36 @@ export async function createServer(
             storeWidget(widget.widget_html);
         }
 
-        // Count completed supplemental calls made directly in MCP (Amazon & Census) that returned without error
-        const amazonVal = isRetailCPG && amazonResult.status === 'fulfilled' ? amazonResult.value : null;
-        const amazonSucceeded = !!(amazonVal && !amazonVal.error);
-        const censusVal = isRetailCPG && beaResult.status === 'fulfilled' ? beaResult.value : null;
-        const censusSucceeded = !!(censusVal && !censusVal.error);
-        const totalCompletedCalls = apiCompletedCalls + (amazonSucceeded ? 1 : 0) + (censusSucceeded ? 1 : 0);
+        // Count every completed supplemental call MCP makes directly:
+        // Amazon, Census, Google Trends, Wikipedia, and the earnings snapshot (+ any comparative calls).
+        // A completed call is one that returned without an error field.
+        const isCallCompleted = (res: PromiseSettledResult<any> | null | undefined): boolean => {
+            if (!res || res.status !== 'fulfilled') return false;
+            const val = res.value;
+            if (!val || typeof val !== 'object') return false;
+            return !val.error;
+        };
+
+        let mcpCompletedCalls = 0;
+        if (isRetailCPG && isCallCompleted(amazonResult)) mcpCompletedCalls++;
+        if (isRetailCPG && isCallCompleted(beaResult)) mcpCompletedCalls++;
+        if (isCallCompleted(googleTrendsResult)) mcpCompletedCalls++;
+        if (isCallCompleted(wikipediaResult)) mcpCompletedCalls++;
+        if (isCallCompleted(earningsResult)) mcpCompletedCalls++;
+        if (compareBrands.length > 0 && isCallCompleted(compareTrendsResult)) mcpCompletedCalls++;
+        if (compareBrands.length > 0 && isCallCompleted(compareWikiResult)) mcpCompletedCalls++;
+
+        const totalCompletedCalls = apiCompletedCalls + mcpCompletedCalls;
 
         return { profile, widget, EDITORIAL_INSTRUCTION, completedCalls: totalCompletedCalls };
     };
 
     server.tool(
         'brand_tracker',
-        'Use when auditing a single brand\'s 360-degree intelligence footprint: evaluates brand health, trend footprint, competitor co-occurrences, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., \'Audit Nike\'s market footprint\', \'How is Lululemon performing across consumer trends?\'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. \'athleisure trends\'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand\'s multi-graph presence, peer competitor matrix, and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (competitor matrix), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html.',
+        'Use when auditing a single brand\'s 360-degree intelligence footprint: evaluates brand health, trend footprint, co-occurring brands that appear alongside it, Google Trends velocity, and Wikipedia pageviews across 100+ knowledge graphs. Mandatory entry point whenever a prompt names a specific commercial brand or company (e.g., \'Audit Nike\'s market footprint\', \'How is Lululemon performing across consumer trends?\'). Sibling routing: Use search_graph for topic- or category-level discovery (e.g. \'athleisure trends\'); use get_company_earnings for detailed SEC financial statements and earnings Q&A; use brand_tracker when focusing on a specific brand\'s multi-graph presence, co-occurring brand footprint ("appears alongside"), and cultural momentum. Returns a comprehensive brand dossier containing trend_footprint, co_occurring_brands (brands that appear alongside it in evidence and trend contexts), search_interest metrics, evidence_velocity, and optional pre-rendered interactive widget_html.',
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
+            compare_to: z.union([z.string(), z.array(z.string())]).optional().describe("Optional brand name(s) to run a separate comparative trend and Wikipedia analysis against (e.g. 'Nike' or ['Nike', 'Puma']). Headline signals for the primary brand remain strictly brand-only."),
             userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
             graph_ids: z.array(z.string()).optional().describe('Optional: specific graph IDs to search. If omitted, searches ALL accessible graphs.'),
             include_evidence: z.boolean().optional().describe('If true (default), include individual evidence items. Set to false for summary-only.'),
@@ -4217,7 +4291,7 @@ export async function createServer(
             include_widget: z.boolean().optional().describe("Whether to include widget_html in the response. Defaults to false when compact or data_only is active; true otherwise."),
         },
         { title: 'Brand Intelligence Profile', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-        async ({ brand_name, userId: uid, graph_ids, include_evidence, max_evidence, format, compact, include_widget }) => {
+        async ({ brand_name, compare_to, userId: uid, graph_ids, include_evidence, max_evidence, format, compact, include_widget }) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
                 logUserQuery(brand_name, 'brand_tracker');
@@ -4236,7 +4310,7 @@ export async function createServer(
                     graph_ids,
                     include_evidence,
                     max_evidence,
-                    { shouldRenderWidget }
+                    { shouldRenderWidget, compare_to }
                 );
 
                 // ── Query-level billing (settlement gates delivery for SPT) ──
@@ -4365,6 +4439,9 @@ export async function createServer(
                 const intentNote = (profile as any).intent_clarification
                     ? `[INTENT CLARIFICATION] ${(profile as any).intent_clarification}\n\n`
                     : '';
+                const withheldMarketDataNote = (profile as any).market_data?.status === 'withheld'
+                    ? `[MARKET DATA] market data withheld: could not verify the company${(profile as any).market_data.resolved_symbol ? ` (${(profile as any).market_data.resolved_symbol})` : ''}\n\n`
+                    : '';
 
                 if (isCompact) {
                     const compactPayload = {
@@ -4406,11 +4483,19 @@ export async function createServer(
                                 yoy_growth_pct: profile.supplemental_signals.census_retail.yoy_growth_pct,
                             } : null,
                         } : null,
-                        market_data: (profile as any).market_data ? {
-                            company_name: (profile as any).market_data.company_name,
-                            ticker: (profile as any).market_data.ticker,
-                            revenue: (profile as any).market_data.revenue,
-                        } : undefined,
+                        comparative_signals: (profile as any).comparative_signals,
+                        market_data: (profile as any).market_data?.status === 'withheld'
+                            ? {
+                                status: 'withheld',
+                                note: 'market data withheld: could not verify the company',
+                                reason: (profile as any).market_data.reason,
+                                resolved_symbol: (profile as any).market_data.resolved_symbol,
+                            }
+                            : (profile as any).market_data ? {
+                                company_name: (profile as any).market_data.company_name,
+                                ticker: (profile as any).market_data.ticker,
+                                revenue: (profile as any).market_data.revenue,
+                            } : undefined,
                         intent_clarification: (profile as any).intent_clarification,
                         next_moves: brandNextMoves,
                     };
@@ -4418,7 +4503,7 @@ export async function createServer(
                     const content: Array<{ type: 'text'; text: string }> = [
                         {
                             type: 'text' as const,
-                            text: intentNote + emptyNote + '── COMPACT BRAND INTELLIGENCE ──\n' + JSON.stringify(compactPayload, null, 2),
+                            text: intentNote + emptyNote + withheldMarketDataNote + '── COMPACT BRAND INTELLIGENCE ──\n' + JSON.stringify(compactPayload, null, 2),
                         }
                     ];
                     if (shouldRenderWidget && widget.widget_html) {
@@ -4434,7 +4519,7 @@ export async function createServer(
                     const content: Array<{ type: 'text'; text: string }> = [
                         {
                             type: 'text' as const,
-                            text: intentNote + emptyNote + '── STRUCTURED BRAND INTELLIGENCE (DATA ONLY) ──\n' + JSON.stringify(profile, null, 2),
+                            text: intentNote + emptyNote + withheldMarketDataNote + '── STRUCTURED BRAND INTELLIGENCE (DATA ONLY) ──\n' + JSON.stringify(profile, null, 2),
                         }
                     ];
                     if (shouldRenderWidget && widget.widget_html) {
@@ -4448,7 +4533,7 @@ export async function createServer(
 
                 const rawDataBlock = {
                     type: 'text' as const,
-                    text: intentNote + emptyNote + '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
+                    text: intentNote + emptyNote + withheldMarketDataNote + '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
                 };
                 const widgetBlock = {
                     type: 'text' as const,

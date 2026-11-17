@@ -79,10 +79,11 @@ async function runTests() {
         assert(meterCalls[0]?.body?.type === 'planning', `Expected type: planning, got ${meterCalls[0]?.body?.type}`);
     }
 
-    // Test 2: Brand Intelligence with API completed_calls: 5, Amazon OK, Census failing → 6 calls
-    console.log('\nTest 2: brand_tracker with API completed_calls: 5, Amazon OK, Census failing → billable_units: 6');
+    // Test 2: Brand Intelligence with full call count (API 5 + Amazon 1 + Trends 1 + Wiki 1 + Earnings 1 - Census error = 9 calls)
+    console.log('\nTest 2: brand_tracker with API completed_calls: 5, Amazon OK, Census failing, Trends OK, Wiki OK, Earnings OK → billable_units: 9');
     {
         const meterCalls: any[] = [];
+        const requestedSupplementalPaths: string[] = [];
         const mockFoddaRequest = async (method: string, path: string, apiKey: string, userId: string, body?: any) => {
             if (path === '/v1/graphs') return [];
             if (path.startsWith('/v1/brand-intelligence/')) {
@@ -90,17 +91,17 @@ async function runTests() {
                     ok: true,
                     trend_footprint: [
                         {
-                            trendName: 'Nike Sustainable Innovation',
-                            trendDescription: 'Nike is leading sustainable footwear',
-                            graphId: 'psfk-retail-trends',
+                            trendName: 'Synthetic Sustainable Innovation',
+                            trendDescription: 'Synthetic brand leading sustainable materials',
+                            graphId: 'synthetic-retail-trends',
                             signalScore: 85,
                             evidenceCount: 1,
                             evidence: [
                                 {
-                                    title: 'Nike Move to Zero',
-                                    summary: 'Nike moves toward zero carbon',
-                                    brandNames: 'Nike',
-                                    sourceUrl: 'https://nike.com'
+                                    title: 'Synthetic Move to Zero',
+                                    summary: 'Synthetic moves toward zero carbon',
+                                    brandNames: 'SyntheticBrand',
+                                    sourceUrl: 'https://synthetic.example.com'
                                 }
                             ]
                         }
@@ -112,23 +113,31 @@ async function runTests() {
                 };
             }
             if (path.startsWith('/v1/supplemental/amazon')) {
-                // Succeeded without error
+                requestedSupplementalPaths.push(path);
                 return {
                     product_count: 5,
-                    products: [{ title: 'Nike Air Max' }]
+                    products: [{ title: 'Synthetic Product' }]
                 };
             }
             if (path.startsWith('/v1/supplemental/census')) {
+                requestedSupplementalPaths.push(path);
                 // Failed with structured error
                 return {
                     error: true,
                     message: 'Census API upstream unavailable'
                 };
             }
-            if (path.startsWith('/v1/supplemental/google-trends') ||
-                path.startsWith('/v1/supplemental/wikipedia') ||
-                path.startsWith('/v1/supplemental/earnings')) {
-                return {};
+            if (path.startsWith('/v1/supplemental/google-trends')) {
+                requestedSupplementalPaths.push(path);
+                return { query: 'SyntheticBrand', peak_interest: 80, latest_value: 65 };
+            }
+            if (path.startsWith('/v1/supplemental/wikipedia')) {
+                requestedSupplementalPaths.push(path);
+                return { article: 'SyntheticBrand', avg_daily_pageviews: 1200 };
+            }
+            if (path.startsWith('/v1/supplemental/earnings')) {
+                requestedSupplementalPaths.push(path);
+                return { brand: 'SyntheticBrand', earnings: [] };
             }
             if (path === '/v1/research/meter') {
                 meterCalls.push({ method, path, body });
@@ -150,7 +159,7 @@ async function runTests() {
         assert(typeof handler === 'function', 'brand_tracker handler exists');
 
         const result = await handler({
-            brand_name: 'Nike',
+            brand_name: 'SyntheticBrand',
             format: 'data_only'
         });
 
@@ -158,8 +167,15 @@ async function runTests() {
         await new Promise(r => setTimeout(r, 50));
 
         assert(meterCalls.length === 1, `Expected 1 meter call, got ${meterCalls.length}`);
-        assert(meterCalls[0]?.body?.billable_units === 6, `Expected billable_units: 6 (5 API + 1 Amazon - 0 Census), got ${meterCalls[0]?.body?.billable_units}`);
+        // 5 API + 1 Amazon + 0 Census (error) + 1 Trends + 1 Wiki + 1 Earnings = 9
+        assert(meterCalls[0]?.body?.billable_units === 9, `Expected billable_units: 9 (5 API + Amazon 1 + Trends 1 + Wiki 1 + Earnings 1), got ${meterCalls[0]?.body?.billable_units}`);
         assert(meterCalls[0]?.body?.type === 'brand_intelligence', `Expected type: brand_intelligence, got ${meterCalls[0]?.body?.type}`);
+
+        // Verify headline calls were strictly brand-only (no co-occurring brands mixed in)
+        const trendsPath = requestedSupplementalPaths.find(p => p.includes('google-trends'));
+        const wikiPath = requestedSupplementalPaths.find(p => p.includes('wikipedia'));
+        assert(trendsPath?.includes('query=SyntheticBrand'), `Headline Trends query is strictly brand-only: ${trendsPath}`);
+        assert(wikiPath?.includes('articles=SyntheticBrand'), `Headline Wiki query is strictly brand-only: ${wikiPath}`);
     }
 
     // Test 3: completed_calls: 0 → no meter call (zero means free)
@@ -289,6 +305,168 @@ async function runTests() {
         assert(r2.charged === false, 'r2 charged is false for 0 units');
         assert(r2.apiCallsCharged === 0, 'r2 apiCallsCharged is 0');
         assert(directMeterCalls.length === 1, 'no second meter call fired for 0 units');
+    }
+
+    // Test 6: compare_to executes separate comparative calls and counts them
+    console.log('\nTest 6: brand_tracker with compare_to parameter fires separate comparative calls');
+    {
+        const requestedSupplementalPaths: string[] = [];
+        const meterCalls: any[] = [];
+        const mockFoddaRequest = async (method: string, path: string, apiKey: string, userId: string, body?: any) => {
+            if (path === '/v1/graphs') return [];
+            if (path.startsWith('/v1/brand-intelligence/')) {
+                return {
+                    ok: true,
+                    trend_footprint: [{ trendName: 'T1', graphId: 'g1', evidenceCount: 1, evidence: [{ title: 'E1', brandNames: 'BrandA' }] }],
+                    cross_graph_presence: [],
+                    usage: { completed_calls: 3 }
+                };
+            }
+            if (path.startsWith('/v1/supplemental/')) {
+                requestedSupplementalPaths.push(path);
+                return { ok: true };
+            }
+            if (path === '/v1/research/meter') {
+                meterCalls.push({ method, path, body });
+                return { ok: true };
+            }
+            return {};
+        };
+
+        const server = await createServer(
+            'sk_test_key',
+            'test_user',
+            mockFoddaRequest as any,
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai'
+        );
+
+        const handler = (server as any)._registeredTools['brand_tracker']?.handler;
+        const result = await handler({
+            brand_name: 'BrandA',
+            compare_to: 'BrandB',
+            format: 'data_only'
+        });
+
+        assert(!result.isError, 'brand_tracker with compare_to succeeded');
+        await new Promise(r => setTimeout(r, 50));
+
+        // Headline calls: BrandA alone
+        const headlineTrends = requestedSupplementalPaths.filter(p => p.includes('google-trends?query=BrandA&'));
+        const headlineWiki = requestedSupplementalPaths.filter(p => p.includes('wikipedia/pageviews?articles=BrandA&'));
+        assert(headlineTrends.length === 1, 'Headline Google Trends call queries BrandA alone');
+        assert(headlineWiki.length === 1, 'Headline Wikipedia call queries BrandA alone');
+
+        // Comparative calls: BrandA,BrandB
+        const compareTrends = requestedSupplementalPaths.filter(p => p.includes('google-trends?query=BrandA%2CBrandB&'));
+        const compareWiki = requestedSupplementalPaths.filter(p => p.includes('wikipedia/pageviews?articles=BrandA%2CBrandB&'));
+        assert(compareTrends.length === 1, 'Separate comparative Google Trends call made for BrandA,BrandB');
+        assert(compareWiki.length === 1, 'Separate comparative Wikipedia call made for BrandA,BrandB');
+
+        // Total calls = 3 (API) + 2 (Amazon, Census) + 3 (Headline Trends, Wiki, Earnings) + 2 (Compare Trends, Compare Wiki) = 10
+        assert(meterCalls[0]?.body?.billable_units === 10, `Expected billable_units: 10 with compare_to and retail supplementals, got ${meterCalls[0]?.body?.billable_units}`);
+    }
+
+    // Test 7: API market_data with status: 'withheld' is respected and surfaced
+    console.log('\nTest 7: market_data status: "withheld" surfaces explicit explanation in output');
+    {
+        const mockFoddaRequest = async (method: string, path: string, apiKey: string, userId: string, body?: any) => {
+            if (path === '/v1/graphs') return [];
+            if (path.startsWith('/v1/brand-intelligence/')) {
+                return {
+                    ok: true,
+                    trend_footprint: [{ trendName: 'T1', graphId: 'g1', evidenceCount: 1, evidence: [{ title: 'E1', brandNames: 'BrandWithheld' }] }],
+                    cross_graph_presence: [],
+                    market_data: {
+                        status: 'withheld',
+                        reason: 'company_mismatch',
+                        resolved_symbol: 'WRONG'
+                    },
+                    usage: { completed_calls: 4 }
+                };
+            }
+            if (path.startsWith('/v1/supplemental/')) return { ok: true };
+            if (path === '/v1/research/meter') return { ok: true };
+            return {};
+        };
+
+        const server = await createServer(
+            'sk_test_key',
+            'test_user',
+            mockFoddaRequest as any,
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai'
+        );
+
+        const handler = (server as any)._registeredTools['brand_tracker']?.handler;
+
+        // Data only mode
+        const resDataOnly = await handler({
+            brand_name: 'BrandWithheld',
+            format: 'data_only'
+        });
+        const textDataOnly = resDataOnly.content?.[0]?.text || '';
+        assert(textDataOnly.includes('market data withheld: could not verify the company'), 'Data-only mode mentions market data withheld');
+        assert(textDataOnly.includes('WRONG'), 'Data-only mode mentions resolved symbol WRONG');
+
+        // Compact mode
+        const resCompact = await handler({
+            brand_name: 'BrandWithheld',
+            format: 'compact'
+        });
+        const textCompact = resCompact.content?.[0]?.text || '';
+        assert(textCompact.includes('market data withheld: could not verify the company'), 'Compact mode mentions market data withheld');
+
+        // Full widget mode
+        const resFull = await handler({
+            brand_name: 'BrandWithheld',
+            format: 'full'
+        });
+        const widgetHtml = resFull.content?.find((c: any) => typeof c.text === 'string' && c.text.includes('market data withheld: could not verify the company'));
+        assert(!!widgetHtml, 'Rendered widget HTML includes market data withheld banner');
+    }
+
+    // Test 8: Wikipedia disambiguation includes Adidas
+    console.log('\nTest 8: Wikipedia disambiguation maps Adidas to canonical article');
+    {
+        const requestedSupplementalPaths: string[] = [];
+        const mockFoddaRequest = async (method: string, path: string, apiKey: string, userId: string, body?: any) => {
+            if (path === '/v1/graphs') return [];
+            if (path.startsWith('/v1/brand-intelligence/')) {
+                return {
+                    ok: true,
+                    trend_footprint: [{ trendName: 'T1', graphId: 'g1', evidenceCount: 1, evidence: [{ title: 'E1', brandNames: 'Adidas' }] }],
+                    cross_graph_presence: [],
+                    usage: { completed_calls: 7 }
+                };
+            }
+            if (path.startsWith('/v1/supplemental/')) {
+                requestedSupplementalPaths.push(path);
+                return { ok: true };
+            }
+            if (path === '/v1/research/meter') return { ok: true };
+            return {};
+        };
+
+        const server = await createServer(
+            'sk_test_key',
+            'test_user',
+            mockFoddaRequest as any,
+            async () => ({}),
+            () => '',
+            () => 'https://mcp.fodda.ai'
+        );
+
+        const handler = (server as any)._registeredTools['brand_tracker']?.handler;
+        await handler({
+            brand_name: 'Adidas',
+            format: 'data_only'
+        });
+
+        const wikiPath = requestedSupplementalPaths.find(p => p.includes('wikipedia'));
+        assert(wikiPath?.includes('articles=Adidas'), `Wikipedia query uses canonical Adidas: ${wikiPath}`);
     }
 
     console.log(`\nPer-Call Billing Tests: ${passed} passed, ${failed} failed.`);

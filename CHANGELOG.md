@@ -5,6 +5,38 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.157] - 2026-11-17
+
+### Changed (Brand Intelligence Quality Pass Part B: Brand-Only Headline Readings, Neutral Labeling, Full Call Count, Withheld Marker Support)
+- **Brand-Only Headline Readings (`src/toolHandlers.ts`)**:
+  - Configured Google Trends and Wikipedia headline calls in `brand_tracker` to query the brand name alone, without co-occurring brands.
+  - Added Wikipedia disambiguation support for Adidas (`Adidas -> Adidas`) alongside existing entities.
+  - Added optional `compare_to` parameter to `brand_tracker`: when provided, executes separate comparative Google Trends and Wikipedia calls clearly labeled in `comparative_signals` without altering or mixing into headline readings.
+- **Honest Neutral Relationship Labeling ("Appears Alongside") (`src/toolHandlers.ts`, `src/brandTemplate.ts`, `src/toolGuide.ts`)**:
+  - Replaced all customer-facing "competitor" copy in tool descriptions, guide definitions, and suggestions with neutral "appears alongside" phrasing, preventing retailers or co-occurring entities from being mislabeled as competitors unless verified as same-category.
+- **Full Call Count Metering (`src/toolHandlers.ts`)**:
+  - Expanded `brand_tracker` billable call counting to meter every completed supplemental request made by MCP (Amazon, Census, Google Trends, Wikipedia, and earnings snapshot, plus optional comparative calls) in addition to the API's `usage.completed_calls`.
+  - A completed call is defined strictly as one returning without an `error` field. Zero completed calls remains uncharged (zero means free).
+- **Respect Withheld Markers (`src/toolHandlers.ts`, `src/brandTemplate.ts`)**:
+  - When the API returns `market_data.status: "withheld"`, MCP explicitly surfaces `"market data withheld: could not verify the company"` across widget HTML, compact JSON, and raw data outputs instead of silently omitting it.
+- **Verification & Testing (`src/test_per_call_billing.ts`)**:
+  - Enhanced unit test suite with 100% synthetic mock fixtures:
+    - Test 2: Verified 9 billable units for 5 API calls + Amazon (1) + Trends (1) + Wiki (1) + Earnings (1) with Census error (0).
+    - Test 2: Verified headline Google Trends and Wikipedia queries are strictly brand-only.
+    - Test 6: Verified `compare_to` triggers separate comparative queries and bills them accurately (10 billable units).
+    - Test 7: Verified `market_data.status: "withheld"` surfaces explicit explanation in data-only, compact, and full widget HTML outputs.
+    - Test 8: Verified Wikipedia disambiguation maps Adidas to canonical article.
+  - All test suites passed: 33 passed, 0 failed. `npm run build` compiled with 0 errors.
+- **Deployment & Production Verification**:
+  - Deployed to Google Cloud Run (`fodda-mcp`, `us-east4`): revision `fodda-mcp-00729-vj8` serving 100% of traffic.
+  - Verified live endpoint: `curl -s https://mcp.fodda.ai/health` -> `{"status":"ok","version":"1.46.157"}`.
+  - Live production verification: executed `brand_tracker` for Adidas via live MCP server (`https://mcp.fodda.ai/mcp`).
+  - Cloud Logging confirmed:
+    - Google Trends query strictly brand-only: `[GoogleTrends] Fetching trends for "Adidas" (US, today 12-m)...`
+    - Wikipedia query strictly brand-only: `[Wikipedia] Fetching pageviews for resolved title "Adidas" (original: "Adidas", 30 days)`
+    - Meter charged full 12 units (7 API + 5 MCP completed supplemental calls): `[Research Meter] Variable billing for brand_intelligence: 12 billable unit(s) (baseline: 4)`
+    - Zero HMAC warnings and zero per-call double billing downgrades.
+
 ## [1.46.156] - 2026-11-16
 
 ### Changed (Per-Completed-Call Billing for Brand Intelligence & Connections Plan)

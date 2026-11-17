@@ -482,7 +482,13 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     // ── Institutional Financial Snapshot (Market Data) section ──
     const marketData = profile.market_data;
     let financialSnapshotHtml = '';
-    if (marketData && marketData.data_status !== 'no_signal') {
+    if (marketData && marketData.status === 'withheld') {
+        const symbolStr = marketData.resolved_symbol ? ` (${esc(marketData.resolved_symbol)})` : '';
+        financialSnapshotHtml = `<div class="ec" style="border-left:3px solid var(--color-border-warning, #f59e0b);padding:8px 12px;background:var(--color-background-secondary, #fafafa);border-radius:6px;margin-top:8px;">
+  <div class="et" style="font-size:12px;font-weight:600;color:var(--color-text-warning, #b45309);">Market Data Withheld</div>
+  <div style="font-size:11px;color:var(--color-text-secondary, #666);margin-top:2px;">market data withheld: could not verify the company${symbolStr}</div>
+</div>`;
+    } else if (marketData && marketData.data_status !== 'no_signal') {
         const symbol = marketData.primary_symbol || marketData.ticker || '';
         const profileInfo = marketData.company_profile;
         const companyName = profileInfo?.company_name || profile.brand || '';
@@ -961,7 +967,7 @@ ${marketDataItems.join('\n')}`
     fills['WIKI_NOTE'] = wikiData.length > 0 ? `Daily Wikipedia pageviews for ${brand}-related articles. Higher = more cultural attention.` : '';
     const safeBrandName = esc(brand).replace(/'/g, "\\'");
     const comp0 = competitors[0]?.brand || competitors[0]?.name;
-    const safeCompName = comp0 ? esc(comp0).replace(/'/g, "\\'") : 'top rival';
+    const safeCompName = comp0 ? esc(comp0).replace(/'/g, "\\'") : 'related brand';
     fills['SUGGESTED_NEXT_HTML'] = isEmptyCoverage
         ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">
         <button class="btn-out" onclick="sendPrompt('Explore broader trends in ${safeBrandName}\\'s category')">Category trends</button>
