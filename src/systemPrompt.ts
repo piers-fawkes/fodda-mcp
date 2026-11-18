@@ -655,7 +655,7 @@ version: 2.0.0
 - Expert quotes & qualitative frameworks: \`search_insights\`
 - Multi-graph deep research reports: \`deep_research_topic\` (poll with \`check_research_status\`)
 - Visual representations: \`generate_visual\`
-- Communications & media planning: \`generate_comms_plan\`
+- Brand Connections Planning, Connections Plans & media strategy: \`generate_comms_plan\` (Primary tool whenever a user asks to create, build, or generate a 'Connections Plan', 'Brand Connections Plan', 'comms plan', or strategic media activation plan)
 - Public company earnings & verbatim Q&A (517 companies): \`get_earnings_intelligence\`, \`get_company_earnings\`, \`get_earnings_divergence\`
 - Macroeconomic, demographic & public research indicators: \`get_supplemental_context\` (poll with \`check_supplemental_status\`)
 - Claim verification: \`verify_market_claim\` (multi-graph market/brand/macro claim check) and \`verify_claim\` (verifies a claim against a specific practitioner's curated knowledge graph via their AI-powered Human Agent model, returning a structured verdict: confirms, contradicts, partial, or no_coverage)
