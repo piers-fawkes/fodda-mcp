@@ -763,6 +763,39 @@ ${weakSignalsHtml}`
         ? `<div class="sec">Co-occurring brands</div>\n${competitorListHtml}`
         : '';
 
+    // ── Recent 90-Day Corporate Activity Card ──
+    const recentActivity = profile.recent_activity_90d;
+    let recentActivitySectionHtml = '';
+    if (!isEmptyCoverage && recentActivity && Array.isArray(recentActivity.events) && recentActivity.events.length > 0) {
+        const eventsHtml = recentActivity.events.map((ev: any) => {
+            const dateStr = ev.date || '';
+            const keyPointsHtml = Array.isArray(ev.key_datapoints) && ev.key_datapoints.length > 0
+                ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">${ev.key_datapoints.map((kp: string) => `<span class="bdp" style="font-size:11px;">${esc(kp)}</span>`).join('')}</div>`
+                : '';
+            const matchedTrendsHtml = Array.isArray(ev.matched_trends) && ev.matched_trends.length > 0
+                ? `<div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;">Grounds: ${ev.matched_trends.map((t: string) => `<span class="bd" style="font-size:10px;">${esc(t)}</span>`).join(' ')}</div>`
+                : '';
+            const sourceLink = ev.source_url
+                ? `<a href="${esc(ev.source_url)}" target="_blank" rel="noopener noreferrer">${esc(ev.headline)}</a>`
+                : esc(ev.headline);
+
+            return `<div class="card" style="margin-bottom:8px;">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;">
+    <span class="lb lb-mature bd" style="font-size:10px;text-transform:uppercase;">${esc(ev.category || 'corporate_event')}</span>
+    <span class="bd" style="font-size:11px;">${esc(dateStr)}</span>
+  </div>
+  <div style="font-weight:600;font-size:13px;margin-top:4px;">${sourceLink}</div>
+  <div style="font-size:11px;color:var(--color-text-secondary);margin-top:2px;">Source: ${esc(ev.source || 'Corporate Disclosure')}</div>
+  ${keyPointsHtml}
+  ${matchedTrendsHtml}
+</div>`;
+        }).join('\n');
+
+        recentActivitySectionHtml = `<div class="sec">Recent 90-Day Corporate Activity</div>
+<p style="font-size:12px;color:var(--color-text-secondary);margin-bottom:8px;">Fresh quarterly announcements, disclosures, and earnings releases mapped to macro knowledge-graph trends.</p>
+${eventsHtml}`;
+    }
+
     const earningsSectionHtml = (!isEmptyCoverage && earningsHtml)
         ? `<div class="sl2">Quarterly Earnings & Wall Street Intelligence</div>
 ${earningsHtml}
@@ -859,6 +892,7 @@ ${marketDataItems.join('\n')}`
     const graphNames = crossGraph.map((g: any) => g.graphName).filter(Boolean);
     const sourcePills = [
         ...graphNames.map((n: string) => `<span class="gp">${esc(n)}</span>`),
+        (!isEmptyCoverage && recentActivity?.events?.length > 0) ? '<span class="gp">90-Day Corporate Activity</span>' : '',
         (!isEmptyCoverage && (earningsSource === 'truth_layer' || earnings.length > 0)) ? '<span class="gp">Earnings Intelligence</span>' : '',
         (!isEmptyCoverage && marketData && marketData.data_status !== 'no_signal') ? '<span class="gp">Financial Snapshot</span>' : '',
         (!isEmptyCoverage && gtHasSignal) ? '<span class="gp">Google Trends</span>' : '',
@@ -897,6 +931,7 @@ ${marketDataItems.join('\n')}`
         'EVIDENCE_HTML': evidenceHtml,
         'EMPTY_STATE_CALLOUT_HTML': emptyStateCalloutHtml,
         'CASE_STUDIES_SECTION_HTML': caseStudiesSectionHtml,
+        'RECENT_ACTIVITY_SECTION_HTML': recentActivitySectionHtml,
         'TRENDS_SECTION_HTML': trendsSectionHtml,
         'COMPETITIVE_SECTION_HTML': competitiveSectionHtml,
         'MARKET_DATA_SECTION_HTML': marketDataSectionHtml,
@@ -1146,6 +1181,8 @@ export const TEMPLATE = `
   {{EMPTY_STATE_CALLOUT_HTML}}
 
   {{CASE_STUDIES_SECTION_HTML}}
+
+  {{RECENT_ACTIVITY_SECTION_HTML}}
 
   {{EARNINGS_SECTION_HTML}}
   {{FINANCIAL_SNAPSHOT_SECTION_HTML}}

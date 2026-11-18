@@ -3554,6 +3554,7 @@ export async function createServer(
         const competitorGraphs: Record<string, Set<string>> = {};  // track which graphs each competitor appears in
         let usedCypherEndpoint = false;
         let marketData: any = null;
+        let recentActivity90d: any = null;
         let apiCompletedCalls = 0;
 
         // ── Strategy 1: Single Cypher endpoint (fast path) ──
@@ -3575,6 +3576,9 @@ export async function createServer(
                 usedCypherEndpoint = true;
                 if (cypherData.market_data) {
                     marketData = cypherData.market_data;
+                }
+                if (cypherData.recent_activity_90d) {
+                    recentActivity90d = cypherData.recent_activity_90d;
                 }
 
                 // Map Cypher response → MCP profile shape
@@ -4102,6 +4106,7 @@ export async function createServer(
             },
             cross_graph_presence: crossGraphPresence,
             activity_timeline: activityTimeline,
+            recent_activity_90d: recentActivity90d || undefined,
             _attribution: `Brand Intelligence Profile for ${brandName} — aggregated from ${crossGraphPresence.length} knowledge graph${crossGraphPresence.length !== 1 ? 's' : ''} on Fodda`,
             supplemental_signals: null as any,
             suggested_next_prompts: [
@@ -4123,9 +4128,16 @@ export async function createServer(
             ].filter(p => uniqueTrends.length > 0),
         };
 
-        if (uniqueTrends.length === 0 || uniqueEvidence.length === 0) {
+        if (uniqueTrends.length === 0 && uniqueEvidence.length === 0) {
             (profile as any).empty_message = `Fodda has no curated trend evidence mentioning ${brandName} yet.`;
             (profile as any).coverage = { status: 'empty', note: `Fodda has no curated trend evidence mentioning ${brandName} yet.` };
+        } else if (uniqueTrends.length > 0) {
+            (profile as any).coverage = {
+                status: 'covered',
+                note: `Fodda actively tracks ${brandName} across ${uniqueTrends.length} trend${uniqueTrends.length === 1 ? '' : 's'} and ${Object.keys(graphPresence).length} knowledge graph${Object.keys(graphPresence).length === 1 ? '' : 's'}.`,
+                trend_count: uniqueTrends.length,
+                evidence_count: uniqueEvidence.length,
+            };
         }
 
         // Wikipedia disambiguation: map brand names to canonical article titles
@@ -4190,17 +4202,17 @@ export async function createServer(
 
         // Unwrap .snapshot nesting — supplemental API wraps actual data inside .snapshot alongside metadata
         const unwrapSnapshot = (raw: any) => raw?.snapshot || raw;
-        const isCoverageEmpty = uniqueTrends.length === 0 || uniqueEvidence.length === 0;
+        const isCoverageEmpty = uniqueTrends.length === 0 && uniqueEvidence.length === 0;
         const isEligibleForRetailSupplemental = !isCoverageEmpty && isRetailCPG && shouldQueryRetailProductSupplementals(brandName, marketData, Object.keys(graphPresence)[0]);
 
         const amzRaw = isEligibleForRetailSupplemental && amazonResult.status === 'fulfilled' ? unwrapSnapshot(amazonResult.value) : null;
         const amzSnapshot = amzRaw && amzRaw.data_status !== 'no_brand_match' && (amzRaw.product_count > 0 || amzRaw.products_analyzed > 0) ? amzRaw : null;
 
-        const wikiRaw = !isCoverageEmpty && wikipediaResult.status === 'fulfilled' ? unwrapSnapshot(wikipediaResult.value) : null;
+        const wikiRaw = wikipediaResult.status === 'fulfilled' ? unwrapSnapshot(wikipediaResult.value) : null;
         const wikiSnapshot = wikiRaw && wikiRaw.data_status !== 'no_signal' ? wikiRaw : null;
 
         profile.supplemental_signals = {
-            google_trends: !isCoverageEmpty && googleTrendsResult.status === 'fulfilled' ? unwrapSnapshot(googleTrendsResult.value) : null,
+            google_trends: googleTrendsResult.status === 'fulfilled' ? unwrapSnapshot(googleTrendsResult.value) : null,
             wikipedia: wikiSnapshot,
             amazon: amzSnapshot,
             census_retail: isEligibleForRetailSupplemental && beaResult.status === 'fulfilled' ? unwrapSnapshot(beaResult.value) : null,
@@ -4231,6 +4243,9 @@ export async function createServer(
                 marketData.note = marketData.note || 'market data withheld: could not verify the company';
             }
             (profile as any).market_data = marketData;
+        }
+        if (recentActivity90d) {
+            (profile as any).recent_activity_90d = recentActivity90d;
         }
 
         const isTrustOrSentiment = /\b(trust|trusted|reputation|safe|safety|consumer sentiment|poll|rating|scandal|boycott)\b/i.test(brandName);
@@ -4442,6 +4457,9 @@ export async function createServer(
                 const withheldMarketDataNote = (profile as any).market_data?.status === 'withheld'
                     ? `[MARKET DATA] market data withheld: could not verify the company${(profile as any).market_data.resolved_symbol ? ` (${(profile as any).market_data.resolved_symbol})` : ''}\n\n`
                     : '';
+                const recencyNote = (profile as any).recent_activity_90d?.total_events > 0
+                    ? `[RECENCY GUIDANCE] Synthesize the included 90-day corporate activity (${(profile as any).recent_activity_90d.total_events} events) alongside the macro knowledge-graph trend footprint to interpret current business execution without querying external web search engines.\n\n`
+                    : '';
 
                 if (isCompact) {
                     const compactPayload = {
@@ -4453,6 +4471,7 @@ export async function createServer(
                             graph_count: Object.keys(profile.cross_graph_presence || {}).length,
                         },
                         velocity: profile.summary?.evidence_velocity,
+                        recent_activity_90d: (profile as any).recent_activity_90d,
                         summary: {
                             one_liner: (profile as any).one_liner || (trendCount === 0 ? `Fodda has no curated trend evidence mentioning ${brand_name} yet.` : undefined),
                             lifecycle_distribution: profile.summary?.lifecycle_distribution,
@@ -4503,7 +4522,7 @@ export async function createServer(
                     const content: Array<{ type: 'text'; text: string }> = [
                         {
                             type: 'text' as const,
-                            text: intentNote + emptyNote + withheldMarketDataNote + '── COMPACT BRAND INTELLIGENCE ──\n' + JSON.stringify(compactPayload, null, 2),
+                            text: recencyNote + intentNote + emptyNote + withheldMarketDataNote + '── COMPACT BRAND INTELLIGENCE ──\n' + JSON.stringify(compactPayload, null, 2),
                         }
                     ];
                     if (shouldRenderWidget && widget.widget_html) {
@@ -4519,7 +4538,7 @@ export async function createServer(
                     const content: Array<{ type: 'text'; text: string }> = [
                         {
                             type: 'text' as const,
-                            text: intentNote + emptyNote + withheldMarketDataNote + '── STRUCTURED BRAND INTELLIGENCE (DATA ONLY) ──\n' + JSON.stringify(profile, null, 2),
+                            text: recencyNote + intentNote + emptyNote + withheldMarketDataNote + '── STRUCTURED BRAND INTELLIGENCE (DATA ONLY) ──\n' + JSON.stringify(profile, null, 2),
                         }
                     ];
                     if (shouldRenderWidget && widget.widget_html) {
@@ -4533,7 +4552,7 @@ export async function createServer(
 
                 const rawDataBlock = {
                     type: 'text' as const,
-                    text: intentNote + emptyNote + withheldMarketDataNote + '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
+                    text: recencyNote + intentNote + emptyNote + withheldMarketDataNote + '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(profile, null, 2),
                 };
                 const widgetBlock = {
                     type: 'text' as const,

@@ -5,6 +5,24 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.158] - 2026-11-17
+
+### Added
+- **90-Day Recency Bridge in `brand_tracker` (`src/toolHandlers.ts`, `src/brandTemplate.ts`)**:
+  - Exposed `recent_activity_90d` from API into the structured profile and compact JSON (`format: 'compact'`).
+  - Added dedicated **"Recent 90-Day Corporate Activity"** card in `widget_html` displaying dated events (Q3 earnings releases, strategic announcements), key numeric datapoints, source citations, and grounded knowledge-graph trends (`matched_trends`).
+  - Added `[RECENCY GUIDANCE]` prompt instruction prepended to output payloads guiding client LLMs to synthesize the 90-day corporate activity alongside the graph trend footprint rather than querying external web search engines for recent events.
+  - Updated `brand_tracker` tool description to declare recent 90-day corporate events, earnings releases, and strategic announcements mapped directly to macro trend themes.
+
+### Fixed
+- **Brand Intelligence Empty-State Guard & Market Signal Decoupling (`src/toolHandlers.ts`)**:
+  - Fixed false-positive empty coverage bug: changed `uniqueTrends.length === 0 || uniqueEvidence.length === 0` to `&&`. Brands with active trends but thin standalone case-study evidence (such as Adidas with 10 trends) are now accurately reported as `status: 'covered'` with full trend footprints.
+  - Decoupled Google Trends and Wikipedia pageview supplemental signals from internal case-study evidence counts, ensuring external market interest signals are never suppressed when upstream data is available.
+- **Verification**:
+  - Added and executed `src/test_adidas_brand_intelligence_verification.ts`: verified full mode and compact mode on Adidas fixture, confirming `covered` status, 10 trends, market signals preserved, and widget HTML rendering the 90-day recency card.
+  - Executed `src/test_per_call_billing.ts` (33/33 tests passed).
+  - `npm run build` completed with zero TypeScript errors. Local deployment held pending final review.
+
 ## [1.46.157] - 2026-11-17
 
 ### Changed (Brand Intelligence Quality Pass Part B: Brand-Only Headline Readings, Neutral Labeling, Full Call Count, Withheld Marker Support)
