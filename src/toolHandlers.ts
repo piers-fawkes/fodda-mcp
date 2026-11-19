@@ -10896,6 +10896,42 @@ export async function createServer(
         }
     );
 
+    server.tool(
+        'get_event_types',
+        'Fetch active meeting types.',
+        {},
+        async () => {
+            return { content: [{ type: 'text' as const, text: JSON.stringify(await foddaRequest('GET', '/v1/cal/events', apiKey, userId), null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'get_availability',
+        'Query available slots.',
+        { eventTypeId: z.string() },
+        async ({ eventTypeId }) => {
+            return { content: [{ type: 'text' as const, text: JSON.stringify(await foddaRequest('GET', `/v1/cal/availability?eventTypeId=${eventTypeId}`, apiKey, userId), null, 2) }] };
+        }
+    );
+
+    server.tool(
+        'create_booking',
+        'Finalize a booking.',
+        { 
+            eventTypeId: z.string(), 
+            name: z.string(), 
+            email: z.string(), 
+            time: z.string(), 
+            note: z.string().optional() 
+        },
+        async ({ eventTypeId, name, email, time, note }) => {
+            return { content: [{ type: 'text' as const, text: JSON.stringify(await foddaRequest('POST', '/v1/cal/booking', apiKey, userId, {
+                eventTypeId, name, email, time, note
+            }), null, 2) }] };
+        }
+    );
+
+
     if (allowedTools && (Array.isArray(allowedTools) ? allowedTools.length > 0 : allowedTools.size > 0)) {
         const allowedSet = allowedTools instanceof Set ? allowedTools : new Set(allowedTools);
         const registered = (server as any)._registeredTools || {};

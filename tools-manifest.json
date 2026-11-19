@@ -589,6 +589,30 @@
       "description": "Step 5 (final stage) in standard Human Agent onboarding: schedules or immediately dispatches a 5–10 minute voice interview with the Fodda AI interviewer on Google Meet to capture conversational tone, voice cadence, and contrarian perspectives. Prerequisite: confirm_themes must be completed first to generate the interview questionnaire. Sibling routing: This tool finalizes standard graph-backed expert onboarding; for Bring-Your-Own-MCP onboarding, use finalize_byo_mcp_onboarding instead (which does not require a voice interview). Returns meeting link, calendar confirmation, and next steps for going live."
     },
     {
+      "name": "get_event_types",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Booking",
+      "profiles": ["mcp"],
+      "description": "Fetch the list of active Cal.com meeting types. Use to understand which booking flow to offer to the user based on their request (e.g., speaking inquiry, product demo, or advisory meeting)."
+    },
+    {
+      "name": "get_availability",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Booking",
+      "profiles": ["mcp"],
+      "description": "Query available slots for a specific Cal.com event type. Call get_event_types first to select the correct ID. Returns a list of available times for booking."
+    },
+    {
+      "name": "create_booking",
+      "kind": "tool",
+      "bills_as": "booking",
+      "category": "Booking",
+      "profiles": ["mcp"],
+      "description": "Finalize a Cal.com booking. Requires eventTypeId, name, email, and time. Use the note field to inject relevant conversation context (e.g., interest in Fodda for agency strategy) to ensure proper CRM mapping."
+    },
+    {
       "name": "search_graph",
       "kind": "tool",
       "bills_as": "topic_research",
