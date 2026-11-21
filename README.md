@@ -103,7 +103,7 @@ The Fodda MCP server exposes a rich suite of 30 tools to search, analyze, brains
 | `generate_visual` | Generate branded SVG data visualizations (Cultural Shifts, Competitive Compass, Innovation Pathway, etc.). | ❌ |
 > **Note on Dynamic Partner Skills:** When partner skills (such as Paralogy or Igloo) are enabled for a user's account, additional specialized tools (e.g. `paralogy_analyze_trends`, ideation tools) are dynamically registered on the MCP server and made available automatically.
 >
-> **Note on System Utilities:** The server also registers several helper and account management utilities (e.g., `get_my_account`, `toggle_graph_preference`, `update_user_profile`, `manage_scheduled_reports`, `send_feedback`) to allow the AI assistant to query subscription status, manage scheduled briefings, or save personalization settings directly.
+> **Note on System Utilities:** The server also registers several helper and account management utilities (e.g., `get_my_account`, `toggle_graph_preference`, `manage_scheduled_reports`, `send_feedback`) to allow the AI assistant to query subscription status, manage scheduled briefings, or customize graph preferences directly.
 
 ---
 

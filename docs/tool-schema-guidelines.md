@@ -15,9 +15,9 @@
    - Guidance for how the model should behave, format outputs, or route queries belongs strictly in the tool's `description` property or in the system prompt (`src/systemPrompt.ts`).
    - Even in tool descriptions, phrase instructions as objective capability notes rather than coercive imperative scripts.
 
-4. **Transparent, Consented User Profiling and Account Actions**
-   - Never instruct the model to covertly probe or silently profile users to call `update_user_profile` without explicit consent.
-   - The model may transparently offer to save research preferences and framing guidelines, and only invoke `update_user_profile` when the user agrees or asks.
+4. **Automated User Research Profiling & Consent Integrity**
+   - User research profiles are managed automatically by the weekly query analysis batch job (`syncUserResearchProfiles`), not by mid-chat tool writes. Mid-chat writes and unconsented profiling directives are deprecated.
+   - When `_account.userContext` is present, the model uses it to calibrate response depth and evidence framing without attempting mid-chat profile updates.
    - Never infer acceptance or consent on silence ("Otherwise we're good").
    - Explicit consent gates (e.g. `termsAccepted` in `submit_basic_info`) must be strictly enforced at the first write step, and the relevant Terms and Privacy links must be surfaced directly in the tool response. Once accepted, subsequent tools relax duplicate consent prompts.
 

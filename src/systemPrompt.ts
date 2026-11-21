@@ -726,12 +726,7 @@ export function buildSystemPrompt(
         if (accountProfile.accountContext) {
             contextParts.push(`Company Context: ${accountProfile.accountContext}`);
         }
-        userContextBlock = isScopedConnector
-            ? `\n\nUSER RESEARCH PROFILE:\n${contextParts.join('\n')}`
-            : `\n\nUSER RESEARCH PROFILE (persisted across sessions — use this to frame all responses):\n${contextParts.join('\n')}\nIf the user asks to update their focus or preferences, call update_user_profile to update their stored profile. The profile is a living document that sharpens as the user clarifies what they value.`;
-    } else if (accountProfile && !isScopedConnector) {
-        // Non-trial user with no stored context — guide Claude to offer saving preferences
-        userContextBlock = `\n\nRESEARCH PROFILE PREFERENCES: This user has no stored research profile. If helpful during research, you may offer to save their research preferences and framing guidelines using update_user_profile, or update them whenever the user requests. Only call update_user_profile after the user agrees or asks to save preferences — never save silently.\nWhen saving a profile, write BEHAVIORAL INSTRUCTIONS that tailor how you respond:\n- Role and use case (pitches, ongoing research, client advisory)\n- Preferred evidence types (commercial data vs. design inspiration)\n- Geographic focus (global vs. specific markets)\n- How results should be framed (executive brief vs. deep analysis)\nFormat: one sentence of identity, then numbered directives that guide response framing.\nGood: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces before specifics. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists."\nBad: "CEO of a data company" or "Business professional interested in trends"`;
+        userContextBlock = `\n\nUSER RESEARCH PROFILE (persisted across sessions — use this to frame all responses):\n${contextParts.join('\n')}\nWhen \`_account.userContext\` is present in graph discovery, use it to calibrate response depth, prioritize relevant commercial evidence, and align with the user's recent strategic focus.`;
     }
 
     // Build analyst entry routing — when entryId matches a known analyst,
@@ -862,7 +857,6 @@ ${behavioralRules}${personaBlock}${userContextBlock}${analystEntryBlock}${skills
             'submit_mcp_source',
             'finalize_byo_mcp_onboarding',
             'get_onboarding_status',
-            'update_user_profile',
             'toggle_graph_preference',
             'send_feedback',
             'sign_up_free_account',

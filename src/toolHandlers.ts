@@ -7058,52 +7058,6 @@ export async function createServer(
         }
     );
 
-    // --- update_user_profile ---
-    server.tool(
-        'update_user_profile',
-        'Save the user\'s research profile to improve the relevance of future responses. Call this after you understand the user\'s role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field. (User persona context update.)',
-        {
-            userContext: z.string().describe('Behavioral framing instructions for this person. Format: one sentence of identity, then numbered FRAMING INSTRUCTIONS. Example: "Agency strategist doing time-pressured pitches. (1) Lead with landscape orientation — top 3-5 macro forces. (2) Prioritize commercially validated signals over design concepts. (3) ALWAYS differentiate by geography. (4) Executive-ready framing — concise, pitch-deck-ready. (5) Strongest findings first, not exhaustive lists." Max 2000 chars.'),
-            accountContext: z.string().optional().describe('Description of their company: industry, size, key markets, competitive position, mission. Shared across all users on this account. Max 2000 chars.'),
-        },
-        { title: 'Update Research Profile', readOnlyHint: false, consequentialHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as any,
-        async ({ userContext, accountContext }) => {
-            try {
-                const body: Record<string, string> = {};
-                if (userContext) body.userContext = String(userContext).slice(0, 2000);
-                if (accountContext) body.accountContext = String(accountContext).slice(0, 2000);
-
-                await foddaRequest('POST', '/v1/user/context', apiKey, userId, body);
-
-                console.error(`[update_user_profile] Profile saved for ${userId}: userContext=${(userContext || '').length} chars, accountContext=${(accountContext || '').length} chars`);
-
-                return {
-                    content: [{
-                        type: 'text' as const,
-                        text: JSON.stringify({
-                            status: 'SAVED',
-                            message: 'Research profile updated. Future sessions will use this context to personalize responses.',
-                        }, null, 2)
-                    }]
-                };
-            } catch (err: any) {
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                console.error(`[update_user_profile] Error: ${msg}`);
-                // Fail gracefully — don't break the conversation
-                return {
-                    content: [{
-                        type: 'text' as const,
-                        text: JSON.stringify({
-                            status: 'ERROR',
-                            message: 'Could not save profile right now. I\'ll use this context for the current session.',
-                            error: msg,
-                        }, null, 2)
-                    }]
-                };
-            }
-        }
-    );
-
     // --- toggle_graph_preference ---
     server.tool(
         'toggle_graph_preference',

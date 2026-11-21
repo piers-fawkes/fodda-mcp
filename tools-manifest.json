@@ -1,7 +1,7 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 59,
+  "count": 58,
   "billable": 27,
   "tools": [
     {
@@ -723,16 +723,6 @@
         "mcp"
       ],
       "description": "User search scope preference manager: toggles inclusion or exclusion preferences for specific knowledge graphs (e.g., 'Don't include the sports graph in my searches', 'Re-enable the beauty graph'). Preferences persist across sessions in the user profile. Sibling routing: Use toggle_graph_preference to set permanent search filtering; use update_user_profile for general account context; pass explicit graphs or graphId directly on search_graph for one-off query overrides. Returns updated user graph preference state and confirmation status."
-    },
-    {
-      "name": "update_user_profile",
-      "kind": "tool",
-      "bills_as": "free",
-      "category": "Account",
-      "profiles": [
-        "mcp"
-      ],
-      "description": "Save the user's research profile to improve the relevance of future responses. Call this after you understand the user's role, industry, and research needs. The profile persists across sessions — you only need to set it once, then update if their focus changes. Write BEHAVIORAL INSTRUCTIONS, not a bio. Format: one sentence of identity (who they are and how they use Fodda), then numbered directives that change how you synthesize and frame responses. Include: what evidence to prioritize, how to frame conclusions, geographic needs, and output structure preferences. Max 2000 chars per field. (User persona context update.)"
     },
     {
       "name": "verify_claim",

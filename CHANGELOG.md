@@ -5,6 +5,31 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.160] - 2026-11-21
+
+### Changed
+- **User Research Profile Alignment (`src/systemPrompt.ts`)**:
+  - Aligned MCP prompt instructions with Fodda API's weekly User Research Profile batch job (`syncUserResearchProfiles`).
+  - Removed all directives instructing the host model to quiz users, covertly profile their role, or call `update_user_profile`.
+  - Retained clean synthesis directive when `_account.userContext` is present: *"When `_account.userContext` is present in graph discovery, use it to calibrate response depth, prioritize relevant commercial evidence, and align with the user's recent strategic focus."*
+  - Eliminated empty-profile nagging: when `_account.userContext` is empty or null, knowledge graph discovery returns cleanly without injecting `RESEARCH PROFILE PREFERENCES` or warning nudges.
+
+### Removed
+- **`update_user_profile` Tool Deprecation (`src/toolHandlers.ts`, `src/tools.ts`, `tools-manifest.json`, `scripts/generate-tools-manifest.mjs`)**:
+  - Deprecated and removed the `update_user_profile` tool definition from the MCP server to stop mid-chat profile overwrites and save session tool context tokens.
+  - Removed sibling reference to `update_user_profile` in `toggle_graph_preference` description.
+  - Regenerated `tools-manifest.json` from 59 to 58 tools (27 billable, 31 free).
+  - Updated documentation (`README.md`, `CLAUDE_CONNECTORS_README.md`, `docs/tool-schema-guidelines.md`).
+
+### Verification
+- `npm run build`: built cleanly with zero TypeScript errors; tools-manifest cost silence guard passed.
+- `scratch/verify_profile_alignment.ts`:
+  - Verified populated `_account.userContext` injects framing directive and zero `update_user_profile` directives across standard and scoped (`claude`, `chatgpt`) connector prompts.
+  - Verified empty `_account.userContext` omits all profiling nagging and tool call instructions.
+  - Verified `update_user_profile` is absent from `TOOL_VERSIONS` and `tools-manifest.json`.
+- `scratch/verify_server_tools.ts`: verified `createServer` instantiates exactly 58 tools with `update_user_profile` removed and core discovery tools (`list_graphs`, `get_my_account`) intact.
+- `npm test`: health endpoint 200 OK on v1.46.160.
+
 ## [1.46.159] - 2026-11-21
 
 ### Added

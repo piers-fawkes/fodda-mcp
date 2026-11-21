@@ -82,7 +82,6 @@ Fodda connects Claude to **expert-curated knowledge graphs** built by PSFK cover
 | Tool | What it does |
 |---|---|
 | `get_my_account` | Check API call balance and plan status |
-| `update_user_profile` | Save research preferences for personalized results |
 | `toggle_graph_preference` | Enable/disable specific graphs or data sources |
 | `manage_scheduled_reports` | Create/manage recurring intelligence briefings |
 | `send_feedback` | Forward feedback to the Fodda team |

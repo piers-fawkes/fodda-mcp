@@ -60,7 +60,7 @@ const CATEGORY = {
   generate_visual: 'Visual',
   draft_linkedin_post: 'Content', draft_linkedin_article: 'Content',
   list_graphs: 'Account', get_my_account: 'Account', sign_up_free_account: 'Account',
-  update_user_profile: 'Account', toggle_graph_preference: 'Account', send_feedback: 'Account',
+  toggle_graph_preference: 'Account', send_feedback: 'Account',
   manage_scheduled_reports: 'Account', check_research_status: 'Status', check_supplemental_status: 'Status',
   begin_expert_onboarding: 'Onboarding', submit_basic_info: 'Onboarding', submit_mcp_source: 'Onboarding',
   finalize_byo_mcp_onboarding: 'Onboarding', expert_onboarding_research: 'Onboarding',

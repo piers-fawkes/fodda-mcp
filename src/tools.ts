@@ -92,7 +92,6 @@ export const TOOL_VERSIONS = {
     sign_up_free_account: "1.0.0",
     send_feedback: "1.0.0",
     get_my_account: "1.0.0",
-    update_user_profile: "1.0.0",
     deep_research_topic: "1.0.0",
     read_url: "1.0.0",
     list_analysts: "1.2.0",
