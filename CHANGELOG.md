@@ -5,6 +5,43 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.159] - 2026-11-21
+
+### Added
+- **Intellectual Stance Discovery (`find_expert`, `list_analysts`, `src/toolHandlers.ts`, `src/coverageRelevance.ts`, `src/catalogCache.ts`)**:
+  - Added optional `stance` filter parameter to `find_expert` and `list_analysts` accepting canonical stances: `Classical Theorist`, `Cultural Critic`, `Revolutionary`, `Contrarian Provocateur`, `Showman & Storyteller`, `Brand & Growth Operator`, `Systems & Craft Architect`, `Strategic Realist`.
+  - Forwarded `&stance=...` to `GET /v1/experts/search` and wired local fallback scoring boost in `findCandidateExperts`.
+  - Added `stances: string[]` to candidate objects and `outputSchema` on `find_expert`.
+  - Emitted `stances: string[]` on all returned analyst profiles in `list_analysts`.
+- **Diagnostic Lens Review Mode (`consult_analyst`, `consult_human_agent`, `src/toolHandlers.ts`)**:
+  - Added optional `review_mode: "architecture" | "product_spec" | "ux_copy"` and `attachment_text: string` (up to 100KB) to `consult_analyst` and `consult_human_agent` input schemas.
+  - Passed `review_mode` and `attachment_text` through `ConsultCoreParams`, `executeConsultAnalystCore`, and `executeConsultHumanAgentCore` into upstream `POST /v1/analysts/consult` and `POST /v1/human-agents/consult` request payloads to bypass commercial out-of-lane refusals when pressure-testing system architecture, specs, or UX copy.
+
+### Fixed
+- **Candidate `consult_tool` Routing (`src/toolHandlers.ts`)**:
+  - Fixed candidate `consult_tool` routing in `find_expert`: mapped `classic_agent`, `synthetic_agent`, and `c_suite_agent` explicitly to `consult_analyst`, and `human_agent` / on-request experts to `consult_human_agent`.
+
+### Verification
+- `npm run build`: succeeded with zero TypeScript errors and tools manifest cost silence guard passed.
+- `scratch/verify_stance_and_review_mode.ts`:
+  - Verified mock and local schema contracts for `find_expert`, `list_analysts`, `consult_analyst`, and `consult_human_agent`.
+  - Live API verified: `find_expert` query with `classical theorist luxury pricing` and `revolutionary` returned active Classic Agents with populated `stances[]` and updated CMO-friendly `search_ask_line`s.
+  - Live API verified: `consult_analyst` for `charles-babbage` with `review_mode: "architecture"` and inline state machine attachment returned `coverage: "FULL"` with in-character architectural critique and zero out-of-lane refusal.
+
+## [Unreleased] - 2026-11-20
+
+### Changed
+- **Deploy Bloat Cleanup (`.gcloudignore`, `.dockerignore`, `Dockerfile`, `package.json`, GCP `fodda-mcp`)**:
+  - Added Artifact Registry cleanup policy on `cloud-run-source-deploy` (`us-east4`, project `fodda-mcp`): keeps the 15 most recent image versions and deletes older versions (>7 days) to reclaim ~18.4 GB of accumulated digests.
+  - Added 14-day GCS lifecycle deletion rules on `gs://fodda-mcp_cloudbuild` (1.35 GB) and `gs://run-sources-fodda-mcp-us-east4` (0.22 GB).
+  - Tightened `.gcloudignore` and `.dockerignore` to exclude `src/test_*.ts`, `packages/`, `*.zip`, `briefs/`, `docs/`, `rules/`, `deployment/`, `deploy_cloud_run.sh`, and root scratch/test scripts — reducing `gcloud run deploy --source .` upload context from 188 files / 3.50 MB to 63 files / 1.86 MB (-66% files, -47% size).
+  - Removed unused production dependency `neo4j-driver` from `package.json` / `package-lock.json` (4.7 MB in `node_modules`, 0 runtime references).
+  - Switched `Dockerfile` to `npm ci --no-audit --no-fund` (builder) and `npm ci --omit=dev --no-audit --no-fund && npm cache clean --force` (runtime).
+- **Verification**:
+  - `gcloud meta list-files-for-upload`: confirmed 63 files / 1.86 MB upload footprint.
+  - Tested `npm ci --omit=dev --no-audit --no-fund` in an isolated temp directory with only `package.json` + `package-lock.json` (no `packages/`): succeeded in 997ms.
+  - `npm run build`: completed with zero TypeScript errors.
+
 ## [1.46.158] - 2026-11-17
 
 ### Added

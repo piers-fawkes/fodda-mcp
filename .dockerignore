@@ -21,6 +21,27 @@ fodda_mcp_registry_key.pem
 # Subprojects & Extension binaries
 fodda-vscode/
 test-mcp-server/
+packages/
+*.zip
+
+# Docs, briefs, rules, and deployment helpers not needed in container build
+briefs/
+docs/
+rules/
+deployment/
+deploy_cloud_run.sh
+
+# Test files & local scratch scripts (already excluded from tsc)
+src/test_*.ts
+src/**/test_*.ts
+test_*.ts
+test_*.sh
+test_*.js
+check_signals.ts
+fix_*.py
+models.json
+agents.yaml
+fodda_mcp_*_server.json
 
 # Stale scrape fixtures & CSV dumps
 graph_profiles*

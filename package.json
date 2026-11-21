@@ -1,6 +1,6 @@
 {
   "name": "fodda-mcp",
-  "version": "1.46.157",
+  "version": "1.46.159",
   "mcpName": "ai.fodda/mcp-server",
   "description": "Fodda MCP Server for accessing knowledge graph insights.",
   "keywords": [
@@ -43,7 +43,6 @@
     "axios": "^1.13.5",
     "dotenv": "^17.2.4",
     "express": "^5.2.1",
-    "neo4j-driver": "^6.0.1",
     "resend": "^6.11.0",
     "zod": "^3.24.2 || ^4.0.0"
   },

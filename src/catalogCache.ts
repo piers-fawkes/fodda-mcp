@@ -101,6 +101,7 @@ export interface CatalogAnalyst {
     topics?: string[];
     what_they_offer?: string;
     example_questions?: string[];
+    stances?: string[];
     [key: string]: any;
 }
 
@@ -227,6 +228,7 @@ export function normalizeAnalyst(a: any): CatalogAnalyst {
         ...(expert_in ? { expert_in } : {}),
         ...(outside_their_lane ? { outside_their_lane } : {}),
         ...(topics ? { topics } : {}),
+        ...(Array.isArray(a.stances) ? { stances: a.stances } : (Array.isArray(a.Stances) ? { stances: a.Stances } : {})),
         ...(a.what_they_offer || a.whatTheyOffer || a.askLine ? { what_they_offer: stringifyField(a.what_they_offer || a.whatTheyOffer || a.askLine) } : {}),
         ...(a.example_questions || a.exampleQuestions || a.exampleQueries ? { example_questions: a.example_questions || a.exampleQuestions || a.exampleQueries } : {})
     };

@@ -1326,6 +1326,7 @@ export interface CandidateExpert {
     credibility_anchor?: string | null;
     reason: string;
     out_of_lane?: boolean;
+    stances?: string[];
 }
 
 export interface CandidateExpertOptions {
@@ -1338,6 +1339,7 @@ export interface CandidateExpertOptions {
     rowsByGraph?: Map<string, any[]> | undefined;
     status?: string | undefined;
     isBrandTracker?: boolean | undefined;
+    stance?: string | undefined;
 }
 
 /**
@@ -1724,6 +1726,15 @@ export function findCandidateExperts(
             } else if (category === 'human_agent' || a.is_verified_real_person) {
                 score += 3.0; // Prioritize living human practitioners over synthetic agents
             }
+
+            if (options?.stance) {
+                const sLower = options.stance.toLowerCase().trim();
+                const analystStances: string[] = Array.isArray(a.stances) ? a.stances : (Array.isArray((a as any).Stances) ? (a as any).Stances : []);
+                if (analystStances.some(st => st.toLowerCase().includes(sLower) || sLower.includes(st.toLowerCase()))) {
+                    score += 8.0;
+                    hasExplicitMatch = true;
+                }
+            }
         }
 
         scoredAnalysts.push({ analyst: a, score, hasBlindSpot, hasExplicitMatch, hasHeadOrDomainMatch, directMatch, matchesPrimaryCategory });
@@ -1775,6 +1786,7 @@ export function findCandidateExperts(
             status: expertStatus,
             consult_tool,
             credibility_anchor: matchedAnalyst.credibility_anchor || (matchedAnalyst as any).credibilityAnchor || null,
+            stances: Array.isArray(matchedAnalyst.stances) ? matchedAnalyst.stances : (Array.isArray((matchedAnalyst as any).Stances) ? (matchedAnalyst as any).Stances : []),
             reason,
             out_of_lane: false
         };

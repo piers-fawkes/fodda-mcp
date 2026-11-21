@@ -1749,10 +1749,20 @@ export async function createServer(
         {
             category: z.enum(['all', 'human_agent', 'classic_agent', 'c_suite_agent', 'synthetic_agent']).optional().describe("Filter by agent category: 'human_agent' (Human Agent), 'classic_agent' (Classic Agent), 'c_suite_agent' (C-Suite Agent), 'synthetic_agent' (Synthetic Agent), or 'all' (default)."),
             query: z.string().optional().describe("Optional natural language search query to filter analysts by lane, domain, expertise, or topics (e.g. 'streetwear', 'earnings', 'marketing')."),
+            stance: z.enum([
+                'Classical Theorist',
+                'Cultural Critic',
+                'Revolutionary',
+                'Contrarian Provocateur',
+                'Showman & Storyteller',
+                'Brand & Growth Operator',
+                'Systems & Craft Architect',
+                'Strategic Realist',
+            ]).optional().describe("Optional intellectual stance / archetype filter (e.g. 'Classical Theorist', 'Revolutionary', 'Contrarian Provocateur', 'Showman & Storyteller', 'Systems & Craft Architect')."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         { title: 'List Human Agents, C-Suite & Analysts', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-        async ({ category, query, userId: uid }) => {
+        async ({ category, query, stance, userId: uid }) => {
             try {
                 const targetUserId = resolveUserId(userId, uid);
                 const [data, bookACallMap] = await Promise.all([
@@ -1877,6 +1887,7 @@ export async function createServer(
                             is_human_agent: is_human,
                             is_classic_agent: is_classic,
                             is_c_suite_agent: is_c_suite,
+                            stances: Array.isArray(a.stances) ? a.stances : (Array.isArray(a.Stances) ? a.Stances : []),
                             ...(a.expertIn || a.expert_in || a.topic ? { expert_in: a.expertIn || a.expert_in || a.topic } : {}),
                             ...(a.description ? { description: a.description } : {}),
                             ...(a.askLine || a.what_they_offer || a.whatTheyOffer ? { what_they_offer: a.askLine || a.what_they_offer || a.whatTheyOffer } : {}),
@@ -1902,6 +1913,15 @@ export async function createServer(
                     // Filter by category if requested
                     if (category && category !== 'all') {
                         deduplicated = deduplicated.filter(a => a.category === category);
+                    }
+
+                    // Filter by stance if requested
+                    if (stance) {
+                        const sLower = stance.toLowerCase().trim();
+                        deduplicated = deduplicated.filter(a => {
+                            const stances: string[] = Array.isArray(a.stances) ? a.stances : [];
+                            return stances.some((st: string) => st.toLowerCase().includes(sLower) || sLower.includes(st.toLowerCase()));
+                        });
                     }
 
                     // Filter / rank by natural query if supplied
@@ -1950,6 +1970,16 @@ export async function createServer(
         {
             query: z.string().describe('The question, brief, topic, or situation to find candidate expert models for.'),
             limit: z.number().optional().default(3).describe('Maximum candidate expert models to return (default: 3, max: 3).'),
+            stance: z.enum([
+                'Classical Theorist',
+                'Cultural Critic',
+                'Revolutionary',
+                'Contrarian Provocateur',
+                'Showman & Storyteller',
+                'Brand & Growth Operator',
+                'Systems & Craft Architect',
+                'Strategic Realist',
+            ]).optional().describe("Optional intellectual stance / archetype filter (e.g. 'Classical Theorist', 'Revolutionary', 'Contrarian Provocateur', 'Showman & Storyteller', 'Systems & Craft Architect'). Natural-language stance words inside `query` also match automatically."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         {
@@ -1966,6 +1996,7 @@ export async function createServer(
                     category: z.string(),
                     consult_tool: z.string(),
                     credibility_anchor: z.string().nullable().optional(),
+                    stances: z.array(z.string()).optional(),
                     reason: z.string().optional(),
                     status: z.string().optional(),
                     search_ask_line: z.string().optional(),
@@ -1980,7 +2011,7 @@ export async function createServer(
                 related_knowledge_graphs: z.array(z.any()).optional().describe('Related graphs if no direct match')
             }
         } as any,
-        async ({ query, limit, userId: uid }) => {
+        async ({ query, limit, stance, userId: uid }) => {
             try {
                 const effectiveLimit = Math.min(Math.max(limit || 3, 1), 3);
                 const targetUserId = resolveUserId(userId, uid);
@@ -1993,9 +2024,10 @@ export async function createServer(
                     const timeoutPromise = new Promise((_, reject) => {
                         timer = setTimeout(() => reject(new Error('Expert search API timed out (>3s)')), 3000);
                     });
+                    const stanceParam = stance ? `&stance=${encodeURIComponent(stance)}` : '';
                     const fetchPromise = foddaRequest(
                         'GET',
-                        `/v1/experts/search?q=${encodeURIComponent(query)}&limit=${effectiveLimit}`,
+                        `/v1/experts/search?q=${encodeURIComponent(query)}&limit=${effectiveLimit}${stanceParam}`,
                         apiKey,
                         targetUserId
                     );
@@ -2019,9 +2051,9 @@ export async function createServer(
                         const category = r.agent_class || 'human_agent';
                         const statusRaw = (r.status || '').toLowerCase().trim();
                         const isOnRequest = statusRaw === 'unclaimed' || statusRaw === 'on request' || statusRaw === 'on_request';
-                        const consultTool = (category === 'human_agent' || isOnRequest)
-                            ? 'consult_human_agent'
-                            : (r.consult_tool || 'consult_analyst');
+                        const consultTool = (category === 'classic_agent' || category === 'synthetic_agent' || category === 'c_suite_agent')
+                            ? 'consult_analyst'
+                            : ((category === 'human_agent' || isOnRequest) ? 'consult_human_agent' : (r.consult_tool || 'consult_analyst'));
 
                         const catLower = (category || '').toLowerCase();
                         let kind: 'active Human Agent' | 'On-Request Human Agent' | 'synthetic analyst' | 'C-Suite Agent' | 'Classic Agent';
@@ -2048,6 +2080,7 @@ export async function createServer(
                             intro: realIntro,
                             consult_tool: consultTool,
                             credibility_anchor: r.credibility_anchor || r.credibilityAnchor || null,
+                            stances: Array.isArray(r.stances) ? r.stances : [],
                             reason: Array.isArray(r.why_matched) && r.why_matched.length > 0
                                 ? `covers ${r.why_matched.join(', ')} directly`
                                 : realIntro,
@@ -2125,6 +2158,7 @@ export async function createServer(
                     limit: effectiveLimit,
                     analysts,
                     graphs: getGraphs(),
+                    stance,
                 });
 
                 const candidates = localCandidates.map(c => {
@@ -2150,6 +2184,7 @@ export async function createServer(
                         expert_kind: kind,
                         intro: c.reason,
                         credibility_anchor: c.credibility_anchor || null,
+                        stances: Array.isArray((c as any).stances) ? (c as any).stances : [],
                         status: c.status || 'active',
                         next_step: isOnReq
                             ? `This specialist is available On Request (${profileUrl}). Request a facilitated advisory introduction, or consult broader domain intelligence.`
@@ -7944,6 +7979,8 @@ export async function createServer(
         company?: string | undefined;
         session_id?: string | undefined;
         deep?: boolean | undefined;
+        review_mode?: 'architecture' | 'product_spec' | 'ux_copy' | undefined;
+        attachment_text?: string | undefined;
         userId?: string | undefined;
     }
 
@@ -8154,7 +8191,7 @@ export async function createServer(
         };
     };
 
-    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
+    const executeConsultHumanAgentCore = async ({ analyst_id, query, company, session_id, deep, review_mode, attachment_text, userId: uid }: ConsultCoreParams) => {
         const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
         const match = getAnalysts().find((a: any) => {
@@ -8194,6 +8231,12 @@ export async function createServer(
                 };
                 if (isDeep) {
                     requestPayload.deep = true;
+                }
+                if (review_mode) {
+                    requestPayload.review_mode = review_mode;
+                }
+                if (attachment_text) {
+                    requestPayload.attachment_text = attachment_text;
                 }
 
                 const result = await foddaRequest('POST', `/v1/human-agents/consult`, apiKey, resolveUserId(userId, uid), requestPayload);
@@ -8723,7 +8766,7 @@ export async function createServer(
 }
 };
 
-    const executeConsultAnalystCore = async ({ analyst_id, query, company, session_id, deep, userId: uid }: ConsultCoreParams) => {
+    const executeConsultAnalystCore = async ({ analyst_id, query, company, session_id, deep, review_mode, attachment_text, userId: uid }: ConsultCoreParams) => {
         try {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
@@ -8754,6 +8797,12 @@ export async function createServer(
             };
             if (isDeep) {
                 requestPayload.deep = true;
+            }
+            if (review_mode) {
+                requestPayload.review_mode = review_mode;
+            }
+            if (attachment_text) {
+                requestPayload.attachment_text = attachment_text;
             }
 
             const result = await foddaRequest('POST', `/v1/analysts/consult`, apiKey, resolveUserId(userId, uid), requestPayload);
@@ -9070,7 +9119,7 @@ export async function createServer(
                 errData?.type === 'human_agent' ||
                 errData?.error?.agent_type === 'human_twin';
             if (isTwinError) {
-                return await executeConsultHumanAgentCore({ analyst_id, query, company, session_id, userId: uid });
+                return await executeConsultHumanAgentCore({ analyst_id, query, company, session_id, deep, review_mode, attachment_text, userId: uid });
             }
             if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
                 return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({
@@ -9158,6 +9207,8 @@ export async function createServer(
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the analyst to a specific brand context. Automatically extracted if included in analyst_id (e.g. 'Nike CMO')."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the analyst keeps context across the session. Omit for a one-off question."),
             deep: z.boolean().optional().describe("Set true to have the agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
+            review_mode: z.enum(['architecture', 'product_spec', 'ux_copy']).optional().describe("Optional diagnostic critique mode when asking the expert to pressure-test code/system architecture ('architecture'), a product/strategy brief ('product_spec'), or messaging/UX copy ('ux_copy'). Bypasses commercial out-of-lane refusals and applies the expert's core frameworks directly to your artifact."),
+            attachment_text: z.string().optional().describe("Optional inline artifact text (up to 100KB — e.g., a git diff, architecture summary, PR description, product spec, or campaign copy) for the expert to inspect and critique."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         {
@@ -9180,7 +9231,7 @@ export async function createServer(
                 job_id: z.string().optional().describe('Job identifier if running asynchronous deep research')
             }
         } as any,
-        async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
+        async ({ analyst_id, query, company, session_id, deep, review_mode, attachment_text, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
             // Proactive routing: if analyst is known to be a Human Agent, route directly before any API call
@@ -9196,9 +9247,9 @@ export async function createServer(
             const targetAnalystId = match?.analyst_id || match?.id || resolvedAnalystId;
 
             if (isTwinAnalyst(match)) {
-                return await executeConsultHumanAgentCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+                return await executeConsultHumanAgentCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, review_mode, attachment_text, userId: uid });
             }
-            return await executeConsultAnalystCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+            return await executeConsultAnalystCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, review_mode, attachment_text, userId: uid });
         }
     );
 
@@ -9212,6 +9263,8 @@ export async function createServer(
             company: z.string().optional().describe("Optional company name or stock ticker (e.g., 'Nike', 'Tesla', or 'TSLA') to bind the human agent to a specific brand context."),
             session_id: z.string().optional().describe("Pass the session_id from a previous consult response to continue that engagement — the human agent keeps context across the session. Omit for a one-off question."),
             deep: z.boolean().optional().describe("Set true to have the human agent conduct deep background research across specialist graphs and market data before answering (or detects 'do your homework' / 'deep breakdown' in multi-turn queries)."),
+            review_mode: z.enum(['architecture', 'product_spec', 'ux_copy']).optional().describe("Optional diagnostic critique mode when asking the expert to pressure-test code/system architecture ('architecture'), a product/strategy brief ('product_spec'), or messaging/UX copy ('ux_copy'). Bypasses commercial out-of-lane refusals and applies the expert's core frameworks directly to your artifact."),
+            attachment_text: z.string().optional().describe("Optional inline artifact text (up to 100KB — e.g., a git diff, architecture summary, PR description, product spec, or campaign copy) for the expert to inspect and critique."),
             userId: z.string().optional().describe('Optional expert user identifier or email. Automatically resolved from authenticated API key for expert accounts.')
         },
         {
@@ -9234,7 +9287,7 @@ export async function createServer(
                 job_id: z.string().optional().describe('Job identifier if running asynchronous deep research')
             }
         } as any,
-        async ({ analyst_id, query, company, session_id, deep, userId: uid }) => {
+        async ({ analyst_id, query, company, session_id, deep, review_mode, attachment_text, userId: uid }) => {
             const { analyst_id: resolvedAnalystId, company: resolvedCompany } = resolveAnalystAlias(analyst_id, company);
 
             const match = getAnalysts().find((a: any) => {
@@ -9250,9 +9303,9 @@ export async function createServer(
 
             // Proactive routing: if target is explicitly a synthetic analyst, route directly before any API call
             if (isSyntheticAnalyst(match)) {
-                return await executeConsultAnalystCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+                return await executeConsultAnalystCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, review_mode, attachment_text, userId: uid });
             }
-            return await executeConsultHumanAgentCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, userId: uid });
+            return await executeConsultHumanAgentCore({ analyst_id: targetAnalystId, query, company: resolvedCompany, session_id, deep, review_mode, attachment_text, userId: uid });
         }
     );
 
