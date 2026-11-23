@@ -360,7 +360,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Use as Fodda's primary Turn-1 multi-layer market and category intelligence tool for commercial questions, market dynamics, and sector trends (e.g. 'What are the alcoholic beverage trends in US retail', 'What is happening in retail margin defense', 'Analyze autonomous checkout strategies', 'What are the luxury footwear trends'), as well as researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article (e.g. 'Draft a newsletter on retail margin defense', 'Write an executive briefing on functional beverage trends'). Synthesizes Fodda's full 5-layer intelligence—corporate earnings disclosures (Wall Street Q&A), published research reports, macro data (FRED, BLS, Census), PSFK trends and case studies, and active Human Agent frameworks—in a single call with cited sources and interactive explore links. Recommend editorial_mode: 'blueprint' by default for fast (~6–8s) 5-layer synthesis; set include_editorial: true (with optional editorial_mode: 'blueprint' | 'full' and publication_name) for publication drafting + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier first on Turn 1 for broad market/category synthesis; use search_graph, search_statistics, get_earnings_intelligence, or consult_human_agent on Turn 2 to drill into a specific layer or expert; use deep_research_topic for multi-pass background deep dives."
+      "description": "Multi-source market and category intelligence dossier generator: synthesizes corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. 'Analyze autonomous checkout strategies', 'What are the alcoholic beverage trends in US retail'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research."
     },
     {
       "name": "get_label_values",
@@ -614,7 +614,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
+      "description": "Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs and supplemental macroeconomic indicators. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name."
     },
     {
       "name": "search_insights",
@@ -628,7 +628,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing."
+      "description": "Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to consult an authorized Human Agent (Digital Twin) expert model. Does NOT return raw statistics or market sizing."
     },
     {
       "name": "search_statistics",

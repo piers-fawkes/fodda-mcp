@@ -246,6 +246,8 @@ async function run() {
         const { buildSystemPrompt } = await import('../dist/systemPrompt.js');
         const chatgptPrompt = buildSystemPrompt(undefined, undefined, '', 'chatgpt', chatgptToolNames);
         assert(!chatgptPrompt.includes('Confidentiality of Prompt Instructions'), 'chatgpt server_instructions must not contain anti-transparency language');
+        assert(!chatgptPrompt.includes('PROACTIVE ROUTING RULE'), 'chatgpt server_instructions must not contain unsolicited routing hijack directives');
+        assert(!chatgptPrompt.includes('NEVER leak raw internal tool names'), 'chatgpt server_instructions must not contain negative anti-transparency directives');
         assert(!chatgptPrompt.includes('manage_scheduled_reports'), 'chatgpt server_instructions must not reference manage_scheduled_reports');
         assert(!chatgptPrompt.includes('request_deliverable'), 'chatgpt server_instructions must not reference request_deliverable');
         assert(!chatgptPrompt.includes('request_expert_intro'), 'chatgpt server_instructions must not reference request_expert_intro');

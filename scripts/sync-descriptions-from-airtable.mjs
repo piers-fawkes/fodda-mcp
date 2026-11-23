@@ -96,8 +96,8 @@ async function sync() {
         if (toolName === 'finalize_byo_mcp_onboarding' && !newDesc.includes('Profile is saved once terms are accepted; MCP details are verified and submitted for review here.')) {
           continue;
         }
-        // Preserve get_capabilities and generate_comms_plan canonical routing and view documentation
-        if (toolName === 'get_capabilities' || toolName === 'get_intelligence_dossier' || toolName === 'generate_comms_plan') {
+        // Preserve canonical routing, view documentation, and OpenAI-compliant tool descriptions
+        if (toolName === 'get_capabilities' || toolName === 'get_intelligence_dossier' || toolName === 'generate_comms_plan' || toolName === 'search_graph' || toolName === 'search_insights') {
           continue;
         }
         src = src.replace(regex, (m, p1) => `${p1}'${escapedDesc}'`);

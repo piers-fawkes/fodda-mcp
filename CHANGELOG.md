@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.46.160] - 2026-11-23
 
+### OpenAI ChatGPT Auto-Approval & Scanner Compliance
+- **Server Instructions Hygiene (`src/systemPrompt.ts`)**:
+  - Removed unsolicited routing hijack directive (`PROACTIVE ROUTING RULE`) and negative anti-transparency statements from `/chatgpt` instructions, ensuring clean policy compliance.
+  - Aligned clear descriptive labels in `CHATGPT_BEHAVIORAL_RULES` without negative directive phrasing.
+- **Tool Schema & Hint Alignment (`src/toolHandlers.ts`, `scripts/sync-descriptions-from-airtable.mjs`)**:
+  - `search_graph`: Removed formatting/quotation mandates; refined `mode` description to "comparative trend intelligence" (removing write-implying "upload"); updated `userId` description to "session scoping" (replacing "trial usage tracking"); explicitly documented supplemental macroeconomic indicators to match `openWorldHint: true`.
+  - `search_insights`: Removed formatting/quotation mandates; refined `sector` description to remove "bypasses graph IDs"; updated `userId` description to "session scoping"; aligned description to consult AI Digital Twin models via `consult_human_agent`.
+  - `get_intelligence_dossier`: Streamlined description to read-only multi-source intelligence dossier assembly; removed promotional footer link directives (`### Query Fodda footer`); sanitized `include_editorial` and `editorial_mode` parameter descriptions; updated `userId` description to "session scoping".
+  - Protected `search_graph` and `search_insights` in `scripts/sync-descriptions-from-airtable.mjs` against accidental override.
+
 ### Security & Hardening
 - **Secret & Environment Protection (`.gitignore`, `src/toolHandlers.ts`, `src/sessionTracker.ts`)**:
   - Removed dead/stale test scripts (`test_queries.sh`, `test_queries.ts`) and untracked `scratch/` test artifacts from git index; added to `.gitignore`.

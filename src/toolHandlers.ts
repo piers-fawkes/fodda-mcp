@@ -2223,16 +2223,16 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
+        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs and supplemental macroeconomic indicators. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
         {
-            mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for upload & compare intelligence. Defaults to "research".'),
+            mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for comparative trend intelligence across categories. Defaults to "research".'),
             graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
             graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             graph: z.string().optional().describe("Alias for graphId."),
             graph_id: z.string().optional().describe("Alias for graphId."),
             sector: z.string().optional().describe("Optional sector focus (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes trend discovery to this sector."),
             query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
             use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
             include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
@@ -3202,7 +3202,7 @@ export async function createServer(
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             seed_node_ids: z.array(z.string()).describe('Array of node IDs to start traversal from. MUST be actual node_id values from a prior search_graph result (e.g. ["2507.0"]). Node IDs are NOT sequential integers — do NOT guess or invent IDs like "1", "2", "3". Always call search_graph first to obtain valid IDs.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             relationship_types: z.array(z.string()).optional().describe("Filter by relationship types: 'EVIDENCED_BY', 'RELATED_TO', 'SEMANTICALLY_SIMILAR', 'ASSOCIATED_BRAND', 'MENTIONS_BRAND', 'IN_LOCATION'"),
             direction: z.enum(['in', 'out']).optional().describe("Traversal direction: 'out' (default) follows outgoing edges, 'in' follows incoming edges"),
             depth: z.number().optional().describe('Traversal depth (default 1, max 2)'),
@@ -3239,7 +3239,7 @@ export async function createServer(
             graphId: z.string().describe(GRAPH_ID_DESC),
             for_node_id: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
             view: z.enum(['articles', 'voices', 'both']).optional().default('both').describe("Filter evidence response view: 'articles' returns supporting articles and case studies only; 'voices' returns sourced executive and commentator voices only; 'both' (default) returns articles and voices."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             top_k: z.number().optional().describe('Number of evidence items to return (default 5)')
         },
         { title: 'Get Supporting Evidence', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -3296,7 +3296,7 @@ export async function createServer(
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             nodeId: z.string().describe("The node_id from a prior search_graph result (e.g. '2507.0'). MUST come from the search result's node_id field. Node IDs are NOT sequential integers — do NOT guess or invent IDs like '1', '2', '3'. Do NOT pass the trend name."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
+            userId: z.string().optional().describe('Optional user identifier for session scoping.')
         },
         { title: 'Get Node Details', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ graphId, nodeId, userId: uid }) => {
@@ -3325,7 +3325,7 @@ export async function createServer(
         {
             graphId: z.string().describe(GRAPH_ID_DESC),
             label: z.string().describe("The label to fetch values for (e.g., 'Brand', 'Location', 'Technology', 'Audience', 'RetailerType', 'Trend'). Note: caps at 100 values alphabetically."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             property: z.string().optional().describe('Optional property to return values for. Defaults vary by label.')
         },
         { title: 'Get Category Values', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -3353,7 +3353,7 @@ export async function createServer(
             trend_id: z.string().optional().describe("The node_id from a prior search_graph result (e.g. '2507.0'). Optional if seed_query or query is provided. Node IDs are not sequential integers — do not guess or invent IDs. If searching from a topic or theme, pass seed_query instead."),
             seed_query: z.string().optional().describe("Topic or theme to discover adjacent trends for (e.g. 'retailers paying to guarantee freight capacity ahead of peak season'). If provided, automatically finds seed trends and maps adjacent territories."),
             query: z.string().optional().describe("Alias for seed_query. Topic or theme to discover adjacent trends for."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             min_score: z.number().optional().describe('Minimum similarity score threshold (0-1). Default: 0.80 for node lookups or 0.70 for topic exploration.'),
             limit: z.number().optional().describe('Maximum number of adjacent trends to return. Default: 10'),
             include_editorial: z.boolean().optional().describe('If true, also include editorially linked trends. Default: false')
@@ -4335,7 +4335,7 @@ export async function createServer(
         {
             brand_name: z.string().describe("The brand name to look up (e.g. 'Nike', 'Adidas', 'Apple'). Case-insensitive."),
             compare_to: z.union([z.string(), z.array(z.string())]).optional().describe("Optional brand name(s) to run a separate comparative trend and Wikipedia analysis against (e.g. 'Nike' or ['Nike', 'Puma']). Headline signals for the primary brand remain strictly brand-only."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             graph_ids: z.array(z.string()).optional().describe('Optional: specific graph IDs to search. If omitted, searches ALL accessible graphs.'),
             include_evidence: z.boolean().optional().describe('If true (default), include individual evidence items. Set to false for summary-only.'),
             max_evidence: z.number().optional().describe('Maximum evidence items per graph. Default: 10. Max: 25.'),
@@ -4632,7 +4632,7 @@ export async function createServer(
             geo: z.string().optional().describe("Country code or geography hint (e.g., 'TH', 'US', 'GB') for country-filtered queries."),
             brands: z.array(z.string()).optional().describe("Brand names to include in demand/product lookups (e.g., ['Nike', 'Adidas']). Triggers Google Trends comparison and Amazon product search."),
             graph_ids: z.array(z.string()).optional().describe("Graph IDs from prior search results — helps refine domain inference."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Get Market Context Data', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ query, domain, geo, brands, graph_ids, userId: uid }) => {
@@ -4758,7 +4758,7 @@ export async function createServer(
             include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
             max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
             min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Search Domain Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ query, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
@@ -4875,7 +4875,7 @@ export async function createServer(
             include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
             max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
             min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Search Specialist Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         handleSpecialistIntelligenceSearch
@@ -4890,7 +4890,7 @@ export async function createServer(
             include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
             max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
             min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Search Specialist Intelligence (Legacy Alias)', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         handleSpecialistIntelligenceSearch
@@ -4908,7 +4908,7 @@ export async function createServer(
             include_evidence: z.boolean().optional().describe('Bundle evidence for each trend (default: true)'),
             max_evidence_per_trend: z.number().optional().describe('Evidence items per trend (default: 5, max: 20)'),
             min_score: z.number().optional().describe('Minimum relevance threshold (default: 0.6)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Search Report Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ query, view, limit, include_evidence, max_evidence_per_trend, min_score, userId: uid }) => {
@@ -5784,17 +5784,17 @@ export async function createServer(
 
     server.tool(
         'get_intelligence_dossier',
-        'Use as Fodda\'s primary Turn-1 multi-layer market and category intelligence tool for commercial questions, market dynamics, and sector trends (e.g. \'What are the alcoholic beverage trends in US retail\', \'What is happening in retail margin defense\', \'Analyze autonomous checkout strategies\', \'What are the luxury footwear trends\'), as well as researching and drafting an in-depth, research-backed newsletter, executive briefing, or market analysis article (e.g. \'Draft a newsletter on retail margin defense\', \'Write an executive briefing on functional beverage trends\'). Synthesizes Fodda\'s full 5-layer intelligence—corporate earnings disclosures (Wall Street Q&A), published research reports, macro data (FRED, BLS, Census), PSFK trends and case studies, and active Human Agent frameworks—in a single call with cited sources and interactive explore links. Recommend editorial_mode: \'blueprint\' by default for fast (~6–8s) 5-layer synthesis; set include_editorial: true (with optional editorial_mode: \'blueprint\' | \'full\' and publication_name) for publication drafting + ### Query Fodda footer. Sibling routing: Use get_intelligence_dossier first on Turn 1 for broad market/category synthesis; use search_graph, search_statistics, get_earnings_intelligence, or consult_human_agent on Turn 2 to drill into a specific layer or expert; use deep_research_topic for multi-pass background deep dives.',
+        'Multi-source market and category intelligence dossier generator: synthesizes corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. \'Analyze autonomous checkout strategies\', \'What are the alcoholic beverage trends in US retail\'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research.',
         {
             topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
             sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
             tickers: z.array(z.string()).optional().describe("Optional corporate tickers to cross-reference against earnings call Q&A intelligence (e.g. ['NKE', 'DECK'])."),
-            include_editorial: z.boolean().optional().describe("Set to true to generate a publication-ready newsletter, executive briefing, or market analysis article (Section 1: The Market Backdrop & Numbers, Section 2: The Core Debate & Published Research, Section 3: Corporate Strategies & Executive Disclosures, Section 4: Category Trends & Expert Frameworks, Section 5: Strategic Implications & Actionable Takeaways + ### Query Fodda footer, zero em dashes, zero bare dollar signs)."),
-            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (recommended default for fast ~6–8s 5-layer synthesis) returns a structured intelligence blueprint, pre-built www.fodda.ai hyperlinks, and composition contract without client timeout; 'full' runs complete server-side article generation; 'none' returns raw dossier only."),
+            include_editorial: z.boolean().optional().describe("Set to true to format the dossier as a structured 5-section executive briefing (Section 1: Market Backdrop & Metrics, Section 2: Core Debate & Published Research, Section 3: Corporate Strategies & Earnings Disclosures, Section 4: Category Trends & Frameworks, Section 5: Strategic Implications & Takeaways)."),
+            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (default) returns a structured intelligence blueprint and citation schema; 'full' runs complete server-side briefing synthesis; 'none' returns raw dossier data only."),
             publication_name: z.string().optional().describe("Optional custom publication or newsletter name (e.g. 'The Retail Signal', 'Omnichannel Executive', 'Consumer Tech Digest'). If omitted, defaults to a neutral executive briefing title."),
             editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing').describe("Editorial tone and format: 'market_briefing' for strategic cross-category analysis, 'industry_newsletter' for category and brand trends, 'executive_memo' for concise decision-maker briefings, or 'psfk_weekly' / 'retail_innovation_week' for PSFK house style."),
             publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().describe("Backward-compatible alias for editorial_style: 'psfk_weekly' or 'retail_innovation_week'. Prefer editorial_style."),
-            userId: z.string().optional().describe('Optional user identifier.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Assemble Unified Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ topic, sector, tickers, include_editorial, editorial_mode, editorial_style, publication_style, publication_name, userId: uid }) => {
@@ -6305,7 +6305,7 @@ export async function createServer(
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold, 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ only for precise data lookups.'),
             include_signals: z.boolean().optional().describe('Also include Signal nodes (case studies, brand examples). Default: false'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
+            userId: z.string().optional().describe('Optional user identifier for session scoping.')
         },
         { title: 'Search Statistics & Data Points', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ graph_id, sector, query, limit, min_score, include_signals, userId: uid }: any) => {
@@ -6420,17 +6420,17 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        'Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Put a voice in quotation marks only when display.quotable is true; otherwise paraphrase it with display.attribution. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to speak interactively with an expert. Does NOT return raw statistics or market sizing.',
+        'Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to consult an authorized Human Agent (Digital Twin) expert model. Does NOT return raw statistics or market sizing.',
         {
             graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'beauty', 'sports', 'fashion', 'sic', 'pew', 'ce-design'."),
-            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes insights extraction to this sector across graphs."),
+            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes insights extraction to this sector across graphs."),
             query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
             types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
             speaker_types: z.string().optional().describe("Optional filter for speaker types (comma-separated, e.g. 'executive,analyst,founder,columnist,journalist,academic,creator,policymaker,other')."),
             stance: z.enum(['supports', 'challenges', 'nuances']).optional().describe("Optional filter for stance relative to parent trend: 'supports', 'challenges', or 'nuances'."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ for precise lookups.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.')
+            userId: z.string().optional().describe('Optional user identifier for session scoping.')
         },
         { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ graph_id, sector, query, types, speaker_types, stance, limit, min_score, userId: uid }: any) => {
@@ -6659,7 +6659,7 @@ export async function createServer(
             dateFrom: z.string().optional().describe("ISO date range start (e.g., '2025-01-01')"),
             dateTo: z.string().optional().describe("ISO date range end (e.g., '2026-06-01')"),
             limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Query Earnings Call Intelligence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ ticker, brand, industry, sector, activity, search, dateFrom, dateTo, limit, userId: uid }) => {
@@ -6739,7 +6739,7 @@ export async function createServer(
             search: z.string().optional().describe("Optional search term (used for logging and query attribution)."),
             industry: z.string().optional().describe("Industry filter alias."),
             limit: z.number().int().optional().describe("Max deflection themes to return (default 25)."),
-            userId: z.string().optional().describe("Optional user identifier for trial usage tracking."),
+            userId: z.string().optional().describe("Optional user identifier for session scoping."),
         },
         { title: 'Detect Earnings Call Divergence', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ sector, period, min_companies, search, industry, limit, userId: uid }) => {
@@ -6839,7 +6839,7 @@ export async function createServer(
             query: z.string().optional().describe("Optional question, topic, or search query (e.g. 'analyst questions about AI', 'who asked about margin'). If asking about analyst questions, quotes, or who asked, view will auto-route to 'qa'."),
             search: z.string().optional().describe("Free-text topic search or question within earnings call."),
             sector: z.string().optional().describe("Sector filter for guidance view."),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Get Company Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         async ({ mode, view, ticker, tickers, period, metrics, analyst, query, search, sector, userId: uid }) => {
@@ -7034,7 +7034,7 @@ export async function createServer(
             sector: z.string().optional().describe("Filter by sector (e.g. 'retail', 'sportswear', 'beauty')."),
             search: z.string().optional().describe("Free text search in validated trends (e.g. 'resale', 'inventory', 'pricing')."),
             limit: z.number().int().optional().describe('Max results to return (default 20, max 50)'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Get Validated Consumer Trends from Earnings', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ ticker, sector, search, limit, userId: uid }) => {
@@ -7328,7 +7328,7 @@ export async function createServer(
         {
             query: z.string().describe("The topic or theme to brainstorm around (e.g., 'tequila', 'sustainable packaging', 'Gen Z beauty')"),
             depth: z.number().optional().describe('Traversal depth: 1 (immediate connections) or 2 (connections of connections). Default: 2. Use 1 for focused brainstorms, 2 for wider exploration.'),
-            userId: z.string().optional().describe('Optional user identifier for trial usage tracking.'),
+            userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
         { title: 'Brainstorm & Explore Topic', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ query, depth, userId: uid }) => {
