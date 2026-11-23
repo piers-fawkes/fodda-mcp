@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.46.160] - 2026-11-23
 
+### Bounded-Await Meter Settlement, First-Charge Notice & Big Offerings Card Gate
+- **Bounded-Await Meter Settlement (`src/pricingCache.ts`, `src/toolHandlers.ts`)**:
+  - Implemented `boundedChargeQuery` using `Promise.race` with a 1500ms ceiling across all metered tool execution points (`search_graph`, `settleOrWithhold`, `get_supplemental_context`, `brainstorm_topic`, `read_url`, `deep_research_topic`).
+  - Ensures serverless instances reliably flush `/v1/research/meter` debits upstream before CPU freeze or throttling halts background operations.
+- **First-Overage Charge Notice (`src/pricingCache.ts`, `src/toolHandlers.ts`)**:
+  - Parsed `first_overage_charge_notice: true` from `/v1/research/meter` responses and provided `appendOverageNoticeToContent`.
+  - Appends the standard one-time trailing notice block to returned tool content when an account transitions into metered billing:
+    `\n\n---\nNote: This query was charged against your account, and any further queries will be billed until your account resets.`
+  - Safe, idempotent attachment ensures zero nagging on normal paid runs when cards are already on file.
+- **Big Offerings Payment Card Gate (`src/errorHandling.ts`, `src/toolHandlers.ts`)**:
+  - Added dedicated handling for HTTP 403 `CARD_REQUIRED_FOR_DELIVERABLE` across all 5 Big Offerings (`generate_comms_plan`, `request_deliverable`, `brand_tracker`, `deep_research_topic`, `manage_scheduled_reports`, and `get_intelligence_dossier`).
+  - Surfaces a clean, structured refusal providing 1-click Stripe card setup via `setup_url` and transparent pricing via `https://www.fodda.ai/pricing` without internal pricing jargon.
+  - Enforced ChatGPT commerce-silence parity: returns clean refusal with `manage_url: https://app.fodda.ai/account` and zero Stripe URLs or dollar values on ChatGPT sessions.
+- **Comprehensive Meter Coverage Audit**:
+  - Audited all 57 registered MCP tools to ensure zero unmetered research or intelligence black holes.
+
 ### OpenAI ChatGPT Automated Approval Hardening (Auto-Review Resolution)
 - **Suppressed Dynamic User/Client Context on Public Scoped Connectors (`src/systemPrompt.ts`)**:
   - Excluded `userContextBlock` and `personaBlock` when `isScopedConnector` is active (`/chatgpt` and `/claude`), preventing private user research profiles or client names (e.g. "Samsung, Panasonic", "Faster Not Easier") from leaking into public ChatGPT app instructions.
