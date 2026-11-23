@@ -263,7 +263,7 @@ async function fetchCatalog(): Promise<CatalogResponse> {
 /**
  * Fetch the analysts from the API. Requires internal auth.
  */
-async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
+async function fetchAnalysts(): Promise<CatalogAnalyst[] | null> {
     const url = `${API_BASE_URL}/v1/analysts?include=unclaimed`;
     const internalKey = process.env.FODDA_INTERNAL_API_KEY || process.env.FODDA_API_KEY;
     const headers = internalKey ? { 'Authorization': `Bearer ${internalKey}` } : {};
@@ -274,7 +274,7 @@ async function fetchAnalysts(): Promise<CatalogAnalyst[]> {
         return raw.map(normalizeAnalyst);
     } catch (err: any) {
         console.error(`[catalogCache] Failed to fetch analysts: ${err.message}`);
-        return [];
+        return null;
     }
 }
 
@@ -375,7 +375,8 @@ export async function initCatalogCache(): Promise<void> {
     try {
         cacheClear();
         const rawCatalog = await fetchCatalog();
-        cachedAnalysts = await fetchAnalysts();
+        const freshAnalysts = await fetchAnalysts();
+        if (freshAnalysts) cachedAnalysts = freshAnalysts;
         cachedCatalog = bridgeAnalystGraphs(rawCatalog, cachedAnalysts);
         lastFetchedAt = Date.now();
         rebuildSearchIndex();
@@ -390,7 +391,8 @@ export async function initCatalogCache(): Promise<void> {
     refreshInterval = setInterval(async () => {
         try {
             const rawCatalog = await fetchCatalog();
-            cachedAnalysts = await fetchAnalysts();
+            const freshAnalysts = await fetchAnalysts();
+            if (freshAnalysts && freshAnalysts.length > 0) cachedAnalysts = freshAnalysts;
             cachedCatalog = bridgeAnalystGraphs(rawCatalog, cachedAnalysts);
             lastFetchedAt = Date.now();
             rebuildSearchIndex();

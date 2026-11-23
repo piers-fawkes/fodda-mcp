@@ -378,7 +378,7 @@ const SECTION_ORDER: ToolGuideSection[] = [
  * Generate the 5-section Tool Guide at runtime.
  * Filters to only tools exposed on the caller's server endpoint (respecting offering-scoped tool subsets).
  */
-export function generateToolGuide(isToolCallable: (toolName: string) => boolean): ToolGuideResponse {
+export function generateToolGuide(isToolCallable: (toolName: string) => boolean, sessionSource?: string): ToolGuideResponse {
     // 1. Helper to resolve default-mode API calls charged from Airtable table tblHsMfyoW39LqCv8
     const getCallsForTool = (toolName: string): number => {
         try {
@@ -419,10 +419,13 @@ export function generateToolGuide(isToolCallable: (toolName: string) => boolean)
 
         // For tools that normally use multiple calls, state approximate count and link pricing.
         // For tools that use 0 or standard single calls, say nothing about cost.
-        if (def.api_calls_override) {
-            item.api_calls = def.api_calls_override;
-        } else if (apiCalls > 1) {
-            item.api_calls = `Normally about ${apiCalls} API calls. See https://www.fodda.ai/pricing for the latest prices.`;
+        // ChatGPT profile must remain completely commerce-free.
+        if (sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
+            if (def.api_calls_override) {
+                item.api_calls = def.api_calls_override;
+            } else if (apiCalls > 1) {
+                item.api_calls = `Normally about ${apiCalls} API calls. See https://www.fodda.ai/pricing for the latest prices.`;
+            }
         }
 
         const secList = grouped.get(def.section);

@@ -247,7 +247,7 @@ export function resolvePrimaryReportGraph(query: string, resultRows: any[] = [])
 export function matchHumanExpertTwin(query: string, primaryGraph?: CatalogGraph | undefined): CatalogAnalyst | undefined {
     const allAnalysts = getAnalysts();
     const humanTwins = allAnalysts.filter(a => {
-        return a.is_human_agent === true ||
+        const isHuman = a.is_human_agent === true ||
             a.is_digital_twin === true ||
             a.isVerifiedRealPerson === true ||
             a.kind === 'human_agent' ||
@@ -256,6 +256,11 @@ export function matchHumanExpertTwin(query: string, primaryGraph?: CatalogGraph 
             a.type === 'human_twin' ||
             a.agent_type === 'human_agent' ||
             a.agent_type === 'human_twin';
+        if (!isHuman) return false;
+        // Only match active Human Agents; skip inactive, unclaimed, or on_request
+        if (a.status && a.status !== 'active') return false;
+        if ((a as any).on_request === true || (a as any).is_claimed === false) return false;
+        return true;
     });
 
     if (humanTwins.length === 0) return undefined;
@@ -431,7 +436,7 @@ Produce a single JSON object with these exact keys:
    - "graph_id": The exact GraphID provided in the input.
    - "signal_type": MUST be either "validates", "contrasts", or "related".
    - "connection": 1 crisp sentence explaining how this other report supports or contrasts the primary finding.
-4. "expert_stance": ${params.expert ? 'A 1-sentence analytical perspective in the voice/philosophy of the matched expert twin regarding this topic.' : 'null'}
+4. "expert_stance": ${params.expert ? `A 1-2 sentence attributed perspective on this topic based on ${params.expert.name}'s framework. CRITICAL RULE: NEVER use quotation marks or invent direct quotes for real people. Use conditional third-person framing (e.g. "${params.expert.name}'s framework suggests that..." or "When ${params.expert.name}'s Human Agent is queried through Fodda, it highlights that...").` : 'null'}
 
 STRICT RULE: Do NOT mention tokens, shared payment tokens, SPT, or pricing mechanics.`;
 
@@ -517,13 +522,13 @@ function renderBriefingMarkdown(payload: {
     if (payload.expertSpotlight) {
         lines.push('---');
         lines.push('');
-        lines.push('### 👤 Human Expert Digital Twin Spotlight');
+        lines.push('### 👤 Human Agent Spotlight');
         lines.push('');
         lines.push(`**Expert Alignment:** ${payload.expertSpotlight.name}`);
         lines.push(`*Why Matched:* ${payload.expertSpotlight.why_matched}`);
-        lines.push(`> *"${payload.expertSpotlight.position}"*`);
+        lines.push(`> ${payload.expertSpotlight.position}`);
         if (payload.expertSpotlight.consult_url) {
-            lines.push(`→ **Consult ${payload.expertSpotlight.name}'s Twin:** [${payload.expertSpotlight.consult_url}](${payload.expertSpotlight.consult_url})`);
+            lines.push(`→ **Consult ${payload.expertSpotlight.name}'s Human Agent:** [${payload.expertSpotlight.consult_url}](${payload.expertSpotlight.consult_url})`);
         }
         lines.push('');
     }
@@ -706,9 +711,11 @@ export async function buildReportEditorialBriefing(params: {
     if (matchedExpert) {
         const rawSlug = matchedExpert.slug || matchedExpert.expertSlug || matchedExpert.analyst_id || '';
         const isCleanSlug = /^[a-z0-9-]+$/.test(rawSlug);
-        const consultUrl = isCleanSlug ? `https://expert.fodda.ai/${rawSlug}` : undefined;
+        const consultUrl = isCleanSlug ? `https://www.fodda.ai/experts/${rawSlug}` : undefined;
 
-        const position = (precomputedExpertQuote || geminiOutput?.expert_stance || matchedExpert.what_they_offer || `Offers strategic advisory on ${matchedExpert.expert_in || 'market shifts'}.`).slice(0, 250);
+        const rawPosition = (precomputedExpertQuote || geminiOutput?.expert_stance || matchedExpert.what_they_offer || `Offers strategic advisory on ${matchedExpert.expert_in || 'market shifts'}.`).slice(0, 350);
+        // Ensure no synthetic quotes wrap the position text
+        const position = rawPosition.replace(/^["'\s]+|["'\s]+$/g, '');
         const whyMatched = `Specializes in ${matchedExpert.expert_in || matchedExpert.name}'s strategic domain`;
 
         expertSpotlight = {

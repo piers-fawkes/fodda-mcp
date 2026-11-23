@@ -1,7 +1,7 @@
 {
   "generated_from": "Fodda MCP src/toolHandlers.ts",
   "note": "Source of truth for callable MCP tools. Public pricing is hosted at https://fodda.ai/pricing.",
-  "count": 58,
+  "count": 56,
   "billable": 27,
   "tools": [
     {
@@ -13,6 +13,16 @@
         "mcp"
       ],
       "description": "Step 1 (session initializer) for Fodda Human Agent onboarding: verifies credentials, checks for existing active or in-progress onboarding sessions, and initiates profile creation for a living expert. Use when an expert asks to create their digital twin or join the Fodda network (e.g., 'I want to build my Human Agent', 'How do I onboard as an expert on Fodda?'). Supports resuming interrupted onboarding sessions automatically. Sibling routing: Use begin_expert_onboarding to kick off or resume onboarding; use submit_basic_info to save initial profile credentials and accept terms; for BYO-MCP onboarding, pass byoMcp: true. Returns onboarding state, current step, and guided next actions."
+    },
+    {
+      "name": "book_fodda_call",
+      "kind": "tool",
+      "bills_as": "free",
+      "category": "Account",
+      "profiles": [
+        "mcp"
+      ],
+      "description": "Schedule a strategy session, demo, or onboarding call with the Fodda team. Supports three actions: 'event_types' (list available meeting types and durations), 'availability' (check open time slots for a given eventTypeId), and 'book' (finalize and confirm a calendar booking with name, email, and selected start time)."
     },
     {
       "name": "brainstorm_topic",
@@ -118,16 +128,6 @@
         "claude"
       ],
       "description": "Use when consulting an authorized Human Agent (Digital Twin) — an AI expert model created directly with the named practitioner's consent, participation, and curated knowledge graph. The AI expert model answers in the practitioner's voice and analytical methodology for one-off questions or multi-turn engagements (pass session_id back to continue). A consult perspective is the agent's view, never a quote from the real person. Call find_expert or list_analysts first to find the right expert ID and distinguish active Human Agents (consultable immediately via consult_human_agent) from On-Request Human Agents (prospective advisors where introductions can be requested via request_expert_intro). Sibling routing: Use consult_human_agent for interactive AI consultation with active Human Agents; use consult_analyst for synthetic/classic personas. Returns practitioner-grounded analysis, coverage status (in/adjacent/out), source attribution, and structured next moves."
-    },
-    {
-      "name": "create_booking",
-      "kind": "tool",
-      "bills_as": "free",
-      "category": "Other",
-      "profiles": [
-        "mcp"
-      ],
-      "description": "Finalize a booking."
     },
     {
       "name": "deep_research_topic",
@@ -241,16 +241,6 @@
       "description": "Create a presentation-ready data visualization from research findings. Available chart types: \"cultural_shifts\" (From→To transitions), \"competitive_compass\" (brands on 2 axes), \"trend_constellation\" (network of related trends), \"implication_ladder\" (Signal→Trend→So What→Do What), \"innovation_pathway\" (Now→Near-Term→Future), \"opportunity_map\" (2×2 white space analysis). Returns a branded SVG that renders directly in the chat. (Data payload transformation + SVG chart rendering.)"
     },
     {
-      "name": "get_availability",
-      "kind": "tool",
-      "bills_as": "free",
-      "category": "Other",
-      "profiles": [
-        "mcp"
-      ],
-      "description": "Query available slots."
-    },
-    {
       "name": "get_capabilities",
       "kind": "tool",
       "bills_as": "free",
@@ -332,16 +322,6 @@
       "description": "Cross-company thematic earnings intelligence from the knowledge graph and web sources. Use for multi-company comparisons (\"what are hotel companies saying about labor costs?\"), industry-level queries, sector filters, or strategic corporate activity categories (activity: \"sustainability\" | \"marketing\" | \"retail\" | \"technology\"). For corporate ESG, circular economy, and climate initiatives (e.g. \"What sustainability commitments did apparel companies make this quarter?\"), pass activity=\"sustainability\" or rely on server-side intent routing to avoid conflation with analyst margin sustainability questions. Multi-company and sector queries return active initiatives along with confirmed_absent brands (checked tickers with confirmed silence / no initiatives discussed). For single-brand earnings, brand_tracker includes earnings automatically. For per-ticker structured analysis (analyst concerns, activity breakdown, validated consumer trends), use get_company_earnings instead — it reads the canonical truth layer. Results may include \"knowledge_graph\" or \"web_supplemental\" provenance. OUTPUT REQUIREMENT: For multi-company thematic findings, present results in a structured evidence table citing: | Company (Ticker) | Reporting Quarter | Speaker (Analyst & Firm / Exec) | Verbatim Quote / Finding |. Clearly distinguish Fodda's synthesized theme labels (e.g. \"Pilot Trap\") from what analysts or executives actually said on the call."
     },
     {
-      "name": "get_event_types",
-      "kind": "tool",
-      "bills_as": "free",
-      "category": "Other",
-      "profiles": [
-        "mcp"
-      ],
-      "description": "Fetch active meeting types."
-    },
-    {
       "name": "get_evidence",
       "kind": "tool",
       "bills_as": "standalone_evidence",
@@ -373,7 +353,7 @@
     {
       "name": "get_intelligence_dossier",
       "kind": "tool",
-      "bills_as": "topic_research",
+      "bills_as": "intelligence_dossier",
       "category": "Intelligence",
       "profiles": [
         "mcp",
@@ -422,7 +402,7 @@
       "name": "get_my_earnings",
       "kind": "tool",
       "bills_as": "free",
-      "category": "Other",
+      "category": "Account",
       "profiles": [
         "mcp"
       ],
@@ -742,7 +722,7 @@
     {
       "name": "verify_market_claim",
       "kind": "tool",
-      "bills_as": "topic_research",
+      "bills_as": "verify_market_claim",
       "category": "Intelligence",
       "profiles": [
         "mcp",

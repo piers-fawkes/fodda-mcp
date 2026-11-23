@@ -164,8 +164,8 @@ function buildCompaniesHtml(rows: any[], publisherTokens?: Set<string>): string 
     if (sorted.length === 0) return '';
 
     return `<div class="co-grid">${sorted.map(({ displayName: brand, count }) => {
-        const query = `Tell me about ${brand.replace(/'/g, "\\'")}'s innovation strategy across the knowledge graphs`;
-        return `<button class="co-pill" onclick="sendPrompt('${query}')">${esc(brand)}<span class="co-count">${count}</span></button>`;
+        const query = `Tell me about ${brand}'s innovation strategy across the knowledge graphs`;
+        return `<button class="co-pill" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(query)}">${esc(brand)}<span class="co-count">${count}</span></button>`;
     }).join('\n')}</div>`;
 }
 
@@ -303,7 +303,7 @@ export async function renderSearchWidget(
     const trendsGridHtml = enriched.map(t => {
         const stageObj = smap[t._stage] || smap['emerging'];
         const sc = t._signal >= 80 ? 'high' : t._signal >= 50 ? 'mid' : 'low';
-        const queryStr = `Tell me about ${t._name} from the ${t._graphName}`.replace(/'/g, "\\'");
+        const queryStr = `Tell me about ${t._name} from the ${t._graphName}`;
         const chipsHtml = t._brands.length > 0
             ? `<div class="bchips">${t._brands.map((b: string) => `<span class="bchip">${esc(b)}</span>`).join('')}</div>`
             : '';
@@ -314,7 +314,7 @@ export async function renderSearchWidget(
           <p class="tc2-desc">${esc(t._desc)}</p>
           ${chipsHtml}
           <div class="tc2-foot"><span class="tc2-graph">${esc(t._graphName)}</span><span>${(t as any).relevance ? (t as any).relevance + '% match' : t._evCount + ' ev.'}</span></div>
-          <button class="tc2-exp" onclick="sendPrompt('${queryStr}')">Explore ↗</button></div>`;
+          <button class="tc2-exp" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(queryStr)}">Explore ↗</button></div>`;
     }).join('');
 
     const companiesSectionHtml = companiesHtml ? `

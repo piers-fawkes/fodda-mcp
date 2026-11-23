@@ -427,7 +427,7 @@ export function replaceSlots(template: string, fills: Record<string, string>): s
     let result = template;
     for (const [slot, value] of Object.entries(fills)) {
         if (value !== undefined && value !== null) {
-            result = result.replace(`{{${slot}}}`, value);
+            result = result.replace(`{{${slot}}}`, () => value);
         }
     }
     return result;

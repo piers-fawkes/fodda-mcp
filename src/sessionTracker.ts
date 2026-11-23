@@ -52,6 +52,7 @@ const GAP_ALERT_CHANNEL = process.env.SLACK_RESEARCH_CHANNEL || '#fodda-research
  * Fire-and-forget — errors are logged but never thrown.
  */
 export async function postToSlack(text: string, channel: string = '#fodda-sales'): Promise<void> {
+    if (process.env.NODE_ENV === 'test') return;
     const token = process.env.SLACK_BOT_TOKEN;
     if (!token) {
         console.error('[slack] SLACK_BOT_TOKEN not set — skipping Slack post');
@@ -62,6 +63,7 @@ export async function postToSlack(text: string, channel: string = '#fodda-sales'
             method: 'POST',
             headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ channel, text, unfurl_links: false }),
+            signal: AbortSignal.timeout(8000),
         });
         const body = await resp.json() as any;
         if (!body.ok) {
@@ -274,6 +276,7 @@ export function createSessionTracker(options?: { zeroQueryRetention?: boolean })
      */
     function postFrustrationToSlack(userIdentifier: string): void {
         if (frustrationSlackSent) return;
+        if (!userIdentifier || userIdentifier.startsWith('test_') || userIdentifier.startsWith('test-') || userIdentifier.startsWith('sk_test_') || process.env.NODE_ENV === 'test') return;
 
         const details = getFrustrationDetails();
         if (!details || details.score < 2) return; // Only aggregate frustration
@@ -300,6 +303,7 @@ export function createSessionTracker(options?: { zeroQueryRetention?: boolean })
         coverage: { status: string; results_returned?: number; results_on_topic?: number; layers_searched?: string[] } | undefined
     ): boolean {
         if (!coverage || (coverage.status !== 'thin' && coverage.status !== 'empty')) return false;
+        if (!userIdentifier || userIdentifier.startsWith('test_') || userIdentifier.startsWith('test-') || userIdentifier.startsWith('sk_test_') || process.env.NODE_ENV === 'test') return false;
         const key = query.toLowerCase().trim().replace(/\s+/g, ' ');
         if (gapAlertsSent.has(key)) return false;
         gapAlertsSent.add(key);

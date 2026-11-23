@@ -24,3 +24,8 @@ eval/
 
 # Internal agent briefs — keep local only
 briefs/
+
+# Test queries scripts (local only)
+test_queries.sh
+test_queries.ts
+

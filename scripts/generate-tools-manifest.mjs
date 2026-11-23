@@ -39,9 +39,11 @@ const BILLS_AS = {
   get_company_earnings: 'earnings_company',
   draft_linkedin_post: 'linkedin_post',
   draft_linkedin_article: 'linkedin_article',
-  verify_market_claim: 'topic_research',
-  get_intelligence_dossier: 'topic_research',
+  verify_market_claim: 'verify_market_claim',
+  get_intelligence_dossier: 'intelligence_dossier',
   generate_comms_plan: 'planning',
+  book_fodda_call: 'free',
+  get_my_earnings: 'free',
 };
 
 const CATEGORY = {
@@ -60,7 +62,7 @@ const CATEGORY = {
   generate_visual: 'Visual',
   draft_linkedin_post: 'Content', draft_linkedin_article: 'Content',
   list_graphs: 'Account', get_my_account: 'Account', sign_up_free_account: 'Account',
-  toggle_graph_preference: 'Account', send_feedback: 'Account',
+  toggle_graph_preference: 'Account', send_feedback: 'Account', book_fodda_call: 'Account', get_my_earnings: 'Account',
   manage_scheduled_reports: 'Account', check_research_status: 'Status', check_supplemental_status: 'Status',
   begin_expert_onboarding: 'Onboarding', submit_basic_info: 'Onboarding', submit_mcp_source: 'Onboarding',
   finalize_byo_mcp_onboarding: 'Onboarding', expert_onboarding_research: 'Onboarding',

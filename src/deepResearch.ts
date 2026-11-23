@@ -531,7 +531,7 @@ export async function runDeepResearch(opts: DeepResearchOpts): Promise<DeepResea
         // 1. Evidence item formatted_citation / sourceUrl (real external links)
         for (const t of graphTrends) {
             for (const ev of (t.evidence || [])) {
-                const rawEvUrl = typeof ev === 'string' ? ev : (ev?.sourceUrl || ev?.formatted_citation || '');
+                const rawEvUrl = typeof ev === 'string' ? ev : (ev?.source_url || ev?.sourceUrl || ev?.formatted_citation || '');
                 const normEv = normalizeUrl(rawEvUrl);
                 if (normEv && !isInternalOrSearchUrl(normEv) && !isFabricatedUrl(normEv) && !seenUrls.has(normEv)) {
                     seenUrls.add(normEv);

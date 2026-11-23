@@ -43,7 +43,7 @@ import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_HOUSE_VISUA
 import type { AccountProfile } from './systemPrompt.js';
 import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, enrichVoice, enrichVoices, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace, cleanTruncateWhyNow } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
-import { chargeQuery, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
+import { chargeQuery, getQueryPricing, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
 import type { SkillConfig, SkillResult, DiscoveredSkill } from './skillClient.js';
 import { createSessionTracker, postToSlack } from './sessionTracker.js';
@@ -400,9 +400,12 @@ const SNAKE_TO_CAMEL: Record<string, string> = {
 function stripRoutingInstruction(text: string): string {
     return text.replace(/\n*\[ROUTING INSTRUCTION:[\s\S]*?\]\s*$/g, '').trimEnd();
 }
-function serializeGraphForList(g: any): Record<string, any> {
+function serializeGraphForList(g: any, sessionSource?: string): Record<string, any> {
     const out: Record<string, any> = {};
     for (const key of GRAPH_LIST_ALLOWLIST) {
+        if ((sessionSource === 'chatgpt' || sessionSource === 'claude') && (key === 'price_per_query' || key === 'pricePerQuery')) {
+            continue;
+        }
         let val = g[key] ?? g[SNAKE_TO_CAMEL[key] || key];
         if (val !== undefined && val !== null) {
             // Defensive: never surface internal routing text in the public description.
@@ -1160,7 +1163,7 @@ export async function createServer(
                 // public-facing description clean (it must never contain internal routing text).
                 if (data && Array.isArray(data.graphs)) {
                     data.graphs = data.graphs.map((g: any) => {
-                        const serialized = serializeGraphForList(g);
+                        const serialized = serializeGraphForList(g, sessionSource);
                         if (g.agent_prompt) {
                             serialized.routing_hint = g.agent_prompt;
                         }
@@ -1458,7 +1461,7 @@ export async function createServer(
 
             // 1. Tool Guide view ('tools')
             if (view === 'tools') {
-                const guide = generateToolGuide(isToolCallable);
+                const guide = generateToolGuide(isToolCallable, sessionSource);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(guide, null, 2) }] };
             }
 
@@ -1469,7 +1472,7 @@ export async function createServer(
 
             if (view === 'help' || (question && question.trim()) || isFoddaMetaQuery(topic)) {
                 const helpQ = question || topic || '';
-                const helpResult = await getHelpAnswer(helpQ);
+                const helpResult = await getHelpAnswer(helpQ, sessionSource);
                 return { content: [{ type: 'text' as const, text: JSON.stringify(helpResult, null, 2) }] };
             }
 
@@ -4513,11 +4516,11 @@ export async function createServer(
                             evidence_by_type: profile.summary?.evidence_by_type,
                         },
                         top_trends: (profile.trend_footprint || []).slice(0, 5).map((t: any) => ({
-                            name: t.name,
+                            name: t.trend_name || t.name || '',
                             lifecycle: t.lifecycle,
                             graph_id: t.graphId || t._use_this_graphId || t.graph_id,
                             signal_score: t.signalScore || t.signal_score,
-                            summary: t.summary,
+                            summary: t.trend_description || t.summary || t.description || '',
                         })),
                         co_occurring_brands: profile.competitive_context?.co_occurring_brands || [],
                         supplemental_signals: profile.supplemental_signals ? {
@@ -4985,7 +4988,7 @@ export async function createServer(
             try {
                 logUserQuery(claim, 'verify_market_claim');
 
-                const guard = sptGuard('topic_research');
+                const guard = sptGuard('verify_market_claim');
                 if (guard) return guard;
 
                 const body: Record<string, any> = {
@@ -4998,7 +5001,7 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/verify/claim', apiKey, resolveUserId(userId, uid), body);
 
                 const withheld = await settleOrWithhold({
-                    queryTypeCode: 'topic_research',
+                    queryTypeCode: 'verify_market_claim',
                     apiKey,
                     userId: resolveUserId(userId, uid),
                     query: claim,
@@ -5798,7 +5801,7 @@ export async function createServer(
             try {
                 logUserQuery(topic, 'intelligence_dossier');
 
-                const guard = sptGuard('topic_research');
+                const guard = sptGuard('intelligence_dossier');
                 if (guard) return guard;
 
                 const resolvedEditorialStyle = editorial_style || (publication_style ? (publication_style as any) : 'market_briefing');
@@ -5833,7 +5836,7 @@ export async function createServer(
                 const data = await foddaRequest('POST', '/v1/intelligence/dossier', apiKey, resolveUserId(userId, uid), body);
 
                 const withheld = await settleOrWithhold({
-                    queryTypeCode: 'topic_research',
+                    queryTypeCode: 'intelligence_dossier',
                     apiKey,
                     userId: resolveUserId(userId, uid),
                     query: topic,
@@ -6045,7 +6048,7 @@ export async function createServer(
         'generate_comms_plan',
         "Generate an agency-grade 7-section Strategy-to-Activation Brand Connections Plan from cultural insights, brand objectives, and live supplemental signals. Produces (1) Audience & Human Tension, (2) The Organizing Idea, (3) Contextual Connection Points with named partners and a Signature Flagship Activation, (4) Role of Each Connection, (5) Retail & Commerce Connections, (6) Priorities & Deliberate Omissions, (7) a 1-to-1 Runtime Evidence Ledger ([LIVE] vs [CAPABILITY] vs [UNVERIFIED]), and Appendix A isolating buyer ad specs, IAB/RMN taxonomies, verification checklists, and Official US Sports & Streaming Media Rights ground-truth. Also supports view: 'sports_media_rights' to query verified US major league & tentpole broadcast/streaming rights directly.",
         {
-            query: z.string().describe("The strategic brief, consumer occasion, or category challenge (e.g., 'The Explorers mindset in travel: people who enjoy meeting new people and connecting with new places...', 'Gen Z social running clubs', 'functional mushroom coffee'). Must specify an audience, product category, or occasion."),
+            query: z.string().optional().describe("The strategic brief, consumer occasion, or category challenge (e.g., 'The Explorers mindset in travel: people who enjoy meeting new people and connecting with new places...', 'Gen Z social running clubs', 'functional mushroom coffee'). Must specify an audience, product category, or occasion (required for full_plan, core_plan, and diagnostic)."),
             view: z.enum(['full_plan', 'core_plan', 'diagnostic', 'sports_media_rights', 'shopper_taxonomy']).optional().default('full_plan').describe("Execution mode: 'full_plan' (default) returns the complete 7-section strategic plan + Appendix A (ad specs, retail shelf audits, evidence ledger); 'core_plan' (1 API call) runs a fast lightweight strategic sweep without paid supplemental calls, ideal for rapid planner iteration; also supports 'diagnostic', 'sports_media_rights', and 'shopper_taxonomy'."),
             domain: z.string().optional().describe("Optional domain filter when using view='sports_media_rights' (e.g. 'sports', 'endurance', 'entertainment')."),
             brand: z.string().optional().describe("Target brand name (e.g. 'Marriott Hotels', 'Airbnb', 'On Running'). Strongly recommended: specifying an exact brand anchors first-party loyalty, relevant retail media networks (e.g. Marriott Media Network, Walmart Connect), and strict competitor exclusion. Omit or set to '' for a brand-agnostic category plan."),
@@ -6827,7 +6830,7 @@ export async function createServer(
         'The canonical per-ticker earnings source for 517 covered companies. \n- view=\'snapshot\' (default): Full quarterly record including headline, financial metrics, analyst sentiment, strategic activity, CEO quotes, and top Q&A entries.\n- view=\'qa\': Itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness. USE THIS VIEW whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes.\n- view=\'history\': Narrative quarterly timeline.\n- view=\'compare\': Side-by-side comparison of 2-5 tickers.',
         {
             mode: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe('Execution mode (alias for view): snapshot, history, qa, compare, guidance, coverage (free). Defaults to snapshot.'),
-            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().default('snapshot').describe("snapshot: full quarterly record including headline, financial metrics, analyst sentiment, strategic activity, CEO quotes, and top Q&A entries. qa: itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness. USE THIS VIEW whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes. history: narrative quarterly timeline. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free). Defaults to snapshot."),
+            view: z.enum(['snapshot', 'history', 'qa', 'compare', 'coverage', 'guidance']).optional().describe("snapshot: full quarterly record including headline, financial metrics, analyst sentiment, strategic activity, CEO quotes, and top Q&A entries. qa: itemized analyst Q&A session with verbatim analyst questions, analyst names, analyst firms, executive responses, and response directness. USE THIS VIEW whenever the user asks who asked a question, for analyst names/firms, or for verbatim call quotes. history: narrative quarterly timeline. compare: side-by-side comparison of 2-5 tickers. coverage: list all covered tickers (free). Defaults to snapshot."),
             ticker: z.string().optional().describe("Company ticker symbol (e.g. NKE, LULU, ONON). Required for snapshot, history, and qa views."),
             tickers: z.string().optional().describe("Comma-separated ticker symbols for compare view (2-5 tickers). Only used when view=compare."),
             period: z.string().optional().describe("Quarter filter (e.g. Q1-2026). Defaults to latest quarter."),
@@ -6902,6 +6905,16 @@ export async function createServer(
                         queryTypeCode = 'earnings_compare';
                         break;
                     }
+                    case 'guidance': {
+                        const params = new URLSearchParams();
+                        if (ticker) params.set('ticker', ticker);
+                        if (sector) params.set('sector', sector);
+                        if (period) params.set('period', period);
+                        const qs = params.toString();
+                        path = `/v1/earnings/guidance-changes${qs ? '?' + qs : ''}`;
+                        queryTypeCode = 'earnings_company';
+                        break;
+                    }
                     case 'coverage': {
                         // Free endpoint — no billing
                         const data = await foddaRequest('GET', '/v1/earnings/coverage', apiKey, resolveUserId(userId, uid));
@@ -6932,7 +6945,7 @@ export async function createServer(
                 ]);
 
                 // ── Settlement ──
-                const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: ticker || tickers || sector || view }, 'get_company_earnings');
+                const withheld = await settleOrWithhold({ queryTypeCode, apiKey, userId: resolveUserId(userId, uid), query: ticker || tickers || sector || view || 'company earnings' }, 'get_company_earnings');
                 if (withheld) return withheld;
 
                 let responsePayload = data;
@@ -7145,12 +7158,24 @@ export async function createServer(
                     slackLines.push(`❓ *Prompt Context:* ${promptDisplay}`);
                 }
                 slackLines.push(`→ Check if this needs a response or product action.`);
-                postToSlack(slackLines.join('\n')).catch(() => {});
+                const isFeedbackTest = Boolean(
+                    userLabel.startsWith('test_') ||
+                    userLabel.startsWith('test-') ||
+                    userLabel.startsWith('sk_test_') ||
+                    apiKey.startsWith('test_') ||
+                    apiKey.startsWith('sk_test_') ||
+                    sessionSource === 'mcp-internal-test' ||
+                    process.env.NODE_ENV === 'test'
+                );
+
+                if (!isFeedbackTest) {
+                    postToSlack(slackLines.join('\n')).catch(() => {});
+                }
 
                 // ── Resend email ──
                 const resendKey = process.env.RESEND_API_KEY;
-                if (!resendKey) {
-                    console.error('[send_feedback] RESEND_API_KEY not set — logging feedback locally');
+                if (!resendKey || process.env.NODE_ENV === 'test') {
+                    console.error('[send_feedback] RESEND_API_KEY not set or test mode — logging feedback locally');
                     console.error(`[FEEDBACK] category=${catLabel} email=${userLabel} feedback=${feedback}${promptDisplay ? ` prompt=${promptDisplay}` : ''}`);
                     return {
                         content: [{
@@ -7168,7 +7193,7 @@ export async function createServer(
                 await resend.emails.send({
                     from: 'Fodda MCP <feedback@fodda.ai>',
                     to: ['piers.fawkes@psfk.com'],
-                    cc: ['team@fodda.ai'],
+                    ...(isFeedbackTest ? {} : { cc: ['team@fodda.ai'] }),
                     subject,
                     text: [
                         `Category: ${catLabel}`,
@@ -7610,6 +7635,7 @@ export async function createServer(
         },
         { title: 'Manage Scheduled Reports', readOnlyHint: false, consequentialHint: true, destructiveHint: true, idempotentHint: false, openWorldHint: true } as any,
         async ({ action, query, email, slack_webhook, graphs, schedule_id, cadence, timezone, report_type, brands }) => {
+            const effUserId = resolveUserId(userId, email);
             try {
                 if (action === 'create') {
                     if (!query) return { isError: true, content: [{ type: 'text' as const, text: 'A research query is required to create a schedule.' }] };
@@ -7627,22 +7653,22 @@ export async function createServer(
                         delivery: { email, slack_webhook, format: 'markdown' },
                         name: query.substring(0, 80),
                     };
-                    const result = await foddaRequest('POST', '/v1/research/schedules', apiKey, resolveUserId('', ''), body);
+                    const result = await foddaRequest('POST', '/v1/research/schedules', apiKey, effUserId, body);
                     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) + '\n\n✅ Briefing created! Your first report will arrive within 24 hours as a preview.' }] };
                 } else if (action === 'list') {
-                    const result = await foddaRequest('GET', '/v1/research/schedules', apiKey, resolveUserId('', ''));
+                    const result = await foddaRequest('GET', '/v1/research/schedules', apiKey, effUserId);
                     return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
                 } else if (action === 'cancel') {
                     if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to cancel.' }] };
-                    const result = await foddaRequest('POST', `/v1/research/schedules/${encodeURIComponent(schedule_id)}/cancel`, apiKey, resolveUserId('', ''), {});
+                    const result = await foddaRequest('POST', `/v1/research/schedules/${encodeURIComponent(schedule_id)}/cancel`, apiKey, effUserId, {});
                     return { content: [{ type: 'text' as const, text: '✅ Schedule cancelled. Already-consumed API calls are not refunded.' }] };
                 } else if (action === 'pause') {
                     if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to pause.' }] };
-                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, resolveUserId('', ''), { status: 'paused' });
+                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, effUserId, { status: 'paused' });
                     return { content: [{ type: 'text' as const, text: '⏸️ Briefing paused. Say "resume my briefing" to restart.' }] };
                 } else if (action === 'resume') {
                     if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to resume.' }] };
-                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, resolveUserId('', ''), { status: 'active' });
+                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, effUserId, { status: 'active' });
                     return { content: [{ type: 'text' as const, text: `✅ Briefing resumed! Next delivery: ${result.next_run}` }] };
                 } else if (action === 'update') {
                     if (!schedule_id) return { isError: true, content: [{ type: 'text' as const, text: 'A schedule_id is required to update.' }] };
@@ -7652,8 +7678,9 @@ export async function createServer(
                     if (email) body.delivery = { email };
                     if (brands) body.brands = brands;
                     if (report_type) body.report_type = report_type;
-                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, resolveUserId('', ''), body);
-                    return { content: [{ type: 'text' as const, text: `✅ Briefing updated: ${result.changes.join(', ')}. Next delivery: ${result.next_run}` }] };
+                    const result = await foddaRequest('PATCH', `/v1/research/schedules/${encodeURIComponent(schedule_id)}`, apiKey, effUserId, body);
+                    const changesText = result?.changes?.join(', ') || 'settings updated';
+                    return { content: [{ type: 'text' as const, text: `✅ Briefing updated: ${changesText}. Next delivery: ${result.next_run || 'as scheduled'}` }] };
                 }
                 return { isError: true, content: [{ type: 'text' as const, text: 'Unknown action.' }] };
             } catch (err: any) {
@@ -7705,19 +7732,25 @@ export async function createServer(
                 }
 
                 // ── Query-level billing ──
+                const pricing = getQueryPricing('url_as_prompt');
+                const callsCharged = pricing?.apiCallsCharged ?? 1;
                 chargeQuery({ queryTypeCode: 'url_as_prompt', apiKey, userId: resolveUserId(userId, uid), query: url, foddaRequest, spt: sptCtx?.token })
                     .catch(e => console.error('[read_url] chargeQuery failed:', e.message));
+
+                const responseData: Record<string, any> = {
+                    url,
+                    content: extractedText,
+                    content_length: extractedText.length,
+                    hint: 'You now have the full text from this URL. Cross-reference it against Fodda knowledge graphs using search_graph or deep_research_topic to find relevant trends and insights.'
+                };
+                if (sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
+                    responseData.api_calls_charged = callsCharged;
+                }
 
                 return {
                     content: [{
                         type: 'text' as const,
-                        text: JSON.stringify({
-                            url,
-                            content: extractedText,
-                            content_length: extractedText.length,
-                            api_calls_charged: 15,
-                            hint: 'You now have the full text from this URL. Cross-reference it against Fodda knowledge graphs using search_graph or deep_research_topic to find relevant trends and insights.'
-                        }, null, 2)
+                        text: JSON.stringify(responseData, null, 2)
                     }]
                 };
             } catch (err: any) {
@@ -7964,7 +7997,11 @@ export async function createServer(
             'https://fodda-sales-agent-p3uz7zw7ja-uc.a.run.app/webhooks/intent',
             'https://fodda-sales-agent-p3uz7zw7ja-uc.a.run.app/api/intent-webhook',
         ];
-        const secret = process.env.INTENT_WEBHOOK_SECRET || 'fodda_intent_secret_x9281';
+        const secret = process.env.INTENT_WEBHOOK_SECRET;
+        if (!secret) {
+            console.warn('[OnRequestWebhook] INTENT_WEBHOOK_SECRET not configured — skipping sales intent webhook');
+            return;
+        }
 
         // Caller identity resolution:
         // Pass userId (when authenticated via OAuth/connection token) or key:sk_live_... (when using an API key)
@@ -7984,6 +8021,7 @@ export async function createServer(
             callerIdentity.startsWith('test_') ||
             callerIdentity.startsWith('test-') ||
             callerIdentity.startsWith('key:sk_test_') ||
+            sessionSource === 'mcp-internal-test' ||
             process.env.NODE_ENV === 'test';
 
         if (isTestCaller) {
@@ -8455,7 +8493,7 @@ export async function createServer(
                 parts.push(`--- BOOK A CALL: ${callText} ---`);
             }
 
-            if (result.partial_credit_warning || result.credit_note) {
+            if ((result.partial_credit_warning || result.credit_note) && sessionSource !== 'chatgpt') {
                 parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
             }
             const humanAgentNextMoves = generateConsultNextMoves(
@@ -8468,6 +8506,7 @@ export async function createServer(
                     sessionId: session_id,
                     isToolCallable,
                     allowedTools,
+                    sessionSource,
                 },
                 getGraphs(),
                 getAnalysts()
@@ -8506,8 +8545,8 @@ export async function createServer(
                 book_a_call: (sessionSource === 'chatgpt' || sessionSource === 'claude' || isClassic) ? null : (result.book_a_call ?? null),
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.perspective ? { perspective: result.perspective } : {}),
-                ...(result.billing ? { billing: result.billing } : {}),
-                ...(result.usage ? { usage: result.usage } : {}),
+                ...(result.billing && sessionSource !== 'chatgpt' ? { billing: result.billing } : {}),
+                ...(result.usage && sessionSource !== 'chatgpt' ? { usage: result.usage } : {}),
                 content: [{ type: 'text' as const, text: parts.join('\n') }],
                 structuredContent: {
                     coverage: result.coverage || 'FULL',
@@ -8997,7 +9036,7 @@ export async function createServer(
                 parts.push(`--- BOOK A CALL: ${callText} ---`);
             }
 
-            if (result.partial_credit_warning || result.credit_note) {
+            if ((result.partial_credit_warning || result.credit_note) && sessionSource !== 'chatgpt') {
                 parts.push(`\n> ℹ️ **Note on Deeper Fodda Graph Sweep**: ${result.partial_credit_warning || result.credit_note}`);
             }
 
@@ -9011,6 +9050,7 @@ export async function createServer(
                     sessionId: session_id,
                     isToolCallable,
                     allowedTools,
+                    sessionSource,
                 },
                 getGraphs(),
                 getAnalysts()
@@ -9047,8 +9087,8 @@ export async function createServer(
                 sources_used: (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(result.sources_used) : result.sources_used,
                 ...(result.speaker_note ? { speaker_note: result.speaker_note } : {}),
                 ...(result.perspective ? { perspective: result.perspective } : {}),
-                ...(result.billing ? { billing: result.billing } : {}),
-                ...(result.usage ? { usage: result.usage } : {}),
+                ...(result.billing && sessionSource !== 'chatgpt' ? { billing: result.billing } : {}),
+                ...(result.usage && sessionSource !== 'chatgpt' ? { usage: result.usage } : {}),
                 content: [{ type: 'text' as const, text: parts.join('\n') }],
                 structuredContent: {
                     coverage: result.coverage || 'FULL',
@@ -10904,37 +10944,46 @@ export async function createServer(
     );
 
     server.tool(
-        'get_event_types',
-        'Fetch active meeting types.',
-        {},
-        async () => {
-            return { content: [{ type: 'text' as const, text: JSON.stringify(await foddaRequest('GET', '/v1/cal/events', apiKey, userId), null, 2) }] };
-        }
-    );
-
-    server.tool(
-        'get_availability',
-        'Query available slots.',
-        { eventTypeId: z.string() },
-        async ({ eventTypeId }) => {
-            return { content: [{ type: 'text' as const, text: JSON.stringify(await foddaRequest('GET', `/v1/cal/availability?eventTypeId=${eventTypeId}`, apiKey, userId), null, 2) }] };
-        }
-    );
-
-    server.tool(
-        'create_booking',
-        'Finalize a booking.',
-        { 
-            eventTypeId: z.string(), 
-            name: z.string(), 
-            email: z.string(), 
-            time: z.string(), 
-            note: z.string().optional() 
+        'book_fodda_call',
+        'Schedule a strategy session, demo, or onboarding call with the Fodda team. Supports three actions: \'event_types\' (list available meeting types and durations), \'availability\' (check open time slots for a given eventTypeId), and \'book\' (finalize and confirm a calendar booking with name, email, and selected start time).',
+        {
+            action: z.enum(['event_types', 'availability', 'book']).default('event_types').describe('Booking action to perform: \'event_types\' to list active meeting types, \'availability\' to check open schedule slots, or \'book\' to confirm a reservation.'),
+            eventTypeId: z.string().optional().describe('Event type identifier (required for \'availability\' and \'book\'). Obtain from action: \'event_types\'.'),
+            name: z.string().optional().describe('Attendee full name (required for action: \'book\').'),
+            email: z.string().email().optional().describe('Attendee email address for calendar invite confirmation (required for action: \'book\').'),
+            time: z.string().optional().describe('Selected ISO 8601 start timestamp for the meeting slot (required for action: \'book\'). Obtain from action: \'availability\'.'),
+            note: z.string().optional().describe('Optional context, agenda items, or questions for the call (for action: \'book\').'),
+            userId: z.string().optional().describe('Optional user identifier. Automatically resolved from authenticated session.')
         },
-        async ({ eventTypeId, name, email, time, note }) => {
-            return { content: [{ type: 'text' as const, text: JSON.stringify(await foddaRequest('POST', '/v1/cal/booking', apiKey, userId, {
-                eventTypeId, name, email, time, note
-            }), null, 2) }] };
+        { title: 'Book Fodda Call', readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        async ({ action, eventTypeId, name, email, time, note, userId: uid }: any) => {
+            const effUserId = resolveUserId(userId, uid);
+            try {
+                if (action === 'event_types' || !action) {
+                    const res = await foddaRequest('GET', '/v1/cal/events', apiKey, effUserId);
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(res, null, 2) }] };
+                }
+                if (action === 'availability') {
+                    if (!eventTypeId) {
+                        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'eventTypeId is required when action is \'availability\'.' }) }] };
+                    }
+                    const res = await foddaRequest('GET', `/v1/cal/availability?eventTypeId=${encodeURIComponent(eventTypeId)}`, apiKey, effUserId);
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(res, null, 2) }] };
+                }
+                if (action === 'book') {
+                    if (!eventTypeId || !name || !email || !time) {
+                        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: 'eventTypeId, name, email, and time are all required when action is \'book\'.' }) }] };
+                    }
+                    const res = await foddaRequest('POST', '/v1/cal/booking', apiKey, effUserId, {
+                        eventTypeId, name, email, time, note
+                    });
+                    return { content: [{ type: 'text' as const, text: JSON.stringify(res, null, 2) }] };
+                }
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: `Unknown action: ${action}` }) }] };
+            } catch (err: any) {
+                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+            }
         }
     );
 

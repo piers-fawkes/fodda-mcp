@@ -29,14 +29,14 @@ const ROOT = path.resolve(path.dirname(__filename), '..');
 
 const CANONICAL_DESCRIPTION =
   "Expert-curated knowledge, brand, research, and earnings intelligence for AI agents. " +
-  "46 tools across 220+ named-expert graphs: consult agentic Human Agents (real experts' digital twins), " +
+  "56 tools across 220+ named-expert graphs: consult agentic Human Agents (real experts' digital twins), " +
   "track brands, run deep research, and query earnings-call intelligence. " +
-  "Pay per task via Stripe SPT — no account required.";
+  "Pay per task with no subscription required.";
 
 // MCP Registry enforces ≤100 chars on body.description.
 // This is the truncated version derived from the canonical.
 const REGISTRY_DESCRIPTION =
-  "Expert-curated knowledge, brand, research & earnings intelligence — 46 tools, 220+ graphs.";
+  "Expert-curated knowledge, brand, research & earnings intelligence — 56 tools, 220+ graphs.";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // § Helpers
@@ -97,17 +97,17 @@ console.log('── Local version sync ──');
 
 // tools.ts — MCP_SERVER_VERSION
 const toolsSrc = read('src/tools.ts');
-const versionMatch = toolsSrc.match(/MCP_SERVER_VERSION\s*=\s*"([^"]+)"/);
-const toolsVersion = versionMatch ? versionMatch[1] : 'MISSING';
-if (diff('src/tools.ts', 'MCP_SERVER_VERSION', VERSION, toolsVersion) && FIX) {
-  write('src/tools.ts', toolsSrc.replace(/MCP_SERVER_VERSION\s*=\s*"[^"]+"/, `MCP_SERVER_VERSION = "${VERSION}"`));
-  console.log(green('    → fixed'));
-}
+const literalMatch = toolsSrc.match(/MCP_SERVER_VERSION\s*=\s*"([^"]+)"/);
+const dynamicMatch = toolsSrc.includes('MCP_SERVER_VERSION: string = pkg.version') || toolsSrc.includes('MCP_SERVER_VERSION = pkg.version');
+const toolsVersion = dynamicMatch ? VERSION : (literalMatch ? literalMatch[1] : 'MISSING');
+diff('src/tools.ts', 'MCP_SERVER_VERSION', VERSION, toolsVersion);
 
 // server.json (npm tarball)
 const serverJson = readJSON('server.json');
 diff('server.json', 'version', VERSION, serverJson.version);
-diff('server.json', 'packages[0].version', VERSION, serverJson.packages?.[0]?.version);
+if (serverJson.packages?.[0]) {
+  diff('server.json', 'packages[0].version', VERSION, serverJson.packages[0].version);
+}
 diff('server.json', 'description', REGISTRY_DESCRIPTION, serverJson.description);
 if (FIX) {
   serverJson.version = VERSION;

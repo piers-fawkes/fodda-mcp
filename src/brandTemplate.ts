@@ -10,7 +10,7 @@
 // Pressure type color mapping
 // ---------------------------------------------------------------------------
 import { fillBrandOneLiner, fillTrendFootprintIntro, fillMarketDataIntro, replaceSlots } from './editorialFill.js';
-import { esc, FODDA_LOGO_URL } from './widgetShell.js';
+import { esc, isSafeHttpUrl, FODDA_LOGO_URL } from './widgetShell.js';
 import { getDomainGraphIds } from './catalogCache.js';
 
 const PRESSURE_COLORS: Record<string, { bg: string; color: string; label: string }> = {
@@ -578,7 +578,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
             t.momentum?.fastMover ? '<span class="bd-fast">fast mover ↗</span>' : '',
         ].filter(Boolean).join('\n      ');
 
-        return `<div class="card" style="cursor:pointer;" onclick="sendPrompt('Explore ${esc(tName).replace(/'/g, '\\&#39;')} trend in Fodda')">
+        return `<div class="card" style="cursor:pointer;" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Explore ${tName} trend in Fodda`)}">
   <div class="th">
     <div class="tn">${esc(tName)}</div>
     <div class="ta">
@@ -596,7 +596,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
 ` +
           weakSignals.slice(0, 3).map((t: any) => {
             const tName = (t.trend_name || '').trim();
-            return `<div class="card" style="opacity:.75;cursor:pointer;" onclick="sendPrompt('Explore ${esc(tName).replace(/'/g, '\\&#39;')} trend in Fodda')">
+            return `<div class="card" style="opacity:.75;cursor:pointer;" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Explore ${tName} trend in Fodda`)}">
   <div class="th">
     <div class="tn">${esc(tName)}</div>
     <span class="lb ${lcClass(t.lifecycle)}">${esc(t.lifecycle)}</span>
@@ -609,7 +609,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
 
     // ── Evidence cards ──
     const evidenceHtml = evidence.slice(0, 20).map((ev: any) => {
-        const imgTag = ev.image_url ? `<img src="${esc(ev.image_url)}" style="width:100%;border-radius:6px;margin-bottom:8px;" onerror="this.style.display='none'"/>` : '';
+        const imgTag = isSafeHttpUrl(ev.image_url) ? `<img src="${esc(ev.image_url)}" style="width:100%;border-radius:6px;margin-bottom:8px;" onerror="this.style.display='none'"/>` : '';
         const placeBadge = ev.place ? `<span class="bd">${esc(ev.place)}</span>` : '';
         // Safe date parsing — fallback to empty on Invalid Date
         let date = '';
@@ -618,7 +618,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
             date = isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
         const dateBadge = date ? `<span class="bd">${esc(date)}</span>` : '';
-        const hasRealUrl = ev.source_url && !ev.source_url.startsWith('https://fodda.ai') && !ev.source_url.startsWith('https://www.fodda.ai');
+        const hasRealUrl = isSafeHttpUrl(ev.source_url) && !ev.source_url.startsWith('https://fodda.ai') && !ev.source_url.startsWith('https://www.fodda.ai');
         const titleHtml = hasRealUrl
             ? `<a href="${esc(ev.source_url)}" target="_blank" rel="noopener noreferrer">${esc(ev.title)}</a>`
             : esc(ev.title);
@@ -652,7 +652,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
   </div>
   <div class="ca">
     <span class="pb" style="background:${colors.bg};color:${colors.color};">${colors.label}</span>
-    <button class="cv" onclick="sendPrompt('brand intelligence: ${esc(bName)}')">Explore ↗</button>
+    <button class="cv" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`brand intelligence: ${bName}`)}">Explore ↗</button>
   </div>
 </div>`;
     }).join('\n');
@@ -660,7 +660,7 @@ export async function renderBrandWidget(profile: any): Promise<{ widget_html: st
     // ── Compare buttons ──
     const compareButtonsHtml = competitors.slice(0, 4).map((c: any) => {
         const bName = c.brand || c.name || '';
-        return `<button class="cp" onclick="sendPrompt('brand intelligence: ${esc(bName)}')">${esc(bName)} ↗</button>`;
+        return `<button class="cp" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`brand intelligence: ${bName}`)}">${esc(bName)} ↗</button>`;
     }).join('\n    ');
 
     // ── Google Trends ──
@@ -960,18 +960,18 @@ ${marketDataItems.join('\n')}`
         'GEO_SECTION_HTML': geoBarsHtml ? `<div class="sl2">Geographic spread</div>
     ${geoBarsHtml}` : '',
         'SOURCE_PILLS_HTML': sourcePills,
-        'EXPORT_1_LABEL': exportLabels[0]!.label,
-        'EXPORT_1_DESC': exportLabels[0]!.desc,
-        'EXPORT_1_PROMPT': exportLabels[0]!.prompt,
-        'EXPORT_2_LABEL': exportLabels[1]!.label,
-        'EXPORT_2_DESC': exportLabels[1]!.desc,
-        'EXPORT_2_PROMPT': exportLabels[1]!.prompt,
-        'EXPORT_3_LABEL': exportLabels[2]!.label,
-        'EXPORT_3_DESC': exportLabels[2]!.desc,
-        'EXPORT_3_PROMPT': exportLabels[2]!.prompt,
-        'EXPORT_4_LABEL': exportLabels[3]!.label,
-        'EXPORT_4_DESC': exportLabels[3]!.desc,
-        'EXPORT_4_PROMPT': exportLabels[3]!.prompt
+        'EXPORT_1_LABEL': esc(exportLabels[0]!.label),
+        'EXPORT_1_DESC': esc(exportLabels[0]!.desc),
+        'EXPORT_1_PROMPT': esc(exportLabels[0]!.prompt),
+        'EXPORT_2_LABEL': esc(exportLabels[1]!.label),
+        'EXPORT_2_DESC': esc(exportLabels[1]!.desc),
+        'EXPORT_2_PROMPT': esc(exportLabels[1]!.prompt),
+        'EXPORT_3_LABEL': esc(exportLabels[2]!.label),
+        'EXPORT_3_DESC': esc(exportLabels[2]!.desc),
+        'EXPORT_3_PROMPT': esc(exportLabels[2]!.prompt),
+        'EXPORT_4_LABEL': esc(exportLabels[3]!.label),
+        'EXPORT_4_DESC': esc(exportLabels[3]!.desc),
+        'EXPORT_4_PROMPT': esc(exportLabels[3]!.prompt)
     };
 
     let html = TEMPLATE;
@@ -984,9 +984,10 @@ ${marketDataItems.join('\n')}`
         fillMarketDataIntro(brand, supplemental),
     ]);
     if (isEmptyCoverage || trends.length === 0 || evidence.length === 0) {
-        fills['ONE_LINER'] = `Fodda has no curated trend evidence mentioning ${brand} yet.`;
+        fills['ONE_LINER'] = esc(`Fodda has no curated trend evidence mentioning ${brand} yet.`);
     } else {
-        fills['ONE_LINER'] = oneLiner.status === 'fulfilled' ? oneLiner.value : `${brand} is ${velocity.label} across ${trends.length} trend${trends.length !== 1 ? 's' : ''}.`;
+        const rawOneLiner = oneLiner.status === 'fulfilled' ? oneLiner.value : `${brand} is ${velocity.label} across ${trends.length} trend${trends.length !== 1 ? 's' : ''}.`;
+        fills['ONE_LINER'] = esc(rawOneLiner);
     }
     const trendIntroText = trendIntro.status === 'fulfilled' ? trendIntro.value : '';
     fills['TREND_FOOTPRINT_INTRO'] = trendIntroText ? `<p class="si">${esc(trendIntroText)}</p>` : '';
@@ -995,24 +996,23 @@ ${marketDataItems.join('\n')}`
 
     trends.slice(0, 10).forEach((t: any, i: number) => {
         const tName = t.trend_name || t.trendName || 'this trend';
-        fills[`EXPLORE_PROMPT_${i + 1}`] = `Tell me more about "${tName}" and how ${brand} is positioned`;
+        fills[`EXPLORE_PROMPT_${i + 1}`] = esc(`Tell me more about "${tName}" and how ${brand} is positioned`);
     });
-    fills['GT_CAPTION'] = supplemental?.google_trends ? `12-month search interest for "${brand}". Peak: ${supplemental.google_trends.peak_interest || '—'}, current: ${supplemental.google_trends.latest_value || '—'}. Source: Google Trends.` : `Search interest data for "${brand}". Source: Google Trends.`;
-    fills['RELATED_QUERIES_NOTE'] = supplemental?.google_trends?.related_queries?.length ? `Top related searches when people look for ${brand}.` : '';
-    fills['WIKI_NOTE'] = wikiData.length > 0 ? `Daily Wikipedia pageviews for ${brand}-related articles. Higher = more cultural attention.` : '';
-    const safeBrandName = esc(brand).replace(/'/g, "\\'");
+    fills['GT_CAPTION'] = esc(supplemental?.google_trends ? `12-month search interest for "${brand}". Peak: ${supplemental.google_trends.peak_interest || '—'}, current: ${supplemental.google_trends.latest_value || '—'}. Source: Google Trends.` : `Search interest data for "${brand}". Source: Google Trends.`);
+    fills['RELATED_QUERIES_NOTE'] = esc(supplemental?.google_trends?.related_queries?.length ? `Top related searches when people look for ${brand}.` : '');
+    fills['WIKI_NOTE'] = esc(wikiData.length > 0 ? `Daily Wikipedia pageviews for ${brand}-related articles. Higher = more cultural attention.` : '');
     const comp0 = competitors[0]?.brand || competitors[0]?.name;
-    const safeCompName = comp0 ? esc(comp0).replace(/'/g, "\\'") : 'related brand';
+    const comp0Name = comp0 || 'related brand';
     fills['SUGGESTED_NEXT_HTML'] = isEmptyCoverage
         ? `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-        <button class="btn-out" onclick="sendPrompt('Explore broader trends in ${safeBrandName}\\'s category')">Category trends</button>
-        <button class="btn-out" onclick="sendPrompt('Find domain specialists who cover ${safeBrandName}\\'s space')">Find expert</button>
-        <button class="btn-out" onclick="sendPrompt('Search market research on ${safeBrandName}')">Market research</button>
+        <button class="btn-out" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Explore broader trends in ${brand}'s category`)}">Category trends</button>
+        <button class="btn-out" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Find domain specialists who cover ${brand}'s space`)}">Find expert</button>
+        <button class="btn-out" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Search market research on ${brand}`)}">Market research</button>
     </div>`
         : `<div style="display:flex;flex-wrap:wrap;gap:6px;">
-        <button class="btn-out" onclick="sendPrompt('What are other brands alongside ${safeBrandName} doing differently?')">Category landscape</button>
-        <button class="btn-out" onclick="sendPrompt('Show me the evidence behind the strongest trend for ${safeBrandName}')">Deep dive</button>
-        <button class="btn-out" onclick="sendPrompt('Compare ${safeBrandName} vs ${safeCompName}')">Head-to-head</button>
+        <button class="btn-out" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`What are other brands alongside ${brand} doing differently?`)}">Category landscape</button>
+        <button class="btn-out" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Show me the evidence behind the strongest trend for ${brand}`)}">Deep dive</button>
+        <button class="btn-out" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="${esc(`Compare ${brand} vs ${comp0Name}`)}">Head-to-head</button>
     </div>`;
 
     html = replaceSlots(html, fills);
@@ -1195,10 +1195,10 @@ export const TEMPLATE = `
 
   <div class="sec">Explore further</div>
   {{SUGGESTED_NEXT_HTML}}
-  <button class="xb" onclick="sendPrompt('{{EXPORT_1_PROMPT}}')"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_1_LABEL}}</div><div class="xd">{{EXPORT_1_DESC}}</div></div></button>
-  <button class="xb" onclick="sendPrompt('{{EXPORT_2_PROMPT}}')"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_2_LABEL}}</div><div class="xd">{{EXPORT_2_DESC}}</div></div></button>
-  <button class="xb" onclick="sendPrompt('{{EXPORT_3_PROMPT}}')"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_3_LABEL}}</div><div class="xd">{{EXPORT_3_DESC}}</div></div></button>
-  <button class="xb" onclick="sendPrompt('{{EXPORT_4_PROMPT}}')"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_4_LABEL}}</div><div class="xd">{{EXPORT_4_DESC}}</div></div></button>
+  <button class="xb" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="{{EXPORT_1_PROMPT}}"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_1_LABEL}}</div><div class="xd">{{EXPORT_1_DESC}}</div></div></button>
+  <button class="xb" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="{{EXPORT_2_PROMPT}}"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_2_LABEL}}</div><div class="xd">{{EXPORT_2_DESC}}</div></div></button>
+  <button class="xb" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="{{EXPORT_3_PROMPT}}"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_3_LABEL}}</div><div class="xd">{{EXPORT_3_DESC}}</div></div></button>
+  <button class="xb" onclick="if(typeof sendPrompt==='function')sendPrompt(this.getAttribute('data-prompt'))" data-prompt="{{EXPORT_4_PROMPT}}"><span class="xi">↗</span><div><div class="xbl">{{EXPORT_4_LABEL}}</div><div class="xd">{{EXPORT_4_DESC}}</div></div></button>
 
   <div class="gf">
     <span class="gfl">Sources:</span>

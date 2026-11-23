@@ -139,6 +139,7 @@ export const AGENT_CARD = {
 interface A2ATaskRecord {
     task: A2ATask;
     createdAt: number;
+    ownerKeyHash?: string;
 }
 const a2aTasks = new Map<string, A2ATaskRecord>();
 
@@ -162,7 +163,7 @@ setInterval(() => {
             console.error(`[a2a] Task ${id} auto-failed: exceeded ${A2A_WORKING_TTL_MS / 60000}min working TTL`);
         }
     }
-}, 60_000);
+}, 60_000).unref();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -446,6 +447,19 @@ export function registerA2ARoute(
 
         const requestId = body.id ?? null;
 
+        // ── Authentication extraction ──
+        const rawApiKey = (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
+            || (req.headers['x-api-key'] as string)
+            || ((req as any).__rawQueryApiKey as string)
+            || (req.query?.api_key as string)
+            || '';
+        const apiKey = rawApiKey.trim();
+        const callerKeyHash = crypto.createHash('sha256').update(apiKey || 'anon').digest('hex');
+
+        const userId = (req.headers['x-user-id'] as string)
+            || (req.query?.user_id as string)
+            || 'a2a-agent';
+
         // ── Method dispatch ──
         switch (body.method) {
             case 'message/send':
@@ -466,6 +480,9 @@ export function registerA2ARoute(
                 if (!record) {
                     return res.json(jsonRpcError(requestId, -32602, `Task not found: ${taskId}`));
                 }
+                if (record.ownerKeyHash && record.ownerKeyHash !== callerKeyHash) {
+                    return res.json(jsonRpcError(requestId, -32003, 'Unauthorized: task does not belong to caller'));
+                }
                 return res.json(jsonRpcSuccess(requestId, record.task));
             }
 
@@ -477,6 +494,9 @@ export function registerA2ARoute(
                 const record = a2aTasks.get(taskId);
                 if (!record) {
                     return res.json(jsonRpcError(requestId, -32602, `Task not found: ${taskId}`));
+                }
+                if (record.ownerKeyHash && record.ownerKeyHash !== callerKeyHash) {
+                    return res.json(jsonRpcError(requestId, -32003, 'Unauthorized: task does not belong to caller'));
                 }
                 // Only cancel if still working
                 if (record.task.status.state === 'working' || record.task.status.state === 'submitted') {
@@ -520,21 +540,10 @@ export function registerA2ARoute(
 
         const queryText = textPart.text;
 
-        // ── Authentication ──
-        // Accept: Authorization: Bearer <key>, X-API-Key header, or api_key query param
-        const apiKey = (req.headers['authorization']?.toString().replace(/^Bearer\s+/i, ''))
-            || (req.headers['x-api-key'] as string)
-            || (req.query.api_key as string)
-            || '';
-
-        const userId = (req.headers['x-user-id'] as string)
-            || (req.query.user_id as string)
-            || 'a2a-agent';
-
         // For unauthenticated requests (health probes), return a minimal valid response
         if (!apiKey) {
-            const taskId = `task-${crypto.randomUUID().slice(0, 8)}`;
-            const contextId = `ctx-${crypto.randomUUID().slice(0, 8)}`;
+            const taskId = `task-${crypto.randomUUID()}`;
+            const contextId = `ctx-${crypto.randomUUID()}`;
 
             return res.json(jsonRpcSuccess(requestId, {
                 id: taskId,
@@ -587,8 +596,8 @@ export function registerA2ARoute(
                 }
 
                 // Create task in working state
-                const taskId = `task-${crypto.randomUUID().slice(0, 8)}`;
-                const contextId = `ctx-${crypto.randomUUID().slice(0, 8)}`;
+                const taskId = `task-${crypto.randomUUID()}`;
+                const contextId = `ctx-${crypto.randomUUID()}`;
                 const task: A2ATask = {
                     id: taskId,
                     contextId,
@@ -597,7 +606,7 @@ export function registerA2ARoute(
                         message: { role: 'agent', parts: [{ kind: 'text', text: 'Deep research in progress — poll tasks/get for the result.' }] },
                     },
                 };
-                a2aTasks.set(taskId, { task, createdAt: Date.now() });
+                a2aTasks.set(taskId, { task, createdAt: Date.now(), ownerKeyHash: callerKeyHash });
 
                 // Run the real pipeline in the background
                 (async () => {

@@ -80,10 +80,12 @@ import { MCP_SERVER_VERSION } from './tools.js';
  * Build a deterministic cache key from the request signature.
  * Uses raw string for small payloads (< 200 chars) to avoid crypto overhead.
  * Falls back to SHA-256 for large POST bodies where the raw key would be unwieldy.
+ * Includes authScope for tenant-specific or entitlement-scoped endpoints.
  */
-function buildCacheKey(method: string, path: string, body?: any): string {
+function buildCacheKey(method: string, path: string, body?: any, authScope?: string): string {
     const bodyStr = body ? JSON.stringify(body) : '';
-    const raw = `${MCP_SERVER_VERSION}:${method}:${path}:${bodyStr}`;
+    const scopeStr = authScope ? `:${authScope}` : '';
+    const raw = `${MCP_SERVER_VERSION}:${method}:${path}:${bodyStr}${scopeStr}`;
     if (raw.length < 200) return raw;
     return crypto.createHash('sha256').update(raw).digest('hex');
 }
@@ -159,12 +161,12 @@ function evictIfNeeded(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Look up a cached response. Returns the cached data or null if miss/expired.
+ * Look up a cached response. Returns a cloned copy of the cached data or null if miss/expired.
  */
-export function cacheGet(method: string, path: string, body?: any): any | null {
+export function cacheGet(method: string, path: string, body?: any, authScope?: string): any | null {
     if (!isCacheable(path)) return null;
 
-    const key = buildCacheKey(method, path, body);
+    const key = buildCacheKey(method, path, body, authScope);
     const entry = cache.get(key);
 
     if (!entry) {
@@ -184,24 +186,42 @@ export function cacheGet(method: string, path: string, body?: any): any | null {
     entry.lastAccessedAt = Date.now();
     stats.hits++;
     console.error(`[queryCache] HIT (${entry.label}) ${method} ${path} — hit #${entry.hitCount}, age ${Math.round((Date.now() - entry.createdAt) / 1000)}s`);
-    return entry.data;
+    try {
+        return structuredClone(entry.data);
+    } catch {
+        return JSON.parse(JSON.stringify(entry.data));
+    }
 }
 
 /**
- * Store a response in the cache.
+ * Store a response in the cache. Cleans ephemeral caller warnings and clones data to prevent shared-object mutation.
  */
-export function cacheSet(method: string, path: string, body: any | undefined, data: any): void {
-    if (!isCacheable(path)) return;
+export function cacheSet(method: string, path: string, body: any | undefined, data: any, authScope?: string): void {
+    if (!isCacheable(path) || !data) return;
 
     const ttlInfo = resolveTTL(path);
     if (!ttlInfo) return;
 
     evictIfNeeded();
 
-    const key = buildCacheKey(method, path, body);
+    const key = buildCacheKey(method, path, body, authScope);
     const now = Date.now();
+    let cleanData: any;
+    try {
+        cleanData = structuredClone(data);
+    } catch {
+        cleanData = JSON.parse(JSON.stringify(data));
+    }
+
+    // Strip caller-specific ephemeral warning/usage fields before storing
+    if (cleanData && typeof cleanData === 'object') {
+        delete cleanData._upstream_usage;
+        delete cleanData._usage_status;
+        delete cleanData._credit_warning;
+    }
+
     cache.set(key, {
-        data,
+        data: cleanData,
         createdAt: now,
         ttlMs: ttlInfo.ttlMs,
         label: ttlInfo.label,

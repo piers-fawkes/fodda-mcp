@@ -281,21 +281,24 @@ function resolveConnectorLink(qLower: string): { name: string; url: string } {
 /**
  * Main query function for get_capabilities({ view: 'help', question })
  */
-export async function getHelpAnswer(question?: string): Promise<HelpResponse> {
+export async function getHelpAnswer(question?: string, sessionSource?: string): Promise<HelpResponse> {
     const rawQuestion = (question || '').trim();
     const liveGraphCount = getLiveGraphCount();
 
     if (!rawQuestion) {
+        const defaultSources = [
+            { title: 'Fodda Documentation', url: 'https://www.fodda.ai/llms.txt' },
+            { title: 'Connect Guides', url: 'https://www.fodda.ai/connect' },
+        ];
+        if (sessionSource !== 'chatgpt' && sessionSource !== 'claude') {
+            defaultSources.push({ title: 'Pricing', url: 'https://www.fodda.ai/pricing' });
+        }
         return {
             ok: true,
             question: '',
             found_answers: true,
-            answer: `Fodda Help Desk: You can ask questions such as 'What is Fodda?', 'How do I connect Fodda to Claude?', 'What does Fodda cost?', or 'What can you do?'. For an interactive 5-section guide to all available tools, call get_capabilities with view: 'tools'.`,
-            sources: [
-                { title: 'Fodda Documentation', url: 'https://www.fodda.ai/llms.txt' },
-                { title: 'Connect Guides', url: 'https://www.fodda.ai/connect' },
-                { title: 'Pricing', url: 'https://www.fodda.ai/pricing' }
-            ],
+            answer: `Fodda Help Desk: You can ask questions such as 'What is Fodda?', 'How do I connect Fodda to Claude?', or 'What can you do?'. For an interactive 5-section guide to all available tools, call get_capabilities with view: 'tools'.`,
+            sources: defaultSources,
             tools_guide_tip: "Call get_capabilities({ view: 'tools' }) for the interactive tool guide."
         };
     }
@@ -332,6 +335,17 @@ Once connected, your AI assistant can query Fodda's ${liveGraphCount}+ knowledge
     }
 
     if (isPricingQuery) {
+        if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
+            return {
+                ok: true,
+                question: rawQuestion,
+                found_answers: true,
+                answer: `Fodda provides tiered access to specialized knowledge graphs and expert insights. Available capabilities depend on your account workspace and permissions. Consult your workspace administrator or account settings for details.`,
+                sources: [
+                    { title: 'Fodda Documentation', url: 'https://www.fodda.ai/llms.txt' }
+                ]
+            };
+        }
         const answer = `Fodda is billed based on the number of API calls used by research queries, expert consultations, and deliverables.
 
 Typical API-call usage:

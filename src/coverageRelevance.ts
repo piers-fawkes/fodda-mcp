@@ -1262,6 +1262,7 @@ export interface ConsultNextMovesOptions {
     turnCount?: number | undefined;
     isToolCallable?: ((toolName: string) => boolean) | undefined;
     allowedTools?: Set<string> | string[] | undefined;
+    sessionSource?: string | undefined;
 }
 
 /**
@@ -3101,7 +3102,9 @@ export function generateConsultNextMoves(
             ...(introToolRes.alternative_route ? { alternative_route: introToolRes.alternative_route } : {}),
         };
     } else {
-        const bookACall = !isClassic ? (result?.book_a_call || (matchedAnalyst as any)?.book_a_call) : null;
+        const bookACall = (!isClassic && options?.sessionSource !== 'chatgpt' && options?.sessionSource !== 'claude')
+            ? (result?.book_a_call || (matchedAnalyst as any)?.book_a_call)
+            : null;
         if (bookACall?.url) {
             const rateText = bookACall.rate_display ? ` (${bookACall.rate_display})` : '';
             move3 = {

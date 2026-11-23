@@ -30,7 +30,7 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "node scripts/sync-descriptions-from-airtable.mjs && node scripts/generate-tools-manifest.mjs && tsc",
+    "build": "rm -rf dist && node scripts/sync-descriptions-from-airtable.mjs && node scripts/generate-tools-manifest.mjs && tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "npm run build && node dist/verify_tools_endpoint.js",

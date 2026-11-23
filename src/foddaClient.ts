@@ -111,8 +111,13 @@ export async function foddaRequest(
     spt?: string,
     client?: string
 ): Promise<any> {
+    const isPublicSupplemental = path.startsWith('/v1/supplemental/') || path.startsWith('/api/supplemental/');
+    const authScope = isPublicSupplemental
+        ? 'public'
+        : crypto.createHash('sha256').update(apiKey || userId || 'anon').digest('hex').substring(0, 16);
+
     // ── Cache check ──
-    const cached = cacheGet(method, path, body);
+    const cached = cacheGet(method, path, body, authScope);
     if (cached !== null) return cached;
 
     const timestamp = Date.now().toString();
@@ -180,7 +185,7 @@ export async function foddaRequest(
     console.error(`[foddaRequest] ${method} ${path} completed in ${latencyMs}ms`);
 
     // ── Cache store ──
-    cacheSet(method, path, body, response.data);
+    cacheSet(method, path, body, response.data, authScope);
 
     // ── Inject upstream usage warning headers into response data ──
     // The app returns X-Usage-Warning / X-Usage-Percent / X-Usage-Overage-Tokens

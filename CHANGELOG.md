@@ -5,30 +5,77 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.46.160] - 2026-11-21
+## [1.46.160] - 2026-11-23
+
+### Security & Hardening
+- **Secret & Environment Protection (`.gitignore`, `src/toolHandlers.ts`, `src/sessionTracker.ts`)**:
+  - Removed dead/stale test scripts (`test_queries.sh`, `test_queries.ts`) and untracked `scratch/` test artifacts from git index; added to `.gitignore`.
+  - Removed hardcoded fallback secret (`fodda_intent_secret_x9281`) in `src/toolHandlers.ts`; added strict environment check on `INTENT_WEBHOOK_SECRET`.
+  - Suppressed Slack alerting and telemetry notifications for test callers and automated test suites (`sessionSource === 'mcp-internal-test'`, `NODE_ENV === 'test'`).
+  - Added test caller detection to `send_feedback` to suppress live email dispatches and avoid notifying production channels during testing.
+- **Query Cache Scoping & Deep Cloning (`src/queryCache.ts`, `src/foddaClient.ts`)**:
+  - Incorporated `authScope` (SHA-256 hash of API key or user ID, `'public'` for keyless endpoints) into all cache keys, preventing multi-tenant cache collision.
+  - Implemented deep cloning via `structuredClone` on `cacheGet` and `cacheSet`, preventing memory reference mutations across requests.
+  - Automatically stripped ephemeral usage warning fields (`_upstream_usage`, `_usage_status`, `_credit_warning`) prior to caching.
+- **A2A Task Hardening (`src/a2aHandler.ts`)**:
+  - Added caller authentication and task ownership validation (`ownerKeyHash === callerKeyHash`) to `tasks/get` and `tasks/cancel`.
+  - Upgraded task identifiers from 32-bit random hex to cryptographically secure UUIDs (`crypto.randomUUID()`).
+  - Added `.unref()` to the task cleanup timer interval to avoid hanging Node process exits.
+- **Express 5 & Session Protocol Hardening (`src/index.ts`)**:
+  - Fixed query string access in Express 5 by capturing `__rawQueryApiKey` prior to `req.url` redaction.
+  - Replaced string comparison with timing-safe HMAC verification (`crypto.timingSafeEqual`) and enforced a 5-minute replay window.
+  - Enforced strict UUID v4 validation on `mcp-session-id` headers and prevented arbitrary client-invented session IDs (returning 404 on expired or nonexistent sessions).
+  - Enforced session credential matching on active session reuse and Firestore session recovery.
+  - Added `Content-Security-Policy` and `X-Content-Type-Options: nosniff` headers to `GET /widget/:id`.
+- **Widget Sanitization & XSS Prevention (`src/widgetShell.ts`, `src/brandTemplate.ts`, `src/searchTemplate.ts`, `src/editorialFill.ts`)**:
+  - Added `isSafeHttpUrl` helper to validate HTTP/HTTPS schemes on evidence and image URLs.
+  - Refactored `sendPrompt` button handlers across widgets from inline string concatenation to HTML-escaped `data-prompt` attributes (`data-prompt="${esc(promptText)}"`) with standard attribute retrieval.
+  - Wrapped dynamic template slot fills (`ONE_LINER`, `EXPORT_*`, `GT_CAPTION`, `WIKI_NOTE`) in `esc()`.
+  - Fixed `replaceSlots` replacement function in `editorialFill.ts` to use `() => value` to prevent `$` interpolation bugs.
+
+### Editorial & House Rules
+- **Human Agent Attributed Perspective Compliance (`src/reportBriefing.ts`)**:
+  - Eliminated synthetic quote generation inside `"..."` in `runGeminiSynthesis` and `renderBriefingMarkdown`, enforcing the mandatory 3-part attribution arc.
+  - Updated section header from `"Human Expert Digital Twin Spotlight"` to `"Human Agent Spotlight"`.
+  - Filtered `matchHumanExpertTwin` to strictly match active Human Agents (`status === 'active'`), skipping inactive, unclaimed, or on-request records.
+  - Canonicalized expert consultation links to `https://www.fodda.ai/experts/${slug}`.
+- **ChatGPT 29-Tool Profile & Commerce Isolation (`src/toolHandlers.ts`, `src/toolGuide.ts`, `src/helpService.ts`, `src/coverageRelevance.ts`, `.agents/rules/chatgpt-listing.md`)**:
+  - Updated approved ChatGPT listing rule doc to reflect the 29-tool profile.
+  - Suppressed booking links, external rates (`book_a_call`), `billing`, `usage`, and `credit_note` in next moves and payloads when `sessionSource === 'chatgpt'`.
+  - Suppressed pricing links and API call mentions in `get_capabilities` (`view: 'tools'` and `view: 'help'`).
+  - Omitted `price_per_query` from `list_graphs` when called by ChatGPT.
+
+### Tool Consolidation & Logic Fixes
+- **Cal.com Tool Consolidation (`src/toolHandlers.ts`, `scripts/generate-tools-manifest.mjs`)**:
+  - Consolidated three bare tools (`get_event_types`, `get_availability`, `create_booking`) into a single, fully-annotated tool `book_fodda_call` supporting `action: 'event_types' | 'availability' | 'book'`.
+- **Handler & Schema Bug Fixes (`src/toolHandlers.ts`, `src/deepResearch.ts`, `src/pricingCache.ts`, `src/catalogCache.ts`)**:
+  - Implemented `case 'guidance':` in `get_company_earnings` (routing to `/v1/earnings/guidance-changes`) and removed `.default('snapshot')` on `view` so `mode` is honored.
+  - Made `query` optional in `generate_comms_plan` so `view: 'sports_media_rights'` and `view: 'shopper_taxonomy'` pass schema validation without dummy queries.
+  - Fixed `manage_scheduled_reports` to resolve user identity (`effUserId`) instead of hardcoding `'anonymous'`, and added safe chaining to `result.changes`.
+  - Fixed compact mode in `brand_tracker` to map `t.trend_name` and `t.trend_description`.
+  - Fixed evidence URL extraction in `src/deepResearch.ts` to check `ev?.source_url || ev?.sourceUrl`.
+  - Added fallback pricing (1 API call) in `src/pricingCache.ts` for `adjacent_trends`, `domain_intelligence`, `expert_intelligence`, `report_intelligence`, and `standalone_insights`.
+  - Removed duplicate `waverunnerRequest` metering in `src/index.ts` to prevent double-billing on `read_url` and `deep_research_topic`.
+  - Updated `fetchAnalysts` in `src/catalogCache.ts` to return `null` on network errors, preserving the cached 4,000+ expert roster across transient failures.
 
 ### Changed
 - **User Research Profile Alignment (`src/systemPrompt.ts`)**:
   - Aligned MCP prompt instructions with Fodda API's weekly User Research Profile batch job (`syncUserResearchProfiles`).
   - Removed all directives instructing the host model to quiz users, covertly profile their role, or call `update_user_profile`.
-  - Retained clean synthesis directive when `_account.userContext` is present: *"When `_account.userContext` is present in graph discovery, use it to calibrate response depth, prioritize relevant commercial evidence, and align with the user's recent strategic focus."*
-  - Eliminated empty-profile nagging: when `_account.userContext` is empty or null, knowledge graph discovery returns cleanly without injecting `RESEARCH PROFILE PREFERENCES` or warning nudges.
+  - Retained clean synthesis directive when `_account.userContext` is present.
+  - Eliminated empty-profile nagging when `_account.userContext` is empty or null.
 
 ### Removed
 - **`update_user_profile` Tool Deprecation (`src/toolHandlers.ts`, `src/tools.ts`, `tools-manifest.json`, `scripts/generate-tools-manifest.mjs`)**:
-  - Deprecated and removed the `update_user_profile` tool definition from the MCP server to stop mid-chat profile overwrites and save session tool context tokens.
-  - Removed sibling reference to `update_user_profile` in `toggle_graph_preference` description.
-  - Regenerated `tools-manifest.json` from 59 to 58 tools (27 billable, 31 free).
-  - Updated documentation (`README.md`, `CLAUDE_CONNECTORS_README.md`, `docs/tool-schema-guidelines.md`).
+  - Deprecated and removed the `update_user_profile` tool definition from the MCP server to stop mid-chat profile overwrites.
+  - Regenerated `tools-manifest.json` to 56 tools (27 billable, 29 free).
 
 ### Verification
-- `npm run build`: built cleanly with zero TypeScript errors; tools-manifest cost silence guard passed.
-- `scratch/verify_profile_alignment.ts`:
-  - Verified populated `_account.userContext` injects framing directive and zero `update_user_profile` directives across standard and scoped (`claude`, `chatgpt`) connector prompts.
-  - Verified empty `_account.userContext` omits all profiling nagging and tool call instructions.
-  - Verified `update_user_profile` is absent from `TOOL_VERSIONS` and `tools-manifest.json`.
-- `scratch/verify_server_tools.ts`: verified `createServer` instantiates exactly 58 tools with `update_user_profile` removed and core discovery tools (`list_graphs`, `get_my_account`) intact.
-- `npm test`: health endpoint 200 OK on v1.46.160.
+- `npm run build`: built cleanly with zero TypeScript errors; tools-manifest cost silence guard passed (56 tools: 27 billable, 29 free).
+- `node dist/verify_tools_endpoint.js`: passed (200 OK, v1.46.160, 448 graphs, 4286 analysts loaded).
+- `node scripts/test_chatgpt_live.mjs`: passed all 7 test suites, including RFC 9728 discovery metadata, 401 unauthenticated initialize matrix across all 8 routes, sanitizePayloadForChatGpt verification, commerce-free error handling, and 29-tool profile compliance.
+- `node scripts/sync-discovery.mjs`: verified 100% local sync across `src/tools.ts`, `server.json`, `fodda_mcp_server.json`, `tools-manifest.json`, and A2A card.
+- `npm audit --omit=dev`: resolved critical `proxy-addr` and high `@modelcontextprotocol/sdk` vulnerabilities via `npm audit fix`.
 
 ## [1.46.159] - 2026-11-21
 

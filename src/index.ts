@@ -65,12 +65,26 @@ export const app: Express = express();
 app.use(express.json({ limit: '512kb' }));
 
 // Strip api_key from request logging globally before anything hits Cloud Run logs
+// Preserves __rawQueryApiKey on req so Express 5 lazy query getter does not lose it
 app.use((req, _res, next) => {
     if (req.url && req.url.includes('api_key=')) {
-        req.url = req.url.replace(/api_key=[^&]+/g, 'api_key=REDACTED');
+        const match = req.url.match(/[?&]api_key=([^&]+)/);
+        if (match && match[1]) {
+            (req as any).__rawQueryApiKey = decodeURIComponent(match[1]);
+        }
+        req.url = req.url.replace(/([?&]api_key=)[^&]+/g, '$1REDACTED');
     }
     next();
 });
+
+// Helper for constant-time secret comparison
+export function matchesSecretConstantTime(a?: string, b?: string): boolean {
+    if (!a || !b) return false;
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+}
 
 // CORS — minimal, matching test server
 app.use((req, res, next) => {
@@ -90,18 +104,17 @@ export function isIncomingHmacValid(req: express.Request): boolean {
     if (!signature) return false;
     const timestamp = (req.headers['x-fodda-timestamp'] as string) || '';
 
-    // If timestamp is supplied, enforce a 5-minute replay window (300,000 ms)
-    if (timestamp) {
-        const ts = parseInt(timestamp, 10);
-        if (isNaN(ts) || Math.abs(Date.now() - ts) > 300000) {
-            return false;
-        }
+    // Enforce mandatory timestamp to prevent permanent replay attacks (5-minute window)
+    if (!timestamp) return false;
+    const ts = parseInt(timestamp, 10);
+    if (isNaN(ts) || Math.abs(Date.now() - ts) > 300000) {
+        return false;
     }
 
     // Try payload with timestamp: `${timestamp}.${JSON.stringify(body)}` or `${timestamp}.${path}`
     const payloadWithTs = (req.method === 'POST' || req.method === 'PATCH')
-        ? (timestamp ? `${timestamp}.${JSON.stringify(req.body ?? {})}` : JSON.stringify(req.body ?? {}))
-        : (timestamp ? `${timestamp}.${req.originalUrl || req.url}` : (req.originalUrl || req.url));
+        ? `${timestamp}.${JSON.stringify(req.body ?? {})}`
+        : `${timestamp}.${req.originalUrl || req.url}`;
 
     const expectedWithTs = crypto.createHmac('sha256', secret).update(payloadWithTs).digest('hex');
     if (signature.length === expectedWithTs.length) {
@@ -110,21 +123,6 @@ export function isIncomingHmacValid(req: express.Request): boolean {
                 return true;
             }
         } catch { /* ignore */ }
-    }
-
-    // Also support payload without timestamp fallback
-    if (timestamp) {
-        const fallbackPayload = (req.method === 'POST' || req.method === 'PATCH')
-            ? JSON.stringify(req.body ?? {})
-            : (req.originalUrl || req.url);
-        const fallbackExpected = crypto.createHmac('sha256', secret).update(fallbackPayload).digest('hex');
-        if (signature.length === fallbackExpected.length) {
-            try {
-                if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(fallbackExpected, 'hex'))) {
-                    return true;
-                }
-            } catch { /* ignore */ }
-        }
     }
 
     return false;
@@ -209,11 +207,12 @@ app.use(LEGACY_DEPRECATION_PATHS, (req, res, next) => {
 
         // Check if request carries modern credentials or internal service authorization
         const hasBearerAuth = rawBearer.length > 0;
+        const queryKey = (req as any).__rawQueryApiKey || (req.query.api_key as string) || '';
         const hasInternalKey = !!(internalKey && (
-            internalKeyHeader === internalKey ||
-            rawBearer === internalKey ||
-            apiKeyHeader === internalKey ||
-            (req.query.api_key as string) === internalKey
+            matchesSecretConstantTime(internalKeyHeader, internalKey) ||
+            matchesSecretConstantTime(rawBearer, internalKey) ||
+            matchesSecretConstantTime(apiKeyHeader, internalKey) ||
+            matchesSecretConstantTime(queryKey, internalKey)
         ));
         const hasValidHmac = isIncomingHmacValid(req);
         const hasHeaderApiKey = apiKeyHeader.startsWith('sk_live_') || apiKeyHeader.startsWith('sk_trial_');
@@ -645,9 +644,11 @@ app.post('/v1/feedback', (req, res) => {
 // Widget serving endpoint — returns cached pre-rendered HTML
 app.get('/widget/:id', (req, res) => {
     const entry = widgetCache.get(req.params.id);
-    if (!entry) return res.status(404).send('<html><body><p>Widget expired or not found.</p></body></html>');
+    if (!entry) return res.status(404).send('<!DOCTYPE html><html><body><p>Widget expired or not found.</p></body></html>');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors *;");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     // Wrap in full HTML document for iframe rendering
     res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}</style></head><body>${entry.html}</body></html>`);
 });
@@ -833,11 +834,8 @@ async function waverunnerRequest(
     // model refusal — a refusal is non-empty text and otherwise looks like success.
     const urlContextMetadata = response.candidates?.[0]?.urlContextMetadata || null;
 
-    // ── Post-decrement (paid accounts) ──
-    foddaRequest('POST', '/v1/research/meter', userApiKey, userId, {
-        type: interactionType,
-        billable_units: tokenCost,
-    }).catch(err => console.error('[waverunnerRequest] Metering failed:', err.message));
+    // Note: Metering is handled by the calling tool via settleOrWithhold/chargeQuery
+    // to prevent duplicate billing.
 
     return {
         outputs: [{ type: 'text', text: reportText }],
@@ -1160,7 +1158,15 @@ export async function resolveMcpToken(token: string, websiteBaseUrl: string): Pr
 
 app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/earnings-intelligence', '/expert-consult', '/copilot', '/chatgpt', '/claude', '/claude/{*sub}', '/grok-brand-context', '/c/:token'], async (req, res) => {
     try {
-        const sessionId = req.headers['mcp-session-id'] as string;
+        const rawSessionId = (req.headers['mcp-session-id'] as string) || '';
+        if (rawSessionId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawSessionId)) {
+            return res.status(400).json({
+                jsonrpc: '2.0',
+                id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                error: { code: -32600, message: 'Invalid Mcp-Session-Id format. Expected UUID v4.' }
+            });
+        }
+        const sessionId = rawSessionId;
         let transport: StreamableHTTPServerTransport;
 
         // Determine offering slug and tool filtering from URL path
@@ -1182,11 +1188,12 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
         const internalKeyHeader = (req.headers['x-internal-key'] as string) || '';
         const hasValidHmac = isIncomingHmacValid(req);
+        const queryApiKey = (req as any).__rawQueryApiKey || (req.query.api_key as string) || '';
         const isInternalAuth = hasValidHmac || !!(internalKey && (
-            internalKeyHeader === internalKey ||
-            rawBearer === internalKey ||
-            (req.headers['x-api-key'] as string) === internalKey ||
-            (req.query.api_key as string) === internalKey
+            matchesSecretConstantTime(internalKeyHeader, internalKey) ||
+            matchesSecretConstantTime(rawBearer, internalKey) ||
+            matchesSecretConstantTime(req.headers['x-api-key'] as string, internalKey) ||
+            matchesSecretConstantTime(queryApiKey, internalKey)
         ));
 
         // Clerk OAuth tokens may be JWTs (eyJ...), opaque tokens (oat_...), session tokens (sess_...), or custom OAuth tokens.
@@ -1271,7 +1278,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             || (!isClerkJwt ? rawBearer : '')
             || (isInternalAuth ? (internalKey || 'sk_internal_service') : '')
             || resolvedApiKey
-            || (req.query.api_key as string)
+            || queryApiKey
             || '');
         const entryId = resolvedEntryId || (req.query.id as string) || '';
         // If id looks like an email and no explicit user_id, use it as userId for tracking + signup
@@ -1294,6 +1301,15 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
         const source = isInternalTest ? 'mcp-internal-test' : (rawSource || (isChatGptUa ? 'chatgpt' : (isClaudeUa ? 'claude' : defaultSource)));
 
         if (sessionId && transports.has(sessionId)) {
+            const existingKey = sessionApiKeys.get(sessionId);
+            if (apiKey && existingKey && apiKey !== existingKey) {
+                return sendAuth401(res, {
+                    offeringSlug,
+                    message: 'Session credential mismatch.',
+                    invalidToken: true,
+                    id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                });
+            }
             transport = transports.get(sessionId)!;
         } else if (sessionId) {
             // Session ID provided, but not in local memory (e.g. after a deploy or container restart).
@@ -1310,11 +1326,25 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
 
             const stored = await getStoredSession(sessionId);
             if (stored?.apiKey) {
-                effectiveApiKey = effectiveApiKey || stored.apiKey;
+                if (apiKey && stored.apiKey !== apiKey) {
+                    return sendAuth401(res, {
+                        offeringSlug,
+                        message: 'Session credential mismatch on recovery.',
+                        invalidToken: true,
+                        id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                    });
+                }
+                effectiveApiKey = stored.apiKey;
                 effectiveUserId = (effectiveUserId && effectiveUserId !== 'anonymous') ? effectiveUserId : stored.userId;
                 effectiveSessionSource = effectiveSessionSource || stored.source || undefined;
                 effectiveClientSlug = clientSlug || stored.clientSlug || undefined;
 
+                // Offering scope enforcement: if session was stored with an offeringSlug, enforce it
+                const sessionOffering = stored.offeringSlug || offeringSlug;
+                const effectiveAllowedTools = (sessionOffering && sessionOffering !== 'mcp' && OFFERING_SCOPED_TOOLS[sessionOffering])
+                    ? OFFERING_SCOPED_TOOLS[sessionOffering]
+                    : allowedTools;
+
                 const boundFoddaRequest = isSpt
                     ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, effectiveClientSlug)) as typeof foddaRequest)
                     : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, effectiveSessionSource, undefined, effectiveClientSlug)) as typeof foddaRequest);
@@ -1328,7 +1358,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                     getServiceUrl,
                     entryId,
                     undefined,
-                    allowedTools,
+                    effectiveAllowedTools,
                     effectiveSessionSource,
                     effectiveClientSlug
                 );
@@ -1352,55 +1382,16 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                     userId: effectiveUserId,
                     source: effectiveSessionSource,
                     clientSlug: effectiveClientSlug,
-                    offeringSlug,
-                }).catch(() => {});
-            } else if (effectiveApiKey) {
-                // Not in Firestore, but request carries valid credentials (e.g. Bearer token sent with old sessionId)
-                const boundFoddaRequest = isSpt
-                    ? (((m: any, p: any, _k: any, u: any, b?: any, r?: any, _s?: any, sptArg?: any) => foddaRequest(m, p, sptArg ? '' : internalKey, u, b, r, isInternalTest ? 'mcp-internal-test' : 'spt', sptArg, effectiveClientSlug)) as typeof foddaRequest)
-                    : (((m: any, p: any, k: any, u: any, b?: any, r?: any) => foddaRequest(m, p, k, u, b, r, effectiveSessionSource, undefined, effectiveClientSlug)) as typeof foddaRequest);
-
-                const server = await createServer(
-                    effectiveApiKey,
-                    effectiveUserId,
-                    boundFoddaRequest,
-                    waverunnerRequest,
-                    storeWidget,
-                    getServiceUrl,
-                    entryId,
-                    undefined,
-                    allowedTools,
-                    effectiveSessionSource,
-                    effectiveClientSlug
-                );
-
-                transport = new StreamableHTTPServerTransport({
-                    sessionIdGenerator: () => sessionId,
-                });
-                (transport as any)._webStandardTransport.sessionId = sessionId;
-                (transport as any)._webStandardTransport._initialized = true;
-                await server.connect(transport as any);
-
-                transports.set(sessionId, transport);
-                sessionApiKeys.set(sessionId, effectiveApiKey);
-                sessionUserIds.set(sessionId, effectiveUserId);
-                sessionCreatedAt.set(sessionId, Date.now());
-                if (effectiveSessionSource) sessionSources.set(sessionId, effectiveSessionSource);
-                if (effectiveClientSlug) sessionClients.set(sessionId, effectiveClientSlug);
-
-                storeSession(sessionId, {
-                    apiKey: effectiveApiKey,
-                    userId: effectiveUserId,
-                    source: effectiveSessionSource,
-                    clientSlug: effectiveClientSlug,
-                    offeringSlug,
+                    offeringSlug: sessionOffering,
                 }).catch(() => {});
             } else {
-                return sendAuth401(res, {
-                    offeringSlug,
-                    message: 'Session expired. Re-authentication required.',
-                    invalidToken: false,
+                return res.status(404).json({
+                    jsonrpc: '2.0',
                     id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
+                    error: {
+                        code: -32001,
+                        message: 'Session not found or expired. Re-initialization required.',
+                    }
                 });
             }
         } else if (!sessionId && req.method === 'POST') {
