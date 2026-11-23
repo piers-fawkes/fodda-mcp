@@ -360,7 +360,7 @@
         "chatgpt",
         "claude"
       ],
-      "description": "Multi-source market and category intelligence dossier generator: synthesizes corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. 'Analyze autonomous checkout strategies', 'What are the alcoholic beverage trends in US retail'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research."
+      "description": "Multi-source market and category intelligence dossier retrieval: aggregates corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. 'Analyze autonomous checkout strategies', 'What are the alcoholic beverage trends in US retail'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research."
     },
     {
       "name": "get_label_values",

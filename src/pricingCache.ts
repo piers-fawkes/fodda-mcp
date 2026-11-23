@@ -709,10 +709,15 @@ export interface ChargeQueryParams {
     foddaRequest: (method: 'GET' | 'POST', path: string, apiKey: string, userId: string, body?: any, requestId?: string, source?: string, spt?: string) => Promise<any>;
 }
 
+export const FIRST_OVERAGE_CHARGE_NOTICE_TEXT = 'Note: This query was charged against your account, and any further queries will be billed until your account resets.';
+export const FIRST_OVERAGE_CHARGE_NOTICE_BLOCK = `\n\n---\n${FIRST_OVERAGE_CHARGE_NOTICE_TEXT}`;
+
 export interface ChargeQueryResult {
     charged: boolean;
     apiCallsCharged: number;
     apiCallsRemaining?: number;
+    firstOverageChargeNotice?: boolean;
+    overageNoticeText?: string;
     error?: string;
 }
 
@@ -775,12 +780,22 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
         try {
             const result = await foddaRequest('POST', '/v1/research/meter', apiKey, userId, meterBody, meterRequestId, undefined, spt);
             const remaining = result?.usage?.api_calls_remaining ?? result?.usage?.remaining;
+            const firstNotice = Boolean(result?.first_overage_charge_notice);
+            const overageNoticeText = firstNotice
+                ? (typeof result?.overage_notice === 'string' && result.overage_notice.trim() ? result.overage_notice.trim() : FIRST_OVERAGE_CHARGE_NOTICE_TEXT)
+                : undefined;
+
             if (result?.idempotent_replay) {
                 console.error(`[chargeQuery] Meter replay (already charged) for ${queryTypeCode} [${meterRequestId}].`);
             } else {
-                console.error(`[chargeQuery] Charged ${price} API calls for ${queryTypeCode} [${meterRequestId}]. Remaining: ${remaining ?? 'unknown'}`);
+                console.error(`[chargeQuery] Charged ${price} API calls for ${queryTypeCode} [${meterRequestId}]. Remaining: ${remaining ?? 'unknown'}${firstNotice ? ' (first overage notice active)' : ''}`);
             }
-            return { charged: true, apiCallsCharged: price, apiCallsRemaining: remaining };
+            return {
+                charged: true,
+                apiCallsCharged: price,
+                apiCallsRemaining: remaining,
+                ...(firstNotice ? { firstOverageChargeNotice: true, overageNoticeText } : {}),
+            };
         } catch (err: any) {
             lastErr = err;
             const cleanErr = cleanMeterError(err);
@@ -800,4 +815,37 @@ export async function chargeQuery(params: ChargeQueryParams): Promise<ChargeQuer
     // with the request id for reconciliation against the API's meter_idempotency records.
     console.error(`[chargeQuery] METER LOST after ${MAX_ATTEMPTS} attempts for ${queryTypeCode} [${meterRequestId}] — query uncharged. Last error: ${cleanMeterError(lastErr)}`);
     return { charged: false, apiCallsCharged: 0, error: cleanMeterError(lastErr) };
+}
+
+/**
+ * Bounded await helper for non-machine chargeQuery settlement.
+ * Races chargeQuery against a timeout (default 1500ms) so the meter call
+ * reliably flushes on Cloud Run without blocking tool delivery if the
+ * upstream meter endpoint is slow.
+ */
+export async function boundedChargeQuery(
+    params: ChargeQueryParams,
+    timeoutMs: number = 1500,
+    label: string = 'boundedChargeQuery'
+): Promise<ChargeQueryResult | null> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<null>((resolve) => {
+        timer = setTimeout(() => {
+            console.warn(`[${label}] Meter settlement timed out after ${timeoutMs}ms — continuing tool response without waiting`);
+            resolve(null);
+        }, timeoutMs);
+    });
+
+    try {
+        const result = await Promise.race([
+            chargeQuery(params),
+            timeoutPromise,
+        ]);
+        return result;
+    } catch (err: any) {
+        console.error(`[${label}] boundedChargeQuery failed:`, err?.message || err);
+        return null;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
 }

@@ -43,7 +43,7 @@ import { buildSystemPrompt, BRAND_INTELLIGENCE_RENDERING_SPEC, FODDA_HOUSE_VISUA
 import type { AccountProfile } from './systemPrompt.js';
 import { computeLifecycle, computeMomentum, isFastMover, enrichEvidence, enrichVoice, enrichVoices, reconcileFreshnessDays, rankAndFilterEvidence, GRAPH_BADGES, getFoddaTheme, getSupplementalTheme, isPlaceholderPlace, cleanTruncateWhyNow } from './enrichment.js';
 import { handleAccessError, handleTrialCreditExhaustion, classifyAccessError } from './errorHandling.js';
-import { chargeQuery, getQueryPricing, getToolCostSummary, type ChargeQueryParams } from './pricingCache.js';
+import { chargeQuery, boundedChargeQuery, getQueryPricing, getToolCostSummary, FIRST_OVERAGE_CHARGE_NOTICE_BLOCK, FIRST_OVERAGE_CHARGE_NOTICE_TEXT, type ChargeQueryParams } from './pricingCache.js';
 import { callOutputSkills, buildSkillInput, discoverSkillTools, executeSkillTool, mapSkillError } from './skillClient.js';
 import type { SkillConfig, SkillResult, DiscoveredSkill } from './skillClient.js';
 import { createSessionTracker, postToSlack } from './sessionTracker.js';
@@ -61,6 +61,27 @@ import { generateToolGuide, getLiveGraphCount } from './toolGuide.js';
 // don't receive MCP server-level `instructions` (e.g. Claude.ai).
 // ---------------------------------------------------------------------------
 const RENDER_SPEC_VERSION = '1.3';
+
+export function appendOverageNoticeToContent<T extends { content?: Array<{ type: string; text: string }> }>(
+    result: T,
+    noticeText: string = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK
+): T {
+    if (!result || !Array.isArray(result.content) || result.content.length === 0) {
+        return result;
+    }
+    const hasAlready = result.content.some(c => c && typeof c.text === 'string' && c.text.includes(FIRST_OVERAGE_CHARGE_NOTICE_TEXT));
+    if (hasAlready) return result;
+
+    for (let i = result.content.length - 1; i >= 0; i--) {
+        const item = result.content[i];
+        if (item && item.type === 'text' && typeof item.text === 'string') {
+            item.text = item.text + noticeText;
+            return result;
+        }
+    }
+    result.content.push({ type: 'text', text: noticeText.trimStart() });
+    return result;
+}
 
 export function resolveAnalystAlias(analystIdInput: string, companyInput?: string): { analyst_id: string; company?: string | undefined } {
     if (!analystIdInput) return { analyst_id: analystIdInput, company: companyInput };
@@ -652,6 +673,8 @@ export async function createServer(
     };
 
     // ── SPT settlement helpers (inert for credit/API-key sessions: sptCtx is undefined) ──
+    let lastTurnOverageNotice: string | null = null;
+
     // Pre-run guard: refuse a task BEFORE spending compute if this payment token can't cover it.
     // Returns an error result to return immediately, or null to proceed.
     const sptGuard = (queryTypeCode: string): { isError: true; content: { type: 'text'; text: string }[] } | null => {
@@ -663,17 +686,24 @@ export async function createServer(
         return null;
     };
     // Settlement-as-gate: SPT sessions await the charge and WITHHOLD the result if it fails;
-    // credit sessions fire-and-forget (a missed meter only under-bills, never blocks delivery).
+    // credit sessions bounded-await the meter (1500ms ceiling) so Cloud Run flushes debits reliably
+    // before CPU throttle drops async operations.
     // Returns an error result to return instead of the payload, or null when it's safe to deliver.
     const settleOrWithhold = async (params: Omit<ChargeQueryParams, 'foddaRequest' | 'spt'>, label: string): Promise<{ isError: true; content: { type: 'text'; text: string }[] } | null> => {
         if (sptCtx) {
             const r = await chargeQuery({ ...params, foddaRequest, spt: sptCtx.token });
+            if (r?.firstOverageChargeNotice) {
+                lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+            }
             if (!r.charged && r.error) {
                 return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: 'SPT_SETTLEMENT_FAILED', message: r.error || 'Payment could not be completed; result withheld.' }) }] };
             }
             return null;
         }
-        chargeQuery({ ...params, foddaRequest }).catch(e => console.error(`[${label}] chargeQuery failed:`, e.message));
+        const r = await boundedChargeQuery({ ...params, foddaRequest }, 1500, label);
+        if (r?.firstOverageChargeNotice) {
+            lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+        }
         return null;
     };
 
@@ -866,12 +896,17 @@ export async function createServer(
         if (typeof originalHandler === 'function') {
             args[handlerIndex] = async (...handlerArgs: any[]) => {
                 const start = Date.now();
+                lastTurnOverageNotice = null;
                 try {
                     const res = await originalHandler(...handlerArgs);
                     const duration = Date.now() - start;
                     const isError = Boolean(res && (res.isError || res.error));
                     const errorMsg = isError ? (typeof res.error === 'string' ? res.error : (res.content?.[0]?.text || 'Tool Error')) : undefined;
                     recordToolOutcome(name, !isError, duration, errorMsg);
+                    if (lastTurnOverageNotice && res && !res.isError && Array.isArray(res.content)) {
+                        appendOverageNoticeToContent(res, lastTurnOverageNotice);
+                        lastTurnOverageNotice = null;
+                    }
                     return res;
                 } catch (err: any) {
                     const duration = Date.now() - start;
@@ -1178,8 +1213,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'list_graphs', userId, apiKey, sessionSource);
             }
         }
     );
@@ -1960,8 +1994,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'list_analysts', userId, apiKey, sessionSource);
             }
         }
     );
@@ -2236,10 +2269,10 @@ export async function createServer(
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
             use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
             include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
-            include_voices: z.boolean().optional().default(true).describe('If true, include sourced voices (quotes, claims, stances) on each trend row. Default: true.'),
+            include_voices: z.boolean().optional().default(true).describe('If true, include cited voices (quotes, claims, stances) on each trend row. Default: true.'),
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
-        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         async ({ mode, graphs, graphId, graph, graph_id, sector, query, userId: uid, limit, use_semantic, include_evidence, include_voices, skip_skills }: any) => {
             const SEARCH_GRAPH_TIMEOUT_MS = 25000;
             const startTime = Date.now();
@@ -2252,6 +2285,20 @@ export async function createServer(
             });
 
             const targetGraphId = graphId || graph || graph_id;
+
+            const recordTopicResearchCharge = async () => {
+                const chargeRes = await boundedChargeQuery({
+                    queryTypeCode: 'topic_research',
+                    apiKey,
+                    userId: resolveUserId(userId, uid),
+                    query,
+                    foddaRequest,
+                    spt: sptCtx?.token,
+                }, 1500, 'search_graph');
+                if (chargeRes?.firstOverageChargeNotice) {
+                    lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+                }
+            };
 
             const executeSearchGraph = async (): Promise<any> => {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -3038,8 +3085,7 @@ export async function createServer(
                     // ChatGPT/Claude clients cannot render arbitrary HTML widgets and get bloated by design briefs
                     if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
                         const cleanData = sanitizePayloadForChatGpt(liteData);
-                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                            .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                        await recordTopicResearchCharge();
                         return {
                             next_moves: cleanData?.next_moves,
                             content: [
@@ -3060,8 +3106,7 @@ export async function createServer(
                     if (totalSize > 30000) {
                         console.error(`[search_graph] Payload too large (${(totalSize / 1024).toFixed(1)}KB) — skipping widget HTML, sending liteData JSON`);
                         // ── Query-level billing (large payload path) ──
-                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                            .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                        await recordTopicResearchCharge();
                         return {
                             next_moves: liteData?.next_moves,
                             content: [
@@ -3087,8 +3132,7 @@ export async function createServer(
                     };
 
                     // ── Query-level billing (rich widget path) ──
-                    chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                        .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                    await recordTopicResearchCharge();
 
                     return widgetResponse;
                 }
@@ -3101,8 +3145,7 @@ export async function createServer(
 
                 if (sessionSource === 'chatgpt' || sessionSource === 'claude') {
                     const cleanData = sanitizePayloadForChatGpt(fallbackData);
-                    chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                        .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                    await recordTopicResearchCharge();
                     return {
                         next_moves: cleanData?.next_moves,
                         content: [
@@ -3118,8 +3161,7 @@ export async function createServer(
                 }
 
                 // ── Query-level billing (fallback path) ──
-                chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                    .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                await recordTopicResearchCharge();
 
                 return {
                     next_moves: fallbackData?.next_moves,
@@ -3153,8 +3195,7 @@ export async function createServer(
                 if (raceResult && raceResult.__isDeadline) {
                     if (coreData && Array.isArray(coreData.rows)) {
                         console.error('[search_graph] Enrichment deadline reached, returning core results');
-                        chargeQuery({ queryTypeCode: 'topic_research', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                            .catch(e => console.error('[search_graph] chargeQuery failed:', e.message));
+                        await recordTopicResearchCharge();
 
                         const finalData = formatLiteData(coreData, targetGraphId);
                         const payload = (sessionSource === 'chatgpt' || sessionSource === 'claude')
@@ -3225,8 +3266,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'get_neighbors', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3283,8 +3323,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'get_evidence', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3312,8 +3351,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'get_node', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3338,8 +3376,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'get_label_values', userId, apiKey, sessionSource);
             }
         }
     );
@@ -3547,8 +3584,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'discover_adjacent_trends', userId, apiKey, sessionSource);
             }
         }
     );
@@ -4612,8 +4648,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'brand_tracker', userId, apiKey, sessionSource);
             }
         }
     );
@@ -4655,8 +4690,14 @@ export async function createServer(
                         const data = await foddaRequest('POST', '/v1/supplemental/context', apiKey, resolveUserId(userId, uid), body);
                         
                         // ── Query-level billing ──
-                        chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                            .catch(e => console.error('[supplemental] chargeQuery failed:', e.message));
+                        let overageNotice = false;
+                        if (sptCtx) {
+                            const r = await chargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx.token });
+                            if (r?.firstOverageChargeNotice) overageNotice = true;
+                        } else {
+                            const r = await boundedChargeQuery({ queryTypeCode: 'standalone_supplemental', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest }, 1500, 'supplemental');
+                            if (r?.firstOverageChargeNotice) overageNotice = true;
+                        }
 
                         const nextMoves = await generateNextMoves(
                             [],
@@ -4683,7 +4724,7 @@ export async function createServer(
                         }
 
                         const supplementalPayload = (sessionSource === 'chatgpt' || sessionSource === 'claude') ? sanitizePayloadForChatGpt(data) : data;
-                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(supplementalPayload, null, 2), nextMoves, query });
+                        activeSupplementalJobs.set(jobId, { status: 'COMPLETE', result: JSON.stringify(supplementalPayload, null, 2), nextMoves, query, firstOverageChargeNotice: overageNotice });
                     } catch (err: any) {
                         const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Unknown error';
                         activeSupplementalJobs.set(jobId, { status: 'FAILED', error: errMsg });
@@ -4699,7 +4740,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_supplemental_context', userId, apiKey, sessionSource);
             }
         }
     );
@@ -4725,11 +4766,16 @@ export async function createServer(
 
                 if (job.status === 'FAILED') {
                     activeSupplementalJobs.delete(job_id); // cleanup
+                    const accessResult = await handleAccessError(job.error, 'get_supplemental_context', userId, apiKey, sessionSource);
+                    if (accessResult) return accessResult;
                     return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
                 }
 
                 if (job.status === 'COMPLETE') {
                     activeSupplementalJobs.delete(job_id); // cleanup
+                    if (job.firstOverageChargeNotice) {
+                        lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+                    }
                     if (job.nextMoves) {
                         sessionTracker.recordNextMoves(job.nextMoves, job.query || '');
                     }
@@ -4806,7 +4852,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_domain_intelligence', userId, apiKey, sessionSource);
             }
         }
     );
@@ -4967,7 +5013,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_report_intelligence', userId, apiKey, sessionSource);
             }
         }
     );
@@ -5065,7 +5111,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'verify_market_claim', userId, apiKey, sessionSource);
             }
         }
     );
@@ -5784,19 +5830,19 @@ export async function createServer(
 
     server.tool(
         'get_intelligence_dossier',
-        'Multi-source market and category intelligence dossier generator: synthesizes corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. \'Analyze autonomous checkout strategies\', \'What are the alcoholic beverage trends in US retail\'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research.',
+        'Multi-source market and category intelligence dossier retrieval: aggregates corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. \'Analyze autonomous checkout strategies\', \'What are the alcoholic beverage trends in US retail\'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research.',
         {
             topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
             sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
             tickers: z.array(z.string()).optional().describe("Optional corporate tickers to cross-reference against earnings call Q&A intelligence (e.g. ['NKE', 'DECK'])."),
-            include_editorial: z.boolean().optional().describe("Set to true to format the dossier as a structured 5-section executive briefing (Section 1: Market Backdrop & Metrics, Section 2: Core Debate & Published Research, Section 3: Corporate Strategies & Earnings Disclosures, Section 4: Category Trends & Frameworks, Section 5: Strategic Implications & Takeaways)."),
-            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Editorial output mode: 'blueprint' (default) returns a structured intelligence blueprint and citation schema; 'full' runs complete server-side briefing synthesis; 'none' returns raw dossier data only."),
-            publication_name: z.string().optional().describe("Optional custom publication or newsletter name (e.g. 'The Retail Signal', 'Omnichannel Executive', 'Consumer Tech Digest'). If omitted, defaults to a neutral executive briefing title."),
-            editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing').describe("Editorial tone and format: 'market_briefing' for strategic cross-category analysis, 'industry_newsletter' for category and brand trends, 'executive_memo' for concise decision-maker briefings, or 'psfk_weekly' / 'retail_innovation_week' for PSFK house style."),
-            publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().describe("Backward-compatible alias for editorial_style: 'psfk_weekly' or 'retail_innovation_week'. Prefer editorial_style."),
+            include_editorial: z.boolean().optional().describe("Set to true to format findings into structured executive briefing sections (Market Backdrop, Core Research, Corporate Strategies, Category Trends, Strategic Takeaways)."),
+            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Dossier output structure: 'blueprint' (default) returns structured sections and citation schema; 'full' returns complete narrative sections; 'none' returns raw dossier data only."),
+            publication_name: z.string().optional().describe("Optional briefing title or header label for the dossier."),
+            editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing').describe("Analytical framing: 'market_briefing' for strategic cross-category analysis, 'industry_newsletter' for category and brand trends, or 'executive_memo' for concise decision-maker briefings."),
+            publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().describe("Alias for editorial_style."),
             userId: z.string().optional().describe('Optional user identifier for session scoping.'),
         },
-        { title: 'Assemble Unified Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+        { title: 'Assemble Unified Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
         async ({ topic, sector, tickers, include_editorial, editorial_mode, editorial_style, publication_style, publication_name, userId: uid }) => {
             try {
                 logUserQuery(topic, 'intelligence_dossier');
@@ -6038,7 +6084,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_intelligence_dossier', userId, apiKey, sessionSource);
             }
         }
     );
@@ -6412,7 +6458,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'search_statistics', userId, apiKey, sessionSource);
             }
         }
     );
@@ -6432,7 +6478,7 @@ export async function createServer(
             min_score: z.number().optional().describe('Minimum relevance threshold 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ for precise lookups.'),
             userId: z.string().optional().describe('Optional user identifier for session scoping.')
         },
-        { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+        { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
         async ({ graph_id, sector, query, types, speaker_types, stance, limit, min_score, userId: uid }: any) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)
@@ -6536,7 +6582,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'search_insights', userId, apiKey, sessionSource);
             }
         }
     );
@@ -6719,7 +6765,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_earnings_intelligence', userId, apiKey, sessionSource);
             }
         }
     );
@@ -6817,7 +6863,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_earnings_divergence', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7020,7 +7066,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_company_earnings', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7066,7 +7112,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                return await handleAccessError(err, 'supplemental', userId, apiKey, sessionSource);
+                return await handleAccessError(err, 'get_validated_trends', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7543,8 +7589,10 @@ export async function createServer(
                 (brainstormMap as any).next_moves = brainstormNextMoves;
 
                 // ── Query-level billing ──
-                chargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token })
-                    .catch(e => console.error('[brainstorm] chargeQuery failed:', e.message));
+                const chargeRes = await boundedChargeQuery({ queryTypeCode: 'brainstorm', apiKey, userId: resolveUserId(userId, uid), query, foddaRequest, spt: sptCtx?.token }, 1500, 'brainstorm');
+                if (chargeRes?.firstOverageChargeNotice) {
+                    lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+                }
 
                 const content: Array<{ type: 'text'; text: string }> = [
                     { type: 'text' as const, text: '── RAW DATA (for follow-up reasoning) ──\n' + JSON.stringify(brainstormMap, null, 2) },
@@ -7552,9 +7600,9 @@ export async function createServer(
 
                 return { next_moves: brainstormNextMoves, content };
             } catch (err: any) {
-                const msg = err.message || 'Brainstorm execution failed.';
-                console.error('[brainstorm_topic] Error:', msg);
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'brainstorm_topic', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7684,8 +7732,9 @@ export async function createServer(
                 }
                 return { isError: true, content: [{ type: 'text' as const, text: 'Unknown action.' }] };
             } catch (err: any) {
-                console.error('[manage_scheduled_reports] Error:', err.message);
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: err.message }) }] };
+                const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
+                if (trialResult) return trialResult;
+                return await handleAccessError(err, 'manage_scheduled_reports', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7734,8 +7783,10 @@ export async function createServer(
                 // ── Query-level billing ──
                 const pricing = getQueryPricing('url_as_prompt');
                 const callsCharged = pricing?.apiCallsCharged ?? 1;
-                chargeQuery({ queryTypeCode: 'url_as_prompt', apiKey, userId: resolveUserId(userId, uid), query: url, foddaRequest, spt: sptCtx?.token })
-                    .catch(e => console.error('[read_url] chargeQuery failed:', e.message));
+                const chargeRes = await boundedChargeQuery({ queryTypeCode: 'url_as_prompt', apiKey, userId: resolveUserId(userId, uid), query: url, foddaRequest, spt: sptCtx?.token }, 1500, 'read_url');
+                if (chargeRes?.firstOverageChargeNotice) {
+                    lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+                }
 
                 const responseData: Record<string, any> = {
                     url,
@@ -7756,9 +7807,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.message || 'URL extraction failed.';
-                console.error('[read_url] Error:', msg);
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'read_url', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7826,19 +7875,21 @@ export async function createServer(
 
                         clearTimeout(jobTimeoutTimer);
 
+                        let jobResultOverageNotice = false;
                         // ── Settlement gates delivery for SPT: only mark COMPLETE once the charge succeeds. ──
                         if (sptCtx) {
                             const r = await chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest, spt: sptCtx.token });
+                            if (r?.firstOverageChargeNotice) jobResultOverageNotice = true;
                             if (!r.charged) {
                                 activeResearchJobs.set(jobId, { status: 'FAILED', error: r.error || 'Payment could not be completed; report withheld.' });
                                 return;
                             }
                         } else {
-                            chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest })
-                                .catch(e => console.error('[deep_research_topic] chargeQuery failed:', e.message));
+                            const r = await boundedChargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest }, 1500, 'deep_research_topic');
+                            if (r?.firstOverageChargeNotice) jobResultOverageNotice = true;
                         }
 
-                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result });
+                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result, firstOverageChargeNotice: jobResultOverageNotice });
                     } catch (err: any) {
                         clearTimeout(jobTimeoutTimer);
                         const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
@@ -7887,8 +7938,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'deep_research_topic', userId, apiKey, sessionSource);
             }
         }
     );
@@ -7914,11 +7964,16 @@ export async function createServer(
 
                 if (job.status === 'FAILED') {
                     activeResearchJobs.delete(job_id); // cleanup
+                    const accessResult = await handleAccessError(job.error, 'deep_research_topic', userId, apiKey, sessionSource);
+                    if (accessResult) return accessResult;
                     return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
                 }
 
                 if (job.status === 'COMPLETE') {
                     activeResearchJobs.delete(job_id); // cleanup
+                    if (job.firstOverageChargeNotice) {
+                        lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
+                    }
                     if (job.isConsult) {
                         const res = job.result;
                         const text = typeof res === 'string'
@@ -9782,8 +9837,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'request_deliverable', userId, apiKey, sessionSource);
             }
         }
     );
@@ -9817,8 +9871,7 @@ export async function createServer(
                 } catch (err: any) {
                     const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                     if (trialResult) return trialResult;
-                    const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                    return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                    return await handleAccessError(err, 'check_deliverable_status', userId, apiKey, sessionSource);
                 }
 
                 const elapsed = Date.now() - startTime;
@@ -9839,8 +9892,7 @@ export async function createServer(
             } catch (err: any) {
                 const trialResult = await handleTrialCreditExhaustion(err, apiKey, userId, sessionSource);
                 if (trialResult) return trialResult;
-                const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: msg }) }] };
+                return await handleAccessError(err, 'check_deliverable_status', userId, apiKey, sessionSource);
             }
         }
     );

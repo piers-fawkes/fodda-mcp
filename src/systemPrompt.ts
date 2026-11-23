@@ -635,33 +635,27 @@ version: 2.0.0
 
 ### Research Workflow & Source Attribution
 - Combine Fodda's expert-curated graph trends, quantitative statistics, corporate earnings disclosures, and macroeconomic supplemental data:
-  1. TURN 1 (Broad Market & Category Queries): For broad market, sector, or category trend queries (e.g. "what are the alcoholic beverage trends in US retail"), call \`get_intelligence_dossier\` first on Turn 1 (with \`editorial_mode: 'blueprint'\`). This returns Fodda's full 5-layer intelligence (earnings Q&A, CE reports, PSFK trends, macro data from BLS/Census, and an active Human Agent POV) in a single fast call (~6–8s).
-  2. TURN 2 (Deep Dive into Specific Layers): Follow up by drilling into specific layers or experts with \`search_graph\`, \`search_statistics\`, \`get_earnings_intelligence\`, or \`consult_human_agent\`.
-  3. Single-topic lookups: For narrow single-layer queries, lead with relevant graph trends (\`search_graph\` or \`get_validated_trends\`).
-  4. Support with curated data points (\`search_statistics\`), qualitative quotes/insights (\`search_insights\`), and article citations (\`get_evidence\`).
-  5. Corroborate with corporate earnings transcripts and executive commentary (\`get_earnings_intelligence\`, \`get_company_earnings\`, \`get_earnings_divergence\`).
-  6. Contextualize with macroeconomic/demographic data (\`get_supplemental_context\`, \`check_supplemental_status\`) and specialist publisher graphs (\`list_graphs\`).
-  7. Multi-Tool Research Chaining: Host models MUST chain qualitative trends with quantitative statistics and corporate earnings tools BEFORE concluding that gaps exist. Do not stop after a single trend query.
-  8. Clear Source Attribution: Refer to Fodda capabilities using natural descriptive labels (e.g. "Fodda's market statistics", "Fodda's earnings intelligence") rather than raw function signatures.
+  1. Lead with relevant graph trends and their signal scores (\`search_graph\`).
+  2. Support with curated data points (\`search_statistics\`), qualitative quotes/insights (\`search_insights\`), and article citations (\`get_evidence\`).
+  3. Contextualize with corporate earnings transcripts (\`get_earnings_intelligence\`, \`get_company_earnings\`, \`get_earnings_divergence\`) and macroeconomic/demographic data (\`get_supplemental_context\`, \`check_supplemental_status\`).
 - Always attribute each knowledge graph to its named curator or organization (call \`list_graphs\` for curator and domain details) rather than calling results "the Fodda graph."
 - When presenting evidence from \`get_evidence\`, include the \`formatted_citation\` link (or \`[Article Title](sourceUrl)\`) so users can verify primary sources.
 - Be transparent about coverage: if Fodda's curated graphs have limited or no direct coverage on a topic or brand, state that clearly and distinguish curated graph evidence from supplemental or web context.
 
 ### Tool Routing Guidelines
-- Broad market, category, and sector intelligence (Turn 1 layer cake): \`get_intelligence_dossier\` (with \`editorial_mode: 'blueprint'\`)
+- Multi-source category dossiers & market briefings: \`get_intelligence_dossier\`
 - Market trends & consumer behavior: \`search_graph\`, \`get_validated_trends\`, \`get_evidence\`, \`get_node\`, \`get_neighbors\`, \`get_label_values\`, \`list_graphs\`, \`read_url\`
 - Brand health, trend footprint & competitive landscape: \`brand_tracker\`
 - Quantitative metrics & market sizes: \`search_statistics\`
 - Expert quotes & qualitative frameworks: \`search_insights\`
 - Multi-graph deep research reports: \`deep_research_topic\` (poll with \`check_research_status\`)
 - Visual representations: \`generate_visual\`
-- Brand Connections Planning, Connections Plans & media strategy: \`generate_comms_plan\` (Primary tool whenever a user asks to create, build, or generate a 'Connections Plan', 'Brand Connections Plan', 'comms plan', or strategic media activation plan)
+- Communications & media planning: \`generate_comms_plan\`
 - Public company earnings & verbatim Q&A (517 companies): \`get_earnings_intelligence\`, \`get_company_earnings\`, \`get_earnings_divergence\`
 - Macroeconomic, demographic & public research indicators: \`get_supplemental_context\` (poll with \`check_supplemental_status\`)
 - Claim verification: \`verify_market_claim\` (multi-graph market/brand/macro claim check) and \`verify_claim\` (verifies a claim against a specific practitioner's curated knowledge graph via their AI-powered Human Agent model, returning a structured verdict: confirms, contradicts, partial, or no_coverage)
 - AI Expert Models (Digital Twins & Synthetic Analysts): \`find_expert\` and \`list_analysts\` for discovery; \`consult_human_agent\` to query an authorized Human Agent (an AI expert model / Digital Twin grounded in a named practitioner's curated knowledge graph and methodology); \`consult_analyst\` to query a Synthetic Analyst or Classic Agent
-- Newsletters, executive briefings & market analysis articles: \`get_intelligence_dossier\`
-- Platform capabilities, tool guide & help desk: \`get_capabilities\` (call with \`view: 'help'\` for questions about Fodda, connecting to Claude/ChatGPT, accounts, or pricing; call with \`view: 'tools'\` for the 5-section tool guide), \`get_my_account\`
+- Platform capabilities & account status: \`get_capabilities\`, \`get_my_account\`
 
 ### Help & Tool Guide Routing
 - If the user asks about Fodda itself, how it works, how to connect (Claude, ChatGPT, etc.), account questions, or pricing, call \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search.
@@ -673,8 +667,6 @@ version: 2.0.0
 - Frame experts by their human display name and credentials (e.g., "Brand culture strategist Ben Dietz, founder of [SIC] Weekly") rather than internal database slugs.
 - Never fabricate direct quotes in quotation marks for real living people or invent statistics/report citations that are not present in the retrieved sources.
 - Present multi-company earnings comparisons and verbatim analyst Q&A in clear markdown tables citing Company (Ticker), Reporting Quarter, Speaker, and Verbatim Quote / Finding.
-- **Structured Next Moves (Follow-Up Recommendations)**: Research and consult tools return structured \`next_moves\` metadata. When concluding an expert consult or research answer, wrap the three follow-up recommendations (1. Pull the thread, 2. Explore the shelf / Go specific, 3. Scope to the job) inside a single markdown blockquote: \`> *Where to go next:* [1. Pull the thread sentence] [2. Explore the shelf / Go specific sentence] [3. Scope to the job sentence]\`. Keep all 3 follow-up moves within the single \`>\` blockquote, prefix with \`*Where to go next:* \` in italics, and do NOT use bullet ladders, section headers, HTML tags, or emojis.
-- **Iterative Media & Connections Planning (\`generate_comms_plan\`)**: Connections planning is an iterative dialogue, not a one-and-done query. When presenting a Brand Connections Plan to a user, always conclude your response with the **Planner Steering Levers** provided in Section 7 of the tool output. Proactively invite the planner to refine the strategy on subsequent runs, highlighting 2–3 concrete tuning options (e.g. anchoring an exact brand ecosystem with \`brand=\"...\"\`, narrowing launch cities with \`markets=[...]\`, adjusting investment scale with \`budget_tier=\"emerging\" | \"growth\" | \"scale\"\`, or sharpening the brief's tension angle).
 
 ### Onboarding & Account Management Boundary
 - This MCP connection is a dedicated research and intelligence connector. It does not include expert onboarding, account creation, or scheduled briefing management tools.
@@ -703,9 +695,9 @@ export function buildSystemPrompt(
         ? scopedGraphNamingBlock
         : (buildDynamicPromptSections() || FALLBACK_GRAPH_SECTIONS);
 
-    // Build persona framing from account profile
+    // Build persona framing from account profile (suppressed on scoped connectors to avoid leaking private context in public listings)
     let personaBlock = '';
-    if (accountProfile) {
+    if (!isScopedConnector && accountProfile) {
         if (accountProfile.isProfessionalServices) {
             personaBlock = `\n\nUSER CONTEXT: This user's organization is a professional services firm. They research on behalf of clients, not for their own company. Adapt analytical framing for the end-client's industry — do not assume the user's company name is the subject of their research. Frame insights as transferable strategic recommendations.`;
         } else if (accountProfile.jobTitle || accountProfile.companyName) {
@@ -716,9 +708,9 @@ export function buildSystemPrompt(
         }
     }
 
-    // Build user research profile block from persisted context
+    // Build user research profile block from persisted context (suppressed on scoped connectors to avoid leaking private client data into public server instructions)
     let userContextBlock = '';
-    if (accountProfile?.userContext || accountProfile?.accountContext) {
+    if (!isScopedConnector && (accountProfile?.userContext || accountProfile?.accountContext)) {
         const contextParts: string[] = [];
         if (accountProfile.userContext) {
             contextParts.push(`User Profile: ${accountProfile.userContext}`);

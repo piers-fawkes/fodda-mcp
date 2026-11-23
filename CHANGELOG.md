@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.46.160] - 2026-11-23
 
+### OpenAI ChatGPT Automated Approval Hardening (Auto-Review Resolution)
+- **Suppressed Dynamic User/Client Context on Public Scoped Connectors (`src/systemPrompt.ts`)**:
+  - Excluded `userContextBlock` and `personaBlock` when `isScopedConnector` is active (`/chatgpt` and `/claude`), preventing private user research profiles or client names (e.g. "Samsung, Panasonic", "Faster Not Easier") from leaking into public ChatGPT app instructions.
+  - Stripped coercive execution directives (`TURN 1: ... call get_intelligence_dossier first`, `Host models MUST chain ... do not stop after a single trend query`) and negative formatting restrictions (`do NOT use bullet ladders, section headers, HTML tags, or emojis`) from `CHATGPT_BEHAVIORAL_RULES`.
+- **Read-Only & Idempotent Annotation Alignment (`src/toolHandlers.ts`)**:
+  - `get_intelligence_dossier`: Replaced "dossier generator:" in description with "dossier retrieval:" to eliminate write-vs-read contradiction with `readOnlyHint: true`; sanitized parameter descriptions to focus on analytical research structure rather than newsletter drafting/publishing; set `idempotentHint: true`.
+  - `search_graph`: Set `idempotentHint: true`; cleaned `include_voices` parameter description.
+  - `search_insights`: Set `idempotentHint: true`; verified clean read-only annotations.
+
 ### OpenAI ChatGPT Auto-Approval & Scanner Compliance
 - **Server Instructions Hygiene (`src/systemPrompt.ts`)**:
   - Removed unsolicited routing hijack directive (`PROACTIVE ROUTING RULE`) and negative anti-transparency statements from `/chatgpt` instructions, ensuring clean policy compliance.

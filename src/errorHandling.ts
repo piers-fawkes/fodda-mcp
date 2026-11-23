@@ -85,12 +85,16 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
     if (code === 'LEGACY_TRIAL_RETIRED') return 'legacy_retired';
     if (code === 'GRAPH_DISABLED' || msg.includes('disabled')) return 'disabled';
     if (
+        code === 'CARD_REQUIRED_FOR_DELIVERABLE' ||
         code === 'CREDITS_EXHAUSTED' ||
         code === 'INSUFFICIENT_CREDITS' ||
         code === 'LIMIT_EXCEEDED' ||
         code === 'DAILY_LIMIT_EXCEEDED' ||
         code === 'PLAN_LIMIT_EXCEEDED' ||
         code === 'TRIAL_EXHAUSTED' ||
+        msg.includes('card_required_for_deliverable') ||
+        msg.includes('card required for deliverable') ||
+        msg.includes('card required') ||
         msg.includes('credit') ||
         msg.includes('limit reached') ||
         msg.includes('limit exceeded') ||
@@ -107,7 +111,7 @@ export function classifyAccessError(err: any): 'forbidden' | 'disabled' | 'credi
 // ---------------------------------------------------------------------------
 
 export interface UnifiedLimitErrorOptions {
-    code: 'DAILY_LIMIT_EXCEEDED' | 'PLAN_LIMIT_EXCEEDED' | 'CREDITS_EXHAUSTED' | 'TRIAL_EXHAUSTED';
+    code: 'DAILY_LIMIT_EXCEEDED' | 'PLAN_LIMIT_EXCEEDED' | 'CREDITS_EXHAUSTED' | 'TRIAL_EXHAUSTED' | 'CARD_REQUIRED_FOR_DELIVERABLE';
     setupUrl?: string | null;
     topUpUrl?: string | null;
     overageRateUsd?: number | null;
@@ -151,6 +155,15 @@ export function buildUnifiedLimitError(options: UnifiedLimitErrorOptions): {
         } else {
             const upUrl = options.upgradeUrl || `${APP_BASE_URL}/billing`;
             next_action = `Daily call limit reached on free Base tier. Manage your billing at ${upUrl} to remove daily limits${rateSuffix}.`;
+        }
+    } else if (options.code === 'CARD_REQUIRED_FOR_DELIVERABLE') {
+        cause = 'A saved payment method or paid plan is required to generate this deliverable.';
+        action = 'SETUP_CARD';
+        const pricingUrl = options.upgradeUrl || 'https://www.fodda.ai/pricing';
+        if (options.setupUrl) {
+            next_action = `A card on file or paid plan is required for this deliverable. Add a card to continue: ${options.setupUrl} or view plans at ${pricingUrl}`;
+        } else {
+            next_action = `A card on file or paid plan is required for this deliverable. Add a card or view plans at ${pricingUrl}`;
         }
     } else if (options.code === 'PLAN_LIMIT_EXCEEDED') {
         cause = 'Monthly plan API call limit exceeded.';
@@ -216,6 +229,9 @@ export function buildUnifiedLimitError(options: UnifiedLimitErrorOptions): {
         payload.upgrade_url = options.upgradeUrl;
         payload.upgradeUrl = options.upgradeUrl;
     }
+    if (options.code === 'CARD_REQUIRED_FOR_DELIVERABLE') {
+        payload.pricing_url = options.upgradeUrl || 'https://www.fodda.ai/pricing';
+    }
     if (options.renewsAt) {
         payload.renews_at = options.renewsAt;
     }
@@ -247,24 +263,26 @@ function extractLimitDetails(err: any, sessionUserId?: string) {
     const code = rawCode.toString().toUpperCase();
     const msg = (data.message || errorData.message || (typeof data.error === 'string' ? data.error : '') || err.message || '').toString().toLowerCase();
 
-    const isDaily = code === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call');
-    const isTrial = isIndividualTrial(err);
-    const isPlan = code === 'PLAN_LIMIT_EXCEEDED' || code === 'LIMIT_EXCEEDED' || msg.includes('monthly api call limit') || msg.includes('monthly credit limit reached') || msg.includes('plan limit');
+    const isCardRequired = code === 'CARD_REQUIRED_FOR_DELIVERABLE' || msg.includes('card_required_for_deliverable') || msg.includes('card required for deliverable') || msg.includes('card required');
+    const isDaily = !isCardRequired && (code === 'DAILY_LIMIT_EXCEEDED' || msg.includes('daily limit') || msg.includes('50-call'));
+    const isTrial = !isCardRequired && isIndividualTrial(err);
+    const isPlan = !isCardRequired && (code === 'PLAN_LIMIT_EXCEEDED' || code === 'LIMIT_EXCEEDED' || msg.includes('monthly api call limit') || msg.includes('monthly credit limit reached') || msg.includes('plan limit'));
 
-    let limitCode: 'DAILY_LIMIT_EXCEEDED' | 'PLAN_LIMIT_EXCEEDED' | 'CREDITS_EXHAUSTED' | 'TRIAL_EXHAUSTED';
-    if (isDaily) limitCode = 'DAILY_LIMIT_EXCEEDED';
+    let limitCode: 'DAILY_LIMIT_EXCEEDED' | 'PLAN_LIMIT_EXCEEDED' | 'CREDITS_EXHAUSTED' | 'TRIAL_EXHAUSTED' | 'CARD_REQUIRED_FOR_DELIVERABLE';
+    if (isCardRequired) limitCode = 'CARD_REQUIRED_FOR_DELIVERABLE';
+    else if (isDaily) limitCode = 'DAILY_LIMIT_EXCEEDED';
     else if (isTrial) limitCode = 'TRIAL_EXHAUSTED';
     else if (isPlan) limitCode = 'PLAN_LIMIT_EXCEEDED';
     else limitCode = 'CREDITS_EXHAUSTED';
 
     const email = sessionUserId && sessionUserId.includes('@') ? sessionUserId : null;
-    const setupUrl = data.setupUrl || errorData.setupUrl || data.setup_url || null;
+    const setupUrl = data.setupUrl || errorData.setupUrl || data.setup_url || errorData.setup_url || null;
     const agentCheckout = data.agent_checkout || errorData.agent_checkout || null;
     const payg = data.payg || errorData.payg || null;
     const topUpUrl = agentCheckout?.url || data.top_up_url || payg?.checkoutUrl || payg?.url || payg?.link || null;
     const overageRateUsd = data.overage_rate_usd ?? payg?.pricePerCall ?? errorData.overage_rate_usd ?? null;
     const renewsAt = data.renews_at || data.nextRenewalDate || data.usage?.nextRenewalDate || null;
-    const upgradeUrl = data.upgradeUrl || data.upgrade_url || errorData.upgradeUrl || (isTrial ? buildPortalUpgradeUrl(email) : (limitCode === 'DAILY_LIMIT_EXCEEDED' ? `${APP_BASE_URL}/billing` : `${APP_BASE_URL}?view=billing`));
+    const upgradeUrl = data.upgradeUrl || data.upgrade_url || errorData.upgradeUrl || errorData.upgrade_url || (isCardRequired ? 'https://www.fodda.ai/pricing' : (isTrial ? buildPortalUpgradeUrl(email) : (limitCode === 'DAILY_LIMIT_EXCEEDED' ? `${APP_BASE_URL}/billing` : `${APP_BASE_URL}?view=billing`)));
 
     return {
         limitCode,
@@ -308,6 +326,27 @@ export async function handleAccessError(err: any, toolName: string, userId?: str
     }
     if (accessType === 'credits') {
         if (source === 'chatgpt') {
+            const rawCode = typeof err.response?.data?.error === 'string'
+                ? err.response.data.error
+                : (err.response?.data?.error?.code || err.response?.data?.code || err.response?.data?.error_code || '');
+            const code = rawCode.toString().toUpperCase();
+            const msg = (err.response?.data?.message || err.response?.data?.error?.message || (typeof err.response?.data?.error === 'string' ? err.response.data.error : '') || err.message || '').toString().toLowerCase();
+            if (code === 'CARD_REQUIRED_FOR_DELIVERABLE' || msg.includes('card_required_for_deliverable') || msg.includes('card required for deliverable') || msg.includes('card required')) {
+                return {
+                    isError: true,
+                    content: [{
+                        type: 'text' as const,
+                        text: JSON.stringify({
+                            code: 'CARD_REQUIRED_FOR_DELIVERABLE',
+                            status: 'CARD_REQUIRED_FOR_DELIVERABLE',
+                            error: 'CARD_REQUIRED_FOR_DELIVERABLE',
+                            action: 'SETUP_CARD',
+                            message: 'A saved payment method or paid plan is required for this deliverable. Manage your Fodda account at https://app.fodda.ai/account.',
+                            manage_url: 'https://app.fodda.ai/account'
+                        }, null, 2)
+                    }]
+                };
+            }
             return buildChatGptQuotaExhausted();
         }
 
@@ -445,6 +484,27 @@ export async function handleTrialCreditExhaustion(
 
     // ── ChatGPT guard: zero commerce/Stripe/prices ──
     if (sessionSource === 'chatgpt') {
+        const rawCode = typeof err.response?.data?.error === 'string'
+            ? err.response.data.error
+            : (err.response?.data?.error?.code || err.response?.data?.code || err.response?.data?.error_code || '');
+        const code = rawCode.toString().toUpperCase();
+        const msg = (err.response?.data?.message || err.response?.data?.error?.message || (typeof err.response?.data?.error === 'string' ? err.response.data.error : '') || err.message || '').toString().toLowerCase();
+        if (code === 'CARD_REQUIRED_FOR_DELIVERABLE' || msg.includes('card_required_for_deliverable') || msg.includes('card required for deliverable') || msg.includes('card required')) {
+            return {
+                isError: true,
+                content: [{
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                        code: 'CARD_REQUIRED_FOR_DELIVERABLE',
+                        status: 'CARD_REQUIRED_FOR_DELIVERABLE',
+                        error: 'CARD_REQUIRED_FOR_DELIVERABLE',
+                        action: 'SETUP_CARD',
+                        message: 'A saved payment method or paid plan is required for this deliverable. Manage your Fodda account at https://app.fodda.ai/account.',
+                        manage_url: 'https://app.fodda.ai/account'
+                    }, null, 2)
+                }]
+            };
+        }
         return buildChatGptQuotaExhausted();
     }
 
