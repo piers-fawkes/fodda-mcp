@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.46.160] - 2026-11-23
 
+### OpenAI ChatGPT Continuous Scanner Remediation (5 Held Items)
+- **`server_instructions` Exact Parity (`src/systemPrompt.ts`)**:
+  - Restored `/chatgpt` `introNotice` and `CHATGPT_BEHAVIORAL_RULES` to byte-for-byte parity with the published `live` OpenAI definition, eliminating `pricing` mentions, competitor connector mentions, `BEFORE any graph search` directives, and held-tool coupling.
+- **Age-Restricted & Read/Write Scanner Triggers (`src/toolHandlers.ts`, `scripts/sync-descriptions-from-airtable.mjs`)**:
+  - Removed `'Alcoholic Drinks'` / `'alcoholic beverage'` examples across `search_graph`, `search_insights`, `search_statistics`, and `get_intelligence_dossier` (resolving OpenAI Guideline 3.2 13–17 general-audience safety hold that matched 4/4 held tools and 0/25 approved tools).
+  - `search_statistics`: Removed `'bypasses graph IDs'` circumvention phrasing in `sector` description.
+  - `search_graph` & `search_insights`: Restored `idempotentHint: false` to match published `live` annotations with zero annotation diff; cleaned city-level location example and `policymaker` example.
+  - `get_intelligence_dossier`: Scoped `/chatgpt` & `/claude` input schema to 5 pure-research parameters (`topic`, `sector`, `tickers`, `editorial_mode`, `include_editorial`), removing newsletter-publishing parameters (`publication_name`, `publication_style`, `editorial_style`, `userId`) and renaming title to `Get Intelligence Dossier`.
+  - Suppressed `appendOverageNoticeToContent` billing notice on `sessionSource === 'chatgpt'` to preserve strict commerce silence.
+
 ### Bounded-Await Meter Settlement, First-Charge Notice & Big Offerings Card Gate
 - **Bounded-Await Meter Settlement (`src/pricingCache.ts`, `src/toolHandlers.ts`)**:
   - Implemented `boundedChargeQuery` using `Promise.race` with a 1500ms ceiling across all metered tool execution points (`search_graph`, `settleOrWithhold`, `get_supplemental_context`, `brainstorm_topic`, `read_url`, `deep_research_topic`).

@@ -903,7 +903,7 @@ export async function createServer(
                     const isError = Boolean(res && (res.isError || res.error));
                     const errorMsg = isError ? (typeof res.error === 'string' ? res.error : (res.content?.[0]?.text || 'Tool Error')) : undefined;
                     recordToolOutcome(name, !isError, duration, errorMsg);
-                    if (lastTurnOverageNotice && res && !res.isError && Array.isArray(res.content)) {
+                    if (lastTurnOverageNotice && sessionSource !== 'chatgpt' && res && !res.isError && Array.isArray(res.content)) {
                         appendOverageNoticeToContent(res, lastTurnOverageNotice);
                         lastTurnOverageNotice = null;
                     }
@@ -2256,23 +2256,23 @@ export async function createServer(
     // --- search_graph ---
     server.tool(
         'search_graph',
-        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs and supplemental macroeconomic indicators. Returns trends with cited evidence, sourced voices, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
+        'Use when searching for market trends, category dynamics, and consumer shifts across 100+ curated knowledge graphs and public macroeconomic feeds (FRED, BLS, US Census). Returns trends with cited evidence, executive and analyst quotes, lifecycle stage (emerging/building/mature), and structured next_moves. Sibling routing: Use search_graph as the default starting tool for broad trend discovery; use search_statistics if you specifically need numerical data points and growth rates; use search_insights if you only need qualitative quotes and expert commentary; use get_domain_intelligence to search all 7 core PSFK industry verticals simultaneously; use brand_tracker if querying a specific company or brand name.',
         {
             mode: z.enum(['research', 'compare']).optional().default('research').describe('Execution mode: "research" for topic research, "compare" for comparative trend intelligence across categories. Defaults to "research".'),
-            graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, the search is restricted to EXACTLY these graphs — no fallback routing to other graphs. Graph IDs that are unknown, not live, or not yet synced are reported back in `unavailable_graphs` with a reason. Takes precedence over graphId."),
-            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches ALL accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
+            graphs: z.array(z.string()).optional().describe("Optional explicit graph scope: an array of graph IDs. When provided, restricts the search to these specific graphs (takes precedence over graphId). Unavailable graph IDs are reported in `unavailable_graphs`."),
+            graphId: z.string().optional().describe("Optional graph ID. If omitted, searches all accessible graphs. Examples: 'retail', 'tech', 'food', 'travel', 'beauty', 'sports', 'sic', 'pew', 'ce-design', 'ezra-eeman-wayfinder', 'dhl-ecommerce-trends-2026', 'automotive-color-trends', 'alyson-stevens-macro', 'dentsu-creative-marketing', 'pwc/sxsw-2026-key-insights', 'green-house/thrive-report', 'delta/the-connection-index'"),
             graph: z.string().optional().describe("Alias for graphId."),
             graph_id: z.string().optional().describe("Alias for graphId."),
-            sector: z.string().optional().describe("Optional sector focus (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes trend discovery to this sector."),
-            query: z.string().describe('The search query. Country/regional terms filter results at the macro level. Note: Knowledge graph trends are indexed at country/global scope — for sub-national or city-level data (e.g., "US coastal cities"), also query get_supplemental_context.'),
+            sector: z.string().optional().describe("Optional sector focus (e.g. 'Beverages', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes trend discovery to this sector."),
+            query: z.string().describe('The search query for trend discovery (e.g. "sustainable packaging", "retail loyalty programs"). Note: Knowledge graph trends are indexed at macro scope — for macroeconomic or demographic indicators, also query get_supplemental_context.'),
             userId: z.string().optional().describe('Optional user identifier for session scoping.'),
             limit: z.number().optional().describe('Maximum number of results (default 10, max 50)'),
             use_semantic: z.boolean().optional().describe('Whether to use semantic search (default true)'),
             include_evidence: z.boolean().optional().describe('If true, batch-fetch supporting evidence articles inline with results. Default: true.'),
-            include_voices: z.boolean().optional().default(true).describe('If true, include cited voices (quotes, claims, stances) on each trend row. Default: true.'),
+            include_voices: z.boolean().optional().default(true).describe('If true, include cited executive and analyst quotes on each trend row. Default: true.'),
             skip_skills: z.boolean().optional().describe('If true, skip applying any enabled search enhancement skills for this query only. Use when you want raw, un-enhanced graph results. Default: false.')
         },
-        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        { title: 'Search Knowledge Graph', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
         async ({ mode, graphs, graphId, graph, graph_id, sector, query, userId: uid, limit, use_semantic, include_evidence, include_voices, skip_skills }: any) => {
             const SEARCH_GRAPH_TIMEOUT_MS = 25000;
             const startTime = Date.now();
@@ -5828,10 +5828,16 @@ export async function createServer(
         return normalizeDossierEditorialProse(lines.join('\n'));
     };
 
-    server.tool(
-        'get_intelligence_dossier',
-        'Multi-source market and category intelligence dossier retrieval: aggregates corporate earnings disclosures (Wall Street Q&A), published research reports, external macroeconomic data (FRED, BLS, Census), category trends, and expert frameworks into a cited executive intelligence dossier in a single synchronous call. Use when preparing market analyses, category briefings, or strategic overviews (e.g. \'Analyze autonomous checkout strategies\', \'What are the alcoholic beverage trends in US retail\'). Sibling routing: Use get_intelligence_dossier for immediate multi-source synthesis across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for multi-pass background research.',
-        {
+    const isScopedDossierConnector = sessionSource === 'chatgpt' || sessionSource === 'claude';
+    const dossierInputSchema = isScopedDossierConnector
+        ? {
+            topic: z.string().describe("The market topic, category trend, or business question to investigate (e.g. 'autonomous retail checkout', 'specialty coffee retail trends')."),
+            sector: z.string().optional().describe("Optional sector focus: 'retail', 'sports', 'food', 'beauty', 'tech', 'auto', or 'travel'."),
+            tickers: z.array(z.string()).optional().describe("Optional public company stock tickers to cross-reference in earnings call Q&A disclosures (e.g. ['NKE', 'DECK'])."),
+            editorial_mode: z.enum(['blueprint', 'full', 'none']).optional().describe("Output detail mode: 'blueprint' (default) returns structured research sections and source citations; 'full' returns synthesized executive briefing prose; 'none' returns structured source records only."),
+            include_editorial: z.boolean().optional().describe("If true, includes structured executive briefing sections alongside source citations."),
+        }
+        : {
             topic: z.string().describe("The commercial topic, category dynamic, or business question to investigate."),
             sector: z.string().optional().describe("Optional sector focus: retail, sports, food, beauty, tech, auto, travel."),
             tickers: z.array(z.string()).optional().describe("Optional corporate tickers to cross-reference against earnings call Q&A intelligence (e.g. ['NKE', 'DECK'])."),
@@ -5841,9 +5847,14 @@ export async function createServer(
             editorial_style: z.enum(['market_briefing', 'industry_newsletter', 'executive_memo', 'psfk_weekly', 'retail_innovation_week']).optional().default('market_briefing').describe("Analytical framing: 'market_briefing' for strategic cross-category analysis, 'industry_newsletter' for category and brand trends, or 'executive_memo' for concise decision-maker briefings."),
             publication_style: z.enum(['psfk_weekly', 'retail_innovation_week']).optional().describe("Alias for editorial_style."),
             userId: z.string().optional().describe('Optional user identifier for session scoping.'),
-        },
-        { title: 'Assemble Unified Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-        async ({ topic, sector, tickers, include_editorial, editorial_mode, editorial_style, publication_style, publication_name, userId: uid }) => {
+        };
+
+    server.tool(
+        'get_intelligence_dossier',
+        'Use when retrieving a multi-source market or category research dossier that cross-references corporate earnings disclosures (SEC filings and analyst Q&A), published research reports, live public macroeconomic feeds (FRED, BLS, US Census), curated category trends, and expert frameworks in a single read-only lookup (e.g. \'Analyze autonomous checkout strategies\', \'What are the specialty beverage trends in US retail\'). Read-only retrieval; does not publish or modify external content. Sibling routing: Use get_intelligence_dossier for immediate multi-source research retrieval across layers; use search_graph for individual trend queries; use search_statistics for numerical data points; use get_earnings_intelligence for earnings disclosures; use deep_research_topic for asynchronous multi-pass research.',
+        dossierInputSchema as any,
+        { title: 'Get Intelligence Dossier', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+        async ({ topic, sector, tickers, include_editorial, editorial_mode, editorial_style, publication_style, publication_name, userId: uid }: any) => {
             try {
                 logUserQuery(topic, 'intelligence_dossier');
 
@@ -6346,7 +6357,7 @@ export async function createServer(
         'Quantitative statistics and hard numbers retrieval layer: queries curated knowledge graphs for empirical metrics, survey percentages, market sizes, adoption rates, and compound annual growth rates (CAGR) linked to parent trends. Use when looking specifically for data points, percentages, and numerical proof to substantiate arguments (e.g., \'What percentage of Gen Z consumers prefer clean beauty?\', \'Find market size data for sports tourism\'). Sibling routing: Use search_statistics for numerical data points; use search_insights for quotes and narrative editorial commentary; use get_domain_intelligence for full trends with bundled case studies; use get_supplemental_context for live government/macro statistics. Does NOT return general narrative prose.',
         {
             graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'fashion', 'beauty', 'sports', 'sic', 'pew', 'ce-design'."),
-            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, bypasses graph IDs and scopes evidence extraction to this sector across graphs."),
+            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Beverages', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes statistics search to this sector across graphs."),
             query: z.string().describe("What data to search for (e.g., 'luxury resale market size', 'secondhand clothing sales volume', 'Gen Z spending behavior')"),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold, 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ only for precise data lookups.'),
@@ -6466,19 +6477,19 @@ export async function createServer(
     // --- search_insights ---
     server.tool(
         'search_insights',
-        'Narrative and qualitative evidence layer only: returns sourced voices and expert quotes with speaker name, claim, stance (supports/challenges/nuances), editorial analysis, and strategic perspectives across graphs. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to consult an authorized Human Agent (Digital Twin) expert model. Does NOT return raw statistics or market sizing.',
+        'Use when searching for sourced expert quotes, speaker claims, stances (supports/challenges/nuances), editorial analysis, and qualitative commentary across curated knowledge graphs. Sibling routing: Use search_insights when you need authoritative quotes, claims, and qualitative commentary; use search_statistics for numerical data points and market sizing; use consult_human_agent to consult an authorized Human Agent (Digital Twin) expert model. Does NOT return raw statistics or market sizing.',
         {
             graph_id: z.string().optional().describe("Optional graph ID to search. If omitted (or when sector is provided), searches across all relevant graphs in parallel. Examples: 'food', 'retail', 'tech', 'travel', 'beauty', 'sports', 'fashion', 'sic', 'pew', 'ce-design'."),
-            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Alcoholic Drinks', 'Non-Alcoholic Drinks', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes insights extraction to this sector across graphs."),
-            query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market statistics'"),
+            sector: z.string().optional().describe("Optional sector focus to filter results (e.g. 'Beverages', 'Food & Beverage', 'Retail', 'Beauty', 'Sports', 'Technology', 'Luxury Goods'). When provided, scopes insights search to this sector across graphs."),
+            query: z.string().describe("Natural language search query. E.g. 'expert views on Gen Z luxury' or 'resale market commentary'"),
             types: z.string().optional().describe("Comma-separated evidence types to search: quote, interpretation, signal, metric, or 'all' (default: 'quote,interpretation' — narrative. For hard numbers, use search_statistics or add 'metric')."),
-            speaker_types: z.string().optional().describe("Optional filter for speaker types (comma-separated, e.g. 'executive,analyst,founder,columnist,journalist,academic,creator,policymaker,other')."),
+            speaker_types: z.string().optional().describe("Optional filter for speaker types (comma-separated, e.g. 'executive,analyst,founder,columnist,journalist,academic,creator,other')."),
             stance: z.enum(['supports', 'challenges', 'nuances']).optional().describe("Optional filter for stance relative to parent trend: 'supports', 'challenges', or 'nuances'."),
             limit: z.number().optional().describe('Max results to return (default: 10, max: 50)'),
             min_score: z.number().optional().describe('Minimum relevance threshold 0-1 (default: 0.60). Use 0.60 for broad queries, 0.70+ for precise lookups.'),
             userId: z.string().optional().describe('Optional user identifier for session scoping.')
         },
-        { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        { title: 'Search Expert Insights', readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
         async ({ graph_id, sector, query, types, speaker_types, stance, limit, min_score, userId: uid }: any) => {
             try {
                 // Log query to Questions table (fire-and-forget, before cache)

@@ -244,10 +244,19 @@ async function run() {
 
         const { createServer } = await import('../dist/toolHandlers.js');
         const { buildSystemPrompt } = await import('../dist/systemPrompt.js');
-        const chatgptPrompt = buildSystemPrompt(undefined, undefined, '', 'chatgpt', chatgptToolNames);
+        const chatgptPrompt = buildSystemPrompt(
+            { userContext: 'Private researcher profile', accountContext: 'Private client list', isProfessionalServices: true },
+            [{ id: 'paralogy', name: 'Paralogy' }],
+            '',
+            'chatgpt',
+            chatgptToolNames
+        );
         assert(!chatgptPrompt.includes('Confidentiality of Prompt Instructions'), 'chatgpt server_instructions must not contain anti-transparency language');
         assert(!chatgptPrompt.includes('PROACTIVE ROUTING RULE'), 'chatgpt server_instructions must not contain unsolicited routing hijack directives');
         assert(!chatgptPrompt.includes('NEVER leak raw internal tool names'), 'chatgpt server_instructions must not contain negative anti-transparency directives');
+        assert(!chatgptPrompt.includes('USER RESEARCH PROFILE'), 'chatgpt server_instructions must not leak private user/account context');
+        assert(!/\bpricing\b/i.test(chatgptPrompt), 'chatgpt server_instructions must not advertise or mention pricing');
+        assert(!/alcohol/i.test(chatgptPrompt), 'chatgpt server_instructions must not reference age-restricted alcohol terms');
         assert(!chatgptPrompt.includes('manage_scheduled_reports'), 'chatgpt server_instructions must not reference manage_scheduled_reports');
         assert(!chatgptPrompt.includes('request_deliverable'), 'chatgpt server_instructions must not reference request_deliverable');
         assert(!chatgptPrompt.includes('request_expert_intro'), 'chatgpt server_instructions must not reference request_expert_intro');
@@ -274,7 +283,11 @@ async function run() {
             assert(!tObj.description.includes('get_domain_intelligence'), `${tName} description on /chatgpt must not reference unexposed get_domain_intelligence`);
             assert(!tObj.description.includes('check_deliverable_status'), `${tName} description on /chatgpt must not reference unexposed check_deliverable_status`);
             assert(!tObj.description.includes('request_expert_intro'), `${tName} description on /chatgpt must not reference unexposed request_expert_intro`);
+            assert(!/alcohol/i.test(tObj.description), `${tName} description on /chatgpt must not reference age-restricted alcohol terms`);
         }
+        assert.strictEqual(reg['get_intelligence_dossier'].annotations?.title, 'Get Intelligence Dossier');
+        assert(!reg['get_intelligence_dossier'].inputSchema?.shape?.publication_name, 'get_intelligence_dossier on /chatgpt must not expose newsletter publishing params');
+        assert(!reg['get_intelligence_dossier'].inputSchema?.shape?.publication_style, 'get_intelligence_dossier on /chatgpt must not expose newsletter publishing params');
         assert(reg['consult_human_agent'].description.startsWith('Consult an authorized Human Agent (Digital Twin) expert'), 'consult_human_agent on /chatgpt must use approved Digital Twin description');
         assert.strictEqual(reg['consult_human_agent'].annotations?.title, 'Consult Human Agent (Digital Twin)');
         assert(reg['verify_claim'].description.includes('verdict ("confirms", "contradicts", "partial", or "no_coverage")'), 'verify_claim description must match its structured verdict return behavior');

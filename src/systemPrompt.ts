@@ -643,7 +643,6 @@ version: 2.0.0
 - Be transparent about coverage: if Fodda's curated graphs have limited or no direct coverage on a topic or brand, state that clearly and distinguish curated graph evidence from supplemental or web context.
 
 ### Tool Routing Guidelines
-- Multi-source category dossiers & market briefings: \`get_intelligence_dossier\`
 - Market trends & consumer behavior: \`search_graph\`, \`get_validated_trends\`, \`get_evidence\`, \`get_node\`, \`get_neighbors\`, \`get_label_values\`, \`list_graphs\`, \`read_url\`
 - Brand health, trend footprint & competitive landscape: \`brand_tracker\`
 - Quantitative metrics & market sizes: \`search_statistics\`
@@ -656,10 +655,6 @@ version: 2.0.0
 - Claim verification: \`verify_market_claim\` (multi-graph market/brand/macro claim check) and \`verify_claim\` (verifies a claim against a specific practitioner's curated knowledge graph via their AI-powered Human Agent model, returning a structured verdict: confirms, contradicts, partial, or no_coverage)
 - AI Expert Models (Digital Twins & Synthetic Analysts): \`find_expert\` and \`list_analysts\` for discovery; \`consult_human_agent\` to query an authorized Human Agent (an AI expert model / Digital Twin grounded in a named practitioner's curated knowledge graph and methodology); \`consult_analyst\` to query a Synthetic Analyst or Classic Agent
 - Platform capabilities & account status: \`get_capabilities\`, \`get_my_account\`
-
-### Help & Tool Guide Routing
-- If the user asks about Fodda itself, how it works, how to connect (Claude, ChatGPT, etc.), account questions, or pricing, call \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search.
-- If the user asks "what can you do?", what tools are available, or how to use them, call \`get_capabilities\` with \`view: 'tools'\`.
 
 ### Expert Consultation & Citation Integrity
 - Human Agents (\`consult_human_agent\`) are AI-powered Digital Twin models created with a named practitioner's consent and grounded in their curated knowledge graph — they are AI expert models, not live human operators.
@@ -806,7 +801,7 @@ IMPORTANT: Skills (which automatically run on search_graph) are completely separ
 
     const behavioralRules = isScopedConnector ? CHATGPT_BEHAVIORAL_RULES : STATIC_BEHAVIORAL_RULES;
     const introNotice = isScopedConnector
-        ? `If asked about Fodda itself, accounts, pricing, connecting (Claude, ChatGPT, etc.), reach for \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search. If asked "what can you do?" or what tools are available, call \`get_capabilities\` with \`view: 'tools'\` for the 5-section tool guide.`
+        ? `If asked what Fodda offers, its capabilities, features, or "what can you do", summarize the 5 core research capabilities above or call \`get_capabilities\`.`
         : `If asked about Fodda itself, how it works, accounts, pricing, connecting (Claude, ChatGPT, etc.), reach for \`get_capabilities\` with \`view: 'help'\` BEFORE any graph search. If asked "what can you do?", features, capabilities, or what tools are available, call \`get_capabilities\` with \`view: 'tools'\` for the 5-section tool guide (Research, Pressure-test, Ask an expert, Make something, Track). "Offerings" refers to a specific analyst's commissionable services ONLY when an analyst is explicitly named.`;
 
     const hostRoutingPreamble = isScopedConnector

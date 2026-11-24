@@ -97,7 +97,7 @@ async function sync() {
           continue;
         }
         // Preserve canonical routing, view documentation, and OpenAI-compliant tool descriptions
-        if (toolName === 'get_capabilities' || toolName === 'get_intelligence_dossier' || toolName === 'generate_comms_plan' || toolName === 'search_graph' || toolName === 'search_insights') {
+        if (toolName === 'get_capabilities' || toolName === 'get_intelligence_dossier' || toolName === 'generate_comms_plan' || toolName === 'search_graph' || toolName === 'search_insights' || toolName === 'search_statistics') {
           continue;
         }
         src = src.replace(regex, (m, p1) => `${p1}'${escapedDesc}'`);
