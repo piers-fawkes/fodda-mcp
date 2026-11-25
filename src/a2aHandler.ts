@@ -20,6 +20,14 @@ import { MCP_SERVER_VERSION } from './tools.js';
 import type { FoddaRequestFn, WaverunnerRequestFn } from './types.js';
 import { runDeepResearch } from './deepResearch.js';
 import { chargeQuery } from './pricingCache.js';
+import {
+    saveA2ATask,
+    getA2ATask,
+    type A2ATask,
+    type A2ATaskRecord,
+    type A2APart,
+    type A2AMessage,
+} from './jobStore.js';
 
 // ---------------------------------------------------------------------------
 // A2A Agent Card — the discovery document agents/registries fetch to learn
@@ -132,38 +140,8 @@ export const AGENT_CARD = {
 };
 
 // ---------------------------------------------------------------------------
-// A2A Task Store — in-memory, same pattern as activeResearchJobs in toolHandlers.
-// Known limitation: tasks lost on restart/redeploy (in-memory under min-instances=1).
+// A2A Task Store — backed by Firestore via jobStore.ts with L1 cache and 24h TTL.
 // ---------------------------------------------------------------------------
-
-interface A2ATaskRecord {
-    task: A2ATask;
-    createdAt: number;
-    ownerKeyHash?: string;
-}
-const a2aTasks = new Map<string, A2ATaskRecord>();
-
-// TTL sweep: terminal tasks (completed/failed/canceled) evicted after 30 min;
-// non-terminal tasks (working/submitted) auto-failed after 15 min (pipeline hung).
-const A2A_TERMINAL_TTL_MS = 30 * 60 * 1000;
-const A2A_WORKING_TTL_MS = 15 * 60 * 1000;
-setInterval(() => {
-    const now = Date.now();
-    for (const [id, record] of a2aTasks) {
-        const age = now - record.createdAt;
-        const state = record.task.status.state;
-        const isTerminal = state === 'completed' || state === 'failed' || state === 'canceled';
-        if (isTerminal && age > A2A_TERMINAL_TTL_MS) {
-            a2aTasks.delete(id);
-        } else if (!isTerminal && age > A2A_WORKING_TTL_MS) {
-            record.task.status = {
-                state: 'failed',
-                message: { role: 'agent', parts: [{ kind: 'text', text: 'Research timed out after 15 minutes.' }] },
-            };
-            console.error(`[a2a] Task ${id} auto-failed: exceeded ${A2A_WORKING_TTL_MS / 60000}min working TTL`);
-        }
-    }
-}, 60_000).unref();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,33 +152,6 @@ interface A2AJsonRpcRequest {
     id: string | number | null;
     method: string;
     params?: any;
-}
-
-interface A2APart {
-    kind?: 'text' | 'data' | 'file';   // A2A v1.0 spec
-    type?: 'text' | 'data' | 'file';   // Google / older A2A variants
-    text?: string;
-    data?: any;
-    mimeType?: string;
-}
-
-interface A2AMessage {
-    role: 'user' | 'agent';
-    parts: A2APart[];
-}
-
-interface A2ATask {
-    id: string;
-    contextId: string;
-    status: {
-        state: 'submitted' | 'working' | 'input-required' | 'completed' | 'failed' | 'canceled';
-        message?: A2AMessage;
-    };
-    artifacts?: Array<{
-        name?: string;
-        description?: string;
-        parts: A2APart[];
-    }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,7 +427,7 @@ export function registerA2ARoute(
                 if (!taskId) {
                     return res.json(jsonRpcError(requestId, -32602, 'Invalid params: id is required'));
                 }
-                const record = a2aTasks.get(taskId);
+                const record = await getA2ATask(taskId);
                 if (!record) {
                     return res.json(jsonRpcError(requestId, -32602, `Task not found: ${taskId}`));
                 }
@@ -491,7 +442,7 @@ export function registerA2ARoute(
                 if (!taskId) {
                     return res.json(jsonRpcError(requestId, -32602, 'Invalid params: id is required'));
                 }
-                const record = a2aTasks.get(taskId);
+                const record = await getA2ATask(taskId);
                 if (!record) {
                     return res.json(jsonRpcError(requestId, -32602, `Task not found: ${taskId}`));
                 }
@@ -504,6 +455,7 @@ export function registerA2ARoute(
                         state: 'canceled',
                         message: { role: 'agent', parts: [{ kind: 'text', text: 'Task canceled by caller.' }] },
                     };
+                    await saveA2ATask(record.task, record.ownerKeyHash);
                     console.error(`[a2a] Task ${taskId} canceled`);
                 }
                 return res.json(jsonRpcSuccess(requestId, record.task));
@@ -606,7 +558,7 @@ export function registerA2ARoute(
                         message: { role: 'agent', parts: [{ kind: 'text', text: 'Deep research in progress — poll tasks/get for the result.' }] },
                     },
                 };
-                a2aTasks.set(taskId, { task, createdAt: Date.now(), ownerKeyHash: callerKeyHash });
+                await saveA2ATask(task, callerKeyHash);
 
                 // Run the real pipeline in the background
                 (async () => {
@@ -622,7 +574,7 @@ export function registerA2ARoute(
                         });
 
                         // Check if canceled during run
-                        const current = a2aTasks.get(taskId);
+                        const current = await getA2ATask(taskId);
                         if (current && current.task.status.state === 'canceled') {
                             console.error(`[a2a] Task ${taskId} was canceled during research — discarding result`);
                             return;
@@ -643,17 +595,19 @@ export function registerA2ARoute(
                                     parts: [{ kind: 'data', data: drResult.source_plan, mimeType: 'application/json' }],
                                 },
                             ];
+                            await saveA2ATask(current.task, current.ownerKeyHash);
                         }
                         console.error(`[a2a] Task ${taskId} completed (${drResult.duration_sec}s, ${drResult.graphs_searched.length} graphs)`);
 
                     } catch (err: any) {
                         const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || 'Research failed';
-                        const current = a2aTasks.get(taskId);
+                        const current = await getA2ATask(taskId);
                         if (current && current.task.status.state !== 'canceled') {
                             current.task.status = {
                                 state: 'failed',
                                 message: { role: 'agent', parts: [{ kind: 'text', text: errMsg }] },
                             };
+                            await saveA2ATask(current.task, current.ownerKeyHash);
                         }
                         console.error(`[a2a] Task ${taskId} failed: ${errMsg}`);
                     }

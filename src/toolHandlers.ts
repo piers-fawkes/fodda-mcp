@@ -55,6 +55,14 @@ import { addCoverageAnnotation, fetchSupplementalSuggest, generateNextMoves, gen
 import { buildReportEditorialBriefing } from './reportBriefing.js';
 import { getHelpAnswer } from './helpService.js';
 import { generateToolGuide, getLiveGraphCount } from './toolGuide.js';
+import {
+    setResearchJob,
+    getResearchJob,
+    computeOwnerScope,
+    JobUnauthorizedError,
+    sweepL1Caches,
+    type ResearchJobRecord,
+} from './jobStore.js';
 
 // ---------------------------------------------------------------------------
 // Render instructions — embedded in tool responses for LLM clients that
@@ -527,7 +535,11 @@ export function shouldQueryRetailProductSupplementals(brand: string, marketData?
 // createServer — builds and returns a fully-configured MCP server
 // ---------------------------------------------------------------------------
 
-const activeResearchJobs = new Map<string, any>();
+// Background L1 memory cache sweeper for research jobs & A2A tasks (durable in Firestore)
+setInterval(() => {
+    sweepL1Caches();
+}, 60_000).unref();
+
 const activeSupplementalJobs = new Map<string, any>();
 
 export async function createServer(
@@ -7854,17 +7866,19 @@ export async function createServer(
                 logUserQuery(query, 'deep_research');
 
                 const jobId = crypto.randomUUID();
-                activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null });
+                const ownerScope = computeOwnerScope(apiKey, resolvedUserId);
+                await setResearchJob(jobId, { status: 'RUNNING', result: null, error: null, ownerScope });
 
                 const jobTimeoutTimer = setTimeout(() => {
-                    const current = activeResearchJobs.get(jobId);
-                    if (current && current.status === 'RUNNING') {
-                        console.error(`[deep_research_topic] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
-                        activeResearchJobs.set(jobId, {
-                            status: 'FAILED',
-                            error: 'Research job exceeded the 240-second maximum execution timeout.'
-                        });
-                    }
+                    getResearchJob(jobId).then((current) => {
+                        if (current && current.status === 'RUNNING') {
+                            console.error(`[deep_research_topic] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
+                            setResearchJob(jobId, {
+                                status: 'FAILED',
+                                error: 'Research job exceeded the 240-second maximum execution timeout.'
+                            }).catch(() => {});
+                        }
+                    }).catch(() => {});
                 }, 240000);
 
                 // Run the extracted pipeline in the background to avoid Claude Web timeout
@@ -7892,7 +7906,7 @@ export async function createServer(
                             const r = await chargeQuery({ queryTypeCode, apiKey, userId: resolvedUserId, query, graphsSearched: result.graphs_searched, foddaRequest, spt: sptCtx.token });
                             if (r?.firstOverageChargeNotice) jobResultOverageNotice = true;
                             if (!r.charged) {
-                                activeResearchJobs.set(jobId, { status: 'FAILED', error: r.error || 'Payment could not be completed; report withheld.' });
+                                await setResearchJob(jobId, { status: 'FAILED', error: r.error || 'Payment could not be completed; report withheld.' });
                                 return;
                             }
                         } else {
@@ -7900,11 +7914,11 @@ export async function createServer(
                             if (r?.firstOverageChargeNotice) jobResultOverageNotice = true;
                         }
 
-                        activeResearchJobs.set(jobId, { status: 'COMPLETE', result, firstOverageChargeNotice: jobResultOverageNotice });
+                        await setResearchJob(jobId, { status: 'COMPLETE', result, firstOverageChargeNotice: jobResultOverageNotice });
                     } catch (err: any) {
                         clearTimeout(jobTimeoutTimer);
                         const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                        activeResearchJobs.set(jobId, { status: 'FAILED', error: msg });
+                        await setResearchJob(jobId, { status: 'FAILED', error: msg });
                     }
                 })();
 
@@ -7966,22 +7980,32 @@ export async function createServer(
             const startTime = Date.now();
             const MAX_WAIT_MS = 28000;
             const POLL_INTERVAL_MS = 1500;
+            const callerOwnerScope = computeOwnerScope(apiKey, userId);
 
             while (Date.now() - startTime < MAX_WAIT_MS) {
-                const job = activeResearchJobs.get(job_id);
+                let job: ResearchJobRecord | null;
+                try {
+                    job = await getResearchJob(job_id, callerOwnerScope);
+                } catch (err: any) {
+                    if (err instanceof JobUnauthorizedError || err?.name === 'JobUnauthorizedError') {
+                        return { isError: true, content: [{ type: 'text' as const, text: `Unauthorized: Job ${job_id} does not belong to caller.` }] };
+                    }
+                    throw err;
+                }
+
                 if (!job) {
                     return { isError: true, content: [{ type: 'text' as const, text: `Job ID ${job_id} not found. It may have expired or never existed.` }] };
                 }
 
                 if (job.status === 'FAILED') {
-                    activeResearchJobs.delete(job_id); // cleanup
+                    // Do NOT delete on read — preserve for retries / subsequent reads
                     const accessResult = await handleAccessError(job.error, 'deep_research_topic', userId, apiKey, sessionSource);
                     if (accessResult) return accessResult;
                     return { isError: true, content: [{ type: 'text' as const, text: `Job ${job_id} FAILED: ${job.error}` }] };
                 }
 
                 if (job.status === 'COMPLETE') {
-                    activeResearchJobs.delete(job_id); // cleanup
+                    // Do NOT delete on read — preserve for retries / subsequent reads
                     if (job.firstOverageChargeNotice) {
                         lastTurnOverageNotice = FIRST_OVERAGE_CHARGE_NOTICE_BLOCK;
                     }
@@ -8763,18 +8787,20 @@ export async function createServer(
 
     if (isDeep) {
         const jobId = crypto.randomUUID();
-        activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null, isConsult: true });
+        const ownerScope = computeOwnerScope(apiKey, userId);
+        await setResearchJob(jobId, { status: 'RUNNING', result: null, error: null, isConsult: true, ownerScope });
 
         const jobTimeoutTimer = setTimeout(() => {
-            const current = activeResearchJobs.get(jobId);
-            if (current && current.status === 'RUNNING') {
-                console.error(`[consult_human_agent] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
-                activeResearchJobs.set(jobId, {
-                    status: 'FAILED',
-                    error: 'Human Agent consultation job exceeded the 240-second maximum execution timeout.',
-                    isConsult: true
-                });
-            }
+            getResearchJob(jobId).then((current) => {
+                if (current && current.status === 'RUNNING') {
+                    console.error(`[consult_human_agent] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
+                    setResearchJob(jobId, {
+                        status: 'FAILED',
+                        error: 'Human Agent consultation job exceeded the 240-second maximum execution timeout.',
+                        isConsult: true
+                    }).catch(() => {});
+                }
+            }).catch(() => {});
         }, 240000);
 
         (async () => {
@@ -8782,13 +8808,13 @@ export async function createServer(
                 const result = await performConsult();
                 clearTimeout(jobTimeoutTimer);
                 if (result && (result as any).isError) {
-                    activeResearchJobs.set(jobId, {
+                    await setResearchJob(jobId, {
                         status: 'FAILED',
                         error: result.content?.[0]?.text || 'Human Agent consultation encountered an error',
                         isConsult: true
                     });
                 } else {
-                    activeResearchJobs.set(jobId, {
+                    await setResearchJob(jobId, {
                         status: 'COMPLETE',
                         result,
                         isConsult: true
@@ -8797,7 +8823,7 @@ export async function createServer(
             } catch (err: any) {
                 clearTimeout(jobTimeoutTimer);
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                activeResearchJobs.set(jobId, {
+                await setResearchJob(jobId, {
                     status: 'FAILED',
                     error: msg,
                     isConsult: true
@@ -9195,18 +9221,20 @@ export async function createServer(
 
     if (isDeep) {
         const jobId = crypto.randomUUID();
-        activeResearchJobs.set(jobId, { status: 'RUNNING', result: null, error: null, isConsult: true });
+        const ownerScope = computeOwnerScope(apiKey, userId);
+        await setResearchJob(jobId, { status: 'RUNNING', result: null, error: null, isConsult: true, ownerScope });
 
         const jobTimeoutTimer = setTimeout(() => {
-            const current = activeResearchJobs.get(jobId);
-            if (current && current.status === 'RUNNING') {
-                console.error(`[consult_analyst] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
-                activeResearchJobs.set(jobId, {
-                    status: 'FAILED',
-                    error: 'Analyst consultation job exceeded the 240-second maximum execution timeout.',
-                    isConsult: true
-                });
-            }
+            getResearchJob(jobId).then((current) => {
+                if (current && current.status === 'RUNNING') {
+                    console.error(`[consult_analyst] Job ${jobId} exceeded hard 240s execution ceiling — setting status to FAILED`);
+                    setResearchJob(jobId, {
+                        status: 'FAILED',
+                        error: 'Analyst consultation job exceeded the 240-second maximum execution timeout.',
+                        isConsult: true
+                    }).catch(() => {});
+                }
+            }).catch(() => {});
         }, 240000);
 
         (async () => {
@@ -9214,13 +9242,13 @@ export async function createServer(
                 const result = await performAnalystConsult();
                 clearTimeout(jobTimeoutTimer);
                 if (result && (result as any).isError) {
-                    activeResearchJobs.set(jobId, {
+                    await setResearchJob(jobId, {
                         status: 'FAILED',
                         error: result.content?.[0]?.text || 'Analyst consultation encountered an error',
                         isConsult: true
                     });
                 } else {
-                    activeResearchJobs.set(jobId, {
+                    await setResearchJob(jobId, {
                         status: 'COMPLETE',
                         result,
                         isConsult: true
@@ -9229,7 +9257,7 @@ export async function createServer(
             } catch (err: any) {
                 clearTimeout(jobTimeoutTimer);
                 const msg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
-                activeResearchJobs.set(jobId, {
+                await setResearchJob(jobId, {
                     status: 'FAILED',
                     error: msg,
                     isConsult: true

@@ -37,7 +37,7 @@ const L1_TTL_MS = 60 * 1000; // 1 minute memory cache
 
 let db: Firestore | null = null;
 
-function getDb(): Firestore | null {
+export function getDb(): Firestore | null {
     if (!db) {
         try {
             const projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT || 'fodda-mcp';
@@ -48,6 +48,10 @@ function getDb(): Firestore | null {
         }
     }
     return db;
+}
+
+export function setDbForTesting(customDb: Firestore | null): void {
+    db = customDb;
 }
 
 // ---------------------------------------------------------------------------

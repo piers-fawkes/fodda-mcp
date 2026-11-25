@@ -5,6 +5,28 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.161] - 2026-11-24
+
+### Durable Firestore Async Jobs & Google A2A Tasks
+- **Durable Firestore Research Job & A2A Task Store (`src/jobStore.ts`)**:
+  - Persisted background jobs (`deep_research_topic`, `consult_human_agent` with `deep: true`, `consult_analyst` with `deep: true`) and Google A2A tasks in Cloud Firestore (`mcp_research_jobs` and `mcp_a2a_tasks`) with 24-hour TTL (`expiresAt`).
+  - Added write-through L1 memory cache (`l1ResearchJobs`, `l1A2ATasks`) ensuring hot-path single-instance polling latency remains sub-millisecond while cache misses and cross-instance polls resolve durably against Firestore.
+  - Fail-open resilience: gracefully logs a warning and falls back to in-memory caching if Firestore is unreachable or unconfigured in local test environments.
+- **Idempotent Read Receipt (Non-Destructive Polling) (`src/toolHandlers.ts`)**:
+  - Eliminated immediate destructive deletes (`activeResearchJobs.delete(job_id)`) upon the first read of `COMPLETE` or `FAILED` jobs in `check_research_status`.
+  - Completed research and consultation briefings remain readable for at least 1 hour (relying on Firestore 24h TTL policy rather than destructive first-poll deletion), eliminating HTTP timeout 404 retries and enabling multi-instance agent resumption.
+- **Interrupted-Job Detection & Auto-Recovery (`src/jobStore.ts`)**:
+  - Detects if an in-flight job in Firestore is still marked `RUNNING` past the 240s execution ceiling (`Date.now() - startedAt > 260_000` ms, indicating the container running the background worker crashed, was scaled down, or redeployed).
+  - Automatically transitions the job to `FAILED` with a retryable message (`Research job exceeded the 240-second maximum execution window; the background worker may have restarted. Please retry.`) and updates Firestore so future polls immediately resolve with clear guidance.
+- **Tenant Isolation & Security Guards (`src/jobStore.ts`, `src/toolHandlers.ts`, `src/a2aHandler.ts`)**:
+  - SHA-256 ownerScope verification prevents caller A from polling or guessing caller B's `job_id` or `taskId`.
+  - Raw API keys (`sk_...`) or bearer tokens are strictly hashed before persistence to ensure zero sensitive credential storage in Firestore.
+- **Google A2A Task Store Integration (`src/a2aHandler.ts`)**:
+  - Replaced process-local `a2aTasks` map with durable `jobStore.ts` storage, persisting task records, status, and generated report/source plan artifacts.
+  - Implemented 15-minute working TTL auto-fail detection and cross-caller authentication guards.
+- **Test Suite (`scripts/test-durable-jobs.ts`)**:
+  - Added integration test suite verifying full job lifecycle: RUNNING -> COMPLETE transition, L1 wipe and cold-cache recovery, non-destructive polling idempotency, cross-user authorization rejection (`JobUnauthorizedError` and `TaskUnauthorizedError`), stale job recovery, and A2A artifact persistence.
+
 ## [1.46.160] - 2026-11-23
 
 ### OpenAI ChatGPT Continuous Scanner Remediation (5 Held Items)
