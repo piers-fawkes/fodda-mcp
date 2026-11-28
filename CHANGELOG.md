@@ -5,6 +5,18 @@ All notable changes to the Fodda MCP server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.46.162] - 2026-11-27
+
+### Security bake — MCP session & telemetry hardening
+- **Session IDs are no longer credentials (`src/index.ts`)**: every request on an owned session must re-present the owner's credential (Bearer / API key / `/c/<token>` / internal auth). A bare `Mcp-Session-Id`, or one with a different key, now gets 401 (`Session credential mismatch`) on both the in-memory and Firestore-recovery paths. Previously a leaked session ID inherited the owner's API key and billing for up to 7 days. Comparison is constant-time.
+- **Raw API keys no longer persisted in `mcp_sessions` (`src/sessionStore.ts`)**: sessions store `apiKeyHash` (SHA-256) and write `apiKey: ''`, which also blanks legacy raw keys on the next write. Legacy docs still verify via hash-of-raw until they roll over.
+- **`/telemetry` no longer leaks error strings**: unauthenticated callers get counts/rates only; `lastError`/`recentErrors` require `X-Internal-Key` or a valid HMAC.
+- **`/v1/feedback` input clipped** (feedback 4000, user 200, category 50 chars).
+- Re-audited & sound: anonymous `initialize` 401s on every offering path; A2A task/job owner-hash guards; HMAC timing-safe with 5-min window; widget IDs are random UUIDs serving API-rendered HTML.
+- Still open (LOW): HMAC payload for POST omits the path — needs a coordinated API change.
+
+**Verification:** `tsc --noEmit` clean. New `src/test_session_credential_binding.ts` PASS (7 assertions). `test_service_to_service_auth.ts` PASS incl. new hijack assertions (no-credential + wrong-credential → 401) and SDK client flow (56 tools). `test_token_resolution`, `test_dcr_and_legacy_deprecation`, `test_onboarding_preauth_handshake` (38/38) PASS. Not deployed.
+
 ## [1.46.161] - 2026-11-24
 
 ### Durable Firestore Async Jobs & Google A2A Tasks

@@ -164,7 +164,20 @@ async function runServiceToServiceAuthTests() {
         assert(sessionId, 'Server must emit Mcp-Session-Id header');
         console.log(`  ✅ Initialized stateful session with session ID: ${sessionId}`);
 
-        // Call tools/list with session ID
+        // A bare session ID is not a credential (security bake 2026-11-27)
+        const res6a = await axios.post(`${baseUrl}/mcp`, { jsonrpc: '2.0', id: 60, method: 'tools/list' }, {
+            headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': sessionId },
+            validateStatus: () => true,
+        });
+        assert.strictEqual(res6a.status, 401, 'Session ID without credential must be rejected');
+        const res6x = await axios.post(`${baseUrl}/mcp`, { jsonrpc: '2.0', id: 61, method: 'tools/list' }, {
+            headers: { 'Content-Type': 'application/json', 'Mcp-Session-Id': sessionId, 'Authorization': 'Bearer sk_live_attacker' },
+            validateStatus: () => true,
+        });
+        assert.strictEqual(res6x.status, 401, 'Session ID with a different credential must be rejected');
+        console.log('  ✅ Session hijack attempts (no credential / wrong credential) rejected with 401');
+
+        // Call tools/list with session ID + owner credential
         const res6b = await axios.post(`${baseUrl}/mcp`, {
             jsonrpc: '2.0',
             id: 6,
@@ -172,6 +185,7 @@ async function runServiceToServiceAuthTests() {
         }, {
             headers: {
                 'Content-Type': 'application/json',
+                'Authorization': 'Bearer sk_live_test_sandbox',
                 'Mcp-Session-Id': sessionId
             }
         });

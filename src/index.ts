@@ -20,7 +20,7 @@ import type { TrialInteractionType } from './trialTracker.js';
 import { registerA2ARoute } from './a2aHandler.js';
 import { registerAgentFactsRoute } from './agentFacts.js';
 import { getTelemetryStats, recordFeedbackEntry } from './telemetry.js';
-import { getStoredOAuthToken, storeOAuthToken, getStoredSession, storeSession } from './sessionStore.js';
+import { getStoredOAuthToken, storeOAuthToken, getStoredSession, storeSession, sessionKeyMatches } from './sessionStore.js';
 import * as dotenv from 'dotenv';
 import {
     API_BASE_URL,
@@ -620,9 +620,22 @@ app.get([
 // Telemetry & Error-Rate Instrumentation Endpoints
 // ---------------------------------------------------------------------------
 
-app.get(['/telemetry', '/v1/telemetry'], (_req, res) => {
+app.get(['/telemetry', '/v1/telemetry'], (req, res) => {
     res.setHeader('Content-Type', 'application/json');
-    res.json(getTelemetryStats());
+    res.setHeader('Cache-Control', 'no-store');
+    const stats = getTelemetryStats();
+    // Raw error strings can carry upstream messages, query text or identifiers —
+    // only internal callers (internal key or signed HMAC) see them.
+    const internalKey = process.env.FODDA_INTERNAL_API_KEY || '';
+    const isInternal = isIncomingHmacValid(req) ||
+        !!(internalKey && matchesSecretConstantTime(req.headers['x-internal-key'] as string, internalKey));
+    if (isInternal) return res.json(stats);
+    const tools: Record<string, any> = {};
+    for (const [name, t] of Object.entries(stats.tools)) {
+        const { lastError: _le, recentErrors: _re, ...rest } = t as any;
+        tools[name] = rest;
+    }
+    res.json({ ...stats, tools });
 });
 
 app.post('/v1/feedback', (req, res) => {
@@ -630,9 +643,10 @@ app.post('/v1/feedback', (req, res) => {
     if (!feedback) {
         return res.status(400).json({ error: 'Missing required field: feedback' });
     }
-    const userLabel = user_email || user || 'anonymous HTTP user';
-    const catLabel = category || 'general';
-    recordFeedbackEntry(catLabel, feedback, userLabel);
+    const clip = (v: unknown, n: number) => String(v ?? '').slice(0, n);
+    const userLabel = clip(user_email || user || 'anonymous HTTP user', 200);
+    const catLabel = clip(category || 'general', 50);
+    recordFeedbackEntry(catLabel, clip(feedback, 4000), userLabel);
     res.json({ status: 'LOGGED', message: 'Feedback recorded successfully.' });
 });
 
@@ -1302,7 +1316,9 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
 
         if (sessionId && transports.has(sessionId)) {
             const existingKey = sessionApiKeys.get(sessionId);
-            if (apiKey && existingKey && apiKey !== existingKey) {
+            // A session ID is not a credential: every request on an owned session must
+            // re-present the owner's credential (MCP spec: verify auth on every request).
+            if (existingKey && (!apiKey || !matchesSecretConstantTime(apiKey, existingKey))) {
                 return sendAuth401(res, {
                     offeringSlug,
                     message: 'Session credential mismatch.',
@@ -1325,8 +1341,8 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
             let effectiveClientSlug: string | undefined = clientSlug;
 
             const stored = await getStoredSession(sessionId);
-            if (stored?.apiKey) {
-                if (apiKey && stored.apiKey !== apiKey) {
+            if (stored) {
+                if (!sessionKeyMatches(stored, apiKey)) {
                     return sendAuth401(res, {
                         offeringSlug,
                         message: 'Session credential mismatch on recovery.',
@@ -1334,7 +1350,7 @@ app.all(['/mcp', '/brand-intelligence', '/topic-research', '/deep-research', '/e
                         id: (req.body && typeof req.body === 'object' && 'id' in req.body) ? (req.body as any).id : null,
                     });
                 }
-                effectiveApiKey = stored.apiKey;
+                effectiveApiKey = apiKey;
                 effectiveUserId = (effectiveUserId && effectiveUserId !== 'anonymous') ? effectiveUserId : stored.userId;
                 effectiveSessionSource = effectiveSessionSource || stored.source || undefined;
                 effectiveClientSlug = clientSlug || stored.clientSlug || undefined;

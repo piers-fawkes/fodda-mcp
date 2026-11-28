@@ -6,11 +6,15 @@
  * and multi-instance Cloud Run scaling without forcing clients into re-authentication loops.
  */
 
+import crypto from 'crypto';
 import { Firestore } from '@google-cloud/firestore';
 
 export interface StoredSession {
     sessionId: string;
+    /** Legacy: raw key on docs written before 1.46.162. New docs write '' here. */
     apiKey: string;
+    /** SHA-256 of the session owner's API key. Raw keys are never persisted. */
+    apiKeyHash?: string;
     userId: string;
     source?: string | undefined;
     clientSlug?: string | undefined;
@@ -118,6 +122,25 @@ export async function storeOAuthToken(
 // Session State Persistence
 // ---------------------------------------------------------------------------
 
+export function hashSessionKey(apiKey: string): string {
+    return crypto.createHash('sha256').update(apiKey).digest('hex');
+}
+
+/** True when the stored session belongs to a credential (hash or legacy raw key). */
+export function sessionHasOwner(s: StoredSession): boolean {
+    return !!(s.apiKeyHash || s.apiKey);
+}
+
+/** Constant-time check that `apiKey` is the session owner's credential. */
+export function sessionKeyMatches(s: StoredSession, apiKey: string): boolean {
+    if (!apiKey) return false;
+    const expected = s.apiKeyHash || (s.apiKey ? hashSessionKey(s.apiKey) : '');
+    if (!expected) return false;
+    const a = Buffer.from(hashSessionKey(apiKey), 'hex');
+    const b = Buffer.from(expected, 'hex');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 /**
  * Retrieve an MCP session by sessionId.
  */
@@ -134,7 +157,7 @@ export async function getStoredSession(sessionId: string): Promise<StoredSession
         const doc = await firestore.collection(SESSIONS_COLLECTION).doc(sessionId).get();
         if (!doc.exists) return null;
         const data = doc.data() as StoredSession;
-        if (!data || !data.apiKey) return null;
+        if (!data || !sessionHasOwner(data)) return null;
 
         if (data.updatedAt && (Date.now() - data.updatedAt > SESSION_TTL_MS)) {
             // Stale session
@@ -168,7 +191,8 @@ export async function storeSession(
 
     const payload: StoredSession = {
         sessionId,
-        apiKey: data.apiKey,
+        apiKey: '', // never persist the raw key (also blanks legacy docs on merge)
+        apiKeyHash: data.apiKey ? hashSessionKey(data.apiKey) : (existing?.apiKeyHash || ''),
         userId: data.userId,
         source: data.source || existing?.source || '',
         clientSlug: data.clientSlug || existing?.clientSlug || '',
